@@ -1,0 +1,18 @@
+{
+  "schemaVersion": "1.0.0",
+  "repo": "payments-pipeline",
+  "evidence": [
+    {
+      "level": 1,
+      "source": "governed_catalog_metadata",
+      "class": "DATA_PIPELINE",
+      "ref": "fixture://catalog/repositories/payments-pipeline"
+    },
+    {
+      "level": 4,
+      "source": "manifest_structure",
+      "class": "DATA_PIPELINE",
+      "ref": "fixture://repositories/payments-pipeline/pipeline.py"
+    }
+  ]
+}

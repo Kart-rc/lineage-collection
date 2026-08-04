@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://lineage.local/contracts/evidence-ref/1.0.0",
+  "title": "EvidenceRef",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "kind", "key", "checksum"],
+  "properties": {
+    "schemaVersion": {"const": "1.0.0"},
+    "kind": {"type": "string", "minLength": 1},
+    "key": {"type": "string", "minLength": 1},
+    "checksum": {"type": "string", "pattern": "^[a-f0-9]{64}$"}
+  }
+}

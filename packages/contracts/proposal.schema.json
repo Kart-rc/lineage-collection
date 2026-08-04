@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://lineage.local/contracts/proposal/1.0.0",
+  "title": "Proposal",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "proposalId",
+    "version",
+    "system",
+    "state",
+    "expectedBaseVersion",
+    "diff",
+    "correlationId",
+    "createdAt"
+  ],
+  "properties": {
+    "schemaVersion": {"const": "1.0.0"},
+    "proposalId": {"type": "string", "minLength": 1},
+    "version": {"type": "integer", "minimum": 1},
+    "system": {"type": "string", "minLength": 1},
+    "state": {"enum": ["DRAFT", "IN_REVIEW", "APPROVED", "REJECTED", "SUPERSEDED", "FINALIZED"]},
+    "expectedBaseVersion": {"type": "string", "minLength": 1},
+    "diff": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["added", "removed", "bandChanged"],
+      "properties": {
+        "added": {"type": "array", "items": {"type": "object"}},
+        "removed": {"type": "array", "items": {"type": "object"}},
+        "bandChanged": {"type": "array", "items": {"type": "object"}}
+      }
+    },
+    "correlationId": {"type": "string", "minLength": 1},
+    "createdAt": {"type": "string", "format": "date-time"},
+    "supersedes": {"type": "string"},
+    "decision": {"type": "object"}
+  }
+}

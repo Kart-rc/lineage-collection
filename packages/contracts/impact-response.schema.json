@@ -1,0 +1,45 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://lineage.local/contracts/impact-response/1.0.0",
+  "title": "ImpactResponse",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["subject", "changeType", "namespaceVersion", "depthSearched", "truncated", "affected", "summary"],
+  "properties": {
+    "subject": {"type": "string", "minLength": 1},
+    "changeType": {
+      "enum": ["COLUMN_DROP", "COLUMN_TYPE_CHANGE", "COLUMN_RENAME", "DATASET_REMOVAL", "TRANSFORM_CHANGE", "FINGERPRINT_DRIFT"]
+    },
+    "namespaceVersion": {"type": "string", "minLength": 1},
+    "depthSearched": {"type": "integer", "minimum": 1, "maximum": 5},
+    "truncated": {"type": "boolean"},
+    "affected": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["urn", "system", "band", "corroboration", "pathLength", "viaEdges", "severity"],
+        "properties": {
+          "urn": {"type": "string"},
+          "system": {"type": "string"},
+          "owner": {"type": "string"},
+          "band": {"enum": ["LOWEST", "SINGLE", "MEDIUM", "HIGH", "HIGHEST"]},
+          "corroboration": {"enum": ["NONE", "DATASET", "ELEMENT"]},
+          "pathLength": {"type": "integer", "minimum": 1},
+          "viaEdges": {"type": "array", "items": {"type": "string"}},
+          "severity": {"enum": ["BLOCK", "WARN", "INFO"]}
+        }
+      }
+    },
+    "summary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["block", "warn", "info"],
+      "properties": {
+        "block": {"type": "integer", "minimum": 0},
+        "warn": {"type": "integer", "minimum": 0},
+        "info": {"type": "integer", "minimum": 0}
+      }
+    }
+  }
+}

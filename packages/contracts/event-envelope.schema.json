@@ -1,0 +1,34 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://lineage.local/contracts/event-envelope/1.0.0",
+  "title": "EventEnvelope",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "eventId",
+    "eventType",
+    "correlationId",
+    "repo",
+    "digest",
+    "env",
+    "system",
+    "lane",
+    "receivedAt"
+  ],
+  "properties": {
+    "schemaVersion": {"const": "1.0.0"},
+    "eventId": {"type": "string", "minLength": 1},
+    "eventType": {
+      "enum": ["repo.push", "pr.updated", "deploy", "baseline", "backfill", "nightly", "llm.batch"]
+    },
+    "correlationId": {"type": "string", "minLength": 1},
+    "repo": {"type": "string", "minLength": 1},
+    "digest": {"type": "string", "minLength": 1},
+    "env": {"type": "string", "minLength": 1},
+    "system": {"type": "string", "minLength": 1},
+    "lane": {"enum": ["interactive", "events", "bulk"]},
+    "changedFiles": {"type": "array", "items": {"type": "string"}, "uniqueItems": true},
+    "receivedAt": {"type": "string", "format": "date-time"}
+  }
+}
