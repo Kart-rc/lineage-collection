@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://lineage.local/contracts/accepted-manifest/1.0.0",
+  "title": "AcceptedLineageManifest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "manifestId",
+    "proposalId",
+    "proposalVersion",
+    "approvalId",
+    "expectedPriorVersion",
+    "edges",
+    "checksum",
+    "correlationId"
+  ],
+  "properties": {
+    "schemaVersion": {"const": "1.0.0"},
+    "manifestId": {"type": "string", "minLength": 1},
+    "proposalId": {"type": "string", "minLength": 1},
+    "proposalVersion": {"type": "integer", "minimum": 1},
+    "approvalId": {"type": "string", "minLength": 1},
+    "expectedPriorVersion": {"type": "string", "minLength": 1},
+    "edges": {"type": "array", "items": {"type": "object"}},
+    "checksum": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "correlationId": {"type": "string", "minLength": 1}
+  }
+}

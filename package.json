@@ -1,0 +1,16 @@
+{
+  "name": "lineage-collector-prototype",
+  "private": true,
+  "version": "0.1.0",
+  "workspaces": [
+    "apps/web"
+  ],
+  "scripts": {
+    "dev": "concurrently -k -n api,web -c cyan,yellow \"uv run --project apps/api uvicorn lineage_api.main:app --reload --host 127.0.0.1 --port 8000\" \"npm run dev --workspace apps/web\"",
+    "test": "npm run test --workspace apps/web --if-present",
+    "build": "npm run build --workspace apps/web --if-present"
+  },
+  "devDependencies": {
+    "concurrently": "^9.2.1"
+  }
+}
