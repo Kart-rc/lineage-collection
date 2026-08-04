@@ -71,3 +71,5 @@ data/               generated local state (ignored)
 ```
 
 The prototype coverage and deliberate deferrals are listed in [docs/prototype-coverage.md](docs/prototype-coverage.md). PRD gaps, enterprise context seams, cross-document conflicts, and reversible local decisions are recorded in [docs/prd-ambiguities.md](docs/prd-ambiguities.md).
+
+The 18 source component PRDs used to design the prototype are included verbatim in [docs/component-prds](docs/component-prds).
