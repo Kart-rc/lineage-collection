@@ -86,15 +86,16 @@ class QueryService:
         self._validate_depth(depth)
         namespace = self._resolve_version(version)
         edges = self._edges(namespace)
-        queue: deque[tuple[str, int, str, list[str]]] = deque(
-            [(subject, 0, "HIGHEST", [subject])]
+        corroboration_order = {"NONE": 0, "DATASET": 1, "ELEMENT": 2}
+        queue: deque[tuple[str, int, str, str, list[str]]] = deque(
+            [(subject, 0, "HIGHEST", "ELEMENT", [])]
         )
         best_depth = {subject: 0}
         affected: dict[str, dict[str, Any]] = {}
         truncated = False
 
         while queue:
-            current, path_length, path_band, path = queue.popleft()
+            current, path_length, path_band, path_corroboration, via_edges = queue.popleft()
             outgoing = [edge for edge in edges if current in edge["from"]]
             if path_length >= depth:
                 truncated = truncated or bool(outgoing)
@@ -105,19 +106,28 @@ class QueryService:
                 next_band = min(
                     (path_band, edge["band"]), key=lambda band: BAND_ORDER[band]
                 )
+                next_corroboration = min(
+                    (path_corroboration, edge["corroboration"]),
+                    key=lambda value: corroboration_order[value],
+                )
                 if target in best_depth and best_depth[target] <= next_length:
                     continue
                 best_depth[target] = next_length
-                next_path = [*path, target]
+                next_via_edges = [*via_edges, edge["edgeKey"]]
+                parsed_target = LineageUrn.parse(target)
                 affected[target] = {
                     "urn": target,
+                    "system": parsed_target.system,
                     "severity": severity_for(change_type, next_band),
-                    "confidenceBand": next_band,
+                    "band": next_band,
+                    "corroboration": next_corroboration,
                     "pathLength": next_length,
-                    "path": next_path,
-                    "owner": f"team-{LineageUrn.parse(target).system}",
+                    "viaEdges": next_via_edges,
+                    "owner": f"team-{parsed_target.system}",
                 }
-                queue.append((target, next_length, next_band, next_path))
+                queue.append(
+                    (target, next_length, next_band, next_corroboration, next_via_edges)
+                )
 
         ordered = sorted(affected.values(), key=lambda item: (item["pathLength"], item["urn"]))
         summary = {"block": 0, "warn": 0, "info": 0}

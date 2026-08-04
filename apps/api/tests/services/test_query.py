@@ -5,6 +5,7 @@ from pathlib import Path
 import pytest
 
 from lineage_api.db import Database
+from lineage_api.contracts import ContractRegistry
 from lineage_api.domain.errors import DomainError
 
 
@@ -114,6 +115,8 @@ def test_impact_uses_path_confidence_and_returns_l11_response(query) -> None:
         (TARGET, "WARN", 2),
     ]
     assert impact["summary"] == {"block": 1, "warn": 1, "info": 0}
+    contracts = ContractRegistry(Path(__file__).parents[4] / "packages" / "contracts")
+    assert contracts.validate("impact-response", impact) == []
 
 
 def test_depth_above_five_is_rejected(query) -> None:

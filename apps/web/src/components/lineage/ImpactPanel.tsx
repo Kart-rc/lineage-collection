@@ -63,8 +63,8 @@ export function ImpactPanel({ subject, edges }: { subject: string; edges: Lineag
                   <div><strong>{item.urn.split(":").at(-1)}</strong><code>{item.urn}</code></div>
                   <dl>
                     <div><dt>Path</dt><dd>Path length {item.pathLength}</dd></div>
-                    <div><dt>Confidence</dt><dd>{item.confidenceBand} band</dd></div>
-                    <div><dt>Corroboration</dt><dd>{evidenceEdge?.corroboration ?? "Not returned"}</dd></div>
+                    <div><dt>Confidence</dt><dd>{item.band} band</dd></div>
+                    <div><dt>Corroboration</dt><dd>{item.corroboration}</dd></div>
                     <div><dt>Owner</dt><dd>{item.owner}</dd></div>
                   </dl>
                   {evidenceEdge && <code className="impact-evidence">Evidence {evidenceEdge.provenance[0]?.evidenceRef.key}</code>}

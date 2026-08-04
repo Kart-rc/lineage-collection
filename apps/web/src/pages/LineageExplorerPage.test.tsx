@@ -75,7 +75,7 @@ test("explorer exposes versioned directional graph, evidence inspector, and impa
           depthSearched: 5,
           truncated: false,
           affected: [
-            { urn: TARGET, severity: "BLOCK", confidenceBand: "HIGH", pathLength: 1, path: [SOURCE, TARGET], owner: "team-payments" },
+            { urn: TARGET, system: "payments", severity: "BLOCK", band: "HIGH", corroboration: "ELEMENT", pathLength: 1, viaEdges: ["edge-one"], owner: "team-payments" },
           ],
           summary: { block: 1, warn: 0, info: 0 },
         });

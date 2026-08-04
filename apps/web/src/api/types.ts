@@ -136,10 +136,12 @@ export interface ImpactResponse {
   truncated: boolean;
   affected: Array<{
     urn: string;
+    system: string;
     severity: Severity;
-    confidenceBand: ConfidenceBand;
+    band: ConfidenceBand;
+    corroboration: "NONE" | "DATASET" | "ELEMENT";
     pathLength: number;
-    path: string[];
+    viaEdges: string[];
     owner: string;
   }>;
   summary: { block: number; warn: number; info: number };
