@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { Link } from "react-router-dom";
+import { Link } from "../routing";
 
 import { api } from "../api/client";
 import { StatusPill } from "../components/shared/StatusPill";

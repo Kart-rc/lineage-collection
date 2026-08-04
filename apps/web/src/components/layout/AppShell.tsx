@@ -1,8 +1,8 @@
 import { useQuery } from "@tanstack/react-query";
 import type { PropsWithChildren } from "react";
-import { NavLink } from "react-router-dom";
 
 import { api } from "../../api/client";
+import { NavLink } from "../../routing";
 import { StatusPill } from "../shared/StatusPill";
 
 

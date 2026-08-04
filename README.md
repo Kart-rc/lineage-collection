@@ -56,7 +56,7 @@ make verify
 
 - `make test` runs the backend domain/API/walking-skeleton suite and the frontend component suite.
 - `make build` performs strict TypeScript compilation and a Vite production build.
-- `make verify` runs both commands as the local pre-handoff gate. Browser E2E is added as a separate command in the completion step.
+- `make verify` runs both commands as the local pre-handoff gate. The documented walkthrough was also exercised in a real Chromium session for the prototype handoff.
 
 ## Project map
 

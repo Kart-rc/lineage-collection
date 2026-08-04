@@ -1,6 +1,6 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render, screen } from "@testing-library/react";
-import { MemoryRouter } from "react-router-dom";
+import { MemoryRouter } from "./routing";
 
 import { App } from "./App";
 
@@ -30,10 +30,7 @@ test("provides an accessible control-room shell and namespace watermark", async 
   });
   render(
     <QueryClientProvider client={queryClient}>
-      <MemoryRouter
-        initialEntries={["/"]}
-        future={{ v7_startTransition: true, v7_relativeSplatPath: true }}
-      >
+      <MemoryRouter initialEntries={["/"]}>
         <App />
       </MemoryRouter>
     </QueryClientProvider>,

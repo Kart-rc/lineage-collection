@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useParams } from "../routing";
 
 import { ApiError, api } from "../api/client";
 import { EdgeDiff } from "../components/review/EdgeDiff";

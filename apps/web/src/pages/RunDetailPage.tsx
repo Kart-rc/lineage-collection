@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { Link, useParams } from "react-router-dom";
+import { Link, useParams } from "../routing";
 
 import { api } from "../api/client";
 import { StageTimeline } from "../components/runs/StageTimeline";

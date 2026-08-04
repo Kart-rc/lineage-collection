@@ -3,6 +3,7 @@
 .venv/
 __pycache__/
 .pytest_cache/
+.playwright-cli/
 *.py[cod]
 node_modules/
 dist/
@@ -10,5 +11,6 @@ dist/
 vite.config.js
 vite.config.d.ts
 coverage/
+output/
 data/
 source-materials/

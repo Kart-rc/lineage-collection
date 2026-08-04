@@ -1,7 +1,7 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { MemoryRouter } from "react-router-dom";
+import { MemoryRouter } from "../routing";
 
 import { App } from "../App";
 
@@ -85,10 +85,7 @@ test("explorer exposes versioned directional graph, evidence inspector, and impa
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(
     <QueryClientProvider client={queryClient}>
-      <MemoryRouter
-        initialEntries={["/lineage"]}
-        future={{ v7_startTransition: true, v7_relativeSplatPath: true }}
-      >
+      <MemoryRouter initialEntries={["/lineage"]}>
         <App />
       </MemoryRouter>
     </QueryClientProvider>,

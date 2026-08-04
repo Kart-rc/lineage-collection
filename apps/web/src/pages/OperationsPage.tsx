@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Link } from "react-router-dom";
+import { Link } from "../routing";
 
 import { ApiError, api } from "../api/client";
 import { FlowRail } from "../components/operations/FlowRail";
