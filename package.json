@@ -7,8 +7,12 @@
   ],
   "scripts": {
     "dev": "concurrently -k -n api,web -c cyan,yellow \"uv run --project apps/api uvicorn lineage_api.main:app --reload --host 127.0.0.1 --port 8000\" \"npm run dev --workspace apps/web\"",
-    "test": "npm run test --workspace apps/web --if-present",
-    "build": "npm run build --workspace apps/web --if-present"
+    "reset": "uv run --project apps/api python -m lineage_api.cli reset",
+    "test": "npm run test:backend && npm run test:web",
+    "test:backend": "uv run --project apps/api --extra dev pytest -q",
+    "test:web": "npm test --workspace apps/web -- --run",
+    "build": "npm run build --workspace apps/web",
+    "verify": "npm test && npm run build"
   },
   "devDependencies": {
     "concurrently": "^9.2.1"
