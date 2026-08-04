@@ -4,11 +4,14 @@ version = "0.1.0"
 description = "Local lineage collector walking-skeleton API"
 requires-python = ">=3.12,<3.14"
 dependencies = [
+  "fastapi>=0.116,<0.117",
   "jsonschema>=4.25,<5",
+  "uvicorn>=0.35,<0.36",
 ]
 
 [project.optional-dependencies]
 dev = [
+  "httpx>=0.28,<1",
   "pytest>=8.4,<9",
 ]
 
