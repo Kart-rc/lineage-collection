@@ -27,6 +27,7 @@ export interface Provenance {
   runId: string;
   correlationId: string;
   transform?: string;
+  citation?: { file: string; line: number; astPath: string };
   runtimeScope?: "DATASET" | "ELEMENT";
   sessionComplete: boolean;
 }

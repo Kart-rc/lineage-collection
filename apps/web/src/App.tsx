@@ -1,6 +1,11 @@
 import { Navigate, Route, Routes } from "react-router-dom";
 
 import { AppShell } from "./components/layout/AppShell";
+import { OperationsPage } from "./pages/OperationsPage";
+import { ProposalDetailPage } from "./pages/ProposalDetailPage";
+import { ReviewQueuePage } from "./pages/ReviewQueuePage";
+import { RunDetailPage } from "./pages/RunDetailPage";
+import { RunsPage } from "./pages/RunsPage";
 
 
 function Placeholder({ eyebrow, title, copy }: { eyebrow: string; title: string; copy: string }) {
@@ -18,26 +23,9 @@ export function App() {
   return (
     <AppShell>
       <Routes>
-        <Route
-          path="/"
-          element={
-            <Placeholder
-              eyebrow="System posture"
-              title="Operations"
-              copy="Follow one signed delivery from intake to an accepted graph projection."
-            />
-          }
-        />
-        <Route
-          path="/review"
-          element={
-            <Placeholder
-              eyebrow="Human gate"
-              title="Review queue"
-              copy="Inspect confidence, corroboration, and immutable source evidence."
-            />
-          }
-        />
+        <Route path="/" element={<OperationsPage />} />
+        <Route path="/review" element={<ReviewQueuePage />} />
+        <Route path="/review/:proposalId" element={<ProposalDetailPage />} />
         <Route
           path="/lineage"
           element={
@@ -48,16 +36,8 @@ export function App() {
             />
           }
         />
-        <Route
-          path="/runs"
-          element={
-            <Placeholder
-              eyebrow="Execution ledger"
-              title="Runs"
-              copy="Read every durable stage transition with its shared correlation identity."
-            />
-          }
-        />
+        <Route path="/runs" element={<RunsPage />} />
+        <Route path="/runs/:runId" element={<RunDetailPage />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </AppShell>

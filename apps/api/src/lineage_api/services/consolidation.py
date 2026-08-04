@@ -29,6 +29,7 @@ class MechanismAssertion:
     repo: str
     run_id: str
     correlation_id: str
+    citation: dict[str, Any] | None = None
     runtime_scope: str | None = None
     session_complete: bool = True
 
@@ -56,6 +57,7 @@ class MechanismAssertion:
             repo=edge.repo,
             run_id=edge.run_id,
             correlation_id=edge.correlation_id,
+            citation={"file": edge.file, "line": edge.line, "astPath": edge.ast_path},
         )
 
     def as_dict(self) -> dict[str, Any]:
@@ -74,6 +76,8 @@ class MechanismAssertion:
         }
         if self.transform is not None:
             payload["transform"] = self.transform
+        if self.citation is not None:
+            payload["citation"] = self.citation
         if self.runtime_scope is not None:
             payload["runtimeScope"] = self.runtime_scope
         return payload
@@ -92,6 +96,7 @@ class MechanismAssertion:
             repo=payload["repo"],
             run_id=payload["runId"],
             correlation_id=payload["correlationId"],
+            citation=payload.get("citation"),
             runtime_scope=payload.get("runtimeScope"),
             session_complete=bool(payload.get("sessionComplete", True)),
         )

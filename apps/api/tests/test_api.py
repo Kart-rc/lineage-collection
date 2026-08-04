@@ -122,6 +122,13 @@ def test_list_and_detail_routes_expose_evidence_and_audit(client) -> None:
         "SCA",
         "RUNTIME",
     }
+    sca_provenance = next(
+        item
+        for item in detail["diff"]["added"][0]["provenance"]
+        if item["mechanism"] == "SCA"
+    )
+    assert sca_provenance["citation"]["file"] == "pipeline.py"
+    assert sca_provenance["citation"]["line"] > 0
     assert client.get(f"/api/runs/{collected['run']['runId']}").json()["stages"]
     assert client.get("/api/proposals").json()[0]["proposalId"] == proposal["proposalId"]
 
