@@ -105,7 +105,7 @@ The resolver maps raw API routes, table names, Kafka topics, S3 prefixes, and Sp
 Confidence is calculated from the collected evidence rather than from the scenario manifest:
 
 - Matching exact SCA and complete runtime element evidence produces `HIGH` confidence and `ELEMENT` corroboration.
-- Runtime-only service interactions produce `MEDIUM` confidence.
+- Runtime-only service interactions produce `SINGLE` confidence and retain their observed runtime provenance. This follows the existing confidence contract, where `MEDIUM` requires two distinct mechanisms.
 - Contradicting exact mappings are retained as conflicts and are ineligible for automatic publication.
 
 All successful stage assertions form one atomic proposal so review covers the entire source-to-gold chain.
