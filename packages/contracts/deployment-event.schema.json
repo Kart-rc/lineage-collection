@@ -1,0 +1,57 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://lineage.local/contracts/deployment-event/1.0.0",
+  "title": "DeploymentEvent",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "eventId",
+    "eventType",
+    "provider",
+    "providerSequence",
+    "attempt",
+    "system",
+    "environment",
+    "outcome",
+    "correlationId",
+    "auditRef",
+    "occurredAt"
+  ],
+  "properties": {
+    "schemaVersion": {"const": "1.0.0"},
+    "eventId": {"type": "string", "minLength": 1},
+    "eventType": {"enum": ["DEPLOYMENT", "ROLLBACK", "MERGE"]},
+    "provider": {"type": "string", "minLength": 1},
+    "providerSequence": {"type": "integer", "minimum": 1},
+    "attempt": {"type": "integer", "minimum": 1},
+    "system": {"type": "string", "minLength": 1},
+    "environment": {"type": "string", "minLength": 1},
+    "outcome": {"enum": ["SUCCEEDED", "FAILED"]},
+    "artifactDigest": {"type": "string", "minLength": 1},
+    "correlationId": {"type": "string", "minLength": 1},
+    "auditRef": {"type": "string", "minLength": 1},
+    "occurredAt": {"type": "string", "format": "date-time"}
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "eventType": {"enum": ["DEPLOYMENT", "ROLLBACK"]},
+          "outcome": {"const": "SUCCEEDED"}
+        },
+        "required": ["eventType", "outcome"]
+      },
+      "then": {"required": ["artifactDigest"]}
+    },
+    {
+      "if": {
+        "properties": {"eventType": {"const": "ROLLBACK"}},
+        "required": ["eventType"]
+      },
+      "then": {
+        "properties": {"outcome": {"const": "SUCCEEDED"}}
+      }
+    }
+  ]
+}

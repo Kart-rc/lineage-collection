@@ -4,7 +4,7 @@ import sqlite3
 from dataclasses import dataclass
 
 
-LATEST_SCHEMA_VERSION = 4
+LATEST_SCHEMA_VERSION = 5
 
 
 @dataclass(frozen=True, slots=True)
@@ -153,10 +153,74 @@ CREATE INDEX IF NOT EXISTS idx_pr_gate_head
 """
 
 
+DEPLOYMENT_SQL = """
+CREATE TABLE IF NOT EXISTS lineage_packages (
+    package_digest TEXT PRIMARY KEY,
+    system TEXT NOT NULL,
+    environment TEXT NOT NULL,
+    artifact_digest TEXT NOT NULL,
+    graph_version TEXT NOT NULL,
+    graph_checksum TEXT NOT NULL,
+    manifest_ref TEXT NOT NULL,
+    approval_ref TEXT NOT NULL,
+    approved INTEGER NOT NULL CHECK(approved = 1),
+    created_at TEXT NOT NULL,
+    UNIQUE(system, environment, artifact_digest)
+);
+
+CREATE TABLE IF NOT EXISTS deployment_events (
+    event_id TEXT PRIMARY KEY,
+    event_type TEXT NOT NULL CHECK(event_type IN ('DEPLOYMENT', 'ROLLBACK')),
+    provider TEXT NOT NULL,
+    provider_sequence INTEGER NOT NULL CHECK(provider_sequence >= 1),
+    attempt INTEGER NOT NULL CHECK(attempt >= 1),
+    system TEXT NOT NULL,
+    environment TEXT NOT NULL,
+    outcome TEXT NOT NULL CHECK(outcome IN ('SUCCEEDED', 'FAILED')),
+    artifact_digest TEXT,
+    correlation_id TEXT NOT NULL,
+    audit_ref TEXT NOT NULL,
+    occurred_at TEXT NOT NULL,
+    status TEXT NOT NULL,
+    result_json TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    UNIQUE(provider, system, environment, provider_sequence, attempt)
+);
+
+CREATE TABLE IF NOT EXISTS deployment_state (
+    system TEXT NOT NULL,
+    environment TEXT NOT NULL,
+    provider TEXT NOT NULL,
+    provider_sequence INTEGER NOT NULL CHECK(provider_sequence >= 1),
+    attempt INTEGER NOT NULL CHECK(attempt >= 1),
+    event_id TEXT NOT NULL,
+    deployed_artifact_digest TEXT,
+    lineage_package_digest TEXT,
+    graph_version TEXT,
+    state TEXT NOT NULL,
+    audit_ref TEXT NOT NULL,
+    correlation_id TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    PRIMARY KEY(system, environment),
+    FOREIGN KEY(event_id) REFERENCES deployment_events(event_id),
+    FOREIGN KEY(lineage_package_digest) REFERENCES lineage_packages(package_digest)
+);
+
+CREATE INDEX IF NOT EXISTS idx_lineage_package_artifact
+    ON lineage_packages(system, environment, artifact_digest);
+CREATE INDEX IF NOT EXISTS idx_deployment_event_order
+    ON deployment_events(system, environment, provider_sequence, attempt);
+CREATE INDEX IF NOT EXISTS idx_deployment_state_status
+    ON deployment_state(state, updated_at);
+"""
+
+
 MIGRATIONS = (
     Migration(2, DURABLE_CONTROL_SQL),
     Migration(3, LOCAL_LANE_BROKER_SQL),
     Migration(4, PR_GATE_SQL),
+    Migration(5, DEPLOYMENT_SQL),
 )
 
 

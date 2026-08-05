@@ -10,6 +10,7 @@ from lineage_api.application.models import Command, LaneMessage, Lease, StageIde
 from lineage_api.application.outbox import OutboxDispatcher
 from lineage_api.application.ports import ClockPort, CommandStorePort, LaneBrokerPort
 from lineage_api.application.workflows.baseline import BaselineWorkflow
+from lineage_api.application.workflows.deployment import DeploymentPackage, DeploymentStorePort
 from lineage_api.application.workflows.incremental import IncrementalWorkflow
 from lineage_api.db import Database
 from lineage_api.domain.errors import DomainError
@@ -43,6 +44,7 @@ class OrchestrationService:
         consolidation: ConsolidationService,
         review: ReviewService,
         publisher: PublisherService,
+        deployment_store: DeploymentStorePort,
         command_store: CommandStorePort,
         outbox_dispatcher: OutboxDispatcher,
         broker: LaneBrokerPort,
@@ -58,6 +60,7 @@ class OrchestrationService:
         self._consolidation = consolidation
         self._review = review
         self._publisher = publisher
+        self._deployment_store = deployment_store
         self._command_store = command_store
         self._outbox_dispatcher = outbox_dispatcher
         self._broker = broker
@@ -1123,6 +1126,38 @@ class OrchestrationService:
         run = self._run_for_correlation(decision.proposal.correlation_id)
         self._stage(run["runId"], "PUBLISHING", {"approvalId": decision.approval.approval_id})
         published = self._publisher.publish(decision.proposal, decision.approval, env="staging")
+        with self._database.connection() as connection:
+            graph = connection.execute(
+                "SELECT checksum FROM graph_versions WHERE env = ? AND version = ?",
+                (run["env"], published.namespace_version),
+            ).fetchone()
+        if graph is None:  # pragma: no cover - publication read-back invariant
+            raise RuntimeError("published graph namespace is unavailable")
+        package_body = {
+            "system": run["system"],
+            "environment": run["env"],
+            "artifactDigest": run["digest"],
+            "graphVersion": published.namespace_version,
+            "graphChecksum": graph["checksum"],
+            "manifestRef": published.manifest_ref.as_dict(),
+            "approvalRef": decision.approval.reference.as_dict(),
+        }
+        package_digest = "sha256:" + hashlib.sha256(
+            self._canonical(package_body).encode()
+        ).hexdigest()
+        self._deployment_store.register_package(
+            DeploymentPackage(
+                package_digest=package_digest,
+                system=run["system"],
+                environment=run["env"],
+                artifact_digest=run["digest"],
+                graph_version=published.namespace_version,
+                graph_checksum=graph["checksum"],
+                manifest_ref=self._canonical(published.manifest_ref.as_dict()),
+                approval_ref=self._canonical(decision.approval.reference.as_dict()),
+                approved=True,
+            )
+        )
         finalized = self._review.finalize(proposal_id, version)
         self._stage(
             run["runId"],

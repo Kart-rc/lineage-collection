@@ -251,6 +251,128 @@ class PublisherService:
         pointer = self.activate(reservation, staged)
         return PublishResult(version, pointer, manifest_ref)
 
+    def promote_existing(
+        self,
+        *,
+        env: str,
+        target_version: str,
+        expected_prior: str,
+        expected_checksum: str,
+        actor: str,
+        correlation_id: str,
+        action: str = "DEPLOYMENT_PROMOTE",
+    ) -> Pointer:
+        """Promote a prebuilt exact package using the same monotonic publication fence."""
+        if action not in {"DEPLOYMENT_PROMOTE", "DEPLOYMENT_ROLLBACK"}:
+            raise ValueError(f"unsupported deployment publication action: {action}")
+        reservation = self.reserve(env, expected_prior)
+        now = self._clock()
+        with self._database.transaction() as connection:
+            current_reservation = connection.execute(
+                "SELECT * FROM publish_reservations WHERE env = ?", (env,)
+            ).fetchone()
+            if (
+                current_reservation is None
+                or int(current_reservation["token"]) != reservation.token
+                or current_reservation["status"] != "RESERVED"
+            ):
+                raise DomainError(
+                    "FENCE_LOST",
+                    "A newer deployment promotion owns the activation fence",
+                    correlation_id,
+                    {"token": reservation.token},
+                )
+            pointer = connection.execute(
+                "SELECT * FROM pointers WHERE env = ?", (env,)
+            ).fetchone()
+            if pointer is None or pointer["active_version"] != expected_prior:
+                raise DomainError(
+                    "POINTER_CONFLICT",
+                    "Active pointer changed before deployment promotion",
+                    correlation_id,
+                    {
+                        "expected": expected_prior,
+                        "actual": None if pointer is None else pointer["active_version"],
+                    },
+                )
+            target = connection.execute(
+                """
+                SELECT checksum FROM graph_versions
+                WHERE env = ? AND version = ?
+                """,
+                (env, target_version),
+            ).fetchone()
+            rows = connection.execute(
+                """
+                SELECT payload_json FROM graph_edges
+                WHERE env = ? AND version = ? ORDER BY edge_key
+                """,
+                (env, target_version),
+            ).fetchall()
+            try:
+                edges = [json.loads(row["payload_json"]) for row in rows]
+                actual_checksum = _checksum(edges)
+                valid_keys = all(edge.get("edgeKey") for edge in edges)
+            except (json.JSONDecodeError, AttributeError):
+                actual_checksum, valid_keys = "", False
+            if (
+                target is None
+                or not valid_keys
+                or target["checksum"] != expected_checksum
+                or actual_checksum != expected_checksum
+            ):
+                raise DomainError(
+                    "VERIFY_MISMATCH",
+                    "Exact deployment package does not match the stored graph namespace",
+                    correlation_id,
+                    {"targetVersion": target_version},
+                )
+
+            connection.execute(
+                "UPDATE graph_versions SET state = 'PRIOR' WHERE env = ? AND state = 'ACTIVE'",
+                (env,),
+            )
+            connection.execute(
+                "UPDATE graph_versions SET state = 'ACTIVE' WHERE env = ? AND version = ?",
+                (env, target_version),
+            )
+            connection.execute(
+                """
+                UPDATE pointers SET active_version = ?, fencing_token = ?, updated_at = ?
+                WHERE env = ?
+                """,
+                (target_version, reservation.token, now, env),
+            )
+            connection.execute(
+                "UPDATE publish_reservations SET status = 'ACTIVATED' WHERE env = ?",
+                (env,),
+            )
+            connection.execute(
+                """
+                INSERT INTO audit_events(
+                    audit_id, actor, action, resource_type, resource_id,
+                    correlation_id, payload_json, created_at
+                ) VALUES (?, ?, ?, 'projection', ?, ?, ?, ?)
+                """,
+                (
+                    f"audit-{uuid.uuid4().hex}",
+                    actor,
+                    action,
+                    f"{env}:{target_version}",
+                    correlation_id,
+                    _canonical(
+                        {
+                            "from": expected_prior,
+                            "to": target_version,
+                            "graphChecksum": expected_checksum,
+                            "fencingToken": reservation.token,
+                        }
+                    ),
+                    now,
+                ),
+            )
+        return Pointer(env, target_version, reservation.token, now)
+
     def rollback(
         self,
         env: str,

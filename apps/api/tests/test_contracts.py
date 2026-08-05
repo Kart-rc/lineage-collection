@@ -27,6 +27,7 @@ def test_contract_registry_loads_all_platform_contracts() -> None:
         "consolidated-edge",
         "coverage-manifest",
         "durable-command",
+        "deployment-event",
         "event-envelope",
         "evidence-ref",
         "impact-response",
@@ -34,6 +35,33 @@ def test_contract_registry_loads_all_platform_contracts() -> None:
         "pr-gate-result",
         "proposal",
         "stage-execution",
+    }
+
+
+def test_deployment_event_is_strict_ordered_and_requires_digest_for_success() -> None:
+    registry = _contract_registry_type()(CONTRACTS_DIR)
+    event = {
+        "schemaVersion": "1.0.0",
+        "eventId": "deployment-001",
+        "eventType": "DEPLOYMENT",
+        "provider": "github-deployments",
+        "providerSequence": 42,
+        "attempt": 1,
+        "system": "payments",
+        "environment": "production",
+        "outcome": "SUCCEEDED",
+        "artifactDigest": "sha256:artifact-v42",
+        "correlationId": "corr-deployment-001",
+        "auditRef": "github://deployment/001",
+        "occurredAt": "2026-08-05T12:00:00Z",
+    }
+
+    assert registry.validate("deployment-event", event) == []
+    assert registry.validate("deployment-event", {**event, "unexpected": True})
+    missing_digest = dict(event)
+    missing_digest.pop("artifactDigest")
+    assert {error.path for error in registry.validate("deployment-event", missing_digest)} == {
+        "artifactDigest"
     }
 
 

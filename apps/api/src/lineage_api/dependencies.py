@@ -15,10 +15,15 @@ from lineage_api.application.workflows.pr_gate import (
     PRGateWorkflow,
     ProjectionUnavailableError,
 )
+from lineage_api.application.workflows.deployment import DeploymentWorkflow
 from lineage_api.config import Settings
 from lineage_api.db import Database
 from lineage_api.domain.errors import DomainError
 from lineage_api.infrastructure.local_broker import LocalLaneBroker, SQLiteOutbox
+from lineage_api.infrastructure.sqlite_deployment import (
+    HmacDeploymentAuthenticator,
+    SQLiteDeploymentStore,
+)
 from lineage_api.infrastructure.sqlite_pr_gate import SQLitePrGateCheckStore
 from lineage_api.infrastructure.sqlite_control import (
     SQLiteCommandStore,
@@ -52,6 +57,7 @@ class AppServices:
     query: QueryService
     orchestration: OrchestrationService
     pr_gate: PRGateWorkflow
+    deployment: DeploymentWorkflow
 
     def reset(self) -> dict[str, Any]:
         if self.settings.object_directory.exists():
@@ -132,6 +138,10 @@ def build_services(settings: Settings) -> AppServices:
     store = EvidenceStore(database, settings.object_directory)
     review = ReviewService(database, store, env="staging")
     publisher = PublisherService(database, store)
+    deployment_store = SQLiteDeploymentStore(
+        database,
+        clock=lambda: clock.now().isoformat().replace("+00:00", "Z"),
+    )
     query = QueryService(database, env="staging")
     orchestration = OrchestrationService(
         database=database,
@@ -143,6 +153,7 @@ def build_services(settings: Settings) -> AppServices:
         consolidation=ConsolidationService(database),
         review=review,
         publisher=publisher,
+        deployment_store=deployment_store,
         command_store=command_store,
         outbox_dispatcher=OutboxDispatcher(outbox, broker, clock),
         broker=broker,
@@ -189,15 +200,21 @@ def build_services(settings: Settings) -> AppServices:
         monotonic=time.monotonic,
         utc_now=clock.now,
     )
+    deployment = DeploymentWorkflow(
+        store=deployment_store,
+        publisher=publisher,
+        authenticator=HmacDeploymentAuthenticator(settings.webhook_secret),
+    )
     services = AppServices(
-        settings,
-        database,
-        store,
-        review,
-        publisher,
-        query,
-        orchestration,
-        pr_gate,
+        settings=settings,
+        database=database,
+        evidence_store=store,
+        review=review,
+        publisher=publisher,
+        query=query,
+        orchestration=orchestration,
+        pr_gate=pr_gate,
+        deployment=deployment,
     )
     services.ensure_seeded()
     return services

@@ -2,7 +2,9 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+
+from lineage_api.application.models import parse_utc
 
 
 class ApiModel(BaseModel):
@@ -64,3 +66,42 @@ class PRGateEvaluationRequest(ApiModel):
     coverageComplete: bool
     changes: list[PRGateChangeRequest] = Field(min_length=1)
     depth: int = Field(default=5, ge=1, le=5)
+
+
+class DeploymentEventPayloadRequest(ApiModel):
+    schemaVersion: Literal["1.0.0"]
+    eventId: str = Field(min_length=1)
+    eventType: Literal["DEPLOYMENT", "ROLLBACK", "MERGE"]
+    provider: str = Field(min_length=1)
+    providerSequence: int = Field(ge=1)
+    attempt: int = Field(ge=1)
+    system: str = Field(min_length=1)
+    environment: str = Field(min_length=1)
+    outcome: Literal["SUCCEEDED", "FAILED"]
+    artifactDigest: str | None = Field(default=None, min_length=1)
+    correlationId: str = Field(min_length=1)
+    auditRef: str = Field(min_length=1)
+    occurredAt: str = Field(min_length=1)
+
+    @field_validator("occurredAt")
+    @classmethod
+    def validate_occurred_at(cls, value: str) -> str:
+        parse_utc(value)
+        return value
+
+    @model_validator(mode="after")
+    def validate_outcome_identity(self) -> "DeploymentEventPayloadRequest":
+        if self.eventType == "ROLLBACK" and self.outcome != "SUCCEEDED":
+            raise ValueError("rollback must be an explicit successful outcome")
+        if (
+            self.eventType in {"DEPLOYMENT", "ROLLBACK"}
+            and self.outcome == "SUCCEEDED"
+            and self.artifactDigest is None
+        ):
+            raise ValueError("successful deployment outcomes require an artifact digest")
+        return self
+
+
+class DeploymentOutcomeRequest(ApiModel):
+    payload: DeploymentEventPayloadRequest
+    signature: str = Field(min_length=1)

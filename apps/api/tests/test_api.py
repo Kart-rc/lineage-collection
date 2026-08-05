@@ -189,3 +189,93 @@ def test_pr_gate_route_is_lineage_read_only_and_upserts_one_stable_check(client)
     assert services.database.snapshot(authoritative_tables) == before
     with services.database.connection() as connection:
         assert connection.execute("SELECT COUNT(*) FROM pr_gate_checks").fetchone()[0] == 1
+
+
+def test_approved_artifact_package_is_promoted_by_authenticated_deployment_outcome(client) -> None:
+    reset = client.post("/api/demo/reset").json()
+    collected = client.post("/api/events/push", json=reset["demoDelivery"]).json()
+    proposal = collected["proposal"]
+    approved = client.post(
+        f"/api/proposals/{proposal['proposalId']}/approve",
+        json={
+            "version": proposal["version"],
+            "actor": "reviewer@example.test",
+            "rationale": "verified",
+            "expectedLockVersion": proposal["lockVersion"],
+        },
+    )
+    assert approved.status_code == 200
+
+    payload = {
+        "schemaVersion": "1.0.0",
+        "eventId": "deployment-api-001",
+        "eventType": "DEPLOYMENT",
+        "provider": "test-deployer",
+        "providerSequence": 1,
+        "attempt": 1,
+        "system": "payments",
+        "environment": "staging",
+        "outcome": "SUCCEEDED",
+        "artifactDigest": "demo-digest-v2",
+        "correlationId": "corr-deployment-api-001",
+        "auditRef": "provider-audit://deployment-api-001",
+        "occurredAt": "2026-08-05T12:00:00Z",
+    }
+
+    promoted = client.post(
+        "/api/deployments/outcomes",
+        json={"payload": payload, "signature": _signature(payload)},
+    )
+
+    assert promoted.status_code == 200
+    assert promoted.json()["state"] == "PROMOTED"
+    assert promoted.json()["deployedArtifactDigest"] == "demo-digest-v2"
+    assert promoted.json()["lineagePackageDigest"]
+    with client.app.state.services.database.connection() as connection:
+        package = connection.execute(
+            "SELECT artifact_digest, graph_version FROM lineage_packages"
+        ).fetchone()
+        state = connection.execute(
+            "SELECT deployed_artifact_digest, graph_version FROM deployment_state"
+        ).fetchone()
+    assert dict(package) == {"artifact_digest": "demo-digest-v2", "graph_version": "v2"}
+    assert dict(state) == {
+        "deployed_artifact_digest": "demo-digest-v2",
+        "graph_version": "v2",
+    }
+
+    client.post("/api/demo/reset")
+    with client.app.state.services.database.connection() as connection:
+        assert connection.execute("SELECT COUNT(*) FROM lineage_packages").fetchone()[0] == 0
+        assert connection.execute("SELECT COUNT(*) FROM deployment_events").fetchone()[0] == 0
+        assert connection.execute("SELECT COUNT(*) FROM deployment_state").fetchone()[0] == 0
+
+
+def test_successful_deployment_request_without_artifact_is_rejected_before_state_mutation(
+    client,
+) -> None:
+    client.post("/api/demo/reset")
+    payload = {
+        "schemaVersion": "1.0.0",
+        "eventId": "deployment-invalid-001",
+        "eventType": "DEPLOYMENT",
+        "provider": "test-deployer",
+        "providerSequence": 1,
+        "attempt": 1,
+        "system": "payments",
+        "environment": "staging",
+        "outcome": "SUCCEEDED",
+        "correlationId": "corr-deployment-invalid-001",
+        "auditRef": "provider-audit://deployment-invalid-001",
+        "occurredAt": "2026-08-05T12:00:00Z",
+    }
+
+    response = client.post(
+        "/api/deployments/outcomes",
+        json={"payload": payload, "signature": _signature(payload)},
+    )
+
+    assert response.status_code == 422
+    with client.app.state.services.database.connection() as connection:
+        assert connection.execute("SELECT COUNT(*) FROM deployment_events").fetchone()[0] == 0
+        assert connection.execute("SELECT COUNT(*) FROM deployment_state").fetchone()[0] == 0

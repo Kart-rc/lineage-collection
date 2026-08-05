@@ -11,11 +11,13 @@ from fastapi.responses import JSONResponse
 
 from lineage_api.api_models import (
     CorrectionRequest,
+    DeploymentOutcomeRequest,
     ImpactRequest,
     PRGateEvaluationRequest,
     PushRequest,
     ReviewRequest,
 )
+from lineage_api.application.workflows.deployment import DeploymentEvent
 from lineage_api.application.workflows.pr_gate import PRGateChange, PRGateRequest
 from lineage_api.config import Settings
 from lineage_api.dependencies import AppServices, build_services
@@ -76,12 +78,16 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         request: Request, error: RequestValidationError
     ) -> JSONResponse:
         correlation_id = request.headers.get("x-correlation-id", "request-validation")
+        serializable_errors = [
+            {key: value for key, value in item.items() if key not in {"ctx", "url"}}
+            for item in error.errors()
+        ]
         return JSONResponse(
             {
                 "code": "INVALID_REQUEST",
                 "message": "Request did not match the API contract",
                 "correlationId": correlation_id,
-                "details": {"errors": error.errors(include_url=False, include_context=False)},
+                "details": {"errors": serializable_errors},
             },
             status_code=422,
         )
@@ -222,6 +228,30 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 ),
                 depth=body.depth,
             )
+        )
+
+    @application.post("/api/deployments/outcomes")
+    def deployment_outcome(
+        body: DeploymentOutcomeRequest,
+        request: Request,
+    ) -> dict[str, object]:
+        payload = body.payload
+        return _services(request).deployment.handle(
+            DeploymentEvent(
+                event_id=payload.eventId,
+                event_type=payload.eventType,
+                provider=payload.provider,
+                provider_sequence=payload.providerSequence,
+                attempt=payload.attempt,
+                system=payload.system,
+                environment=payload.environment,
+                outcome=payload.outcome,
+                artifact_digest=payload.artifactDigest,
+                correlation_id=payload.correlationId,
+                audit_ref=payload.auditRef,
+                occurred_at=payload.occurredAt,
+            ),
+            signature=body.signature,
         )
 
     @application.get("/api/edges/{edge_key}")
