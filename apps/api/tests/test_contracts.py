@@ -22,6 +22,7 @@ def test_contract_registry_loads_all_platform_contracts() -> None:
     registry = contract_registry(CONTRACTS_DIR)
 
     assert registry.names() == {
+        "acceptance-evidence-manifest",
         "accepted-manifest",
         "consolidated-edge",
         "event-envelope",
@@ -58,3 +59,41 @@ def test_event_envelope_requires_correlation_contract() -> None:
         "env",
         "system",
     }
+
+
+def test_acceptance_evidence_manifest_is_strict_and_versioned() -> None:
+    contract_registry = _contract_registry_type()
+    registry = contract_registry(CONTRACTS_DIR)
+    valid = {
+        "schemaVersion": "1.0.0",
+        "buildId": "B04",
+        "acceptanceId": "B04-AC-001",
+        "artifactDigest": "sha256:demo",
+        "outcome": "PASS",
+        "evidenceRefs": ["object://acceptance/B04-AC-001"],
+    }
+
+    assert registry.validate("acceptance-evidence-manifest", valid) == []
+    invalid = {**valid, "unexpected": True}
+    assert {error.path for error in registry.validate("acceptance-evidence-manifest", invalid)} == {
+        ""
+    }
+
+
+def test_acceptance_evidence_manifest_distinguishes_unproven_environment_claims() -> None:
+    contract_registry = _contract_registry_type()
+    registry = contract_registry(CONTRACTS_DIR)
+    base = {
+        "schemaVersion": "1.0.0",
+        "buildId": "B16",
+        "acceptanceId": "B16-AC-001",
+        "artifactDigest": "sha256:demo",
+        "evidenceRefs": ["object://acceptance/B16-AC-001"],
+    }
+
+    assert registry.validate(
+        "acceptance-evidence-manifest", {**base, "outcome": "AWS_REQUIRED"}
+    ) == []
+    assert registry.validate(
+        "acceptance-evidence-manifest", {**base, "outcome": "NOT_CONFIGURED"}
+    ) == []

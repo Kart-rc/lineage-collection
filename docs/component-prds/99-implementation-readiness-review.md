@@ -10,6 +10,11 @@ input first — kept OPEN, never invented).
 
 ## Review method
 
+The [Lineage Platform Executable Acceptance Specification](../acceptance/lineage-platform-acceptance.md)
+is the normative test and evidence index for this repository. Historical `Test Suite §2` through
+`Test Suite §7` references in the source PRDs map to that specification; they no longer imply a
+separate, unavailable test-suite document.
+
 Each PRD checked for: (1) every FR has a concrete schema/algorithm in LLD or
 in-PRD; (2) all constants have values or a named owner; (3) no hidden
 enterprise knowledge is assumed; (4) test suite covers the FRs; (5) the

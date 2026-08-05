@@ -56,3 +56,25 @@ def test_ambiguity_register_has_required_fields_ctx_items_and_inconsistencies() 
     table_rows = [line for line in ambiguities.splitlines() if re.match(r"\| (CTX|G-|INC-|PA-)", line)]
     assert len(table_rows) >= 26
     assert all(row.count("|") >= 7 for row in table_rows)
+
+
+def test_acceptance_spec_covers_every_build_unit_cadence_and_historical_reference() -> None:
+    acceptance = _read("docs/acceptance/lineage-platform-acceptance.md")
+    readiness = _read("docs/component-prds/99-implementation-readiness-review.md")
+
+    for number in range(1, 17):
+        assert f"B{number:02d}" in acceptance
+    for cadence in (
+        "Every PR",
+        "Every deployment",
+        "Nightly",
+        "Weekly",
+        "Monthly",
+        "Quarterly",
+    ):
+        assert cadence in acceptance
+    for historical_section in range(2, 8):
+        assert f"Test Suite §{historical_section}" in acceptance
+
+    assert "AcceptanceEvidenceManifest" in acceptance
+    assert "../acceptance/lineage-platform-acceptance.md" in readiness
