@@ -415,6 +415,49 @@ class SQLiteCommandStore:
             completed_at=parse_utc(row["completed_at"]),
         )
 
+    def record_stage(self, lease: Lease, result: StageResult) -> StageResult:
+        self._assert_result_matches_lease(lease, result)
+        now_value = self.clock.now()
+        key = result.identity.idempotency_key()
+        with self.database.transaction() as connection:
+            row = self._required_row(connection, lease.command_id)
+            command = _command_from_row(row)
+            self._assert_result_matches_command(command, result)
+            stored = connection.execute(
+                "SELECT * FROM stage_results WHERE idempotency_key = ?", (key,)
+            ).fetchone()
+            if stored is not None:
+                if stored["output_checksum"] != result.output_checksum:
+                    raise IdempotencyConflictError(
+                        f"completed stage {key} has a different checksum"
+                    )
+                return StageResult(
+                    identity=result.identity,
+                    command_id=stored["command_id"],
+                    output_ref=stored["output_ref"],
+                    output_checksum=stored["output_checksum"],
+                    lease_epoch=stored["lease_epoch"],
+                    completed_at=parse_utc(stored["completed_at"]),
+                )
+            self._assert_active_lease(row, lease, now_value)
+            connection.execute(
+                """
+                INSERT INTO stage_results(
+                    idempotency_key, command_id, output_ref, output_checksum,
+                    lease_epoch, completed_at
+                ) VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    key,
+                    result.command_id,
+                    result.output_ref,
+                    result.output_checksum,
+                    result.lease_epoch,
+                    _utc_text(result.completed_at),
+                ),
+            )
+        return result
+
     @staticmethod
     def _required_row(connection: sqlite3.Connection, command_id: str) -> sqlite3.Row:
         row = connection.execute(

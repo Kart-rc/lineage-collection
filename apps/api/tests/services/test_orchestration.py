@@ -68,7 +68,9 @@ def test_run_records_ordered_correlated_evidence_and_continues_after_approval(tm
     }
     storing = collected["run"]["stages"][4]["detail"]
     assert storing["scaEvidenceRef"]["checksum"]
-    assert storing["runtimeEvidenceRef"]["checksum"]
+    assert storing["runtimeEvidenceStatus"] == "NOT_PROVIDED"
+    assert collected["coverageManifest"]["state"] == "COMPLETE"
+    assert collected["evidenceManifest"]["runtime"] == {"status": "NOT_PROVIDED"}
     with services.database.connection() as connection:
         durable = connection.execute(
             "SELECT status, attempt FROM commands WHERE command_id = ?",

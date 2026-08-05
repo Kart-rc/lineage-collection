@@ -64,6 +64,14 @@ class AppServices:
             self.reset()
 
     def demo_delivery(self) -> dict[str, Any]:
+        expected_lineage = json.loads(
+            (
+                self.settings.fixture_directory
+                / "repositories"
+                / "payments-pipeline"
+                / "expected-lineage.json"
+            ).read_text(encoding="utf-8")
+        )
         payload = {
             "eventId": "delivery-demo-001",
             "eventType": "repo.push",
@@ -72,6 +80,23 @@ class AppServices:
             "env": "staging",
             "system": "payments",
             "changedFiles": ["pipeline.py"],
+            "runtimeObservation": {
+                "schemaVersion": "1.0.0",
+                "artifactDigest": "demo-digest-v2",
+                "complete": True,
+                "scope": "ELEMENT",
+                "assertions": [
+                    {
+                        "provenanceId": f"runtime-demo-{index}",
+                        "from": [edge["from"]],
+                        "to": edge["to"],
+                        "edgeType": edge["type"],
+                        "transform": edge["transform"],
+                        "exact": True,
+                    }
+                    for index, edge in enumerate(expected_lineage["edges"], start=1)
+                ],
+            },
             "receivedAt": "2026-08-04T16:00:00Z",
         }
         canonical = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()

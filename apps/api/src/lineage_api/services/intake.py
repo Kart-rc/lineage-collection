@@ -106,6 +106,9 @@ class IntakeService:
             "changedFiles": sorted(set(str(item) for item in payload.get("changedFiles", []))),
             "receivedAt": received_at,
         }
+        runtime_observation = payload.get("runtimeObservation")
+        if isinstance(runtime_observation, dict):
+            envelope["runtimeObservation"] = runtime_observation
         envelope_json = json.dumps(envelope, sort_keys=True, separators=(",", ":"))
         try:
             parse_utc(received_at)
@@ -178,6 +181,11 @@ class IntakeService:
             "eventType": envelope["eventType"],
             "lanePolicyVersion": LANE_POLICY_VERSION,
             "system": envelope["system"],
+            "runtimeObservationDigest": (
+                self._payload_digest(self._canonical(envelope["runtimeObservation"]))
+                if "runtimeObservation" in envelope
+                else None
+            ),
         }
         determinant = f"sha256:{self._payload_digest(self._canonical(determinant_body))}"
         workflow_kind = WORKFLOW_POLICY[envelope["eventType"]]

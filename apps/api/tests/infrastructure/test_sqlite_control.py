@@ -190,6 +190,32 @@ def test_completed_stage_rejects_a_different_checksum(
         store.complete(lease, replace(result, output_checksum="sha256:different"))
 
 
+def test_intermediate_checkpoint_is_immutable_and_rejects_a_stale_lease(
+    store: SQLiteCommandStore, clock: AdjustableClock
+) -> None:
+    command = store.submit(command_fixture(clock))
+    first = store.claim(command.command_id, "worker-a", lease_seconds=30)
+    first_result = result_fixture(command, first.epoch, clock)
+
+    recorded = store.record_stage(first, first_result)
+
+    assert store.completed_stage(first_result.identity) == recorded
+    with pytest.raises(IdempotencyConflictError, match="checksum"):
+        store.record_stage(
+            first,
+            replace(first_result, output_checksum="sha256:different"),
+        )
+
+    clock.advance(seconds=31)
+    store.claim(command.command_id, "worker-b", lease_seconds=30)
+    stale_result = replace(
+        first_result,
+        identity=replace(first_result.identity, stage_name="RESOLVE"),
+    )
+    with pytest.raises(StaleLeaseError, match="stale lease"):
+        store.record_stage(first, stale_result)
+
+
 def test_retryable_failures_stop_at_the_configured_attempt_bound(
     store: SQLiteCommandStore, clock: AdjustableClock
 ) -> None:

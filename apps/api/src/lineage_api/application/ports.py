@@ -55,6 +55,8 @@ class CommandStorePort(Protocol):
 
     def completed_stage(self, identity: StageIdentity) -> StageResult | None: ...
 
+    def record_stage(self, lease: Lease, result: StageResult) -> StageResult: ...
+
 
 @runtime_checkable
 class ArtifactStorePort(Protocol):

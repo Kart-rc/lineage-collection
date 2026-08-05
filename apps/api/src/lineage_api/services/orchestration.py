@@ -6,11 +6,13 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Callable
 
-from lineage_api.application.models import Command, LaneMessage, StageIdentity, StageResult
+from lineage_api.application.models import Command, LaneMessage, Lease, StageIdentity, StageResult
 from lineage_api.application.outbox import OutboxDispatcher
 from lineage_api.application.ports import ClockPort, CommandStorePort, LaneBrokerPort
+from lineage_api.application.workflows.incremental import IncrementalWorkflow
 from lineage_api.db import Database
 from lineage_api.domain.errors import DomainError
+from lineage_api.domain.evidence import EvidenceRef
 from lineage_api.services.classification import (
     ClassificationEvidence,
     ClassificationService,
@@ -60,6 +62,10 @@ class OrchestrationService:
         self._broker = broker
         self._durable_clock = durable_clock
         self._clock = clock
+        self._fault_injector: Callable[[str], None] | None = None
+
+    def set_fault_injector(self, injector: Callable[[str], None] | None) -> None:
+        self._fault_injector = injector
 
     def process_push(
         self,
@@ -149,9 +155,15 @@ class OrchestrationService:
             return self._result_for_completed_command(command)
 
         lease = self._command_store.claim(command_id, "local-worker", lease_seconds=60)
+        completed: Command | None = None
         try:
             envelope = self._event_envelope(command)
-            result = self._process_accepted(command, envelope, classification_evidence)
+            result = self._process_accepted(
+                command,
+                lease,
+                envelope,
+                classification_evidence,
+            )
             output_ref = (
                 f"proposal://{result['proposal']['proposalId']}"
                 if result["proposal"] is not None
@@ -176,8 +188,12 @@ class OrchestrationService:
                     completed_at=self._durable_clock.now(),
                 ),
             )
+            if self._fault_injector is not None:
+                self._fault_injector("COMMAND_COMPLETED")
         except Exception:
-            self._command_store.fail(lease, "WORKFLOW_EXECUTION_FAILED", retryable=True)
+            current = self._command_store.get(command_id)
+            if current is not None and current.status != "COMPLETED":
+                self._command_store.fail(lease, "WORKFLOW_EXECUTION_FAILED", retryable=True)
             self._broker.retry(
                 message,
                 available_at=self._durable_clock.now(),
@@ -186,15 +202,25 @@ class OrchestrationService:
             raise
 
         self._broker.acknowledge(message)
+        if completed is None:  # pragma: no cover - defensive invariant
+            raise RuntimeError(f"command {command_id} completion was not recorded")
         result["command"] = self._command_dict(completed)
         return result
 
     def _process_accepted(
         self,
         command: Command,
+        lease: Lease,
         envelope: dict[str, Any],
         classification_evidence: list[ClassificationEvidence] | None = None,
     ) -> dict[str, Any]:
+        if command.workflow_kind == "INCREMENTAL":
+            return self._run_incremental(
+                command,
+                lease,
+                envelope,
+                classification_evidence,
+            )
         run_id = f"run-{hashlib.sha256(envelope['eventId'].encode()).hexdigest()[:20]}"
         correlation_id = envelope["correlationId"]
         now = self._clock()
@@ -341,6 +367,429 @@ class OrchestrationService:
             "proposal": proposal.as_dict(),
         }
 
+    def _run_incremental(
+        self,
+        command: Command,
+        lease: Lease,
+        envelope: dict[str, Any],
+        classification_evidence: list[ClassificationEvidence] | None,
+    ) -> dict[str, Any]:
+        workflow = IncrementalWorkflow(
+            command,
+            lease,
+            self._command_store,
+            self._store,
+            self._durable_clock,
+            self._fault_injector,
+        )
+        i1 = workflow.checkpoint("I1", lambda: self._incremental_start(envelope))
+        i2 = workflow.checkpoint("I2", lambda: self._incremental_changed_scope(envelope))
+        i3 = workflow.checkpoint(
+            "I3", lambda: self._incremental_coverage_plan(command, i2)
+        )
+        i4 = workflow.checkpoint(
+            "I4",
+            lambda: self._incremental_classify(
+                envelope,
+                i1["runId"],
+                classification_evidence,
+            ),
+        )
+        if i4["repositoryClass"] == "UNKNOWN":
+            self._fail(i1["runId"], "CLASSIFYING", "UNKNOWN_CLASSIFICATION")
+            return {
+                "outcome": "BLOCKED",
+                "reason": "UNKNOWN_CLASSIFICATION",
+                "eventId": envelope["eventId"],
+                "run": self.get_run(i1["runId"]),
+                "proposal": None,
+                "resume": {"reusedStages": workflow.reused_stage_ids},
+            }
+
+        i5 = workflow.checkpoint(
+            "I5", lambda: self._incremental_sca(envelope, i1["runId"])
+        )
+        i6 = workflow.checkpoint(
+            "I6", lambda: self._incremental_runtime(envelope, i1["runId"], i5)
+        )
+        i7 = workflow.checkpoint(
+            "I7", lambda: self._incremental_consolidate(i1["runId"], i5, i6)
+        )
+        i8 = workflow.checkpoint(
+            "I8", lambda: self._incremental_recheck(command, i1, i3)
+        )
+        i9 = workflow.checkpoint(
+            "I9", lambda: self._incremental_propose(i1["runId"], i1, i7)
+        )
+        i10 = workflow.checkpoint(
+            "I10",
+            lambda: self._incremental_finalize(command, i5, i6, i7, i8, i9),
+        )
+        return {
+            "outcome": "ACCEPTED",
+            "reason": None,
+            "eventId": envelope["eventId"],
+            "run": self.get_run(i1["runId"]),
+            "proposal": i9["proposal"],
+            "coverageManifest": i8["coverageManifest"],
+            "evidenceManifest": i10["evidenceManifest"],
+            "resume": {"reusedStages": workflow.reused_stage_ids},
+        }
+
+    def _incremental_start(self, envelope: dict[str, Any]) -> dict[str, Any]:
+        run_id = f"run-{hashlib.sha256(envelope['eventId'].encode()).hexdigest()[:20]}"
+        now = self._clock()
+        pointer = self._publisher.pointer(envelope["env"])
+        with self._database.transaction() as connection:
+            connection.execute(
+                """
+                INSERT OR IGNORE INTO runs(
+                    run_id, event_id, repo, digest, env, system, state,
+                    correlation_id, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, 'QUEUED', ?, ?, ?)
+                """,
+                (
+                    run_id,
+                    envelope["eventId"],
+                    envelope["repo"],
+                    envelope["digest"],
+                    envelope["env"],
+                    envelope["system"],
+                    envelope["correlationId"],
+                    now,
+                    now,
+                ),
+            )
+        self._stage(run_id, "QUEUED", {"lane": envelope["lane"]})
+        return {
+            "runId": run_id,
+            "environment": envelope["env"],
+            "activeBaseVersion": pointer.active_version,
+            "activeBaseFence": pointer.fencing_token,
+            "artifactDigest": envelope["digest"],
+        }
+
+    @staticmethod
+    def _incremental_changed_scope(envelope: dict[str, Any]) -> dict[str, Any]:
+        changed = sorted(set(envelope["changedFiles"]))
+        return {
+            "changedPaths": changed,
+            "affectedScope": changed,
+            "removedPaths": [],
+        }
+
+    @staticmethod
+    def _incremental_coverage_plan(
+        command: Command,
+        changed: dict[str, Any],
+    ) -> dict[str, Any]:
+        return {
+            "workflowKind": command.workflow_kind,
+            "artifactDigest": command.artifact_digest,
+            "determinantDigest": command.determinant_digest,
+            "expectedScope": changed["affectedScope"],
+            "recomputedScope": changed["affectedScope"],
+            "reusedScope": [],
+            "removedScope": changed["removedPaths"],
+            "unsupportedScope": [],
+        }
+
+    def _incremental_classify(
+        self,
+        envelope: dict[str, Any],
+        run_id: str,
+        classification_evidence: list[ClassificationEvidence] | None,
+    ) -> dict[str, Any]:
+        evidence = (
+            self._fixture_classification(envelope["repo"])
+            if classification_evidence is None
+            else classification_evidence
+        )
+        decision = self._classification.classify(
+            envelope["repo"], evidence, envelope["correlationId"]
+        )
+        detail = {
+            "decisionId": decision.decision_id,
+            "repositoryClass": decision.repository_class,
+            "evidenceLevel": decision.evidence_level_used,
+        }
+        self._stage(run_id, "CLASSIFYING", detail)
+        return detail
+
+    def _incremental_sca(
+        self,
+        envelope: dict[str, Any],
+        run_id: str,
+    ) -> dict[str, Any]:
+        sca = self._analyzer.analyze(
+            repository_root=self._fixture_root / "repositories" / envelope["repo"],
+            repo=envelope["repo"],
+            digest=envelope["digest"],
+            scope_paths=tuple(envelope["changedFiles"]),
+            resolver_context=ResolveContext(
+                env=envelope["env"],
+                platform="snowflake",
+                system=envelope["system"],
+                repo=envelope["repo"],
+                digest=envelope["digest"],
+                config={},
+                snapshot_id=self._analyzer._resolver.snapshot_id,
+            ),
+            run_id=run_id,
+            correlation_id=envelope["correlationId"],
+        )
+        sca_ref = self._store.put(
+            "sca", f"{envelope['system']}/{run_id}", sca.as_dict(), sca.schema_version
+        )
+        self._stage(
+            run_id,
+            "ANALYZING",
+            {"filesAnalyzed": sca.stats["filesAnalyzed"], "edgesEmitted": len(sca.edges)},
+        )
+        self._stage(
+            run_id,
+            "RESOLVING",
+            {"datasetsSeen": list(sca.datasets_seen), "residueCount": len(sca.residue)},
+        )
+        return {"sca": sca.as_dict(), "scaRef": sca_ref.as_dict()}
+
+    def _incremental_runtime(
+        self,
+        envelope: dict[str, Any],
+        run_id: str,
+        sca: dict[str, Any],
+    ) -> dict[str, Any]:
+        observation = envelope.get("runtimeObservation")
+        runtime: dict[str, Any]
+        if observation is None:
+            runtime = {"status": "NOT_PROVIDED"}
+        elif observation.get("artifactDigest") != envelope["digest"]:
+            runtime = {"status": "REJECTED", "reason": "ARTIFACT_MISMATCH"}
+        elif not observation.get("complete"):
+            runtime = {"status": "INCOMPLETE", "reason": "SESSION_INCOMPLETE"}
+        elif observation.get("scope") not in {"DATASET", "ELEMENT"}:
+            runtime = {"status": "REJECTED", "reason": "INVALID_SCOPE"}
+        elif not self._valid_runtime_assertions(observation.get("assertions")):
+            runtime = {"status": "REJECTED", "reason": "INVALID_ASSERTIONS"}
+        else:
+            runtime_ref = self._store.put(
+                "runtime",
+                f"{envelope['system']}/{run_id}",
+                observation,
+                str(observation["schemaVersion"]),
+            )
+            runtime = {
+                "status": "VALIDATED",
+                "scope": observation["scope"],
+                "complete": True,
+                "assertions": observation["assertions"],
+                "evidenceRef": runtime_ref.as_dict(),
+            }
+        detail: dict[str, Any] = {
+            "scaEvidenceRef": sca["scaRef"],
+            "runtimeEvidenceStatus": runtime["status"],
+        }
+        if "evidenceRef" in runtime:
+            detail["runtimeEvidenceRef"] = runtime["evidenceRef"]
+        self._stage(run_id, "STORING_EVIDENCE", detail)
+        return {"runtime": runtime}
+
+    @staticmethod
+    def _valid_runtime_assertions(value: object) -> bool:
+        if not isinstance(value, list):
+            return False
+        return all(
+            isinstance(assertion, dict)
+            and isinstance(assertion.get("provenanceId"), str)
+            and isinstance(assertion.get("from"), list)
+            and all(isinstance(item, str) for item in assertion["from"])
+            and isinstance(assertion.get("to"), str)
+            and isinstance(assertion.get("edgeType"), str)
+            for assertion in value
+        )
+
+    def _incremental_consolidate(
+        self,
+        run_id: str,
+        sca: dict[str, Any],
+        runtime: dict[str, Any],
+    ) -> dict[str, Any]:
+        runtime_body = runtime["runtime"]
+        runtime_by_edge: dict[tuple[tuple[str, ...], str, str], list[dict[str, Any]]] = {}
+        if runtime_body["status"] == "VALIDATED":
+            for assertion in runtime_body["assertions"]:
+                key = (
+                    tuple(assertion.get("from", [])),
+                    str(assertion.get("to", "")),
+                    str(assertion.get("edgeType", "")),
+                )
+                runtime_by_edge.setdefault(key, []).append(assertion)
+
+        merged = []
+        for edge in sca["sca"]["edges"]:
+            static = MechanismAssertion(
+                provenance_id=edge["provenanceId"],
+                from_urns=tuple(edge["from"]),
+                to_urn=edge["to"],
+                edge_type=edge["edgeType"],
+                transform=edge.get("transform"),
+                mechanism="SCA",
+                exact=bool(edge["exact"]),
+                evidence_ref=sca["scaRef"],
+                repo=edge["repo"],
+                run_id=edge["runId"],
+                correlation_id=edge["correlationId"],
+                citation=edge.get("evidence"),
+            )
+            assertions = [static]
+            key = (tuple(edge["from"]), edge["to"], edge["edgeType"])
+            for runtime_assertion in runtime_by_edge.get(key, []):
+                assertions.append(
+                    MechanismAssertion(
+                        provenance_id=str(runtime_assertion["provenanceId"]),
+                        from_urns=tuple(runtime_assertion["from"]),
+                        to_urn=str(runtime_assertion["to"]),
+                        edge_type=str(runtime_assertion["edgeType"]),
+                        transform=runtime_assertion.get("transform"),
+                        mechanism="RUNTIME",
+                        exact=bool(runtime_assertion.get("exact", True)),
+                        evidence_ref=runtime_body["evidenceRef"],
+                        repo=edge["repo"],
+                        run_id=edge["runId"],
+                        correlation_id=edge["correlationId"],
+                        runtime_scope=runtime_body["scope"],
+                        session_complete=True,
+                    )
+                )
+            merged.append(self._consolidation.merge_many(assertions))
+        edge_payloads = [edge.as_dict() for edge in merged]
+        self._stage(
+            run_id,
+            "MERGING",
+            {"edgeCount": len(edge_payloads), "bands": sorted({edge.band for edge in merged})},
+        )
+        return {"edges": edge_payloads}
+
+    def _incremental_recheck(
+        self,
+        command: Command,
+        start: dict[str, Any],
+        plan: dict[str, Any],
+    ) -> dict[str, Any]:
+        pointer = self._publisher.pointer(start["environment"])
+        if pointer.active_version != start["activeBaseVersion"]:
+            raise DomainError(
+                "STALE_BASE_VERSION",
+                "Incremental base changed before proposal",
+                command.correlation_id,
+            )
+        identity = {
+            "artifactDigest": command.artifact_digest,
+            "determinantDigest": command.determinant_digest,
+            "expectedScope": plan["expectedScope"],
+            "scope": command.scope,
+        }
+        manifest_id = f"coverage-{hashlib.sha256(self._canonical(identity).encode()).hexdigest()[:20]}"
+        manifest = {
+            "schemaVersion": "1.0.0",
+            "manifestId": manifest_id,
+            "workflowKind": command.workflow_kind,
+            "scope": command.scope,
+            "artifactDigest": command.artifact_digest,
+            "determinantDigest": command.determinant_digest,
+            "state": "COMPLETE",
+            "expectedScope": plan["expectedScope"],
+            "completedScope": plan["recomputedScope"],
+            "reusedScope": plan["reusedScope"],
+            "skippedScope": [],
+            "unsupportedScope": plan["unsupportedScope"],
+            "quarantinedScope": [],
+            "failedScope": [],
+        }
+        payload = self._canonical(manifest)
+        now = self._clock()
+        with self._database.transaction() as connection:
+            existing = connection.execute(
+                "SELECT payload_json FROM coverage_manifests WHERE manifest_id = ?",
+                (manifest_id,),
+            ).fetchone()
+            if existing is not None and existing["payload_json"] != payload:
+                raise RuntimeError(f"coverage manifest conflict: {manifest_id}")
+            connection.execute(
+                """
+                INSERT OR IGNORE INTO coverage_manifests(
+                    manifest_id, workflow_kind, scope, artifact_digest,
+                    determinant_digest, state, payload_json, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, 'COMPLETE', ?, ?, ?)
+                """,
+                (
+                    manifest_id,
+                    command.workflow_kind,
+                    command.scope,
+                    command.artifact_digest,
+                    command.determinant_digest,
+                    payload,
+                    now,
+                    now,
+                ),
+            )
+        return {"coverageManifest": manifest}
+
+    def _incremental_propose(
+        self,
+        run_id: str,
+        start: dict[str, Any],
+        consolidation: dict[str, Any],
+    ) -> dict[str, Any]:
+        proposal = self._review.create(
+            consolidation["edges"],
+            start["activeBaseVersion"],
+            self.get_run(run_id)["correlationId"],
+        )
+        self._stage(
+            run_id,
+            "PROPOSING",
+            {"proposalId": proposal.proposal_id, "proposalVersion": proposal.version},
+        )
+        self._stage(run_id, "IN_REVIEW", {"proposalId": proposal.proposal_id})
+        return {"proposal": proposal.as_dict()}
+
+    @staticmethod
+    def _incremental_finalize(
+        command: Command,
+        sca: dict[str, Any],
+        runtime: dict[str, Any],
+        consolidation: dict[str, Any],
+        coverage: dict[str, Any],
+        proposal: dict[str, Any],
+    ) -> dict[str, Any]:
+        edge_summary = [
+            {
+                "edgeKey": edge["edgeKey"],
+                "version": edge["version"],
+                "band": edge["band"],
+                "status": edge["status"],
+            }
+            for edge in sorted(consolidation["edges"], key=lambda item: item["edgeKey"])
+        ]
+        return {
+            "evidenceManifest": {
+                "schemaVersion": "1.0.0",
+                "commandId": command.command_id,
+                "workflowKind": command.workflow_kind,
+                "artifactDigest": command.artifact_digest,
+                "determinantDigest": command.determinant_digest,
+                "coverageManifestId": coverage["coverageManifest"]["manifestId"],
+                "sca": sca["scaRef"],
+                "runtime": runtime["runtime"],
+                "edges": edge_summary,
+                "proposal": {
+                    "proposalId": proposal["proposal"]["proposalId"],
+                    "version": proposal["proposal"]["version"],
+                },
+            }
+        }
+
     def _event_envelope(self, command: Command) -> dict[str, Any]:
         if not command.input_ref.startswith("event://"):
             raise RuntimeError(f"invalid event reference {command.input_ref}")
@@ -355,7 +804,7 @@ class OrchestrationService:
 
     def _result_for_completed_command(self, command: Command) -> dict[str, Any]:
         event_id = command.input_ref.removeprefix("event://")
-        return {
+        result = {
             "outcome": "REUSED",
             "reason": "COMMAND_ALREADY_COMPLETED",
             "eventId": event_id,
@@ -363,6 +812,43 @@ class OrchestrationService:
             "proposal": self._proposal_for_event(event_id),
             "command": self._command_dict(command),
         }
+        if command.workflow_kind == "INCREMENTAL":
+            coverage = self._incremental_checkpoint(command, "I8")
+            evidence = self._incremental_checkpoint(command, "I10")
+            if coverage is not None:
+                result["coverageManifest"] = coverage["coverageManifest"]
+            if evidence is not None:
+                result["evidenceManifest"] = evidence["evidenceManifest"]
+            result["resume"] = {"reusedStages": [f"I{index}" for index in range(1, 11)]}
+        return result
+
+    def _incremental_checkpoint(
+        self,
+        command: Command,
+        stage_id: str,
+    ) -> dict[str, Any] | None:
+        stored = self._command_store.completed_stage(
+            StageIdentity(
+                workflow_kind=command.workflow_kind,
+                scope=command.scope,
+                artifact_digest=command.artifact_digest,
+                stage_name=stage_id,
+                determinant_digest=command.determinant_digest,
+                schema_version=command.workflow_version,
+            )
+        )
+        if stored is None:
+            return None
+        payload = json.loads(stored.output_ref)
+        body = self._store.get(
+            EvidenceRef(
+                kind=payload["kind"],
+                key=payload["key"],
+                checksum=payload["checksum"],
+                schema_version=payload["schemaVersion"],
+            )
+        )
+        return body if isinstance(body, dict) else None
 
     @staticmethod
     def _command_dict(command: Command) -> dict[str, Any]:
@@ -511,6 +997,16 @@ class OrchestrationService:
             ).fetchone()
             if run is None:
                 raise DomainError("RUN_NOT_FOUND", "Run does not exist", "unknown")
+            existing = connection.execute(
+                "SELECT 1 FROM run_stages WHERE run_id = ? AND stage = ?",
+                (run_id, stage),
+            ).fetchone()
+            if existing is not None:
+                connection.execute(
+                    "UPDATE runs SET state = ?, updated_at = ? WHERE run_id = ?",
+                    (stage, now, run_id),
+                )
+                return
             sequence = int(
                 connection.execute(
                     "SELECT COALESCE(MAX(sequence), 0) + 1 FROM run_stages WHERE run_id = ?",
