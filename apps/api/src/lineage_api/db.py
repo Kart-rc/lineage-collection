@@ -6,6 +6,8 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
+from lineage_api.migrations import apply_migrations, current_schema_version
+
 
 DDL = """
 CREATE TABLE IF NOT EXISTS events (
@@ -189,10 +191,16 @@ class Database:
             else:
                 connection.commit()
 
-    def initialize(self) -> None:
+    def initialize(self, target_version: int | None = None) -> None:
         with self.connection() as connection:
-            connection.executescript(DDL)
+            apply_migrations(connection, DDL, target_version)
             connection.commit()
+
+    def schema_version(self) -> int:
+        if not self.path.exists():
+            return 0
+        with self.connection() as connection:
+            return current_schema_version(connection)
 
     def snapshot(self, table_names: Sequence[str]) -> dict[str, list[dict[str, Any]]]:
         result: dict[str, list[dict[str, Any]]] = {}
