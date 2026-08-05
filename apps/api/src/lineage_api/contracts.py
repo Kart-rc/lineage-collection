@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -47,4 +48,43 @@ class ContractRegistry:
                     errors.append(ContractError(path=missing_path, message=f"'{missing}' is required"))
                 continue
             errors.append(ContractError(path=path, message=error.message))
+        if name == "coverage-manifest" and isinstance(payload, dict):
+            errors.extend(self._validate_coverage_manifest(payload))
         return errors
+
+    @staticmethod
+    def _validate_coverage_manifest(payload: dict[str, Any]) -> list[ContractError]:
+        scope_fields = (
+            "completedScope",
+            "reusedScope",
+            "skippedScope",
+            "unsupportedScope",
+            "quarantinedScope",
+            "failedScope",
+        )
+        expected = payload.get("expectedScope")
+        accounted_values = [payload.get(field) for field in scope_fields]
+        if not isinstance(expected, list) or not all(
+            isinstance(values, list) for values in accounted_values
+        ):
+            return []
+
+        accounted = [item for values in accounted_values for item in values]
+        semantic_errors: list[ContractError] = []
+        if payload.get("state") != "PLANNED" and Counter(expected) != Counter(accounted):
+            semantic_errors.append(
+                ContractError(
+                    path="expectedScope",
+                    message="every expected scope must be accounted exactly once",
+                )
+            )
+        if payload.get("state") == "COMPLETE" and any(
+            payload.get(field) for field in ("unsupportedScope", "quarantinedScope", "failedScope")
+        ):
+            semantic_errors.append(
+                ContractError(
+                    path="state",
+                    message="COMPLETE coverage cannot contain unsupported, quarantined, or failed scope",
+                )
+            )
+        return semantic_errors

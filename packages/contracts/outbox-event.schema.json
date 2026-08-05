@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://lineage.local/contracts/outbox-event/1.0.0",
+  "title": "OutboxEvent",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "outboxId",
+    "topic",
+    "partitionKey",
+    "payloadRef",
+    "status",
+    "attempts",
+    "availableAt",
+    "correlationId",
+    "createdAt"
+  ],
+  "properties": {
+    "schemaVersion": {"const": "1.0.0"},
+    "outboxId": {"type": "string", "minLength": 1},
+    "topic": {"type": "string", "minLength": 1},
+    "partitionKey": {"type": "string", "minLength": 1},
+    "payloadRef": {"type": "string", "minLength": 1},
+    "status": {"enum": ["PENDING", "DELIVERED", "DEAD"]},
+    "attempts": {"type": "integer", "minimum": 0},
+    "availableAt": {"type": "string", "format": "date-time"},
+    "deliveredAt": {"type": "string", "format": "date-time"},
+    "correlationId": {"type": "string", "minLength": 1},
+    "createdAt": {"type": "string", "format": "date-time"}
+  },
+  "allOf": [
+    {
+      "if": {"properties": {"status": {"const": "DELIVERED"}}},
+      "then": {"required": ["deliveredAt"]}
+    }
+  ]
+}
