@@ -728,13 +728,14 @@ git add docs/build-prds tests/test_documentation.py docs/component-prds/16-deliv
 git commit -m "docs: add build-ready component PRDs"
 ```
 
-### Task 18: Add synthesizable CDK stack boundaries and assertions
+### Task 18: Build deployable AWS runtime packages and CDK stack boundaries
 
 **Files:**
 - Create: `infra/package.json`
 - Create: `infra/tsconfig.json`
 - Create: `infra/bin/lineage-platform.ts`
 - Create: `infra/lib/config.ts`
+- Create: `infra/lib/runtime-assets.ts`
 - Create: `infra/lib/network-stack.ts`
 - Create: `infra/lib/data-stack.ts`
 - Create: `infra/lib/intake-stack.ts`
@@ -745,89 +746,208 @@ git commit -m "docs: add build-ready component PRDs"
 - Create: `infra/lib/api-stack.ts`
 - Create: `infra/lib/operations-stack.ts`
 - Create: `infra/test/stacks.test.ts`
+- Create: `infra/test/runtime-assets.test.ts`
+- Create: `infra/assets/lambda/Dockerfile`
+- Create: `infra/assets/sca/Dockerfile`
+- Create: `apps/api/src/lineage_api/entrypoints/aws/__init__.py`
+- Create: `apps/api/src/lineage_api/entrypoints/aws/intake.py`
+- Create: `apps/api/src/lineage_api/entrypoints/aws/control_stage.py`
+- Create: `apps/api/src/lineage_api/entrypoints/aws/runtime_validation.py`
+- Create: `apps/api/src/lineage_api/entrypoints/aws/consolidation.py`
+- Create: `apps/api/src/lineage_api/entrypoints/aws/coverage.py`
+- Create: `apps/api/src/lineage_api/entrypoints/aws/proposal.py`
+- Create: `apps/api/src/lineage_api/entrypoints/aws/publication.py`
+- Create: `apps/api/src/lineage_api/entrypoints/aws/deployment.py`
+- Create: `apps/api/tests/entrypoints/aws/test_handler_contracts.py`
+- Modify: `apps/api/pyproject.toml`
 - Modify: `package.json`
 - Modify: `Makefile`
 
-**Step 1: Write failing CDK assertion tests**
+Task numbers are not deployment units. Keep one versioned Python domain/application package, but
+produce independently configurable compute targets: intake, lightweight control stages, runtime
+validation, consolidation, coverage, proposal, publication, and deployment promotion Lambdas, plus
+an SCA Fargate task. A shared image is acceptable, but each Lambda has its own handler, IAM role,
+reserved concurrency, timeout, memory, alarms, and deployment alias. No handler imports the local
+SQLite composition root.
+
+**Step 1: Write failing handler packaging and CDK assertion tests**
 
 Require encryption, block-public-access, versioning/Object Lock on truth buckets, PITR/deletion
 protection on control tables, DLQ per lane, FIFO on interactive/events, EventBridge archive,
 Standard Step Functions, reserved interactive concurrency, Kinesis encryption, Neptune multi-AZ,
-alarms, tags, and no wildcard production IAM actions.
+alarms, tags, and no wildcard production IAM actions. Require each Python handler module to import
+in a Lambda-like environment, expose a `handler(event, context)` entry point, validate a versioned
+S3-reference envelope, return only bounded references, and construct dependencies through ports.
+Assert that CDK creates distinct functions/roles for the handler boundaries and an ECS task
+definition for SCA rather than deploying the FastAPI/local worker as one Lambda.
 
 **Step 2: Install locked infrastructure dependencies and verify red tests**
 
 Run: `npm install --workspace infra`
+Run: `uv run --project apps/api --extra dev pytest -q apps/api/tests/entrypoints/aws/test_handler_contracts.py`
 Run: `npm test --workspace infra -- --run`
-Expected: FAIL because stacks are not implemented.
+Expected: FAIL because handler entry points, runtime assets, and stacks are absent.
 
-**Step 3: Implement minimal stack constructs and externalized config**
+**Step 3: Implement handler boundaries and reproducible runtime assets**
+
+Keep handlers thin: parse the stage envelope, create an AWS composition root, call one application
+use case, and serialize a typed result/reference. Put no workflow branching or domain rules in the
+entry points. Build a pinned application wheel into a shared Lambda container image and build the
+SCA worker as a separately bounded, non-root Fargate image with parser/rule assets. Record source
+revision, dependency-lock digest, image digest, and handler name in build metadata. Add a local
+runtime-interface smoke that invokes every handler with fake ports; no AWS calls belong in this
+test.
+
+**Step 4: Implement deployable stack constructs and externalized config**
 
 Use fixture-safe defaults only for local synth. Require explicit production context for regions,
 retention, quotas, budgets, enterprise endpoints, paging destinations, and account IDs. This task
-does not deploy.
+must define the deployable resources, assets, least-privilege role boundaries, aliases/canary
+settings, log retention, alarms, private networking, and stack outputs consumed by workflow wiring.
+Local synth must not contact AWS, while `cdk deploy` with an explicit environment must have no
+placeholder resource or `NotConfigured` runtime path.
 
-**Step 4: Run synth, tests, and root build**
+**Step 5: Run packaging, synth, tests, and root build**
 
+Run: `uv run --project apps/api --extra dev pytest -q apps/api/tests/entrypoints/aws/test_handler_contracts.py`
 Run: `npm test --workspace infra -- --run`
 Run: `npm run synth --workspace infra`
+Run: `npm run package --workspace infra`
 Run: `npm run build`
-Expected: PASS; synth emits templates without contacting an AWS account.
+Expected: PASS; handler imports and fake-port invocations pass, image/wheel manifests are
+reproducible, and synth emits deployable templates without contacting an AWS account.
 
-**Step 5: Commit**
+**Step 6: Self-review the deployment bill of materials**
+
+Compare synthesized Lambda functions, ECS task definitions, IAM roles, queues, tables, buckets,
+state machines, networking, alarms, and outputs with B03-B16 and the L14 infrastructure mapping.
+Fail the task if any compute target has wildcard data-plane access, if a stage has no deployment
+target, or if the only runnable target is still the local FastAPI/worker process.
+
+**Step 7: Commit**
 
 ```bash
-git add infra package.json package-lock.json Makefile
-git commit -m "infra: define lineage platform CDK stacks"
+git add infra apps/api/src/lineage_api/entrypoints/aws apps/api/tests/entrypoints/aws apps/api/pyproject.toml package.json package-lock.json Makefile
+git commit -m "infra: package deployable lineage runtime units"
 ```
 
-### Task 19: Add AWS adapter contract skeletons and Step Functions definitions
+### Task 19: Wire production AWS adapters and executable Step Functions workflows
 
 **Files:**
 - Create: `apps/api/src/lineage_api/infrastructure/aws/__init__.py`
+- Create: `apps/api/src/lineage_api/infrastructure/aws/config.py`
+- Create: `apps/api/src/lineage_api/infrastructure/aws/composition.py`
 - Create: `apps/api/src/lineage_api/infrastructure/aws/dynamodb_control.py`
 - Create: `apps/api/src/lineage_api/infrastructure/aws/s3_artifacts.py`
 - Create: `apps/api/src/lineage_api/infrastructure/aws/sqs_broker.py`
 - Create: `apps/api/src/lineage_api/infrastructure/aws/kinesis_runtime.py`
 - Create: `apps/api/src/lineage_api/infrastructure/aws/neptune_projection.py`
+- Create: `scripts/export_workflow_definitions.py`
+- Create: `infra/workflows/generated/workflow-contracts.json`
 - Create: `infra/workflows/baseline.asl.json`
 - Create: `infra/workflows/incremental.asl.json`
 - Create: `infra/workflows/pr-gate.asl.json`
 - Create: `infra/workflows/nightly.asl.json`
 - Create: `apps/api/tests/infrastructure/aws/test_adapter_contracts.py`
+- Create: `apps/api/tests/infrastructure/aws/test_composition.py`
+- Create: `apps/api/tests/entrypoints/aws/test_stage_handlers.py`
 - Create: `infra/test/workflows.test.ts`
+- Create: `tests/aws/test_ephemeral_workflow.py`
+- Create: `scripts/deploy_ephemeral_aws.sh`
+- Create: `scripts/smoke_ephemeral_aws.sh`
+- Modify: `infra/lib/orchestration-stack.ts`
+- Modify: `infra/lib/engines-stack.ts`
+- Modify: `infra/lib/publication-stack.ts`
+- Modify: `infra/lib/operations-stack.ts`
+- Modify: `package.json`
+- Modify: `Makefile`
 
-**Step 1: Write failing shared contract and workflow-topology tests**
+**Step 1: Write failing AWS adapter, composition, and handler tests**
 
-Use fakes, not AWS calls. Require each adapter to implement the application Protocol signature and
-translate conditional/retryable errors to domain error classes. Validate workflow JSON has timeouts,
-Catch paths, bounded Map concurrency, S3 references rather than large payloads, and complete
-terminals.
+Use fake SDK clients, not AWS calls. Require every adapter to implement its application Protocol,
+perform the real conditional expression/transaction/request construction, and translate throttling,
+conditional-conflict, missing-object, stale-fence, and retryable service failures into typed domain
+errors. Require the AWS composition root to fail fast on missing resource identifiers; deployed
+handlers may not continue with local adapters or `NotConfigured` placeholders.
 
 **Step 2: Verify failures**
 
 Run: `uv run --project apps/api --extra dev pytest -q apps/api/tests/infrastructure/aws/test_adapter_contracts.py`
+Run: `uv run --project apps/api --extra dev pytest -q apps/api/tests/infrastructure/aws/test_composition.py apps/api/tests/entrypoints/aws/test_stage_handlers.py`
+Expected: FAIL on absent production adapters and composition.
+
+**Step 3: Implement concrete AWS adapters and composition**
+
+Implement DynamoDB conditional receipt/command/lease/stage/outbox/pointer operations, versioned S3
+artifact reads and immutable writes, SQS FIFO/Standard lane semantics and redrive metadata, Kinesis
+partitioning/session reconciliation, and idempotent Neptune projection writes. Inject SDK clients so
+unit tests remain hermetic. The composition root receives physical resource identifiers from CDK
+environment variables and supplies the same ports used by local Task 9 execution. Keep large
+payloads in S3 and pass exact bucket/key/version/checksum references.
+
+**Step 4: Export Task 8 definitions and write failing workflow-parity tests**
+
+Export the version, stage IDs, timeouts, attempts, retry class, side-effect mode, determinants,
+success/error routes, and terminal states from
+`apps/api/src/lineage_api/application/workflows/definitions.py` into the generated workflow contract.
+The exporter supports `--check` and fails on checked-in drift. Validate every ASL definition against
+that contract: Standard workflow type, complete Task/Catch/terminal topology, bounded retries and
+Map concurrency, S3-reference payloads, per-stage handler/ECS target, and explicit redrive outcome.
+Incremental must map I1-I10 exactly; Baseline maps B1-B10 exactly; PRGate maps P1-P8 exactly;
+Nightly maps N1-N6 exactly. The dedicated deployment-promotion Lambda must execute and checkpoint
+D1-D6 in order, using the same exported contract, without source-merge activation; it is not a
+fifth Step Functions workflow.
+
+**Step 5: Verify workflow tests fail before ASL and CDK wiring exist**
+
+Run: `uv run --project apps/api python scripts/export_workflow_definitions.py --check`
 Run: `npm test --workspace infra -- --run test/workflows.test.ts`
-Expected: FAIL on missing adapters/ASL.
+Expected: FAIL on absent generated contracts, ASL states, targets, or stack wiring.
 
-**Step 3: Implement adapter boundaries and ASL**
+**Step 6: Implement executable ASL and connect every task target**
 
-Methods may raise `NotConfigured` when credentials/endpoints are absent, but serialization,
-conditional expressions, queue attributes, partition keys, pointer transactions and error mapping
-must be testable. No live network call belongs in unit tests.
+Generate the workflow contract, implement the four Step Functions definitions plus the dedicated
+deployment-promotion Lambda, and wire them to the distinct Lambda/Fargate targets from Task 18.
+Configure Step Functions logging/tracing, execution roles,
+timeouts, Retry/Catch policies, callback/heartbeat where required, bounded Baseline distributed-map
+concurrency, aliases/versions, and S3-reference-only state. EventBridge/SQS routing starts the exact
+workflow alias and records provider event, correlation, causation, artifact, environment, and
+workflow versions. An in-flight execution remains pinned to its original state-machine and handler
+versions during rollout.
 
-**Step 4: Run focused suites and synth**
+**Step 7: Run hermetic adapter, handler, topology, synth, and package gates**
 
 Run: `uv run --project apps/api --extra dev pytest -q apps/api/tests/infrastructure/aws/test_adapter_contracts.py`
+Run: `uv run --project apps/api --extra dev pytest -q apps/api/tests/infrastructure/aws/test_composition.py apps/api/tests/entrypoints/aws/test_stage_handlers.py`
+Run: `uv run --project apps/api python scripts/export_workflow_definitions.py --check`
 Run: `npm test --workspace infra -- --run`
 Run: `npm run synth --workspace infra`
-Expected: PASS.
+Run: `npm run package --workspace infra`
+Expected: PASS with no placeholder integrations, topology drift, wildcard production IAM, local
+adapter import, unbounded retry/map, or unpackaged task target.
 
-**Step 5: Commit**
+**Step 8: Deploy and smoke an ephemeral AWS environment**
+
+Run: `AWS_PROFILE=<approved-profile> AWS_REGION=<approved-region> ./scripts/deploy_ephemeral_aws.sh`
+Run: `AWS_PROFILE=<approved-profile> AWS_REGION=<approved-region> ./scripts/smoke_ephemeral_aws.sh`
+Run: `AWS_PROFILE=<approved-profile> AWS_REGION=<approved-region> uv run --project apps/api --extra dev pytest -q tests/aws/test_ephemeral_workflow.py`
+Expected: a clean namespaced deployment succeeds; a signed seeded event traverses SQS and the
+Incremental state machine; I1-I10 use the expected Lambda/Fargate targets; DynamoDB contains one
+completed command and ten immutable stage results; S3 contains checksummed evidence/coverage; a
+duplicate event creates no second effect; CloudWatch contains the correlation ID; and stack outputs
+identify the exact deployed image and state-machine versions. The smoke script must not publish or
+advance a production pointer.
+
+If no approved AWS account/credentials are available, retain the hermetic evidence with outcome
+`AWS_REQUIRED`. Do not report `B16-AC-001` or AWS deployability as passed until this step succeeds.
+Use only the explicit, namespaced cleanup command printed by the deploy script; never target an
+unresolved account, region, stack prefix, or shared environment.
+
+**Step 9: Commit**
 
 ```bash
-git add apps/api/src/lineage_api/infrastructure/aws apps/api/tests/infrastructure/aws infra/workflows infra/test/workflows.test.ts
-git commit -m "feat: add production adapter contracts and workflows"
+git add apps/api/src/lineage_api/infrastructure/aws apps/api/src/lineage_api/entrypoints/aws apps/api/tests/infrastructure/aws apps/api/tests/entrypoints/aws scripts/export_workflow_definitions.py scripts/deploy_ephemeral_aws.sh scripts/smoke_ephemeral_aws.sh tests/aws infra package.json Makefile
+git commit -m "feat: deploy executable lineage workflows on aws"
 ```
 
 ### Task 20: Build the fault, load, and acceptance-evidence harness
