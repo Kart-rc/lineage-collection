@@ -9,6 +9,7 @@ from typing import Any, Callable
 from lineage_api.application.models import Command, LaneMessage, Lease, StageIdentity, StageResult
 from lineage_api.application.outbox import OutboxDispatcher
 from lineage_api.application.ports import ClockPort, CommandStorePort, LaneBrokerPort
+from lineage_api.application.workflows.baseline import BaselineWorkflow
 from lineage_api.application.workflows.incremental import IncrementalWorkflow
 from lineage_api.db import Database
 from lineage_api.domain.errors import DomainError
@@ -214,6 +215,13 @@ class OrchestrationService:
         envelope: dict[str, Any],
         classification_evidence: list[ClassificationEvidence] | None = None,
     ) -> dict[str, Any]:
+        if command.workflow_kind == "BASELINE":
+            return self._run_baseline(
+                command,
+                lease,
+                envelope,
+                classification_evidence,
+            )
         if command.workflow_kind == "INCREMENTAL":
             return self._run_incremental(
                 command,
@@ -434,6 +442,232 @@ class OrchestrationService:
             "coverageManifest": i8["coverageManifest"],
             "evidenceManifest": i10["evidenceManifest"],
             "resume": {"reusedStages": workflow.reused_stage_ids},
+        }
+
+    def _run_baseline(
+        self,
+        command: Command,
+        lease: Lease,
+        envelope: dict[str, Any],
+        classification_evidence: list[ClassificationEvidence] | None,
+    ) -> dict[str, Any]:
+        workflow = BaselineWorkflow(
+            command,
+            lease,
+            self._command_store,
+            self._store,
+            self._durable_clock,
+            self._fault_injector,
+        )
+        b1 = workflow.checkpoint("B1", lambda: self._incremental_start(envelope))
+        b2 = workflow.checkpoint("B2", lambda: self._baseline_pins(envelope))
+        b3 = workflow.checkpoint(
+            "B3",
+            lambda: self._incremental_classify(
+                envelope,
+                b1["runId"],
+                classification_evidence,
+            ),
+        )
+        if b3["repositoryClass"] == "UNKNOWN":
+            self._fail(b1["runId"], "CLASSIFYING", "UNKNOWN_CLASSIFICATION")
+            return {
+                "outcome": "BLOCKED",
+                "reason": "UNKNOWN_CLASSIFICATION",
+                "eventId": envelope["eventId"],
+                "run": self.get_run(b1["runId"]),
+                "proposal": None,
+                "resume": {"reusedStages": workflow.reused_stage_ids},
+            }
+
+        b4 = workflow.checkpoint(
+            "B4",
+            lambda: BaselineWorkflow.plan_repository(
+                self._fixture_root / "repositories" / envelope["repo"],
+                max_fanout=1_000,
+            ),
+        )
+        scoped_envelope = {**envelope, "changedFiles": b4["recomputedScope"]}
+        b5 = workflow.checkpoint(
+            "B5", lambda: self._incremental_sca(scoped_envelope, b1["runId"])
+        )
+        b6 = workflow.checkpoint(
+            "B6", lambda: self._incremental_runtime(envelope, b1["runId"], b5)
+        )
+        b7 = workflow.checkpoint("B7", lambda: self._baseline_residue(b5))
+        b8 = workflow.checkpoint(
+            "B8", lambda: self._baseline_consolidate(command, b1, b4, b5, b6)
+        )
+        if b8["coverageManifest"]["state"] != "COMPLETE":
+            self._fail(b1["runId"], "COVERAGE", "INCOMPLETE_COVERAGE")
+            return {
+                "outcome": "INCOMPLETE",
+                "reason": "INCOMPLETE_COVERAGE",
+                "eventId": envelope["eventId"],
+                "run": self.get_run(b1["runId"]),
+                "proposal": None,
+                "coverageManifest": b8["coverageManifest"],
+                "resume": {"reusedStages": workflow.reused_stage_ids},
+            }
+        if b8["edges"]:
+            b9 = workflow.checkpoint(
+                "B9", lambda: self._incremental_propose(b1["runId"], b1, b8)
+            )
+        else:
+            b9 = workflow.checkpoint(
+                "B9", lambda: self._baseline_no_lineage(b1["runId"])
+            )
+        b10 = workflow.checkpoint(
+            "B10",
+            lambda: self._baseline_finalize(command, b5, b6, b7, b8, b9, b2),
+        )
+        no_lineage = b9.get("decision") == "NO_LINEAGE"
+        return {
+            "outcome": "NO_LINEAGE" if no_lineage else "ACCEPTED",
+            "reason": "NO_LINEAGE_EVIDENCE" if no_lineage else None,
+            "eventId": envelope["eventId"],
+            "run": self.get_run(b1["runId"]),
+            "proposal": b9["proposal"],
+            "coverageManifest": b8["coverageManifest"],
+            "evidenceManifest": b10["evidenceManifest"],
+            "resume": {"reusedStages": workflow.reused_stage_ids},
+        }
+
+    def _baseline_pins(self, envelope: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "artifactDigest": envelope["digest"],
+            "environment": envelope["env"],
+            "catalogSnapshotId": self._analyzer._resolver.snapshot_id,
+            "resolverVersion": self._analyzer._resolver.resolver_version,
+            "rulesetVersion": self._analyzer._ruleset_version,
+            "classificationPolicyVersion": "1.0.0",
+        }
+
+    @staticmethod
+    def _baseline_residue(sca: dict[str, Any]) -> dict[str, Any]:
+        residue = sca["sca"]["residue"]
+        return {
+            "residue": {
+                "status": "SKIPPED_WITH_RECORD",
+                "count": len(residue),
+                "reason": "LLM_NOT_CONFIGURED",
+            }
+        }
+
+    def _baseline_consolidate(
+        self,
+        command: Command,
+        start: dict[str, Any],
+        plan: dict[str, Any],
+        sca: dict[str, Any],
+        runtime: dict[str, Any],
+    ) -> dict[str, Any]:
+        consolidation = self._incremental_consolidate(start["runId"], sca, runtime)
+        state = "COMPLETE" if not plan["unsupportedScope"] else "INCOMPLETE"
+        identity = {
+            "artifactDigest": command.artifact_digest,
+            "determinantDigest": command.determinant_digest,
+            "expectedScope": plan["expectedScope"],
+            "scope": command.scope,
+        }
+        manifest_id = (
+            f"coverage-{hashlib.sha256(self._canonical(identity).encode()).hexdigest()[:20]}"
+        )
+        manifest = {
+            "schemaVersion": "1.0.0",
+            "manifestId": manifest_id,
+            "workflowKind": command.workflow_kind,
+            "scope": command.scope,
+            "artifactDigest": command.artifact_digest,
+            "determinantDigest": command.determinant_digest,
+            "state": state,
+            "expectedScope": plan["expectedScope"],
+            "completedScope": plan["recomputedScope"],
+            "reusedScope": [],
+            "skippedScope": plan["skippedScope"],
+            "unsupportedScope": plan["unsupportedScope"],
+            "quarantinedScope": [],
+            "failedScope": [],
+        }
+        payload = self._canonical(manifest)
+        now = self._clock()
+        with self._database.transaction() as connection:
+            existing = connection.execute(
+                "SELECT payload_json FROM coverage_manifests WHERE manifest_id = ?",
+                (manifest_id,),
+            ).fetchone()
+            if existing is not None and existing["payload_json"] != payload:
+                raise RuntimeError(f"coverage manifest conflict: {manifest_id}")
+            connection.execute(
+                """
+                INSERT OR IGNORE INTO coverage_manifests(
+                    manifest_id, workflow_kind, scope, artifact_digest,
+                    determinant_digest, state, payload_json, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    manifest_id,
+                    command.workflow_kind,
+                    command.scope,
+                    command.artifact_digest,
+                    command.determinant_digest,
+                    state,
+                    payload,
+                    now,
+                    now,
+                ),
+            )
+        return {**consolidation, "coverageManifest": manifest}
+
+    def _baseline_no_lineage(self, run_id: str) -> dict[str, Any]:
+        self._stage(
+            run_id,
+            "NO_LINEAGE",
+            {"reason": "NO_LINEAGE_EVIDENCE", "proposalCreated": False},
+        )
+        return {"decision": "NO_LINEAGE", "proposal": None}
+
+    @staticmethod
+    def _baseline_finalize(
+        command: Command,
+        sca: dict[str, Any],
+        runtime: dict[str, Any],
+        residue: dict[str, Any],
+        consolidation: dict[str, Any],
+        proposal: dict[str, Any],
+        pins: dict[str, Any],
+    ) -> dict[str, Any]:
+        edge_summary = [
+            {
+                "edgeKey": edge["edgeKey"],
+                "version": edge["version"],
+                "band": edge["band"],
+                "status": edge["status"],
+            }
+            for edge in sorted(consolidation["edges"], key=lambda item: item["edgeKey"])
+        ]
+        return {
+            "evidenceManifest": {
+                "schemaVersion": "1.0.0",
+                "commandId": command.command_id,
+                "workflowKind": command.workflow_kind,
+                "artifactDigest": command.artifact_digest,
+                "determinantDigest": command.determinant_digest,
+                "pins": pins,
+                "coverageManifestId": consolidation["coverageManifest"]["manifestId"],
+                "sca": sca["scaRef"],
+                "runtime": runtime["runtime"],
+                "residue": residue["residue"],
+                "edges": edge_summary,
+                "proposal": (
+                    {
+                        "proposalId": proposal["proposal"]["proposalId"],
+                        "version": proposal["proposal"]["version"],
+                    }
+                    if proposal["proposal"] is not None
+                    else None
+                ),
+            }
         }
 
     def _incremental_start(self, envelope: dict[str, Any]) -> dict[str, Any]:
@@ -812,14 +1046,19 @@ class OrchestrationService:
             "proposal": self._proposal_for_event(event_id),
             "command": self._command_dict(command),
         }
-        if command.workflow_kind == "INCREMENTAL":
-            coverage = self._incremental_checkpoint(command, "I8")
-            evidence = self._incremental_checkpoint(command, "I10")
+        if command.workflow_kind in {"BASELINE", "INCREMENTAL"}:
+            coverage_stage = "B8" if command.workflow_kind == "BASELINE" else "I8"
+            evidence_stage = "B10" if command.workflow_kind == "BASELINE" else "I10"
+            prefix = "B" if command.workflow_kind == "BASELINE" else "I"
+            coverage = self._incremental_checkpoint(command, coverage_stage)
+            evidence = self._incremental_checkpoint(command, evidence_stage)
             if coverage is not None:
                 result["coverageManifest"] = coverage["coverageManifest"]
             if evidence is not None:
                 result["evidenceManifest"] = evidence["evidenceManifest"]
-            result["resume"] = {"reusedStages": [f"I{index}" for index in range(1, 11)]}
+            result["resume"] = {
+                "reusedStages": [f"{prefix}{index}" for index in range(1, 11)]
+            }
         return result
 
     def _incremental_checkpoint(
