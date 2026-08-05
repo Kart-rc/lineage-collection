@@ -10,6 +10,7 @@ from lineage_api.application.models import (
     Lease,
     LineagePackage,
     OutboxEvent,
+    StageIdentity,
     StageResult,
 )
 
@@ -37,6 +38,8 @@ class CommandStorePort(Protocol):
     def complete(self, lease: Lease, result: StageResult) -> Command: ...
 
     def fail(self, lease: Lease, error_code: str, retryable: bool) -> Command: ...
+
+    def completed_stage(self, identity: StageIdentity) -> StageResult | None: ...
 
 
 @runtime_checkable
