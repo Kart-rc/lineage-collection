@@ -4,14 +4,22 @@ import hashlib
 import hmac
 import json
 import shutil
+import time
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
 
 from lineage_api.application.outbox import OutboxDispatcher
+from lineage_api.application.workflows.pr_gate import (
+    EnvironmentPin,
+    PRGateWorkflow,
+    ProjectionUnavailableError,
+)
 from lineage_api.config import Settings
 from lineage_api.db import Database
+from lineage_api.domain.errors import DomainError
 from lineage_api.infrastructure.local_broker import LocalLaneBroker, SQLiteOutbox
+from lineage_api.infrastructure.sqlite_pr_gate import SQLitePrGateCheckStore
 from lineage_api.infrastructure.sqlite_control import (
     SQLiteCommandStore,
     SQLiteIntakeUnitOfWork,
@@ -43,6 +51,7 @@ class AppServices:
     publisher: PublisherService
     query: QueryService
     orchestration: OrchestrationService
+    pr_gate: PRGateWorkflow
 
     def reset(self) -> dict[str, Any]:
         if self.settings.object_directory.exists():
@@ -139,6 +148,56 @@ def build_services(settings: Settings) -> AppServices:
         broker=broker,
         durable_clock=clock,
     )
-    services = AppServices(settings, database, store, review, publisher, query, orchestration)
+
+    def environment_reader(environment: str) -> EnvironmentPin | None:
+        with database.connection() as connection:
+            row = connection.execute(
+                """
+                SELECT p.active_version, p.fencing_token, g.checksum
+                FROM pointers p
+                JOIN graph_versions g ON g.env = p.env AND g.version = p.active_version
+                WHERE p.env = ?
+                """,
+                (environment,),
+            ).fetchone()
+        if row is None:
+            return None
+        return EnvironmentPin(
+            environment=environment,
+            graph_version=str(row["active_version"]),
+            fencing_token=int(row["fencing_token"]),
+            deployed_artifact_digest=f"sha256:{row['checksum']}",
+            status="HEALTHY",
+        )
+
+    def impact_reader(change, environment, depth):
+        try:
+            return query.impact(
+                change.subject,
+                change.change_type,
+                depth,
+                environment.graph_version,
+            )
+        except DomainError as error:
+            raise ProjectionUnavailableError(error.code) from error
+
+    pr_gate = PRGateWorkflow(
+        head_reader=lambda _repo, _pr_number, expected_head: expected_head,
+        environment_reader=environment_reader,
+        impact_reader=impact_reader,
+        check_writer=SQLitePrGateCheckStore(database),
+        monotonic=time.monotonic,
+        utc_now=clock.now,
+    )
+    services = AppServices(
+        settings,
+        database,
+        store,
+        review,
+        publisher,
+        query,
+        orchestration,
+        pr_gate,
+    )
     services.ensure_seeded()
     return services

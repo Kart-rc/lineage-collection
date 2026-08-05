@@ -37,3 +37,30 @@ class ImpactRequest(ApiModel):
     ]
     depth: int = Field(default=5)
     version: str | None = None
+
+
+class PRGateChangeRequest(ApiModel):
+    changeType: Literal[
+        "COLUMN_DROP",
+        "COLUMN_TYPE_CHANGE",
+        "DATASET_REMOVAL",
+        "COLUMN_RENAME",
+        "TRANSFORM_CHANGE",
+        "FINGERPRINT_DRIFT",
+    ]
+    subject: str = Field(min_length=1)
+    evidenceMechanisms: list[
+        Literal["SCA", "NATIVE", "MANIFEST", "CACHE", "LLM"]
+    ] = Field(min_length=1)
+
+
+class PRGateEvaluationRequest(ApiModel):
+    repo: str = Field(min_length=1)
+    prNumber: int = Field(ge=1)
+    headSha: str = Field(min_length=1)
+    targetEnvironment: str = Field(min_length=1)
+    policyVersion: str = Field(min_length=1)
+    candidateArtifactDigest: str = Field(min_length=1)
+    coverageComplete: bool
+    changes: list[PRGateChangeRequest] = Field(min_length=1)
+    depth: int = Field(default=5, ge=1, le=5)

@@ -9,7 +9,14 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from lineage_api.api_models import CorrectionRequest, ImpactRequest, PushRequest, ReviewRequest
+from lineage_api.api_models import (
+    CorrectionRequest,
+    ImpactRequest,
+    PRGateEvaluationRequest,
+    PushRequest,
+    ReviewRequest,
+)
+from lineage_api.application.workflows.pr_gate import PRGateChange, PRGateRequest
 from lineage_api.config import Settings
 from lineage_api.dependencies import AppServices, build_services
 from lineage_api.domain.errors import DomainError
@@ -189,6 +196,32 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     def impact(body: ImpactRequest, request: Request) -> dict[str, Any]:
         return _services(request).query.impact(
             body.subject, body.changeType, body.depth, body.version
+        )
+
+    @application.post("/api/pr-gate/evaluate")
+    def evaluate_pr_gate(
+        body: PRGateEvaluationRequest,
+        request: Request,
+    ) -> dict[str, object]:
+        return _services(request).pr_gate.evaluate(
+            PRGateRequest(
+                repo=body.repo,
+                pr_number=body.prNumber,
+                head_sha=body.headSha,
+                target_environment=body.targetEnvironment,
+                policy_version=body.policyVersion,
+                candidate_artifact_digest=body.candidateArtifactDigest,
+                coverage_complete=body.coverageComplete,
+                changes=tuple(
+                    PRGateChange(
+                        change_type=change.changeType,
+                        subject=change.subject,
+                        evidence_mechanisms=tuple(change.evidenceMechanisms),
+                    )
+                    for change in body.changes
+                ),
+                depth=body.depth,
+            )
         )
 
     @application.get("/api/edges/{edge_key}")

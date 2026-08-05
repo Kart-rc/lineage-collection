@@ -144,3 +144,48 @@ def test_list_and_detail_routes_expose_evidence_and_audit(client) -> None:
     edge_key = approved["proposal"]["diff"]["added"][0]["edgeKey"]
     assert client.get(f"/api/edges/{edge_key}").json()["provenance"]
     assert client.get("/api/audit").json()[0]["actor"] == "reviewer@example.test"
+
+
+def test_pr_gate_route_is_lineage_read_only_and_upserts_one_stable_check(client) -> None:
+    client.post("/api/demo/reset")
+    services = client.app.state.services
+    authoritative_tables = (
+        "events",
+        "runs",
+        "evidence_objects",
+        "edge_ledger",
+        "proposals",
+        "graph_versions",
+        "graph_edges",
+        "pointers",
+        "publish_reservations",
+        "coverage_manifests",
+    )
+    before = services.database.snapshot(authoritative_tables)
+    body = {
+        "repo": "payments-pipeline",
+        "prNumber": 42,
+        "headSha": "head-abc",
+        "targetEnvironment": "staging",
+        "policyVersion": "1.0.0",
+        "candidateArtifactDigest": "sha256:candidate",
+        "coverageComplete": True,
+        "changes": [
+            {
+                "changeType": "COLUMN_DROP",
+                "subject": "urn:ldp:staging:snowflake:payments:raw.transactions#amount",
+                "evidenceMechanisms": ["SCA"],
+            }
+        ],
+        "depth": 5,
+    }
+
+    first = client.post("/api/pr-gate/evaluate", json=body)
+    second = client.post("/api/pr-gate/evaluate", json=body)
+
+    assert first.status_code == 200
+    assert first.json()["verdict"] == "PASS"
+    assert first.json()["checkId"] == second.json()["checkId"]
+    assert services.database.snapshot(authoritative_tables) == before
+    with services.database.connection() as connection:
+        assert connection.execute("SELECT COUNT(*) FROM pr_gate_checks").fetchone()[0] == 1

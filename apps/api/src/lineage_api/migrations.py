@@ -4,7 +4,7 @@ import sqlite3
 from dataclasses import dataclass
 
 
-LATEST_SCHEMA_VERSION = 3
+LATEST_SCHEMA_VERSION = 4
 
 
 @dataclass(frozen=True, slots=True)
@@ -134,9 +134,29 @@ CREATE INDEX IF NOT EXISTS idx_lane_messages_supersession
 """
 
 
+PR_GATE_SQL = """
+CREATE TABLE IF NOT EXISTS pr_gate_checks (
+    check_id TEXT PRIMARY KEY,
+    repo TEXT NOT NULL,
+    pr_number INTEGER NOT NULL CHECK(pr_number >= 1),
+    head_sha TEXT NOT NULL,
+    environment TEXT NOT NULL,
+    environment_version TEXT NOT NULL,
+    verdict TEXT NOT NULL CHECK(verdict IN ('PASS', 'WARN', 'BLOCK')),
+    policy_version TEXT NOT NULL,
+    payload_json TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_pr_gate_head
+    ON pr_gate_checks(repo, pr_number, head_sha, updated_at);
+"""
+
+
 MIGRATIONS = (
     Migration(2, DURABLE_CONTROL_SQL),
     Migration(3, LOCAL_LANE_BROKER_SQL),
+    Migration(4, PR_GATE_SQL),
 )
 
 

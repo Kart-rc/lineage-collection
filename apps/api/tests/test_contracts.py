@@ -31,6 +31,7 @@ def test_contract_registry_loads_all_platform_contracts() -> None:
         "evidence-ref",
         "impact-response",
         "outbox-event",
+        "pr-gate-result",
         "proposal",
         "stage-execution",
     }
@@ -101,6 +102,32 @@ def test_acceptance_evidence_manifest_distinguishes_unproven_environment_claims(
     assert registry.validate(
         "acceptance-evidence-manifest", {**base, "outcome": "NOT_CONFIGURED"}
     ) == []
+
+
+def test_pr_gate_result_is_strict_versioned_and_freshness_pinned() -> None:
+    contract_registry = _contract_registry_type()
+    registry = contract_registry(CONTRACTS_DIR)
+    result = {
+        "schemaVersion": "1.0.0",
+        "checkId": "pr-check-001",
+        "repo": "payments-pipeline",
+        "prNumber": 42,
+        "headSha": "head-abc",
+        "environment": "staging",
+        "environmentVersion": "v1",
+        "environmentFence": 7,
+        "deployedArtifactDigest": "sha256:deployed",
+        "candidateArtifactDigest": "sha256:candidate",
+        "policyVersion": "1.0.0",
+        "verdict": "PASS",
+        "reasons": [],
+        "truncated": False,
+        "evaluatedChangeTypes": ["COLUMN_DROP"],
+        "evaluatedAt": "2026-08-05T12:00:00Z",
+    }
+
+    assert registry.validate("pr-gate-result", result) == []
+    assert registry.validate("pr-gate-result", {**result, "unexpected": True})
 
 
 def _stage_execution_fixture(status: str = "RUNNING") -> dict[str, object]:

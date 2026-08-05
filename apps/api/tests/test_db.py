@@ -21,6 +21,7 @@ EXPECTED_TABLES = {
     "lane_messages",
     "outbox_events",
     "pointers",
+    "pr_gate_checks",
     "proposals",
     "publish_reservations",
     "quarantines",
@@ -55,7 +56,7 @@ def test_database_enables_integrity_pragmas_and_creates_platform_tables(tmp_path
             ).fetchall()
         }
     assert tables >= EXPECTED_TABLES
-    assert database.schema_version() == 3
+    assert database.schema_version() == 4
 
 
 def test_transactions_roll_back_on_failure(tmp_path: Path) -> None:
@@ -103,7 +104,7 @@ def test_migration_upgrades_legacy_schema_without_losing_control_or_graph_data(
     assert database.schema_version() == 1
     database.initialize()
 
-    assert database.schema_version() == 3
+    assert database.schema_version() == 4
     with database.connection() as connection:
         event = connection.execute(
             "SELECT event_id, outcome FROM events WHERE event_id = 'delivery-legacy'"
@@ -176,7 +177,7 @@ def test_lane_broker_migration_preserves_pending_version_two_outbox_data(
 
     database.initialize()
 
-    assert database.schema_version() == 3
+    assert database.schema_version() == 4
     with database.connection() as connection:
         row = connection.execute(
             "SELECT status, payload_ref FROM outbox_events WHERE outbox_id = 'outbox-v2'"
