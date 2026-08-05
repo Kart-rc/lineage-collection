@@ -6,6 +6,9 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Callable
 
+from lineage_api.application.models import Command, LaneMessage, StageIdentity, StageResult
+from lineage_api.application.outbox import OutboxDispatcher
+from lineage_api.application.ports import ClockPort, CommandStorePort, LaneBrokerPort
 from lineage_api.db import Database
 from lineage_api.domain.errors import DomainError
 from lineage_api.services.classification import (
@@ -37,6 +40,10 @@ class OrchestrationService:
         consolidation: ConsolidationService,
         review: ReviewService,
         publisher: PublisherService,
+        command_store: CommandStorePort,
+        outbox_dispatcher: OutboxDispatcher,
+        broker: LaneBrokerPort,
+        durable_clock: ClockPort,
         clock: Callable[[], str] = _utc_now,
     ) -> None:
         self._database = database
@@ -48,6 +55,10 @@ class OrchestrationService:
         self._consolidation = consolidation
         self._review = review
         self._publisher = publisher
+        self._command_store = command_store
+        self._outbox_dispatcher = outbox_dispatcher
+        self._broker = broker
+        self._durable_clock = durable_clock
         self._clock = clock
 
     def process_push(
@@ -64,7 +75,11 @@ class OrchestrationService:
                 "eventId": intake.event_id,
                 "run": None,
                 "proposal": None,
+                "command": None,
             }
+        command = intake.command
+        if command is None:
+            raise RuntimeError("durable intake returned no command")
         if intake.outcome == "DUPLICATE":
             return {
                 "outcome": "DUPLICATE",
@@ -72,10 +87,114 @@ class OrchestrationService:
                 "eventId": intake.event_id,
                 "run": self._run_for_event(intake.event_id),
                 "proposal": self._proposal_for_event(intake.event_id),
+                "command": self._command_dict(
+                    self._command_store.get(command.command_id) or command
+                ),
             }
 
-        envelope = intake.envelope
-        assert envelope is not None
+        processed = self.worker_once(classification_evidence=classification_evidence)
+        if processed is None:
+            raise RuntimeError(f"accepted command {command.command_id} was not drained")
+        return processed
+
+    def worker_once(
+        self,
+        classification_evidence: list[ClassificationEvidence] | None = None,
+    ) -> dict[str, Any] | None:
+        self._outbox_dispatcher.dispatch(limit=100)
+        for lane in ("interactive", "events", "bulk"):
+            message = self._broker.claim(
+                lane,
+                "local-worker",
+                visibility_timeout_seconds=60,
+            )
+            if message is not None:
+                return self._handle_message(message, classification_evidence)
+        return None
+
+    def worker_drain(self, max_messages: int = 100) -> list[dict[str, Any]]:
+        if max_messages < 1:
+            raise ValueError("max messages must be positive")
+        processed: list[dict[str, Any]] = []
+        while len(processed) < max_messages:
+            result = self.worker_once()
+            if result is None:
+                break
+            processed.append(result)
+        return processed
+
+    def _handle_message(
+        self,
+        message: LaneMessage,
+        classification_evidence: list[ClassificationEvidence] | None,
+    ) -> dict[str, Any]:
+        if not message.payload_ref.startswith("command://"):
+            self._broker.retry(
+                message,
+                available_at=self._durable_clock.now(),
+                error_code="INVALID_COMMAND_REFERENCE",
+            )
+            raise RuntimeError(f"invalid command reference {message.payload_ref}")
+        command_id = message.payload_ref.removeprefix("command://")
+        command = self._command_store.get(command_id)
+        if command is None:
+            self._broker.retry(
+                message,
+                available_at=self._durable_clock.now(),
+                error_code="COMMAND_NOT_FOUND",
+            )
+            raise RuntimeError(f"command {command_id} does not exist")
+        if command.status == "COMPLETED":
+            self._broker.acknowledge(message)
+            return self._result_for_completed_command(command)
+
+        lease = self._command_store.claim(command_id, "local-worker", lease_seconds=60)
+        try:
+            envelope = self._event_envelope(command)
+            result = self._process_accepted(command, envelope, classification_evidence)
+            output_ref = (
+                f"proposal://{result['proposal']['proposalId']}"
+                if result["proposal"] is not None
+                else f"run://{result['run']['runId']}"
+            )
+            body = self._canonical(result).encode()
+            completed = self._command_store.complete(
+                lease,
+                StageResult(
+                    identity=StageIdentity(
+                        workflow_kind=command.workflow_kind,
+                        scope=command.scope,
+                        artifact_digest=command.artifact_digest,
+                        stage_name="WORKFLOW",
+                        determinant_digest=command.determinant_digest,
+                        schema_version=command.workflow_version,
+                    ),
+                    command_id=command.command_id,
+                    output_ref=output_ref,
+                    output_checksum=f"sha256:{hashlib.sha256(body).hexdigest()}",
+                    lease_epoch=lease.epoch,
+                    completed_at=self._durable_clock.now(),
+                ),
+            )
+        except Exception:
+            self._command_store.fail(lease, "WORKFLOW_EXECUTION_FAILED", retryable=True)
+            self._broker.retry(
+                message,
+                available_at=self._durable_clock.now(),
+                error_code="WORKFLOW_EXECUTION_FAILED",
+            )
+            raise
+
+        self._broker.acknowledge(message)
+        result["command"] = self._command_dict(completed)
+        return result
+
+    def _process_accepted(
+        self,
+        command: Command,
+        envelope: dict[str, Any],
+        classification_evidence: list[ClassificationEvidence] | None = None,
+    ) -> dict[str, Any]:
         run_id = f"run-{hashlib.sha256(envelope['eventId'].encode()).hexdigest()[:20]}"
         correlation_id = envelope["correlationId"]
         now = self._clock()
@@ -123,7 +242,7 @@ class OrchestrationService:
             return {
                 "outcome": "BLOCKED",
                 "reason": "UNKNOWN_CLASSIFICATION",
-                "eventId": intake.event_id,
+                "eventId": envelope["eventId"],
                 "run": self.get_run(run_id),
                 "proposal": None,
             }
@@ -217,9 +336,52 @@ class OrchestrationService:
         return {
             "outcome": "ACCEPTED",
             "reason": None,
-            "eventId": intake.event_id,
+            "eventId": envelope["eventId"],
             "run": self.get_run(run_id),
             "proposal": proposal.as_dict(),
+        }
+
+    def _event_envelope(self, command: Command) -> dict[str, Any]:
+        if not command.input_ref.startswith("event://"):
+            raise RuntimeError(f"invalid event reference {command.input_ref}")
+        event_id = command.input_ref.removeprefix("event://")
+        with self._database.connection() as connection:
+            row = connection.execute(
+                "SELECT payload_json FROM events WHERE event_id = ?", (event_id,)
+            ).fetchone()
+        if row is None:
+            raise RuntimeError(f"event {event_id} does not exist")
+        return json.loads(row["payload_json"])
+
+    def _result_for_completed_command(self, command: Command) -> dict[str, Any]:
+        event_id = command.input_ref.removeprefix("event://")
+        return {
+            "outcome": "REUSED",
+            "reason": "COMMAND_ALREADY_COMPLETED",
+            "eventId": event_id,
+            "run": self._run_for_event(event_id),
+            "proposal": self._proposal_for_event(event_id),
+            "command": self._command_dict(command),
+        }
+
+    @staticmethod
+    def _command_dict(command: Command) -> dict[str, Any]:
+        return {
+            "commandId": command.command_id,
+            "idempotencyKey": command.idempotency_key,
+            "workflowKind": command.workflow_kind,
+            "workflowVersion": command.workflow_version,
+            "scope": command.scope,
+            "artifactDigest": command.artifact_digest,
+            "determinantDigest": command.determinant_digest,
+            "status": command.status,
+            "attempt": command.attempt,
+            "maxAttempts": command.max_attempts,
+            "inputRef": command.input_ref,
+            "outputRef": command.output_ref,
+            "correlationId": command.correlation_id,
+            "createdAt": command.created_at.isoformat().replace("+00:00", "Z"),
+            "deadlineAt": command.deadline_at.isoformat().replace("+00:00", "Z"),
         }
 
     def approve(

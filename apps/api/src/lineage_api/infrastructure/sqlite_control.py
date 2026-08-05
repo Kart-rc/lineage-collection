@@ -1,11 +1,21 @@
 from __future__ import annotations
 
 import sqlite3
+from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 
-from lineage_api.application.models import Command, Lease, StageIdentity, StageResult, parse_utc
+from lineage_api.application.models import (
+    Command,
+    DurableAcceptance,
+    Lease,
+    OutboxEvent,
+    StageIdentity,
+    StageResult,
+    parse_utc,
+)
 from lineage_api.application.ports import ClockPort
 from lineage_api.db import Database
+from lineage_api.infrastructure.local_broker import SQLiteOutbox
 
 
 class CommandStoreError(RuntimeError):
@@ -85,53 +95,63 @@ class SQLiteCommandStore:
         self.database = database
         self.clock = clock
 
-    def submit(self, command: Command) -> Command:
+    def submit(
+        self,
+        command: Command,
+        *,
+        connection: sqlite3.Connection | None = None,
+    ) -> Command:
         if command.status != "QUEUED" or command.attempt != 0:
             raise CommandStateError("new commands must be QUEUED at attempt zero")
-        now = _utc_text(self.clock.now())
-        with self.database.transaction() as connection:
-            row = connection.execute(
-                "SELECT * FROM commands WHERE idempotency_key = ?",
-                (command.idempotency_key,),
-            ).fetchone()
-            if row is not None:
-                existing = _command_from_row(row)
-                if _submission_identity(existing) != _submission_identity(command):
-                    raise IdempotencyConflictError(
-                        "command idempotency key refers to a different immutable identity"
-                    )
-                return existing
+        if connection is not None:
+            return self._submit(connection, command)
+        with self.database.transaction() as owned_connection:
+            return self._submit(owned_connection, command)
 
-            connection.execute(
-                """
-                INSERT INTO commands(
-                    command_id, idempotency_key, workflow_kind, workflow_version, scope,
-                    artifact_digest, determinant_digest, status, attempt, max_attempts,
-                    input_ref, output_ref, correlation_id, causation_id, created_at,
-                    deadline_at, lease_owner, lease_epoch, lease_expires_at, last_error_code,
-                    updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, 0, NULL, NULL, ?)
-                """,
-                (
-                    command.command_id,
-                    command.idempotency_key,
-                    command.workflow_kind,
-                    command.workflow_version,
-                    command.scope,
-                    command.artifact_digest,
-                    command.determinant_digest,
-                    command.status,
-                    command.attempt,
-                    command.max_attempts,
-                    command.input_ref,
-                    command.output_ref,
-                    command.correlation_id,
-                    command.causation_id,
-                    _utc_text(command.created_at),
-                    _utc_text(command.deadline_at),
-                    now,
-                ),
-            )
+    def _submit(self, connection: sqlite3.Connection, command: Command) -> Command:
+        now = _utc_text(self.clock.now())
+        row = connection.execute(
+            "SELECT * FROM commands WHERE idempotency_key = ?",
+            (command.idempotency_key,),
+        ).fetchone()
+        if row is not None:
+            existing = _command_from_row(row)
+            if _submission_identity(existing) != _submission_identity(command):
+                raise IdempotencyConflictError(
+                    "command idempotency key refers to a different immutable identity"
+                )
+            return existing
+
+        connection.execute(
+            """
+            INSERT INTO commands(
+                command_id, idempotency_key, workflow_kind, workflow_version, scope,
+                artifact_digest, determinant_digest, status, attempt, max_attempts,
+                input_ref, output_ref, correlation_id, causation_id, created_at,
+                deadline_at, lease_owner, lease_epoch, lease_expires_at, last_error_code,
+                updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, 0, NULL, NULL, ?)
+            """,
+            (
+                command.command_id,
+                command.idempotency_key,
+                command.workflow_kind,
+                command.workflow_version,
+                command.scope,
+                command.artifact_digest,
+                command.determinant_digest,
+                command.status,
+                command.attempt,
+                command.max_attempts,
+                command.input_ref,
+                command.output_ref,
+                command.correlation_id,
+                command.causation_id,
+                _utc_text(command.created_at),
+                _utc_text(command.deadline_at),
+                now,
+            ),
+        )
         return command
 
     def get(self, command_id: str) -> Command | None:
@@ -459,3 +479,54 @@ class SQLiteCommandStore:
                 lease_epoch,
             ),
         )
+
+
+class SQLiteIntakeUnitOfWork:
+    """Commits an accepted receipt, command, and outbox event as one durable fact."""
+
+    def __init__(
+        self,
+        database: Database,
+        commands: SQLiteCommandStore,
+        outbox: SQLiteOutbox,
+        *,
+        after_receipt: Callable[[], None] | None = None,
+    ) -> None:
+        self.database = database
+        self.commands = commands
+        self.outbox = outbox
+        self.after_receipt = after_receipt
+
+    def accept(
+        self,
+        event_id: str,
+        envelope_json: str,
+        created_at: datetime,
+        command: Command,
+        outbox: OutboxEvent,
+    ) -> DurableAcceptance:
+        with self.database.transaction() as connection:
+            existing = connection.execute(
+                "SELECT payload_json FROM events WHERE event_id = ?", (event_id,)
+            ).fetchone()
+            created = existing is None
+            stored_envelope = envelope_json if created else existing["payload_json"]
+            if created:
+                connection.execute(
+                    """
+                    INSERT INTO events(event_id, payload_json, outcome, created_at)
+                    VALUES (?, ?, 'ACCEPTED', ?)
+                    """,
+                    (event_id, envelope_json, _utc_text(created_at)),
+                )
+                if self.after_receipt is not None:
+                    self.after_receipt()
+
+            stored_command = self.commands.submit(command, connection=connection)
+            stored_outbox = self.outbox.append(outbox, connection=connection)
+            return DurableAcceptance(
+                created=created,
+                envelope_json=stored_envelope,
+                command=stored_command,
+                outbox=stored_outbox,
+            )

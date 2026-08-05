@@ -50,6 +50,7 @@ def test_run_records_ordered_correlated_evidence_and_continues_after_approval(tm
     collected = services.orchestration.process_push(_delivery())
 
     assert collected["outcome"] == "ACCEPTED"
+    assert collected["command"]["status"] == "COMPLETED"
     assert collected["run"]["state"] == "IN_REVIEW"
     assert collected["proposal"]["state"] == "IN_REVIEW"
     assert [stage["stage"] for stage in collected["run"]["stages"]] == [
@@ -68,6 +69,16 @@ def test_run_records_ordered_correlated_evidence_and_continues_after_approval(tm
     storing = collected["run"]["stages"][4]["detail"]
     assert storing["scaEvidenceRef"]["checksum"]
     assert storing["runtimeEvidenceRef"]["checksum"]
+    with services.database.connection() as connection:
+        durable = connection.execute(
+            "SELECT status, attempt FROM commands WHERE command_id = ?",
+            (collected["command"]["commandId"],),
+        ).fetchone()
+        outbox = connection.execute("SELECT status FROM outbox_events").fetchone()
+        message = connection.execute("SELECT status FROM lane_messages").fetchone()
+    assert dict(durable) == {"status": "COMPLETED", "attempt": 1}
+    assert outbox["status"] == "DELIVERED"
+    assert message["status"] == "ACKED"
 
     proposal = collected["proposal"]
     approved = services.orchestration.approve(
@@ -98,6 +109,7 @@ def test_duplicate_delivery_reuses_the_only_run(tmp_path) -> None:
     duplicate = services.orchestration.process_push(_delivery())
 
     assert duplicate["outcome"] == "DUPLICATE"
+    assert duplicate["command"]["commandId"] == first["command"]["commandId"]
     assert duplicate["run"]["runId"] == first["run"]["runId"]
     assert len(services.orchestration.list_runs()) == 1
 

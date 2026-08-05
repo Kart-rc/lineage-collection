@@ -5,10 +5,17 @@ import hmac
 import json
 import shutil
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from typing import Any
 
+from lineage_api.application.outbox import OutboxDispatcher
 from lineage_api.config import Settings
 from lineage_api.db import Database
+from lineage_api.infrastructure.local_broker import LocalLaneBroker, SQLiteOutbox
+from lineage_api.infrastructure.sqlite_control import (
+    SQLiteCommandStore,
+    SQLiteIntakeUnitOfWork,
+)
 from lineage_api.seed import SeedSummary, reset_demo
 from lineage_api.services.classification import ClassificationService
 from lineage_api.services.consolidation import ConsolidationService
@@ -20,6 +27,11 @@ from lineage_api.services.query import QueryService
 from lineage_api.services.resolver import Resolver
 from lineage_api.services.review import ReviewService
 from lineage_api.services.sca import ScaAnalyzer
+
+
+class SystemClock:
+    def now(self) -> datetime:
+        return datetime.now(UTC)
 
 
 @dataclass(slots=True)
@@ -72,6 +84,16 @@ class AppServices:
 def build_services(settings: Settings) -> AppServices:
     database = Database(settings.database_path)
     database.initialize()
+    clock = SystemClock()
+    command_store = SQLiteCommandStore(database, clock)
+    outbox = SQLiteOutbox(database, clock)
+    broker = LocalLaneBroker(database, clock)
+    intake = IntakeService(
+        database,
+        settings.webhook_secret,
+        SQLiteIntakeUnitOfWork(database, command_store, outbox),
+        clock,
+    )
     resolver = Resolver.from_path(settings.fixture_directory / "catalog" / "catalog-snapshot-v1.json")
     store = EvidenceStore(database, settings.object_directory)
     review = ReviewService(database, store, env="staging")
@@ -80,13 +102,17 @@ def build_services(settings: Settings) -> AppServices:
     orchestration = OrchestrationService(
         database=database,
         fixture_root=settings.fixture_directory,
-        intake=IntakeService(database, settings.webhook_secret),
+        intake=intake,
         classification=ClassificationService(database, policy_version="1.0.0"),
         analyzer=ScaAnalyzer(resolver, ruleset_version="python-demo-v1"),
         store=store,
         consolidation=ConsolidationService(database),
         review=review,
         publisher=publisher,
+        command_store=command_store,
+        outbox_dispatcher=OutboxDispatcher(outbox, broker, clock),
+        broker=broker,
+        durable_clock=clock,
     )
     services = AppServices(settings, database, store, review, publisher, query, orchestration)
     services.ensure_seeded()

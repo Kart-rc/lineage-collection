@@ -7,6 +7,7 @@ from typing import Protocol, runtime_checkable
 from lineage_api.application.models import (
     Command,
     CoverageManifest,
+    DurableAcceptance,
     LaneMessage,
     Lease,
     LineagePackage,
@@ -24,6 +25,18 @@ class ClockPort(Protocol):
 @runtime_checkable
 class ReceiptPort(Protocol):
     def accept(self, event_id: str, payload_ref: str, correlation_id: str) -> bool: ...
+
+
+@runtime_checkable
+class IntakeUnitOfWorkPort(Protocol):
+    def accept(
+        self,
+        event_id: str,
+        envelope_json: str,
+        created_at: datetime,
+        command: Command,
+        outbox: OutboxEvent,
+    ) -> DurableAcceptance: ...
 
 
 @runtime_checkable

@@ -166,6 +166,14 @@ class OutboxEvent:
 
 
 @dataclass(frozen=True, slots=True)
+class DurableAcceptance:
+    created: bool
+    envelope_json: str
+    command: Command
+    outbox: OutboxEvent
+
+
+@dataclass(frozen=True, slots=True)
 class LaneMessage:
     message_id: str
     lane: str

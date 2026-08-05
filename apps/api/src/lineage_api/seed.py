@@ -25,6 +25,13 @@ def reset_demo(database: Database, fixture_root: Path) -> SeedSummary:
     catalog_digest = hashlib.sha256(catalog_bytes).hexdigest()
 
     delete_order = (
+        "stage_results",
+        "command_attempts",
+        "lane_messages",
+        "lane_group_state",
+        "outbox_events",
+        "coverage_manifests",
+        "commands",
         "run_stages",
         "runs",
         "events",
