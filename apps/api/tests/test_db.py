@@ -17,6 +17,8 @@ EXPECTED_TABLES = {
     "evidence_objects",
     "graph_edges",
     "graph_versions",
+    "lane_group_state",
+    "lane_messages",
     "outbox_events",
     "pointers",
     "proposals",
@@ -53,7 +55,7 @@ def test_database_enables_integrity_pragmas_and_creates_platform_tables(tmp_path
             ).fetchall()
         }
     assert tables >= EXPECTED_TABLES
-    assert database.schema_version() == 2
+    assert database.schema_version() == 3
 
 
 def test_transactions_roll_back_on_failure(tmp_path: Path) -> None:
@@ -101,7 +103,7 @@ def test_migration_upgrades_legacy_schema_without_losing_control_or_graph_data(
     assert database.schema_version() == 1
     database.initialize()
 
-    assert database.schema_version() == 2
+    assert database.schema_version() == 3
     with database.connection() as connection:
         event = connection.execute(
             "SELECT event_id, outcome FROM events WHERE event_id = 'delivery-legacy'"
@@ -134,6 +136,8 @@ def test_durable_control_schema_enforces_identity_and_has_due_work_indexes(tmp_p
         "idx_commands_expired_lease",
         "idx_outbox_pending",
         "idx_coverage_workflow_scope",
+        "idx_lane_messages_eligible",
+        "idx_lane_messages_group",
     }
     assert command_columns >= {
         "command_id",
@@ -142,4 +146,42 @@ def test_durable_control_schema_enforces_identity_and_has_due_work_indexes(tmp_p
         "lease_epoch",
         "lease_expires_at",
         "deadline_at",
+    }
+
+
+def test_lane_broker_migration_preserves_pending_version_two_outbox_data(
+    tmp_path: Path,
+) -> None:
+    database_type = _database_type()
+    database = database_type(tmp_path / "lineage.db")
+    database.initialize(target_version=2)
+    with database.transaction() as connection:
+        connection.execute(
+            """
+            INSERT INTO outbox_events(
+                outbox_id, topic, partition_key, payload_ref, status, attempts,
+                available_at, correlation_id, created_at
+            ) VALUES (?, ?, ?, ?, 'PENDING', 0, ?, ?, ?)
+            """,
+            (
+                "outbox-v2",
+                "INCREMENTAL",
+                "repo:payments",
+                "object://commands/command-v2",
+                "2026-08-05T12:00:00Z",
+                "correlation-v2",
+                "2026-08-05T12:00:00Z",
+            ),
+        )
+
+    database.initialize()
+
+    assert database.schema_version() == 3
+    with database.connection() as connection:
+        row = connection.execute(
+            "SELECT status, payload_ref FROM outbox_events WHERE outbox_id = 'outbox-v2'"
+        ).fetchone()
+    assert dict(row) == {
+        "status": "PENDING",
+        "payload_ref": "object://commands/command-v2",
     }

@@ -166,6 +166,21 @@ class OutboxEvent:
 
 
 @dataclass(frozen=True, slots=True)
+class LaneMessage:
+    message_id: str
+    lane: str
+    group_key: str
+    payload_ref: str
+    correlation_id: str
+    attempt: int
+    max_attempts: int
+    delivery_epoch: int
+    owner: str
+    lease_expires_at: datetime
+    supersession_key: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
 class LineagePackage:
     package_id: str
     artifact_digest: str

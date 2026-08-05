@@ -7,6 +7,7 @@ from typing import Protocol, runtime_checkable
 from lineage_api.application.models import (
     Command,
     CoverageManifest,
+    LaneMessage,
     Lease,
     LineagePackage,
     OutboxEvent,
@@ -60,13 +61,27 @@ class OutboxPort(Protocol):
 
 @runtime_checkable
 class LaneBrokerPort(Protocol):
-    def publish(self, lane: str, group_key: str, payload_ref: str, correlation_id: str) -> str: ...
+    def publish(
+        self,
+        lane: str,
+        group_key: str,
+        payload_ref: str,
+        correlation_id: str,
+        *,
+        message_id: str,
+        max_attempts: int = 5,
+        supersession_key: str | None = None,
+    ) -> str: ...
 
-    def claim(self, lane: str, owner: str) -> object | None: ...
+    def claim(
+        self, lane: str, owner: str, visibility_timeout_seconds: int = 30
+    ) -> LaneMessage | None: ...
 
-    def acknowledge(self, message_id: str, owner: str) -> None: ...
+    def acknowledge(self, message: LaneMessage) -> None: ...
 
-    def retry(self, message_id: str, owner: str, available_at: datetime) -> None: ...
+    def retry(self, message: LaneMessage, available_at: datetime, error_code: str) -> None: ...
+
+    def redrive(self, message_id: str, available_at: datetime) -> None: ...
 
 
 @runtime_checkable

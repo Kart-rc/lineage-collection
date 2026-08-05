@@ -4,7 +4,7 @@ import sqlite3
 from dataclasses import dataclass
 
 
-LATEST_SCHEMA_VERSION = 2
+LATEST_SCHEMA_VERSION = 3
 
 
 @dataclass(frozen=True, slots=True)
@@ -96,7 +96,48 @@ CREATE INDEX IF NOT EXISTS idx_coverage_workflow_scope
 """
 
 
-MIGRATIONS = (Migration(2, DURABLE_CONTROL_SQL),)
+LOCAL_LANE_BROKER_SQL = """
+CREATE TABLE IF NOT EXISTS lane_messages (
+    sequence INTEGER PRIMARY KEY AUTOINCREMENT,
+    message_id TEXT NOT NULL UNIQUE,
+    lane TEXT NOT NULL,
+    group_key TEXT NOT NULL,
+    payload_ref TEXT NOT NULL,
+    correlation_id TEXT NOT NULL,
+    status TEXT NOT NULL,
+    available_at TEXT NOT NULL,
+    attempts INTEGER NOT NULL DEFAULT 0 CHECK(attempts >= 0),
+    max_attempts INTEGER NOT NULL CHECK(max_attempts >= 1),
+    delivery_epoch INTEGER NOT NULL DEFAULT 0 CHECK(delivery_epoch >= 0),
+    lease_owner TEXT,
+    lease_expires_at TEXT,
+    supersession_key TEXT,
+    published_at TEXT NOT NULL,
+    acknowledged_at TEXT,
+    dead_at TEXT,
+    last_error TEXT
+);
+
+CREATE TABLE IF NOT EXISTS lane_group_state (
+    lane TEXT NOT NULL,
+    group_key TEXT NOT NULL,
+    last_claim_order INTEGER NOT NULL CHECK(last_claim_order >= 1),
+    PRIMARY KEY(lane, group_key)
+);
+
+CREATE INDEX IF NOT EXISTS idx_lane_messages_eligible
+    ON lane_messages(lane, status, available_at, sequence);
+CREATE INDEX IF NOT EXISTS idx_lane_messages_group
+    ON lane_messages(lane, group_key, status, sequence);
+CREATE INDEX IF NOT EXISTS idx_lane_messages_supersession
+    ON lane_messages(lane, supersession_key, status, sequence);
+"""
+
+
+MIGRATIONS = (
+    Migration(2, DURABLE_CONTROL_SQL),
+    Migration(3, LOCAL_LANE_BROKER_SQL),
+)
 
 
 def current_schema_version(connection: sqlite3.Connection) -> int:
