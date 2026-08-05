@@ -916,6 +916,57 @@ git add README.md docs/prototype-coverage.md docs/prd-ambiguities.md docs/plans/
 git commit -m "docs: hand off resilient lineage collector"
 ```
 
+### Task 22: Publish the PR to main and close the automated review loop
+
+**Files:**
+- Modify only files required by actionable GitHub/Codex review threads
+- Update: `/tmp/refactor-lineagecollector.md` outside Git after every review cycle
+
+**Step 1: Verify publish prerequisites and scope**
+
+Run: `git status --short --branch`
+Run: `git diff main...HEAD --stat`
+Run: `gh --version`
+Run: `gh auth status`
+Expected: intended branch only, clean worktree, GitHub CLI installed and authenticated. Do not stage
+or publish unrelated user changes.
+
+**Step 2: Run the final local gates**
+
+Run: `make verify`
+Run: `make acceptance-smoke`
+Expected: all local tests/build pass; AWS-only claims remain explicitly `AWS_REQUIRED` unless their
+approved environment evidence exists.
+
+**Step 3: Push and open a draft PR targeting main**
+
+Run: `git push -u origin codex/lineage-prototype`
+Open a draft pull request with base `main`, head `codex/lineage-prototype`, a complete change/risk/
+verification summary, and links to the architecture, plan, acceptance specification, and build PRDs.
+Do not enable or invoke CodeRabbit.
+
+**Step 4: Monitor checks and automated reviews periodically**
+
+Poll CI plus GitHub and Codex bot reviews until checks and review threads reach a stable terminal
+state. Read thread-aware review state, including unresolved/outdated status and inline anchors; flat
+comment lists are not sufficient.
+
+**Step 5: Address every actionable comment with TDD**
+
+For each actionable thread: reproduce the concern with a failing test or documentation assertion,
+verify the red phase, implement the smallest safe fix, run focused plus full required gates, perform
+a local diff review, commit with a traceable message, push, reply with evidence, and resolve the
+thread. Group duplicate comments; answer informational comments without forcing code. Surface
+conflicting, ambiguous, or regression-causing feedback before changing behavior.
+
+**Step 6: Repeat until satisfactory and make the PR ready**
+
+Continue polling after each push because bot reviews may be regenerated. Completion requires all CI
+checks green, no unresolved actionable GitHub/Codex bot threads, replies/evidence on addressed
+comments, a clean worktree, and current acceptance evidence. Mark the draft ready for review and
+record the PR URL, final head commit, checks, review disposition, and any non-actionable comments in
+the progress journal.
+
 ## Final acceptance checklist
 
 - Existing walking-skeleton behavior remains covered and compatible.
@@ -934,3 +985,5 @@ git commit -m "docs: hand off resilient lineage collector"
 - Local acceptance evidence is retained; production-only scale/AZ/DR gates remain explicitly
   `AWS_REQUIRED` until executed in the approved environment.
 - `make verify` and `make acceptance-smoke` pass before final handoff.
+- A PR targets `main`; CI is green; all actionable GitHub and Codex bot review threads are addressed,
+  evidenced, replied to, and resolved; CodeRabbit was not used.
