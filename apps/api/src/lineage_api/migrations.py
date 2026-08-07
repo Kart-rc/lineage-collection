@@ -4,7 +4,7 @@ import sqlite3
 from dataclasses import dataclass
 
 
-LATEST_SCHEMA_VERSION = 5
+LATEST_SCHEMA_VERSION = 6
 
 
 @dataclass(frozen=True, slots=True)
@@ -216,11 +216,53 @@ CREATE INDEX IF NOT EXISTS idx_deployment_state_status
 """
 
 
+RUNTIME_SQL = """
+CREATE TABLE IF NOT EXISTS runtime_sessions (
+    session_id TEXT PRIMARY KEY,
+    token_digest TEXT NOT NULL,
+    repo TEXT NOT NULL,
+    environment TEXT NOT NULL,
+    artifact_digest TEXT NOT NULL,
+    datasets_json TEXT NOT NULL,
+    state TEXT NOT NULL CHECK(state IN ('GRANT', 'READY', 'OBSERVING', 'DRAIN', 'CLOSED')),
+    outcome TEXT CHECK(outcome IN ('COMPLETE', 'INCOMPLETE', 'EXPIRED', 'REVOKED')),
+    attempted INTEGER NOT NULL DEFAULT 0 CHECK(attempted >= 0),
+    accepted INTEGER NOT NULL DEFAULT 0 CHECK(accepted >= 0),
+    rejected INTEGER NOT NULL DEFAULT 0 CHECK(rejected >= 0),
+    duplicates INTEGER NOT NULL DEFAULT 0 CHECK(duplicates >= 0),
+    expires_at TEXT NOT NULL,
+    manifest_json TEXT,
+    actor TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS runtime_observations (
+    session_id TEXT NOT NULL REFERENCES runtime_sessions(session_id),
+    observation_id TEXT NOT NULL,
+    sequence INTEGER NOT NULL CHECK(sequence >= 0),
+    mechanism TEXT NOT NULL CHECK(mechanism IN ('OPENLINEAGE', 'SDK', 'OTEL')),
+    granularity TEXT NOT NULL CHECK(granularity IN ('DATASET', 'ELEMENT', 'CONNECTIVITY')),
+    datasets_json TEXT NOT NULL,
+    payload_checksum TEXT NOT NULL,
+    payload_json TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    PRIMARY KEY(session_id, observation_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_runtime_sessions_artifact
+    ON runtime_sessions(repo, environment, artifact_digest, outcome, updated_at);
+CREATE INDEX IF NOT EXISTS idx_runtime_observation_sequence
+    ON runtime_observations(session_id, sequence, observation_id);
+"""
+
+
 MIGRATIONS = (
     Migration(2, DURABLE_CONTROL_SQL),
     Migration(3, LOCAL_LANE_BROKER_SQL),
     Migration(4, PR_GATE_SQL),
     Migration(5, DEPLOYMENT_SQL),
+    Migration(6, RUNTIME_SQL),
 )
 
 

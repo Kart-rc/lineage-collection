@@ -34,8 +34,53 @@ def test_contract_registry_loads_all_platform_contracts() -> None:
         "outbox-event",
         "pr-gate-result",
         "proposal",
+        "runtime-observation",
+        "runtime-session-manifest",
         "stage-execution",
     }
+
+
+def test_runtime_contracts_are_metadata_only_strict_and_completeness_explicit() -> None:
+    registry = _contract_registry_type()(CONTRACTS_DIR)
+    observation = {
+        "schemaVersion": "1.0.0",
+        "observationId": "runtime-observation-1",
+        "sessionId": "runtime-session-1",
+        "sequence": 1,
+        "artifactDigest": "sha256:artifact-v1",
+        "mechanism": "SDK",
+        "granularity": "ELEMENT",
+        "sourceDatasets": ["snowflake://payments/raw.transactions"],
+        "targetDataset": "snowflake://payments/analytics.daily_revenue",
+        "sourceFields": ["amount"],
+        "targetField": "gross_revenue",
+        "edgeType": "DERIVES",
+        "transform": "SUM(amount)",
+        "exact": True,
+        "observedAt": "2026-08-06T12:00:00Z",
+    }
+    manifest = {
+        "schemaVersion": "1.0.0",
+        "sessionId": "runtime-session-1",
+        "repo": "payments-pipeline",
+        "environment": "staging",
+        "artifactDigest": "sha256:artifact-v1",
+        "outcome": "COMPLETE",
+        "attempted": 1,
+        "accepted": 1,
+        "rejected": 0,
+        "duplicates": 0,
+        "buffered": 0,
+        "dropped": 0,
+        "drained": 1,
+        "observationChecksum": "sha256:checksum",
+        "closedAt": "2026-08-06T12:01:00Z",
+    }
+
+    assert registry.validate("runtime-observation", observation) == []
+    assert registry.validate("runtime-session-manifest", manifest) == []
+    assert registry.validate("runtime-observation", {**observation, "value": "secret"})
+    assert registry.validate("runtime-session-manifest", {**manifest, "unknown": True})
 
 
 def test_deployment_event_is_strict_ordered_and_requires_digest_for_success() -> None:

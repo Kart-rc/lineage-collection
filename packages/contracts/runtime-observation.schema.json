@@ -1,0 +1,50 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://lineage.local/contracts/runtime-observation/1.0.0",
+  "title": "RuntimeObservation",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "observationId",
+    "sessionId",
+    "sequence",
+    "artifactDigest",
+    "mechanism",
+    "granularity",
+    "sourceDatasets",
+    "targetDataset",
+    "edgeType",
+    "exact",
+    "observedAt"
+  ],
+  "properties": {
+    "schemaVersion": {"const": "1.0.0"},
+    "observationId": {"type": "string", "minLength": 1},
+    "sessionId": {"type": "string", "minLength": 1},
+    "sequence": {"type": "integer", "minimum": 0},
+    "artifactDigest": {"type": "string", "minLength": 1},
+    "mechanism": {"enum": ["OPENLINEAGE", "SDK", "OTEL"]},
+    "granularity": {"enum": ["DATASET", "ELEMENT", "CONNECTIVITY"]},
+    "sourceDatasets": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {"type": "string", "minLength": 1}
+    },
+    "targetDataset": {"type": "string", "minLength": 1},
+    "sourceFields": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {"type": "string", "minLength": 1}
+    },
+    "targetField": {"type": "string", "minLength": 1},
+    "edgeType": {"enum": ["DERIVES", "READS", "WRITES", "CONNECTS"]},
+    "transform": {"type": "string", "minLength": 1},
+    "exact": {"type": "boolean"},
+    "parserContract": {"type": "string", "minLength": 1},
+    "traceId": {"type": "string", "minLength": 1},
+    "spanId": {"type": "string", "minLength": 1},
+    "observedAt": {"type": "string", "format": "date-time"}
+  }
+}
