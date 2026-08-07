@@ -68,6 +68,14 @@ class IncrementalWorkflow:
         result = self.commands.completed_stage(self._identity(stage_id))
         return None if result is None else self._load(result.output_ref)
 
+    @staticmethod
+    def runtime_coverage(runtime: dict[str, Any]) -> dict[str, object]:
+        body = runtime["runtime"]
+        return {
+            "status": str(body["status"]),
+            "sessionIds": sorted(set(str(value) for value in body.get("sessionIds", []))),
+        }
+
     def _identity(self, stage_id: str) -> StageIdentity:
         if stage_id not in INCREMENTAL.stage_ids:
             raise ValueError(f"unknown Incremental stage: {stage_id}")

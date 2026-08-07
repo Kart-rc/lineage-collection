@@ -38,6 +38,19 @@
     "unsupportedScope": {"$ref": "#/$defs/scopeItems"},
     "quarantinedScope": {"$ref": "#/$defs/scopeItems"},
     "failedScope": {"$ref": "#/$defs/scopeItems"},
+    "runtimeEvidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "sessionIds"],
+      "properties": {
+        "status": {"enum": ["NOT_PROVIDED", "INCOMPLETE", "REJECTED", "VALIDATED"]},
+        "sessionIds": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {"type": "string", "minLength": 1}
+        }
+      }
+    },
     "createdAt": {"type": "string", "format": "date-time"}
   },
   "$defs": {

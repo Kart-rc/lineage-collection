@@ -301,6 +301,34 @@ class RuntimeLineageService:
             for row in sessions
         ]
 
+    def evidence_status(
+        self,
+        *,
+        repo: str,
+        environment: str,
+        artifact_digest: str,
+    ) -> dict[str, object]:
+        with self._database.connection() as connection:
+            rows = connection.execute(
+                """
+                SELECT session_id, state, outcome FROM runtime_sessions
+                WHERE repo = ? AND environment = ? AND artifact_digest = ?
+                ORDER BY updated_at, session_id
+                """,
+                (repo, environment, artifact_digest),
+            ).fetchall()
+        if not rows:
+            return {"status": "NOT_PROVIDED", "sessionIds": []}
+        complete_ids = [row["session_id"] for row in rows if row["outcome"] == "COMPLETE"]
+        if complete_ids:
+            return {"status": "VALIDATED", "sessionIds": complete_ids}
+        session_ids = [row["session_id"] for row in rows]
+        return {
+            "status": "INCOMPLETE",
+            "reason": "SESSION_INCOMPLETE",
+            "sessionIds": session_ids,
+        }
+
     def _active_session(
         self,
         session_id: str,

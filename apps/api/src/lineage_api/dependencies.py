@@ -39,6 +39,7 @@ from lineage_api.services.publisher import PublisherService
 from lineage_api.services.query import QueryService
 from lineage_api.services.resolver import Resolver
 from lineage_api.services.review import ReviewService
+from lineage_api.services.runtime import RuntimeLineageService
 from lineage_api.services.sca import ScaAnalyzer
 
 
@@ -55,6 +56,7 @@ class AppServices:
     review: ReviewService
     publisher: PublisherService
     query: QueryService
+    runtime: RuntimeLineageService
     orchestration: OrchestrationService
     pr_gate: PRGateWorkflow
     deployment: DeploymentWorkflow
@@ -138,6 +140,12 @@ def build_services(settings: Settings) -> AppServices:
     store = EvidenceStore(database, settings.object_directory)
     review = ReviewService(database, store, env="staging")
     publisher = PublisherService(database, store)
+    runtime = RuntimeLineageService(
+        database,
+        signing_secret=f"{settings.webhook_secret}:runtime",
+        clock=clock,
+        approved_otel_parsers=set(),
+    )
     deployment_store = SQLiteDeploymentStore(
         database,
         clock=lambda: clock.now().isoformat().replace("+00:00", "Z"),
@@ -153,6 +161,7 @@ def build_services(settings: Settings) -> AppServices:
         consolidation=ConsolidationService(database),
         review=review,
         publisher=publisher,
+        runtime=runtime,
         deployment_store=deployment_store,
         command_store=command_store,
         outbox_dispatcher=OutboxDispatcher(outbox, broker, clock),
@@ -212,6 +221,7 @@ def build_services(settings: Settings) -> AppServices:
         review=review,
         publisher=publisher,
         query=query,
+        runtime=runtime,
         orchestration=orchestration,
         pr_gate=pr_gate,
         deployment=deployment,

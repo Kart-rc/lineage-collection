@@ -217,6 +217,86 @@ class ConsolidationService:
             result = self.merge(assertion)
         return result  # type: ignore[return-value]
 
+    def merge_runtime_observation(
+        self,
+        observation: dict[str, Any],
+        manifest: dict[str, Any],
+        *,
+        environment: str,
+        repo: str,
+        correlation_id: str,
+    ) -> list[ConsolidatedEdge]:
+        """Corroborate existing edges; runtime evidence never invents a new edge."""
+        if manifest.get("outcome") != "COMPLETE":
+            return []
+        granularity = str(observation.get("granularity", ""))
+        if granularity not in {"DATASET", "ELEMENT"}:
+            return []
+        source_datasets = tuple(
+            self._runtime_dataset_urn(str(value), environment)
+            for value in observation.get("sourceDatasets", [])
+        )
+        target_dataset = self._runtime_dataset_urn(
+            str(observation.get("targetDataset", "")), environment
+        )
+        candidates = self._latest_edges()
+        matched: list[ConsolidatedEdge] = []
+        if granularity == "ELEMENT":
+            source_fields = tuple(str(value) for value in observation.get("sourceFields", []))
+            target_field = observation.get("targetField")
+            if len(source_fields) != len(source_datasets) or not isinstance(target_field, str):
+                return []
+            expected_sources = tuple(
+                str(LineageUrn.parse(dataset).with_element(field))
+                for dataset, field in zip(source_datasets, source_fields, strict=True)
+            )
+            expected_target = str(LineageUrn.parse(target_dataset).with_element(target_field))
+            candidates = [
+                edge
+                for edge in candidates
+                if tuple(sorted(edge.from_urns)) == tuple(sorted(expected_sources))
+                and edge.to_urn == expected_target
+                and edge.edge_type == observation.get("edgeType")
+            ]
+        else:
+            candidates = [
+                edge
+                for edge in candidates
+                if {
+                    LineageUrn.parse(value).dataset_urn for value in edge.from_urns
+                }
+                == set(source_datasets)
+                and LineageUrn.parse(edge.to_urn).dataset_urn == target_dataset
+                and edge.edge_type == observation.get("edgeType")
+            ]
+
+        for edge in candidates:
+            suffix = "" if granularity == "ELEMENT" else f":{edge.edge_key}"
+            assertion = MechanismAssertion(
+                provenance_id=(
+                    f"runtime:{manifest['sessionId']}:{observation['observationId']}{suffix}"
+                ),
+                from_urns=edge.from_urns,
+                to_urn=edge.to_urn,
+                edge_type=edge.edge_type,
+                transform=observation.get("transform"),
+                mechanism="RUNTIME",
+                exact=bool(observation.get("exact", False)),
+                evidence_ref={
+                    "schemaVersion": "1.0.0",
+                    "kind": "runtime",
+                    "key": str(manifest["sessionId"]),
+                    "checksum": str(manifest["observationChecksum"]),
+                },
+                repo=repo,
+                run_id=f"runtime-{manifest['sessionId']}",
+                correlation_id=correlation_id,
+                runtime_scope=granularity,
+                session_complete=True,
+            )
+            matched.append(self.merge(assertion))
+        return sorted(matched, key=lambda edge: edge.edge_key)
+
     def version_count(self, edge_key: str) -> int:
         with self._database.connection() as connection:
             return int(
@@ -224,6 +304,32 @@ class ConsolidationService:
                     "SELECT COUNT(*) FROM edge_ledger WHERE edge_key = ?", (edge_key,)
                 ).fetchone()[0]
             )
+
+    def _latest_edges(self) -> list[ConsolidatedEdge]:
+        with self._database.connection() as connection:
+            rows = connection.execute(
+                """
+                SELECT ledger.payload_json
+                FROM edge_ledger ledger
+                JOIN (
+                    SELECT edge_key, MAX(version) AS version
+                    FROM edge_ledger GROUP BY edge_key
+                ) latest
+                  ON latest.edge_key = ledger.edge_key AND latest.version = ledger.version
+                ORDER BY ledger.edge_key
+                """
+            ).fetchall()
+        return [ConsolidatedEdge.from_dict(json.loads(row["payload_json"])) for row in rows]
+
+    @staticmethod
+    def _runtime_dataset_urn(value: str, environment: str) -> str:
+        if "://" not in value:
+            raise ValueError(f"invalid runtime dataset identifier: {value}")
+        platform, remainder = value.split("://", 1)
+        if "/" not in remainder:
+            raise ValueError(f"invalid runtime dataset identifier: {value}")
+        system, dataset = remainder.split("/", 1)
+        return LineageUrn(environment, platform, system, dataset).dataset_urn
 
     @staticmethod
     def edge_key_for(assertion: MechanismAssertion) -> str:

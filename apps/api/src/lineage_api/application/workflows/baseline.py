@@ -70,6 +70,14 @@ class BaselineWorkflow:
         return body
 
     @staticmethod
+    def runtime_coverage(runtime: dict[str, Any]) -> dict[str, object]:
+        body = runtime["runtime"]
+        return {
+            "status": str(body["status"]),
+            "sessionIds": sorted(set(str(value) for value in body.get("sessionIds", []))),
+        }
+
+    @staticmethod
     def plan_repository(repository_root: Path, *, max_fanout: int) -> dict[str, Any]:
         if max_fanout < 1:
             raise ValueError("max fanout must be positive")

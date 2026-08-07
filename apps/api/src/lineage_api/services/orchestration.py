@@ -25,6 +25,7 @@ from lineage_api.services.intake import IntakeService, PushDelivery
 from lineage_api.services.publisher import PublisherService
 from lineage_api.services.resolver import ResolveContext
 from lineage_api.services.review import ReviewService
+from lineage_api.services.runtime import RuntimeLineageService
 from lineage_api.services.sca import ScaAnalyzer
 
 
@@ -44,6 +45,7 @@ class OrchestrationService:
         consolidation: ConsolidationService,
         review: ReviewService,
         publisher: PublisherService,
+        runtime: RuntimeLineageService,
         deployment_store: DeploymentStorePort,
         command_store: CommandStorePort,
         outbox_dispatcher: OutboxDispatcher,
@@ -60,6 +62,7 @@ class OrchestrationService:
         self._consolidation = consolidation
         self._review = review
         self._publisher = publisher
+        self._runtime = runtime
         self._deployment_store = deployment_store
         self._command_store = command_store
         self._outbox_dispatcher = outbox_dispatcher
@@ -427,7 +430,7 @@ class OrchestrationService:
             "I7", lambda: self._incremental_consolidate(i1["runId"], i5, i6)
         )
         i8 = workflow.checkpoint(
-            "I8", lambda: self._incremental_recheck(command, i1, i3)
+            "I8", lambda: self._incremental_recheck(command, i1, i3, i6)
         )
         i9 = workflow.checkpoint(
             "I9", lambda: self._incremental_propose(i1["runId"], i1, i7)
@@ -571,6 +574,7 @@ class OrchestrationService:
             "artifactDigest": command.artifact_digest,
             "determinantDigest": command.determinant_digest,
             "expectedScope": plan["expectedScope"],
+            "runtimeEvidence": BaselineWorkflow.runtime_coverage(runtime),
             "scope": command.scope,
         }
         manifest_id = (
@@ -591,6 +595,7 @@ class OrchestrationService:
             "unsupportedScope": plan["unsupportedScope"],
             "quarantinedScope": [],
             "failedScope": [],
+            "runtimeEvidence": BaselineWorkflow.runtime_coverage(runtime),
         }
         payload = self._canonical(manifest)
         now = self._clock()
@@ -796,10 +801,45 @@ class OrchestrationService:
         run_id: str,
         sca: dict[str, Any],
     ) -> dict[str, Any]:
+        durable_status = self._runtime.evidence_status(
+            repo=envelope["repo"],
+            environment=envelope["env"],
+            artifact_digest=envelope["digest"],
+        )
+        completed = self._runtime.completed_evidence(
+            repo=envelope["repo"],
+            environment=envelope["env"],
+            artifact_digest=envelope["digest"],
+        )
         observation = envelope.get("runtimeObservation")
         runtime: dict[str, Any]
-        if observation is None:
-            runtime = {"status": "NOT_PROVIDED"}
+        if completed:
+            session_ids = [str(item["manifest"]["sessionId"]) for item in completed]
+            join_body = {
+                "schemaVersion": "1.0.0",
+                "artifactDigest": envelope["digest"],
+                "sessionEvidence": completed,
+            }
+            runtime_ref = self._store.put(
+                "runtime",
+                f"{envelope['system']}/{run_id}/session-join",
+                join_body,
+                "1.0.0",
+            )
+            runtime = {
+                "status": "VALIDATED",
+                "source": "SESSION",
+                "complete": True,
+                "sessionIds": session_ids,
+                "sessionEvidence": completed,
+                "evidenceRef": runtime_ref.as_dict(),
+            }
+        elif observation is None:
+            runtime = (
+                {"status": "NOT_PROVIDED"}
+                if durable_status["status"] == "NOT_PROVIDED"
+                else dict(durable_status)
+            )
         elif observation.get("artifactDigest") != envelope["digest"]:
             runtime = {"status": "REJECTED", "reason": "ARTIFACT_MISMATCH"}
         elif not observation.get("complete"):
@@ -817,8 +857,10 @@ class OrchestrationService:
             )
             runtime = {
                 "status": "VALIDATED",
+                "source": "EVENT_ADAPTER",
                 "scope": observation["scope"],
                 "complete": True,
+                "sessionIds": [str(observation.get("sessionId", "event-adapter"))],
                 "assertions": observation["assertions"],
                 "evidenceRef": runtime_ref.as_dict(),
             }
@@ -853,7 +895,7 @@ class OrchestrationService:
     ) -> dict[str, Any]:
         runtime_body = runtime["runtime"]
         runtime_by_edge: dict[tuple[tuple[str, ...], str, str], list[dict[str, Any]]] = {}
-        if runtime_body["status"] == "VALIDATED":
+        if runtime_body["status"] == "VALIDATED" and "assertions" in runtime_body:
             for assertion in runtime_body["assertions"]:
                 key = (
                     tuple(assertion.get("from", [])),
@@ -862,6 +904,7 @@ class OrchestrationService:
                 )
                 runtime_by_edge.setdefault(key, []).append(assertion)
 
+        run = self.get_run(run_id)
         merged = []
         for edge in sca["sca"]["edges"]:
             static = MechanismAssertion(
@@ -899,6 +942,19 @@ class OrchestrationService:
                     )
                 )
             merged.append(self._consolidation.merge_many(assertions))
+        merged_by_key = {edge.edge_key: edge for edge in merged}
+        for session in runtime_body.get("sessionEvidence", []):
+            manifest = session["manifest"]
+            for observation in session["observations"]:
+                for runtime_edge in self._consolidation.merge_runtime_observation(
+                    observation,
+                    manifest,
+                    environment=run["env"],
+                    repo=run["repo"],
+                    correlation_id=run["correlationId"],
+                ):
+                    merged_by_key[runtime_edge.edge_key] = runtime_edge
+        merged = [merged_by_key[key] for key in sorted(merged_by_key)]
         edge_payloads = [edge.as_dict() for edge in merged]
         self._stage(
             run_id,
@@ -912,6 +968,7 @@ class OrchestrationService:
         command: Command,
         start: dict[str, Any],
         plan: dict[str, Any],
+        runtime: dict[str, Any],
     ) -> dict[str, Any]:
         pointer = self._publisher.pointer(start["environment"])
         if pointer.active_version != start["activeBaseVersion"]:
@@ -924,6 +981,7 @@ class OrchestrationService:
             "artifactDigest": command.artifact_digest,
             "determinantDigest": command.determinant_digest,
             "expectedScope": plan["expectedScope"],
+            "runtimeEvidence": IncrementalWorkflow.runtime_coverage(runtime),
             "scope": command.scope,
         }
         manifest_id = f"coverage-{hashlib.sha256(self._canonical(identity).encode()).hexdigest()[:20]}"
@@ -942,6 +1000,7 @@ class OrchestrationService:
             "unsupportedScope": plan["unsupportedScope"],
             "quarantinedScope": [],
             "failedScope": [],
+            "runtimeEvidence": IncrementalWorkflow.runtime_coverage(runtime),
         }
         payload = self._canonical(manifest)
         now = self._clock()
@@ -1110,6 +1169,99 @@ class OrchestrationService:
             "correlationId": command.correlation_id,
             "createdAt": command.created_at.isoformat().replace("+00:00", "Z"),
             "deadlineAt": command.deadline_at.isoformat().replace("+00:00", "Z"),
+        }
+
+    def reconcile_runtime_evidence(
+        self,
+        *,
+        repo: str,
+        environment: str,
+        artifact_digest: str,
+        max_observations: int,
+    ) -> dict[str, Any]:
+        if max_observations < 1:
+            raise ValueError("runtime reconciliation bound must be positive")
+        evidence = self._runtime.completed_evidence(
+            repo=repo,
+            environment=environment,
+            artifact_digest=artifact_digest,
+        )
+        observations = [
+            (session["manifest"], observation)
+            for session in evidence
+            for observation in session["observations"]
+        ]
+        if not observations:
+            return {
+                "status": "NO_COMPLETE_RUNTIME",
+                "sessionIds": [],
+                "proposal": None,
+            }
+        if len(observations) > max_observations:
+            raise DomainError(
+                "RUNTIME_RECONCILIATION_BOUNDED",
+                "Runtime reconciliation exceeds its observation bound",
+                f"runtime-reconcile:{artifact_digest}",
+                {"observations": len(observations), "limit": max_observations},
+            )
+        session_ids = sorted(
+            {str(manifest["sessionId"]) for manifest, _ in observations}
+        )
+        identity = {
+            "artifactDigest": artifact_digest,
+            "environment": environment,
+            "repo": repo,
+            "sessionIds": session_ids,
+        }
+        correlation_id = (
+            "runtime-reconcile-"
+            + hashlib.sha256(self._canonical(identity).encode()).hexdigest()[:20]
+        )
+        reconciled: dict[str, Any] = {}
+        for manifest, observation in observations:
+            for edge in self._consolidation.merge_runtime_observation(
+                observation,
+                manifest,
+                environment=environment,
+                repo=repo,
+                correlation_id=correlation_id,
+            ):
+                reconciled[edge.edge_key] = edge.as_dict()
+        if not reconciled:
+            return {
+                "status": "NO_MATCHING_LINEAGE",
+                "sessionIds": session_ids,
+                "proposal": None,
+            }
+        pointer = self._publisher.pointer(environment)
+        proposal = self._review.create(
+            [reconciled[key] for key in sorted(reconciled)],
+            pointer.active_version,
+            correlation_id,
+        )
+        audit_id = f"audit-{hashlib.sha256(correlation_id.encode()).hexdigest()[:20]}"
+        with self._database.transaction() as connection:
+            connection.execute(
+                """
+                INSERT OR IGNORE INTO audit_events(
+                    audit_id, actor, action, resource_type, resource_id,
+                    correlation_id, payload_json, created_at
+                ) VALUES (?, 'system-runtime-reconciler', 'RUNTIME_RECONCILED',
+                          'proposal', ?, ?, ?, ?)
+                """,
+                (
+                    audit_id,
+                    proposal.proposal_id,
+                    correlation_id,
+                    self._canonical(identity),
+                    self._clock(),
+                ),
+            )
+        return {
+            "status": "PROPOSED",
+            "sessionIds": session_ids,
+            "proposal": proposal.as_dict(),
+            "edges": [reconciled[key] for key in sorted(reconciled)],
         }
 
     def approve(
