@@ -26,6 +26,7 @@ EXPECTED_TABLES = {
     "pointers",
     "pr_gate_checks",
     "proposals",
+    "publication_operations",
     "publish_reservations",
     "quarantines",
     "run_stages",
@@ -61,7 +62,7 @@ def test_database_enables_integrity_pragmas_and_creates_platform_tables(tmp_path
             ).fetchall()
         }
     assert tables >= EXPECTED_TABLES
-    assert database.schema_version() == 6
+    assert database.schema_version() == 7
 
 
 def test_transactions_roll_back_on_failure(tmp_path: Path) -> None:
@@ -109,7 +110,7 @@ def test_migration_upgrades_legacy_schema_without_losing_control_or_graph_data(
     assert database.schema_version() == 1
     database.initialize()
 
-    assert database.schema_version() == 6
+    assert database.schema_version() == 7
     with database.connection() as connection:
         event = connection.execute(
             "SELECT event_id, outcome FROM events WHERE event_id = 'delivery-legacy'"
@@ -136,6 +137,12 @@ def test_durable_control_schema_enforces_identity_and_has_due_work_indexes(tmp_p
         command_columns = {
             row[1] for row in connection.execute("PRAGMA table_info(commands)").fetchall()
         }
+        publication_columns = {
+            row[1]
+            for row in connection.execute(
+                "PRAGMA table_info(publication_operations)"
+            ).fetchall()
+        }
 
     assert indexes >= {
         "idx_commands_due",
@@ -152,6 +159,17 @@ def test_durable_control_schema_enforces_identity_and_has_due_work_indexes(tmp_p
         "lease_epoch",
         "lease_expires_at",
         "deadline_at",
+    }
+    assert publication_columns >= {
+        "operation_id",
+        "proposal_digest",
+        "package_digest",
+        "stage",
+        "token",
+        "expected_prior",
+        "namespace_version",
+        "edge_checksum",
+        "terminal_outcome",
     }
 
 
@@ -182,7 +200,7 @@ def test_lane_broker_migration_preserves_pending_version_two_outbox_data(
 
     database.initialize()
 
-    assert database.schema_version() == 6
+    assert database.schema_version() == 7
     with database.connection() as connection:
         row = connection.execute(
             "SELECT status, payload_ref FROM outbox_events WHERE outbox_id = 'outbox-v2'"

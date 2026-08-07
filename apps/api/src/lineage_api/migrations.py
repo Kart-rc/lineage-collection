@@ -4,7 +4,7 @@ import sqlite3
 from dataclasses import dataclass
 
 
-LATEST_SCHEMA_VERSION = 6
+LATEST_SCHEMA_VERSION = 7
 
 
 @dataclass(frozen=True, slots=True)
@@ -257,12 +257,46 @@ CREATE INDEX IF NOT EXISTS idx_runtime_observation_sequence
 """
 
 
+RESUMABLE_PUBLICATION_SQL = """
+CREATE TABLE IF NOT EXISTS publication_operations (
+    operation_id TEXT PRIMARY KEY,
+    proposal_id TEXT NOT NULL,
+    proposal_version INTEGER NOT NULL CHECK(proposal_version >= 1),
+    proposal_digest TEXT NOT NULL,
+    approval_id TEXT NOT NULL,
+    approval_ref TEXT NOT NULL,
+    env TEXT NOT NULL,
+    expected_prior TEXT NOT NULL,
+    package_digest TEXT NOT NULL,
+    stage TEXT NOT NULL,
+    token INTEGER CHECK(token >= 1),
+    namespace_version TEXT,
+    manifest_ref TEXT,
+    edge_checksum TEXT NOT NULL,
+    edge_count INTEGER NOT NULL CHECK(edge_count >= 0),
+    next_edge_index INTEGER NOT NULL DEFAULT 0 CHECK(next_edge_index >= 0),
+    failure_policy TEXT NOT NULL CHECK(failure_policy IN ('RETAIN', 'DISCARD')),
+    result_json TEXT,
+    terminal_outcome TEXT,
+    correlation_id TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    terminal_at TEXT,
+    UNIQUE(env, proposal_id, proposal_version, approval_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_publication_stage
+    ON publication_operations(stage, updated_at);
+"""
+
+
 MIGRATIONS = (
     Migration(2, DURABLE_CONTROL_SQL),
     Migration(3, LOCAL_LANE_BROKER_SQL),
     Migration(4, PR_GATE_SQL),
     Migration(5, DEPLOYMENT_SQL),
     Migration(6, RUNTIME_SQL),
+    Migration(7, RESUMABLE_PUBLICATION_SQL),
 )
 
 
