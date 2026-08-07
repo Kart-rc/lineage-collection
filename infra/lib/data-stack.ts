@@ -11,6 +11,7 @@ import {
   aws_kms as kms,
   aws_neptune as neptune,
   aws_s3 as s3,
+  CfnOutput,
 } from "aws-cdk-lib";
 import { Construct } from "constructs";
 
@@ -40,10 +41,11 @@ export class DataStack extends Stack {
 
   constructor(scope: Construct, id: string, props: DataStackProps) {
     super(scope, id, props);
+    const disposable = props.config.environment === "ephemeral";
     this.key = new kms.Key(this, "PlatformKey", {
       alias: `alias/${props.config.resourcePrefix}`,
       enableKeyRotation: true,
-      removalPolicy: RemovalPolicy.RETAIN,
+      removalPolicy: disposable ? RemovalPolicy.DESTROY : RemovalPolicy.RETAIN,
     });
     const runtimeRepository = (name: string, repositoryName: string) =>
       new ecr.Repository(this, name, {
@@ -53,8 +55,8 @@ export class DataStack extends Stack {
         imageScanOnPush: true,
         imageTagMutability: ecr.TagMutability.IMMUTABLE,
         lifecycleRules: [{ maxImageCount: 50, description: "Retain the latest 50 immutable builds" }],
-        removalPolicy: RemovalPolicy.RETAIN,
-        emptyOnDelete: false,
+        removalPolicy: disposable ? RemovalPolicy.DESTROY : RemovalPolicy.RETAIN,
+        emptyOnDelete: disposable,
       });
     this.lambdaImageRepository = runtimeRepository("LambdaImageRepository", "lambda-runtime");
     this.scaImageRepository = runtimeRepository("ScaImageRepository", "sca-runtime");
@@ -67,13 +69,17 @@ export class DataStack extends Stack {
         encryption: s3.BucketEncryption.KMS,
         encryptionKey: this.key,
         versioned: true,
-        objectLockEnabled: true,
-        objectLockDefaultRetention: s3.ObjectLockRetention.governance(
-          Duration.days(props.config.truthRetentionDays),
-        ),
+        ...(disposable
+          ? { autoDeleteObjects: true }
+          : {
+              objectLockEnabled: true,
+              objectLockDefaultRetention: s3.ObjectLockRetention.governance(
+                Duration.days(props.config.truthRetentionDays),
+              ),
+            }),
         blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
         enforceSSL: true,
-        removalPolicy: RemovalPolicy.RETAIN,
+        removalPolicy: disposable ? RemovalPolicy.DESTROY : RemovalPolicy.RETAIN,
         replicationRole,
         replicationRules: [
           {
@@ -142,8 +148,8 @@ export class DataStack extends Stack {
         encryption: dynamodb.TableEncryption.CUSTOMER_MANAGED,
         encryptionKey: this.key,
         pointInTimeRecoverySpecification: { pointInTimeRecoveryEnabled: true },
-        deletionProtection: true,
-        removalPolicy: RemovalPolicy.RETAIN,
+        deletionProtection: !disposable,
+        removalPolicy: disposable ? RemovalPolicy.DESTROY : RemovalPolicy.RETAIN,
       });
     this.controlTable = controlTable("ControlTable");
     this.ledgerTable = controlTable("LedgerTable");
@@ -164,7 +170,7 @@ export class DataStack extends Stack {
       availabilityZones: props.network.vpc.availabilityZones.slice(0, 3),
       backupRetentionPeriod: 7,
       dbSubnetGroupName: subnetGroup.ref,
-      deletionProtection: true,
+      deletionProtection: !disposable,
       iamAuthEnabled: true,
       kmsKeyId: this.key.keyArn,
       storageEncrypted: true,
@@ -185,6 +191,16 @@ export class DataStack extends Stack {
       resourceName: `${cluster.attrClusterResourceId}/*`,
       arnFormat: ArnFormat.SLASH_RESOURCE_NAME,
     });
+    new CfnOutput(this, "ControlTableName", { value: this.controlTable.tableName });
+    new CfnOutput(this, "LedgerTableName", { value: this.ledgerTable.tableName });
+    new CfnOutput(this, "EvidenceBucketName", { value: this.evidenceBucket.bucketName });
+    new CfnOutput(this, "PackageBucketName", { value: this.packageBucket.bucketName });
+    new CfnOutput(this, "LambdaImageRepositoryUri", {
+      value: this.lambdaImageRepository.repositoryUri,
+    });
+    new CfnOutput(this, "ScaImageRepositoryUri", {
+      value: this.scaImageRepository.repositoryUri,
+    });
   }
 
   runtimeEnvironment(): Record<string, string> {
@@ -202,7 +218,7 @@ export class DataStack extends Stack {
 
   dataPlaneStatements(target: string): iam.PolicyStatement[] {
     const tablesByTarget: Record<string, dynamodb.Table[]> = {
-      intake: [this.controlTable],
+      intake: [this.ledgerTable],
       "control-stage": [this.controlTable, this.ledgerTable],
       "runtime-validation": [this.controlTable, this.ledgerTable],
       consolidation: [this.controlTable, this.ledgerTable],

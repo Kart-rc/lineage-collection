@@ -1,0 +1,1159 @@
+{
+  "schemaVersion": "1.0.0",
+  "workflows": {
+    "BASELINE": {
+      "entryStage": "B1",
+      "kind": "BASELINE",
+      "stages": [
+        {
+          "idempotencyDeterminants": [
+            "workflowVersion",
+            "artifactDigest",
+            "determinantDigest",
+            "scope",
+            "stageId"
+          ],
+          "inputContracts": [
+            "durable-command/1.0.0"
+          ],
+          "maxAttempts": 3,
+          "name": "ACCEPT_AND_DEDUPLICATE_INTENT",
+          "onError": [
+            "terminal:FAILED_REDRIVABLE"
+          ],
+          "onSuccess": [
+            "B2"
+          ],
+          "outputContracts": [
+            "baseline-b1-result/1.0.0"
+          ],
+          "retryClass": "BOUNDED_TRANSIENT",
+          "sideEffectMode": "IDEMPOTENT_WRITE",
+          "stageId": "B1",
+          "timeoutSeconds": 30
+        },
+        {
+          "idempotencyDeterminants": [
+            "workflowVersion",
+            "artifactDigest",
+            "determinantDigest",
+            "scope",
+            "stageId"
+          ],
+          "inputContracts": [
+            "baseline-b1-result/1.0.0"
+          ],
+          "maxAttempts": 3,
+          "name": "PIN_REPOSITORY_AND_DETERMINANTS",
+          "onError": [
+            "terminal:FAILED_REDRIVABLE"
+          ],
+          "onSuccess": [
+            "B3"
+          ],
+          "outputContracts": [
+            "baseline-b2-result/1.0.0"
+          ],
+          "retryClass": "BOUNDED_TRANSIENT",
+          "sideEffectMode": "IDEMPOTENT_WRITE",
+          "stageId": "B2",
+          "timeoutSeconds": 120
+        },
+        {
+          "idempotencyDeterminants": [
+            "workflowVersion",
+            "artifactDigest",
+            "determinantDigest",
+            "scope",
+            "stageId"
+          ],
+          "inputContracts": [
+            "baseline-b2-result/1.0.0"
+          ],
+          "maxAttempts": 3,
+          "name": "CLASSIFY_REPOSITORY_AND_PATHS",
+          "onError": [
+            "terminal:FAILED_REDRIVABLE"
+          ],
+          "onSuccess": [
+            "B4"
+          ],
+          "outputContracts": [
+            "baseline-b3-result/1.0.0"
+          ],
+          "retryClass": "BOUNDED_TRANSIENT",
+          "sideEffectMode": "IDEMPOTENT_WRITE",
+          "stageId": "B3",
+          "timeoutSeconds": 300
+        },
+        {
+          "idempotencyDeterminants": [
+            "workflowVersion",
+            "artifactDigest",
+            "determinantDigest",
+            "scope",
+            "stageId"
+          ],
+          "inputContracts": [
+            "baseline-b3-result/1.0.0"
+          ],
+          "maxAttempts": 3,
+          "name": "BUILD_COVERAGE_PLAN",
+          "onError": [
+            "terminal:FAILED_REDRIVABLE"
+          ],
+          "onSuccess": [
+            "B5"
+          ],
+          "outputContracts": [
+            "baseline-b4-result/1.0.0"
+          ],
+          "retryClass": "BOUNDED_TRANSIENT",
+          "sideEffectMode": "IDEMPOTENT_WRITE",
+          "stageId": "B4",
+          "timeoutSeconds": 120
+        },
+        {
+          "idempotencyDeterminants": [
+            "workflowVersion",
+            "artifactDigest",
+            "determinantDigest",
+            "scope",
+            "stageId"
+          ],
+          "inputContracts": [
+            "baseline-b4-result/1.0.0"
+          ],
+          "maxAttempts": 3,
+          "name": "RUN_BOUNDED_STATIC_ANALYSIS",
+          "onError": [
+            "terminal:FAILED_REDRIVABLE"
+          ],
+          "onSuccess": [
+            "B6"
+          ],
+          "outputContracts": [
+            "baseline-b5-result/1.0.0"
+          ],
+          "retryClass": "BOUNDED_TRANSIENT",
+          "sideEffectMode": "IMMUTABLE_WRITE",
+          "stageId": "B5",
+          "timeoutSeconds": 7200
+        },
+        {
+          "idempotencyDeterminants": [
+            "workflowVersion",
+            "artifactDigest",
+            "determinantDigest",
+            "scope",
+            "stageId"
+          ],
+          "inputContracts": [
+            "baseline-b5-result/1.0.0"
+          ],
+          "maxAttempts": 3,
+          "name": "VALIDATE_OPTIONAL_RUNTIME_EVIDENCE",
+          "onError": [
+            "terminal:FAILED_REDRIVABLE"
+          ],
+          "onSuccess": [
+            "B7"
+          ],
+          "outputContracts": [
+            "baseline-b6-result/1.0.0"
+          ],
+          "retryClass": "BOUNDED_TRANSIENT",
+          "sideEffectMode": "IMMUTABLE_WRITE",
+          "stageId": "B6",
+          "timeoutSeconds": 900
+        },
+        {
+          "idempotencyDeterminants": [
+            "workflowVersion",
+            "artifactDigest",
+            "determinantDigest",
+            "scope",
+            "stageId"
+          ],
+          "inputContracts": [
+            "baseline-b6-result/1.0.0"
+          ],
+          "maxAttempts": 3,
+          "name": "ANALYZE_RESIDUE_WITH_POLICY",
+          "onError": [
+            "terminal:FAILED_REDRIVABLE"
+          ],
+          "onSuccess": [
+            "B8"
+          ],
+          "outputContracts": [
+            "baseline-b7-result/1.0.0"
+          ],
+          "retryClass": "BOUNDED_TRANSIENT",
+          "sideEffectMode": "IMMUTABLE_WRITE",
+          "stageId": "B7",
+          "timeoutSeconds": 3600
+        },
+        {
+          "idempotencyDeterminants": [
+            "workflowVersion",
+            "artifactDigest",
+            "determinantDigest",
+            "scope",
+            "stageId"
+          ],
+          "inputContracts": [
+            "baseline-b7-result/1.0.0"
+          ],
+          "maxAttempts": 3,
+          "name": "CONSOLIDATE_AND_VERIFY_COVERAGE",
+          "onError": [
+            "terminal:FAILED_REDRIVABLE"
+          ],
+          "onSuccess": [
+            "B9"
+          ],
+          "outputContracts": [
+            "baseline-b8-result/1.0.0"
+          ],
+          "retryClass": "BOUNDED_TRANSIENT",
+          "sideEffectMode": "IDEMPOTENT_WRITE",
+          "stageId": "B8",
+          "timeoutSeconds": 1800
+        },
+        {
+          "idempotencyDeterminants": [
+            "workflowVersion",
+            "artifactDigest",
+            "determinantDigest",
+            "scope",
+            "stageId"
+          ],
+          "inputContracts": [
+            "baseline-b8-result/1.0.0"
+          ],
+          "maxAttempts": 3,
+          "name": "CREATE_PROPOSAL_OR_AUTOPUBLISH_DECISION",
+          "onError": [
+            "terminal:FAILED_REDRIVABLE"
+          ],
+          "onSuccess": [
+            "B10"
+          ],
+          "outputContracts": [
+            "baseline-b9-result/1.0.0"
+          ],
+          "retryClass": "BOUNDED_TRANSIENT",
+          "sideEffectMode": "IDEMPOTENT_WRITE",
+          "stageId": "B9",
+          "timeoutSeconds": 300
+        },
+        {
+          "idempotencyDeterminants": [
+            "workflowVersion",
+            "artifactDigest",
+            "determinantDigest",
+            "scope",
+            "stageId"
+          ],
+          "inputContracts": [
+            "baseline-b9-result/1.0.0"
+          ],
+          "maxAttempts": 3,
+          "name": "STAGE_VERIFY_FENCE_AND_ACTIVATE",
+          "onError": [
+            "terminal:FAILED_REDRIVABLE"
+          ],
+          "onSuccess": [
+            "terminal:PUBLISHED"
+          ],
+          "outputContracts": [
+            "baseline-b10-result/1.0.0"
+          ],
+          "retryClass": "BOUNDED_TRANSIENT",
+          "sideEffectMode": "FENCED_WRITE",
+          "stageId": "B10",
+          "timeoutSeconds": 600
+        }
+      ],
+      "terminalStates": [
+        "PUBLISHED",
+        "NO_LINEAGE",
+        "REJECTED",
+        "QUARANTINED",
+        "FAILED_REDRIVABLE",
+        "FAILED_TERMINAL"
+      ],
+      "version": "1.0.0",
+      "workflowTimeoutSeconds": 43200
+    },
+    "DEPLOYMENT": {
+      "entryStage": "D1",
+      "kind": "DEPLOYMENT",
+      "stages": [
+        {
+          "idempotencyDeterminants": [
+            "workflowVersion",
+            "artifactDigest",
+            "determinantDigest",
+            "scope",
+            "stageId"
+          ],
+          "inputContracts": [
+            "durable-command/1.0.0"
+          ],
+          "maxAttempts": 3,
+          "name": "AUTHENTICATE_AND_DEDUPLICATE_OUTCOME",
+          "onError": [
+            "terminal:FAILED_TERMINAL"
+          ],
+          "onSuccess": [
+            "D2"
+          ],
+          "outputContracts": [
+            "deployment-d1-result/1.0.0"
+          ],
+          "retryClass": "BOUNDED_TRANSIENT",
+          "sideEffectMode": "IDEMPOTENT_WRITE",
+          "stageId": "D1",
+          "timeoutSeconds": 30
+        },
+        {
+          "idempotencyDeterminants": [
+            "workflowVersion",
+            "artifactDigest",
+            "determinantDigest",
+            "scope",
+            "stageId"
+          ],
+          "inputContracts": [
+            "deployment-d1-result/1.0.0"
+          ],
+          "maxAttempts": 3,
+          "name": "ESTABLISH_AUTHORITATIVE_ORDERING",
+          "onError": [
+            "terminal:FAILED_TERMINAL"
+          ],
+          "onSuccess": [
+            "D3"
+          ],
+          "outputContracts": [
+            "deployment-d2-result/1.0.0"
+          ],
+          "retryClass": "BOUNDED_TRANSIENT",
+          "sideEffectMode": "IDEMPOTENT_WRITE",
+          "stageId": "D2",
+          "timeoutSeconds": 30
+        },
+        {
+          "idempotencyDeterminants": [
+            "workflowVersion",
+            "artifactDigest",
+            "determinantDigest",
+            "scope",
+            "stageId"
+          ],
+          "inputContracts": [
+            "deployment-d2-result/1.0.0"
+          ],
+          "maxAttempts": 3,
+          "name": "RECORD_ACTUAL_DEPLOYED_DIGEST",
+          "onError": [
+            "terminal:FAILED_TERMINAL"
+          ],
+          "onSuccess": [
+            "D4"
+          ],
+          "outputContracts": [
+            "deployment-d3-result/1.0.0"
+          ],
+          "retryClass": "BOUNDED_TRANSIENT",
+          "sideEffectMode": "IDEMPOTENT_WRITE",
+          "stageId": "D3",
+          "timeoutSeconds": 60
+        },
+        {
+          "idempotencyDeterminants": [
+            "workflowVersion",
+            "artifactDigest",
+            "determinantDigest",
+            "scope",
+            "stageId"
+          ],
+          "inputContracts": [
+            "deployment-d3-result/1.0.0"
+          ],
+          "maxAttempts": 3,
+          "name": "RESOLVE_EXACT_APPROVED_LINEAGE_PACKAGE",
+          "onError": [
+            "terminal:FAILED_TERMINAL"
+          ],
+          "onSuccess": [
+            "D5"
+          ],
+          "outputContracts": [
+            "deployment-d4-result/1.0.0"
+          ],
+          "retryClass": "BOUNDED_TRANSIENT",
+          "sideEffectMode": "READ_ONLY",
+          "stageId": "D4",
+          "timeoutSeconds": 120
+        },
+        {
+          "idempotencyDeterminants": [
+            "workflowVersion",
+            "artifactDigest",
+            "determinantDigest",
+            "scope",
+            "stageId"
+          ],
+          "inputContracts": [
+            "deployment-d4-result/1.0.0"
+          ],
+          "maxAttempts": 3,
+          "name": "RESERVE_FENCE_AND_PROMOTE",
+          "onError": [
+            "terminal:FAILED_TERMINAL"
+          ],
+          "onSuccess": [
+            "D6"
+          ],
+          "outputContracts": [
+            "deployment-d5-result/1.0.0"
+          ],
+          "retryClass": "BOUNDED_TRANSIENT",
+          "sideEffectMode": "FENCED_WRITE",
+          "stageId": "D5",
+          "timeoutSeconds": 240
+        },
+        {
+          "idempotencyDeterminants": [
+            "workflowVersion",
+            "artifactDigest",
+            "determinantDigest",
+            "scope",
+            "stageId"
+          ],
+          "inputContracts": [
+            "deployment-d5-result/1.0.0"
+          ],
+          "maxAttempts": 3,
+          "name": "READ_BACK_AND_VERIFY_CORRELATION",
+          "onError": [
+            "terminal:FAILED_TERMINAL"
+          ],
+          "onSuccess": [
+            "terminal:PROMOTED"
+          ],
+          "outputContracts": [
+            "deployment-d6-result/1.0.0"
+          ],
+          "retryClass": "BOUNDED_TRANSIENT",
+          "sideEffectMode": "READ_ONLY",
+          "stageId": "D6",
+          "timeoutSeconds": 120
+        }
+      ],
+      "terminalStates": [
+        "PROMOTED",
+        "FAILED_NO_CHANGE",
+        "ROLLED_BACK",
+        "LINEAGE_OUT_OF_SYNC",
+        "FAILED_TERMINAL"
+      ],
+      "version": "1.0.0",
+      "workflowTimeoutSeconds": 600
+    },
+    "INCREMENTAL": {
+      "entryStage": "I1",
+      "kind": "INCREMENTAL",
+      "stages": [
+        {
+          "idempotencyDeterminants": [
+            "workflowVersion",
+            "artifactDigest",
+            "determinantDigest",
+            "scope",
+            "stageId"
+          ],
+          "inputContracts": [
+            "durable-command/1.0.0"
+          ],
+          "maxAttempts": 3,
+          "name": "DEDUPLICATE_AND_PIN_ACTIVE_BASE",
+          "onError": [
+            "terminal:FAILED_REDRIVABLE"
+          ],
+          "onSuccess": [
+            "I2"
+          ],
+          "outputContracts": [
+            "incremental-i1-result/1.0.0"
+          ],
+          "retryClass": "BOUNDED_TRANSIENT",
+          "sideEffectMode": "IDEMPOTENT_WRITE",
+          "stageId": "I1",
+          "timeoutSeconds": 30
+        },
+        {
+          "idempotencyDeterminants": [
+            "workflowVersion",
+            "artifactDigest",
+            "determinantDigest",
+            "scope",
+            "stageId"
+          ],
+          "inputContracts": [
+            "incremental-i1-result/1.0.0"
+          ],
+          "maxAttempts": 1,
+          "name": "COMPUTE_CHANGED_PATHS_AND_CLOSURE",
+          "onError": [
+            "terminal:FAILED_REDRIVABLE"
+          ],
+          "onSuccess": [
+            "I3"
+          ],
+          "outputContracts": [
+            "incremental-i2-result/1.0.0"
+          ],
+          "retryClass": "NONE",
+          "sideEffectMode": "PURE",
+          "stageId": "I2",
+          "timeoutSeconds": 120
+        },
+        {
+          "idempotencyDeterminants": [
+            "workflowVersion",
+            "artifactDigest",
+            "determinantDigest",
+            "scope",
+            "stageId"
+          ],
+          "inputContracts": [
+            "incremental-i2-result/1.0.0"
+          ],
+          "maxAttempts": 3,
+          "name": "BUILD_DIFFERENTIAL_COVERAGE_PLAN",
+          "onError": [
+            "terminal:FAILED_REDRIVABLE"
+          ],
+          "onSuccess": [
+            "I4"
+          ],
+          "outputContracts": [
+            "incremental-i3-result/1.0.0"
+          ],
+          "retryClass": "BOUNDED_TRANSIENT",
+          "sideEffectMode": "IDEMPOTENT_WRITE",
+          "stageId": "I3",
+          "timeoutSeconds": 60
+        },
+        {
+          "idempotencyDeterminants": [
+            "workflowVersion",
+            "artifactDigest",
+            "determinantDigest",
+            "scope",
+            "stageId"
+          ],
+          "inputContracts": [
+            "incremental-i3-result/1.0.0"
+          ],
+          "maxAttempts": 3,
+          "name": "FETCH_REQUIRED_IMMUTABLE_ARTIFACTS",
+          "onError": [
+            "terminal:FAILED_REDRIVABLE"
+          ],
+          "onSuccess": [
+            "I5"
+          ],
+          "outputContracts": [
+            "incremental-i4-result/1.0.0"
+          ],
+          "retryClass": "BOUNDED_TRANSIENT",
+          "sideEffectMode": "READ_ONLY",
+          "stageId": "I4",
+          "timeoutSeconds": 180
+        },
+        {
+          "idempotencyDeterminants": [
+            "workflowVersion",
+            "artifactDigest",
+            "determinantDigest",
+            "scope",
+            "stageId"
+          ],
+          "inputContracts": [
+            "incremental-i4-result/1.0.0"
+          ],
+          "maxAttempts": 3,
+          "name": "PROVE_NO_IMPACT_OR_EXTRACT_EVIDENCE",
+          "onError": [
+            "terminal:FAILED_REDRIVABLE"
+          ],
+          "onSuccess": [
+            "I6"
+          ],
+          "outputContracts": [
+            "incremental-i5-result/1.0.0"
+          ],
+          "retryClass": "BOUNDED_TRANSIENT",
+          "sideEffectMode": "IMMUTABLE_WRITE",
+          "stageId": "I5",
+          "timeoutSeconds": 600
+        },
+        {
+          "idempotencyDeterminants": [
+            "workflowVersion",
+            "artifactDigest",
+            "determinantDigest",
+            "scope",
+            "stageId"
+          ],
+          "inputContracts": [
+            "incremental-i5-result/1.0.0"
+          ],
+          "maxAttempts": 3,
+          "name": "VALIDATE_OPTIONAL_RUNTIME_EVIDENCE",
+          "onError": [
+            "terminal:FAILED_REDRIVABLE"
+          ],
+          "onSuccess": [
+            "I7"
+          ],
+          "outputContracts": [
+            "incremental-i6-result/1.0.0"
+          ],
+          "retryClass": "BOUNDED_TRANSIENT",
+          "sideEffectMode": "IMMUTABLE_WRITE",
+          "stageId": "I6",
+          "timeoutSeconds": 180
+        },
+        {
+          "idempotencyDeterminants": [
+            "workflowVersion",
+            "artifactDigest",
+            "determinantDigest",
+            "scope",
+            "stageId"
+          ],
+          "inputContracts": [
+            "incremental-i6-result/1.0.0"
+          ],
+          "maxAttempts": 3,
+          "name": "CONSOLIDATE_DELTAS_AND_TOMBSTONES",
+          "onError": [
+            "terminal:FAILED_REDRIVABLE"
+          ],
+          "onSuccess": [
+            "I8"
+          ],
+          "outputContracts": [
+            "incremental-i7-result/1.0.0"
+          ],
+          "retryClass": "BOUNDED_TRANSIENT",
+          "sideEffectMode": "IDEMPOTENT_WRITE",
+          "stageId": "I7",
+          "timeoutSeconds": 300
+        },
+        {
+          "idempotencyDeterminants": [
+            "workflowVersion",
+            "artifactDigest",
+            "determinantDigest",
+            "scope",
+            "stageId"
+          ],
+          "inputContracts": [
+            "incremental-i7-result/1.0.0"
+          ],
+          "maxAttempts": 3,
+          "name": "RECHECK_BASE_AND_COVERAGE",
+          "onError": [
+            "terminal:FAILED_REDRIVABLE"
+          ],
+          "onSuccess": [
+            "I9"
+          ],
+          "outputContracts": [
+            "incremental-i8-result/1.0.0"
+          ],
+          "retryClass": "BOUNDED_TRANSIENT",
+          "sideEffectMode": "READ_ONLY",
+          "stageId": "I8",
+          "timeoutSeconds": 60
+        },
+        {
+          "idempotencyDeterminants": [
+            "workflowVersion",
+            "artifactDigest",
+            "determinantDigest",
+            "scope",
+            "stageId"
+          ],
+          "inputContracts": [
+            "incremental-i8-result/1.0.0"
+          ],
+          "maxAttempts": 3,
+          "name": "CREATE_DELTA_PROPOSAL",
+          "onError": [
+            "terminal:FAILED_REDRIVABLE"
+          ],
+          "onSuccess": [
+            "I10"
+          ],
+          "outputContracts": [
+            "incremental-i9-result/1.0.0"
+          ],
+          "retryClass": "BOUNDED_TRANSIENT",
+          "sideEffectMode": "IDEMPOTENT_WRITE",
+          "stageId": "I9",
+          "timeoutSeconds": 120
+        },
+        {
+          "idempotencyDeterminants": [
+            "workflowVersion",
+            "artifactDigest",
+            "determinantDigest",
+            "scope",
+            "stageId"
+          ],
+          "inputContracts": [
+            "incremental-i9-result/1.0.0"
+          ],
+          "maxAttempts": 3,
+          "name": "PUBLISH_WITH_FENCED_PROTOCOL",
+          "onError": [
+            "terminal:FAILED_REDRIVABLE"
+          ],
+          "onSuccess": [
+            "terminal:PUBLISHED"
+          ],
+          "outputContracts": [
+            "incremental-i10-result/1.0.0"
+          ],
+          "retryClass": "BOUNDED_TRANSIENT",
+          "sideEffectMode": "FENCED_WRITE",
+          "stageId": "I10",
+          "timeoutSeconds": 150
+        }
+      ],
+      "terminalStates": [
+        "PUBLISHED",
+        "NO_LINEAGE_IMPACT",
+        "REJECTED",
+        "QUARANTINED",
+        "FAILED_REDRIVABLE",
+        "FAILED_TERMINAL"
+      ],
+      "version": "1.0.0",
+      "workflowTimeoutSeconds": 1800
+    },
+    "NIGHTLY": {
+      "entryStage": "N1",
+      "kind": "NIGHTLY",
+      "stages": [
+        {
+          "idempotencyDeterminants": [
+            "workflowVersion",
+            "artifactDigest",
+            "determinantDigest",
+            "scope",
+            "stageId"
+          ],
+          "inputContracts": [
+            "durable-command/1.0.0"
+          ],
+          "maxAttempts": 3,
+          "name": "RECONCILE_EVENTS_RECEIPTS_AND_ARCHIVES",
+          "onError": [
+            "terminal:FAILED_REDRIVABLE"
+          ],
+          "onSuccess": [
+            "N2"
+          ],
+          "outputContracts": [
+            "nightly-n1-result/1.0.0"
+          ],
+          "retryClass": "BOUNDED_TRANSIENT",
+          "sideEffectMode": "IDEMPOTENT_WRITE",
+          "stageId": "N1",
+          "timeoutSeconds": 1800
+        },
+        {
+          "idempotencyDeterminants": [
+            "workflowVersion",
+            "artifactDigest",
+            "determinantDigest",
+            "scope",
+            "stageId"
+          ],
+          "inputContracts": [
+            "nightly-n1-result/1.0.0"
+          ],
+          "maxAttempts": 3,
+          "name": "SAMPLE_PUBLISHED_LINEAGE_AGAINST_CLEAN_ANALYSIS",
+          "onError": [
+            "terminal:FAILED_REDRIVABLE"
+          ],
+          "onSuccess": [
+            "N3"
+          ],
+          "outputContracts": [
+            "nightly-n2-result/1.0.0"
+          ],
+          "retryClass": "BOUNDED_TRANSIENT",
+          "sideEffectMode": "IMMUTABLE_WRITE",
+          "stageId": "N2",
+          "timeoutSeconds": 7200
+        },
+        {
+          "idempotencyDeterminants": [
+            "workflowVersion",
+            "artifactDigest",
+            "determinantDigest",
+            "scope",
+            "stageId"
+          ],
+          "inputContracts": [
+            "nightly-n2-result/1.0.0"
+          ],
+          "maxAttempts": 3,
+          "name": "VERIFY_PROJECTION_CHECKSUMS",
+          "onError": [
+            "terminal:FAILED_REDRIVABLE"
+          ],
+          "onSuccess": [
+            "N4"
+          ],
+          "outputContracts": [
+            "nightly-n3-result/1.0.0"
+          ],
+          "retryClass": "BOUNDED_TRANSIENT",
+          "sideEffectMode": "READ_ONLY",
+          "stageId": "N3",
+          "timeoutSeconds": 1800
+        },
+        {
+          "idempotencyDeterminants": [
+            "workflowVersion",
+            "artifactDigest",
+            "determinantDigest",
+            "scope",
+            "stageId"
+          ],
+          "inputContracts": [
+            "nightly-n3-result/1.0.0"
+          ],
+          "maxAttempts": 3,
+          "name": "DRAIN_BOUNDED_STALE_LLM_CACHE",
+          "onError": [
+            "terminal:FAILED_REDRIVABLE"
+          ],
+          "onSuccess": [
+            "N5"
+          ],
+          "outputContracts": [
+            "nightly-n4-result/1.0.0"
+          ],
+          "retryClass": "BOUNDED_TRANSIENT",
+          "sideEffectMode": "IDEMPOTENT_WRITE",
+          "stageId": "N4",
+          "timeoutSeconds": 1800
+        },
+        {
+          "idempotencyDeterminants": [
+            "workflowVersion",
+            "artifactDigest",
+            "determinantDigest",
+            "scope",
+            "stageId"
+          ],
+          "inputContracts": [
+            "nightly-n4-result/1.0.0"
+          ],
+          "maxAttempts": 3,
+          "name": "EVALUATE_AUTOPUBLISH_AUDIT_SAMPLE",
+          "onError": [
+            "terminal:FAILED_REDRIVABLE"
+          ],
+          "onSuccess": [
+            "N6"
+          ],
+          "outputContracts": [
+            "nightly-n5-result/1.0.0"
+          ],
+          "retryClass": "BOUNDED_TRANSIENT",
+          "sideEffectMode": "READ_ONLY",
+          "stageId": "N5",
+          "timeoutSeconds": 900
+        },
+        {
+          "idempotencyDeterminants": [
+            "workflowVersion",
+            "artifactDigest",
+            "determinantDigest",
+            "scope",
+            "stageId"
+          ],
+          "inputContracts": [
+            "nightly-n5-result/1.0.0"
+          ],
+          "maxAttempts": 3,
+          "name": "EMIT_PROPOSALS_ALERTS_AND_EVIDENCE",
+          "onError": [
+            "terminal:FAILED_REDRIVABLE"
+          ],
+          "onSuccess": [
+            "terminal:RECONCILED"
+          ],
+          "outputContracts": [
+            "nightly-n6-result/1.0.0"
+          ],
+          "retryClass": "BOUNDED_TRANSIENT",
+          "sideEffectMode": "IDEMPOTENT_WRITE",
+          "stageId": "N6",
+          "timeoutSeconds": 300
+        }
+      ],
+      "terminalStates": [
+        "RECONCILED",
+        "PROPOSALS_RAISED",
+        "FAILED_REDRIVABLE",
+        "FAILED_TERMINAL"
+      ],
+      "version": "1.0.0",
+      "workflowTimeoutSeconds": 14400
+    },
+    "PR_GATE": {
+      "entryStage": "P1",
+      "kind": "PR_GATE",
+      "stages": [
+        {
+          "idempotencyDeterminants": [
+            "workflowVersion",
+            "artifactDigest",
+            "determinantDigest",
+            "scope",
+            "stageId"
+          ],
+          "inputContracts": [
+            "durable-command/1.0.0"
+          ],
+          "maxAttempts": 3,
+          "name": "PIN_SIGNED_PR_HEAD_AND_POLICY",
+          "onError": [
+            "terminal:WARN"
+          ],
+          "onSuccess": [
+            "P2"
+          ],
+          "outputContracts": [
+            "pr_gate-p1-result/1.0.0"
+          ],
+          "retryClass": "BOUNDED_TRANSIENT",
+          "sideEffectMode": "READ_ONLY",
+          "stageId": "P1",
+          "timeoutSeconds": 5
+        },
+        {
+          "idempotencyDeterminants": [
+            "workflowVersion",
+            "artifactDigest",
+            "determinantDigest",
+            "scope",
+            "stageId"
+          ],
+          "inputContracts": [
+            "pr_gate-p1-result/1.0.0"
+          ],
+          "maxAttempts": 3,
+          "name": "FETCH_OR_BUILD_EXACT_CANDIDATE",
+          "onError": [
+            "terminal:WARN"
+          ],
+          "onSuccess": [
+            "P3"
+          ],
+          "outputContracts": [
+            "pr_gate-p2-result/1.0.0"
+          ],
+          "retryClass": "BOUNDED_TRANSIENT",
+          "sideEffectMode": "READ_ONLY",
+          "stageId": "P2",
+          "timeoutSeconds": 30
+        },
+        {
+          "idempotencyDeterminants": [
+            "workflowVersion",
+            "artifactDigest",
+            "determinantDigest",
+            "scope",
+            "stageId"
+          ],
+          "inputContracts": [
+            "pr_gate-p2-result/1.0.0"
+          ],
+          "maxAttempts": 3,
+          "name": "PIN_DEPLOYED_ARTIFACT_AND_GRAPH",
+          "onError": [
+            "terminal:WARN"
+          ],
+          "onSuccess": [
+            "P4"
+          ],
+          "outputContracts": [
+            "pr_gate-p3-result/1.0.0"
+          ],
+          "retryClass": "BOUNDED_TRANSIENT",
+          "sideEffectMode": "READ_ONLY",
+          "stageId": "P3",
+          "timeoutSeconds": 5
+        },
+        {
+          "idempotencyDeterminants": [
+            "workflowVersion",
+            "artifactDigest",
+            "determinantDigest",
+            "scope",
+            "stageId"
+          ],
+          "inputContracts": [
+            "pr_gate-p3-result/1.0.0"
+          ],
+          "maxAttempts": 1,
+          "name": "ANALYZE_RELEVANT_CHANGED_PATHS",
+          "onError": [
+            "terminal:WARN"
+          ],
+          "onSuccess": [
+            "P5"
+          ],
+          "outputContracts": [
+            "pr_gate-p4-result/1.0.0"
+          ],
+          "retryClass": "NONE",
+          "sideEffectMode": "PURE",
+          "stageId": "P4",
+          "timeoutSeconds": 35
+        },
+        {
+          "idempotencyDeterminants": [
+            "workflowVersion",
+            "artifactDigest",
+            "determinantDigest",
+            "scope",
+            "stageId"
+          ],
+          "inputContracts": [
+            "pr_gate-p4-result/1.0.0"
+          ],
+          "maxAttempts": 3,
+          "name": "RUN_BOUNDED_IMPACT_TRAVERSAL",
+          "onError": [
+            "terminal:WARN"
+          ],
+          "onSuccess": [
+            "P6"
+          ],
+          "outputContracts": [
+            "pr_gate-p5-result/1.0.0"
+          ],
+          "retryClass": "BOUNDED_TRANSIENT",
+          "sideEffectMode": "READ_ONLY",
+          "stageId": "P5",
+          "timeoutSeconds": 15
+        },
+        {
+          "idempotencyDeterminants": [
+            "workflowVersion",
+            "artifactDigest",
+            "determinantDigest",
+            "scope",
+            "stageId"
+          ],
+          "inputContracts": [
+            "pr_gate-p5-result/1.0.0"
+          ],
+          "maxAttempts": 1,
+          "name": "EVALUATE_VERSIONED_GATE_POLICY",
+          "onError": [
+            "terminal:WARN"
+          ],
+          "onSuccess": [
+            "P7"
+          ],
+          "outputContracts": [
+            "pr_gate-p6-result/1.0.0"
+          ],
+          "retryClass": "NONE",
+          "sideEffectMode": "PURE",
+          "stageId": "P6",
+          "timeoutSeconds": 10
+        },
+        {
+          "idempotencyDeterminants": [
+            "workflowVersion",
+            "artifactDigest",
+            "determinantDigest",
+            "scope",
+            "stageId"
+          ],
+          "inputContracts": [
+            "pr_gate-p6-result/1.0.0"
+          ],
+          "maxAttempts": 3,
+          "name": "RECHECK_HEAD_AND_ENVIRONMENT_POINTER",
+          "onError": [
+            "terminal:WARN"
+          ],
+          "onSuccess": [
+            "P8"
+          ],
+          "outputContracts": [
+            "pr_gate-p7-result/1.0.0"
+          ],
+          "retryClass": "BOUNDED_TRANSIENT",
+          "sideEffectMode": "READ_ONLY",
+          "stageId": "P7",
+          "timeoutSeconds": 5
+        },
+        {
+          "idempotencyDeterminants": [
+            "workflowVersion",
+            "artifactDigest",
+            "determinantDigest",
+            "scope",
+            "stageId"
+          ],
+          "inputContracts": [
+            "pr_gate-p7-result/1.0.0"
+          ],
+          "maxAttempts": 3,
+          "name": "UPSERT_STABLE_GITHUB_CHECK",
+          "onError": [
+            "terminal:WARN"
+          ],
+          "onSuccess": [
+            "terminal:PASS"
+          ],
+          "outputContracts": [
+            "pr_gate-p8-result/1.0.0"
+          ],
+          "retryClass": "BOUNDED_TRANSIENT",
+          "sideEffectMode": "CHECK_AND_AUDIT_WRITE",
+          "stageId": "P8",
+          "timeoutSeconds": 5
+        }
+      ],
+      "terminalStates": [
+        "PASS",
+        "WARN",
+        "BLOCK"
+      ],
+      "version": "1.0.0",
+      "workflowTimeoutSeconds": 120
+    }
+  }
+}

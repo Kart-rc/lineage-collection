@@ -4,9 +4,11 @@ import {
   Stack,
   type StackProps,
   aws_events as events,
+  aws_events_targets as eventTargets,
   aws_cloudwatch as cloudwatch,
   aws_cloudwatch_actions as cloudwatchActions,
   aws_iam as iam,
+  aws_lambda_event_sources as lambdaEventSources,
   aws_sqs as sqs,
   aws_sns as sns,
 } from "aws-cdk-lib";
@@ -15,12 +17,14 @@ import { Construct } from "constructs";
 import type { PlatformConfig } from "./config.js";
 import type { DataStack } from "./data-stack.js";
 import type { NetworkStack } from "./network-stack.js";
+import type { OrchestrationStack } from "./orchestration-stack.js";
 import { RuntimeTarget, lambdaTarget } from "./runtime-assets.js";
 
 export interface IntakeStackProps extends StackProps {
   readonly config: PlatformConfig;
   readonly network: NetworkStack;
   readonly data: DataStack;
+  readonly orchestration: OrchestrationStack;
 }
 
 export class IntakeStack extends Stack {
@@ -90,6 +94,16 @@ export class IntakeStack extends Stack {
       ],
       resources: Object.values(this.queues).map((queue) => queue.queueArn),
     });
+    const workflowAliases = {
+      BASELINE: props.orchestration.workflowAliases.baseline.attrArn,
+      INCREMENTAL: props.orchestration.workflowAliases.incremental.attrArn,
+      PR_GATE: props.orchestration.workflowAliases["pr-gate"].attrArn,
+      NIGHTLY: props.orchestration.workflowAliases.nightly.attrArn,
+    };
+    const startWorkflowStatement = new iam.PolicyStatement({
+      actions: ["states:StartExecution"],
+      resources: Object.values(workflowAliases),
+    });
     this.intake = new RuntimeTarget(this, "IntakeTarget", {
       config: props.config,
       network: props.network,
@@ -101,9 +115,59 @@ export class IntakeStack extends Stack {
         LINEAGE_EVENTS_QUEUE_URL: this.queues.events.queueUrl,
         LINEAGE_BATCH_QUEUE_URL: this.queues.batch.queueUrl,
         LINEAGE_EVENT_BUS_NAME: this.eventBus.eventBusName,
+        LINEAGE_BASELINE_WORKFLOW_ALIAS_ARN: workflowAliases.BASELINE,
+        LINEAGE_INCREMENTAL_WORKFLOW_ALIAS_ARN: workflowAliases.INCREMENTAL,
+        LINEAGE_PR_GATE_WORKFLOW_ALIAS_ARN: workflowAliases.PR_GATE,
+        LINEAGE_NIGHTLY_WORKFLOW_ALIAS_ARN: workflowAliases.NIGHTLY,
+        LINEAGE_BASELINE_MAP_CONCURRENCY: String(props.config.baselineMapConcurrency),
       },
-      policyStatements: [...props.data.dataPlaneStatements("intake"), queueStatement],
+      policyStatements: [
+        ...props.data.dataPlaneStatements("intake"),
+        queueStatement,
+        startWorkflowStatement,
+      ],
     });
+    const intakeConcurrency =
+      props.config.lambdaReservedConcurrency.intake ?? lambdaTarget("intake").reservedConcurrency;
+    if (intakeConcurrency < 6) {
+      throw new Error("Intake reserved concurrency must be at least 6 for three isolated lanes");
+    }
+    const batchConcurrency = 2;
+    const eventsConcurrency = Math.max(2, Math.floor((intakeConcurrency - 2) / 3));
+    const interactiveConcurrency = intakeConcurrency - batchConcurrency - eventsConcurrency;
+    for (const [lane, batchSize, maxConcurrency] of [
+      ["interactive", 1, interactiveConcurrency],
+      ["events", 10, eventsConcurrency],
+      ["batch", 10, batchConcurrency],
+    ] as const) {
+      this.intake.alias.addEventSource(
+        new lambdaEventSources.SqsEventSource(this.queues[lane], {
+          batchSize,
+          maxConcurrency,
+          reportBatchItemFailures: true,
+        }),
+      );
+    }
+    for (const route of [
+      { id: "Baseline", detailType: "lineage.baseline.requested", lane: "batch" },
+      { id: "Incremental", detailType: "lineage.incremental.requested", lane: "events" },
+      { id: "PrGate", detailType: "lineage.pr-gate.requested", lane: "interactive" },
+      { id: "Nightly", detailType: "lineage.nightly.requested", lane: "batch" },
+    ] as const) {
+      const rule = new events.Rule(this, `${route.id}Requested`, {
+        eventBus: this.eventBus,
+        eventPattern: {
+          source: ["lineage.intake"],
+          detailType: [route.detailType],
+        },
+      });
+      rule.addTarget(
+        new eventTargets.SqsQueue(this.queues[route.lane], {
+          message: events.RuleTargetInput.fromEventPath("$.detail"),
+          ...(route.lane === "batch" ? {} : { messageGroupId: route.lane }),
+        }),
+      );
+    }
     for (const [lane, queue] of Object.entries(this.queues)) {
       new CfnOutput(this, `${lane}QueueUrl`, { value: queue.queueUrl });
     }

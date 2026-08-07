@@ -24,24 +24,74 @@ const recoveryEnv = config.account && config.secondaryRegion
   : undefined;
 const recovery = new RecoveryStack(app, "LineageRecovery", {
   config,
+  stackName: `${config.resourcePrefix}-recovery`,
   env: recoveryEnv,
   crossRegionReferences: true,
 });
-const network = new NetworkStack(app, "LineageNetwork", { config, env });
+const network = new NetworkStack(app, "LineageNetwork", {
+  config,
+  stackName: `${config.resourcePrefix}-network`,
+  env,
+});
 const data = new DataStack(app, "LineageData", {
   config,
+  stackName: `${config.resourcePrefix}-data`,
   network,
   recovery,
   env,
   crossRegionReferences: true,
 });
-new IntakeStack(app, "LineageIntake", { config, network, data, env });
-new OrchestrationStack(app, "LineageOrchestration", { config, network, data, env });
-new EnginesStack(app, "LineageEngines", { config, network, data, env });
-new RuntimeStack(app, "LineageRuntime", { config, network, data, env });
-new PublicationStack(app, "LineagePublication", { config, network, data, env });
-new ApiStack(app, "LineageApi", { config, env });
-new OperationsStack(app, "LineageOperations", { config, network, data, env });
+const engines = new EnginesStack(app, "LineageEngines", {
+  config,
+  network,
+  data,
+  stackName: `${config.resourcePrefix}-engines`,
+  env,
+});
+const runtime = new RuntimeStack(app, "LineageRuntime", {
+  config,
+  network,
+  data,
+  stackName: `${config.resourcePrefix}-runtime`,
+  env,
+});
+const publication = new PublicationStack(app, "LineagePublication", {
+  config,
+  network,
+  data,
+  stackName: `${config.resourcePrefix}-publication`,
+  env,
+});
+const orchestration = new OrchestrationStack(app, "LineageOrchestration", {
+  config,
+  network,
+  data,
+  engines,
+  runtime,
+  publication,
+  stackName: `${config.resourcePrefix}-orchestration`,
+  env,
+});
+new IntakeStack(app, "LineageIntake", {
+  config,
+  network,
+  data,
+  orchestration,
+  stackName: `${config.resourcePrefix}-intake`,
+  env,
+});
+new ApiStack(app, "LineageApi", {
+  config,
+  stackName: `${config.resourcePrefix}-api`,
+  env,
+});
+new OperationsStack(app, "LineageOperations", {
+  config,
+  network,
+  data,
+  stackName: `${config.resourcePrefix}-operations`,
+  env,
+});
 
 Tags.of(app).add("Application", "lineage-collector");
 Tags.of(app).add("Environment", config.environment);

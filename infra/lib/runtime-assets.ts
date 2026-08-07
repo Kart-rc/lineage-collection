@@ -135,6 +135,7 @@ export interface RuntimeTargetProps {
 
 export class RuntimeTarget extends Construct {
   readonly function: lambda.DockerImageFunction;
+  readonly version: lambda.Version;
   readonly alias: lambda.Alias;
   readonly alarm: cloudwatch.Alarm;
   readonly deploymentGroup: codedeploy.LambdaDeploymentGroup;
@@ -174,9 +175,9 @@ export class RuntimeTarget extends Construct {
     let image: ecrAssets.DockerImageAsset | undefined;
     let imageDigest: string;
     let code: lambda.DockerImageCode;
-    if (props.config.environment === "production") {
+    if (props.config.environment !== "fixture") {
       if (!props.config.lambdaImageDigest) {
-        throw new Error("Production Lambda image digest is required");
+        throw new Error("AWS Lambda image digest is required");
       }
       imageDigest = props.config.lambdaImageDigest;
       code = lambda.DockerImageCode.fromEcr(props.imageRepository, {
@@ -221,10 +222,10 @@ export class RuntimeTarget extends Construct {
       tracing: lambda.Tracing.ACTIVE,
       architecture: lambda.Architecture.X86_64,
     });
-    const version = this.function.currentVersion;
+    this.version = this.function.currentVersion;
     this.alias = new lambda.Alias(this, "LiveAlias", {
       aliasName: "live",
-      version,
+      version: this.version,
     });
     this.alarm = new cloudwatch.Alarm(this, "ErrorsAlarm", {
       metric: this.function.metricErrors({ period: Duration.minutes(1) }),
@@ -249,7 +250,7 @@ export class RuntimeTarget extends Construct {
     });
     new CfnOutput(Stack.of(this), `${id}AliasArn`, { value: this.alias.functionArn });
     new CfnOutput(Stack.of(this), `${id}FunctionName`, { value: this.function.functionName });
-    new CfnOutput(Stack.of(this), `${id}FunctionVersionArn`, { value: version.functionArn });
+    new CfnOutput(Stack.of(this), `${id}FunctionVersionArn`, { value: this.version.functionArn });
     new CfnOutput(Stack.of(this), `${id}RoleArn`, { value: this.role.roleArn });
     new CfnOutput(Stack.of(this), `${id}DeploymentGroupName`, {
       value: this.deploymentGroup.deploymentGroupName,

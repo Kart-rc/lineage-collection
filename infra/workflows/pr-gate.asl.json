@@ -1,0 +1,462 @@
+{
+  "Comment": "Generated PR_GATE 1.0.0; large payloads remain versioned S3 references",
+  "StartAt": "P1",
+  "States": {
+    "BLOCK": {
+      "Type": "Succeed"
+    },
+    "P1": {
+      "Catch": [
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "Next": "WARN",
+          "ResultPath": "$.workflowError"
+        }
+      ],
+      "Next": "P1Outcome",
+      "Parameters": {
+        "FunctionName": "${ControlAliasArn}",
+        "Payload": {
+          "causationId.$": "$.causationId",
+          "commandId.$": "$.commandId",
+          "correlationId.$": "$.correlationId",
+          "determinantDigest.$": "$.determinantDigest",
+          "idempotencyKey.$": "States.Format('{}:P1', $.idempotencyKey)",
+          "input.$": "$.input",
+          "schemaVersion.$": "$.schemaVersion",
+          "stageId": "P1",
+          "stageName": "PIN_SIGNED_PR_HEAD_AND_POLICY",
+          "workflowKind": "PR_GATE",
+          "workflowVersion": "1.0.0"
+        }
+      },
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "ResultPath": "$._P1",
+      "Retry": [
+        {
+          "BackoffRate": 2,
+          "ErrorEquals": [
+            "Lambda.ServiceException",
+            "Lambda.SdkClientException",
+            "Lambda.TooManyRequestsException",
+            "ECS.AmazonECSException",
+            "States.Timeout"
+          ],
+          "IntervalSeconds": 2,
+          "MaxAttempts": 3
+        }
+      ],
+      "TimeoutSeconds": 5,
+      "Type": "Task"
+    },
+    "P1Outcome": {
+      "Choices": [
+        {
+          "Next": "WARN",
+          "StringEquals": "REDRIVE_REQUIRED",
+          "Variable": "$._P1.Payload.outcome"
+        }
+      ],
+      "Default": "P2",
+      "Type": "Choice"
+    },
+    "P2": {
+      "Catch": [
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "Next": "WARN",
+          "ResultPath": "$.workflowError"
+        }
+      ],
+      "Next": "P2Outcome",
+      "Parameters": {
+        "FunctionName": "${ControlAliasArn}",
+        "Payload": {
+          "causationId.$": "$.causationId",
+          "commandId.$": "$.commandId",
+          "correlationId.$": "$.correlationId",
+          "determinantDigest.$": "$.determinantDigest",
+          "idempotencyKey.$": "States.Format('{}:P2', $.idempotencyKey)",
+          "input.$": "$._P1.Payload.output",
+          "schemaVersion.$": "$.schemaVersion",
+          "stageId": "P2",
+          "stageName": "FETCH_OR_BUILD_EXACT_CANDIDATE",
+          "workflowKind": "PR_GATE",
+          "workflowVersion": "1.0.0"
+        }
+      },
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "ResultPath": "$._P2",
+      "Retry": [
+        {
+          "BackoffRate": 2,
+          "ErrorEquals": [
+            "Lambda.ServiceException",
+            "Lambda.SdkClientException",
+            "Lambda.TooManyRequestsException",
+            "ECS.AmazonECSException",
+            "States.Timeout"
+          ],
+          "IntervalSeconds": 2,
+          "MaxAttempts": 3
+        }
+      ],
+      "TimeoutSeconds": 30,
+      "Type": "Task"
+    },
+    "P2Outcome": {
+      "Choices": [
+        {
+          "Next": "WARN",
+          "StringEquals": "REDRIVE_REQUIRED",
+          "Variable": "$._P2.Payload.outcome"
+        }
+      ],
+      "Default": "P3",
+      "Type": "Choice"
+    },
+    "P3": {
+      "Catch": [
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "Next": "WARN",
+          "ResultPath": "$.workflowError"
+        }
+      ],
+      "Next": "P3Outcome",
+      "Parameters": {
+        "FunctionName": "${ControlAliasArn}",
+        "Payload": {
+          "causationId.$": "$.causationId",
+          "commandId.$": "$.commandId",
+          "correlationId.$": "$.correlationId",
+          "determinantDigest.$": "$.determinantDigest",
+          "idempotencyKey.$": "States.Format('{}:P3', $.idempotencyKey)",
+          "input.$": "$._P2.Payload.output",
+          "schemaVersion.$": "$.schemaVersion",
+          "stageId": "P3",
+          "stageName": "PIN_DEPLOYED_ARTIFACT_AND_GRAPH",
+          "workflowKind": "PR_GATE",
+          "workflowVersion": "1.0.0"
+        }
+      },
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "ResultPath": "$._P3",
+      "Retry": [
+        {
+          "BackoffRate": 2,
+          "ErrorEquals": [
+            "Lambda.ServiceException",
+            "Lambda.SdkClientException",
+            "Lambda.TooManyRequestsException",
+            "ECS.AmazonECSException",
+            "States.Timeout"
+          ],
+          "IntervalSeconds": 2,
+          "MaxAttempts": 3
+        }
+      ],
+      "TimeoutSeconds": 5,
+      "Type": "Task"
+    },
+    "P3Outcome": {
+      "Choices": [
+        {
+          "Next": "WARN",
+          "StringEquals": "REDRIVE_REQUIRED",
+          "Variable": "$._P3.Payload.outcome"
+        }
+      ],
+      "Default": "P4",
+      "Type": "Choice"
+    },
+    "P4": {
+      "Catch": [
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "Next": "WARN",
+          "ResultPath": "$.workflowError"
+        }
+      ],
+      "Next": "P4Outcome",
+      "Parameters": {
+        "FunctionName": "${ConsolidationAliasArn}",
+        "Payload": {
+          "causationId.$": "$.causationId",
+          "commandId.$": "$.commandId",
+          "correlationId.$": "$.correlationId",
+          "determinantDigest.$": "$.determinantDigest",
+          "idempotencyKey.$": "States.Format('{}:P4', $.idempotencyKey)",
+          "input.$": "$._P3.Payload.output",
+          "schemaVersion.$": "$.schemaVersion",
+          "stageId": "P4",
+          "stageName": "ANALYZE_RELEVANT_CHANGED_PATHS",
+          "workflowKind": "PR_GATE",
+          "workflowVersion": "1.0.0"
+        }
+      },
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "ResultPath": "$._P4",
+      "Retry": [],
+      "TimeoutSeconds": 35,
+      "Type": "Task"
+    },
+    "P4Outcome": {
+      "Choices": [
+        {
+          "Next": "WARN",
+          "StringEquals": "REDRIVE_REQUIRED",
+          "Variable": "$._P4.Payload.outcome"
+        }
+      ],
+      "Default": "P5",
+      "Type": "Choice"
+    },
+    "P5": {
+      "Catch": [
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "Next": "WARN",
+          "ResultPath": "$.workflowError"
+        }
+      ],
+      "Next": "P5Outcome",
+      "Parameters": {
+        "FunctionName": "${CoverageAliasArn}",
+        "Payload": {
+          "causationId.$": "$.causationId",
+          "commandId.$": "$.commandId",
+          "correlationId.$": "$.correlationId",
+          "determinantDigest.$": "$.determinantDigest",
+          "idempotencyKey.$": "States.Format('{}:P5', $.idempotencyKey)",
+          "input.$": "$._P4.Payload.output",
+          "schemaVersion.$": "$.schemaVersion",
+          "stageId": "P5",
+          "stageName": "RUN_BOUNDED_IMPACT_TRAVERSAL",
+          "workflowKind": "PR_GATE",
+          "workflowVersion": "1.0.0"
+        }
+      },
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "ResultPath": "$._P5",
+      "Retry": [
+        {
+          "BackoffRate": 2,
+          "ErrorEquals": [
+            "Lambda.ServiceException",
+            "Lambda.SdkClientException",
+            "Lambda.TooManyRequestsException",
+            "ECS.AmazonECSException",
+            "States.Timeout"
+          ],
+          "IntervalSeconds": 2,
+          "MaxAttempts": 3
+        }
+      ],
+      "TimeoutSeconds": 15,
+      "Type": "Task"
+    },
+    "P5Outcome": {
+      "Choices": [
+        {
+          "Next": "WARN",
+          "StringEquals": "REDRIVE_REQUIRED",
+          "Variable": "$._P5.Payload.outcome"
+        }
+      ],
+      "Default": "P6",
+      "Type": "Choice"
+    },
+    "P6": {
+      "Catch": [
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "Next": "WARN",
+          "ResultPath": "$.workflowError"
+        }
+      ],
+      "Next": "P6Outcome",
+      "Parameters": {
+        "FunctionName": "${ControlAliasArn}",
+        "Payload": {
+          "causationId.$": "$.causationId",
+          "commandId.$": "$.commandId",
+          "correlationId.$": "$.correlationId",
+          "determinantDigest.$": "$.determinantDigest",
+          "idempotencyKey.$": "States.Format('{}:P6', $.idempotencyKey)",
+          "input.$": "$._P5.Payload.output",
+          "schemaVersion.$": "$.schemaVersion",
+          "stageId": "P6",
+          "stageName": "EVALUATE_VERSIONED_GATE_POLICY",
+          "workflowKind": "PR_GATE",
+          "workflowVersion": "1.0.0"
+        }
+      },
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "ResultPath": "$._P6",
+      "Retry": [],
+      "TimeoutSeconds": 10,
+      "Type": "Task"
+    },
+    "P6Outcome": {
+      "Choices": [
+        {
+          "Next": "WARN",
+          "StringEquals": "REDRIVE_REQUIRED",
+          "Variable": "$._P6.Payload.outcome"
+        }
+      ],
+      "Default": "P7",
+      "Type": "Choice"
+    },
+    "P7": {
+      "Catch": [
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "Next": "WARN",
+          "ResultPath": "$.workflowError"
+        }
+      ],
+      "Next": "P7Outcome",
+      "Parameters": {
+        "FunctionName": "${ControlAliasArn}",
+        "Payload": {
+          "causationId.$": "$.causationId",
+          "commandId.$": "$.commandId",
+          "correlationId.$": "$.correlationId",
+          "determinantDigest.$": "$.determinantDigest",
+          "idempotencyKey.$": "States.Format('{}:P7', $.idempotencyKey)",
+          "input.$": "$._P6.Payload.output",
+          "schemaVersion.$": "$.schemaVersion",
+          "stageId": "P7",
+          "stageName": "RECHECK_HEAD_AND_ENVIRONMENT_POINTER",
+          "workflowKind": "PR_GATE",
+          "workflowVersion": "1.0.0"
+        }
+      },
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "ResultPath": "$._P7",
+      "Retry": [
+        {
+          "BackoffRate": 2,
+          "ErrorEquals": [
+            "Lambda.ServiceException",
+            "Lambda.SdkClientException",
+            "Lambda.TooManyRequestsException",
+            "ECS.AmazonECSException",
+            "States.Timeout"
+          ],
+          "IntervalSeconds": 2,
+          "MaxAttempts": 3
+        }
+      ],
+      "TimeoutSeconds": 5,
+      "Type": "Task"
+    },
+    "P7Outcome": {
+      "Choices": [
+        {
+          "Next": "WARN",
+          "StringEquals": "REDRIVE_REQUIRED",
+          "Variable": "$._P7.Payload.outcome"
+        }
+      ],
+      "Default": "P8",
+      "Type": "Choice"
+    },
+    "P8": {
+      "Catch": [
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "Next": "WARN",
+          "ResultPath": "$.workflowError"
+        }
+      ],
+      "Next": "P8Outcome",
+      "Parameters": {
+        "FunctionName": "${ControlAliasArn}",
+        "Payload": {
+          "causationId.$": "$.causationId",
+          "commandId.$": "$.commandId",
+          "correlationId.$": "$.correlationId",
+          "determinantDigest.$": "$.determinantDigest",
+          "idempotencyKey.$": "States.Format('{}:P8', $.idempotencyKey)",
+          "input.$": "$._P7.Payload.output",
+          "schemaVersion.$": "$.schemaVersion",
+          "stageId": "P8",
+          "stageName": "UPSERT_STABLE_GITHUB_CHECK",
+          "workflowKind": "PR_GATE",
+          "workflowVersion": "1.0.0"
+        }
+      },
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "ResultPath": "$._P8",
+      "Retry": [
+        {
+          "BackoffRate": 2,
+          "ErrorEquals": [
+            "Lambda.ServiceException",
+            "Lambda.SdkClientException",
+            "Lambda.TooManyRequestsException",
+            "ECS.AmazonECSException",
+            "States.Timeout"
+          ],
+          "IntervalSeconds": 2,
+          "MaxAttempts": 3
+        }
+      ],
+      "TimeoutSeconds": 5,
+      "Type": "Task"
+    },
+    "P8Outcome": {
+      "Choices": [
+        {
+          "Next": "WARN",
+          "StringEquals": "REDRIVE_REQUIRED",
+          "Variable": "$._P8.Payload.outcome"
+        }
+      ],
+      "Default": "TerminalRoute",
+      "Type": "Choice"
+    },
+    "PASS": {
+      "Type": "Succeed"
+    },
+    "TerminalRoute": {
+      "Choices": [
+        {
+          "Next": "WARN",
+          "StringEquals": "WARN",
+          "Variable": "$.terminalOutcome"
+        },
+        {
+          "Next": "BLOCK",
+          "StringEquals": "BLOCK",
+          "Variable": "$.terminalOutcome"
+        }
+      ],
+      "Default": "PASS",
+      "Type": "Choice"
+    },
+    "WARN": {
+      "Type": "Succeed"
+    }
+  },
+  "TimeoutSeconds": 120
+}

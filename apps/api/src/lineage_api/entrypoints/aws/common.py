@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import re
 from collections.abc import Callable, Mapping
 from typing import Any, Protocol
@@ -10,6 +11,7 @@ SCHEMA_VERSION = "1.0.0"
 MAX_RESULT_BYTES = 8_192
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
 _REFERENCE_KEYS = frozenset({"bucket", "key", "versionId", "sha256", "sizeBytes"})
+_LOG = logging.getLogger("lineage.aws.stage")
 
 
 class StageExecutor(Protocol):
@@ -72,6 +74,19 @@ def create_handler(stage: str):
             "outcome": outcome,
             "output": validate_reference(executed.get("output")),
         }
+        _LOG.info(
+            json.dumps(
+                {
+                    "commandId": envelope["commandId"],
+                    "correlationId": envelope["correlationId"],
+                    "event": "lineage.stage.completed",
+                    "outcome": outcome,
+                    "stage": stage,
+                },
+                sort_keys=True,
+                separators=(",", ":"),
+            )
+        )
         if len(json.dumps(result, sort_keys=True, separators=(",", ":")).encode()) >= MAX_RESULT_BYTES:
             raise ValueError("stage result exceeds bounded reference contract")
         return result

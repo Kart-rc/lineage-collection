@@ -32,31 +32,33 @@ export class OperationsStack extends Stack {
       policyStatements: props.data.dataPlaneStatements("deployment"),
     });
 
-    const backupVault = new backup.BackupVault(this, "PlatformBackupVault", {
-      encryptionKey: props.data.key,
-      blockRecoveryPointDeletion: true,
-      lockConfiguration: {
-        minRetention: Duration.days(35),
-        maxRetention: Duration.days(2555),
-        changeableFor: Duration.days(3),
-      },
-    });
-    const backupPlan = backup.BackupPlan.daily35DayRetention(
-      this,
-      "PlatformBackupPlan",
-      backupVault,
-    );
-    backupPlan.addSelection("ProtectedPlatformState", {
-      allowRestores: true,
-      resources: [
-        backup.BackupResource.fromDynamoDbTable(props.data.controlTable),
-        backup.BackupResource.fromDynamoDbTable(props.data.ledgerTable),
-        backup.BackupResource.fromDynamoDbTable(props.data.proposalTable),
-        backup.BackupResource.fromDynamoDbTable(props.data.pointerTable),
-        backup.BackupResource.fromArn(props.data.evidenceBucket.bucketArn),
-        backup.BackupResource.fromArn(props.data.packageBucket.bucketArn),
-      ],
-    });
+    if (props.config.environment !== "ephemeral") {
+      const backupVault = new backup.BackupVault(this, "PlatformBackupVault", {
+        encryptionKey: props.data.key,
+        blockRecoveryPointDeletion: true,
+        lockConfiguration: {
+          minRetention: Duration.days(35),
+          maxRetention: Duration.days(2555),
+          changeableFor: Duration.days(3),
+        },
+      });
+      const backupPlan = backup.BackupPlan.daily35DayRetention(
+        this,
+        "PlatformBackupPlan",
+        backupVault,
+      );
+      backupPlan.addSelection("ProtectedPlatformState", {
+        allowRestores: true,
+        resources: [
+          backup.BackupResource.fromDynamoDbTable(props.data.controlTable),
+          backup.BackupResource.fromDynamoDbTable(props.data.ledgerTable),
+          backup.BackupResource.fromDynamoDbTable(props.data.proposalTable),
+          backup.BackupResource.fromDynamoDbTable(props.data.pointerTable),
+          backup.BackupResource.fromArn(props.data.evidenceBucket.bucketArn),
+          backup.BackupResource.fromArn(props.data.packageBucket.bucketArn),
+        ],
+      });
+    }
 
     new budgets.CfnBudget(this, "PlatformBudget", {
       budget: {

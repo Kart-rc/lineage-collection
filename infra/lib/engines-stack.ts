@@ -61,6 +61,16 @@ export class EnginesStack extends Stack {
       description: "Scoped SCA evidence worker role",
     });
     for (const statement of props.data.dataPlaneStatements("sca")) taskRole.addToPolicy(statement);
+    taskRole.addToPolicy(
+      new iam.PolicyStatement({
+        actions: [
+          "states:SendTaskFailure",
+          "states:SendTaskHeartbeat",
+          "states:SendTaskSuccess",
+        ],
+        resources: ["*"],
+      }),
+    );
     this.scaTask = new ecs.FargateTaskDefinition(this, "ScaTask", {
       cpu: 2048,
       memoryLimitMiB: 4096,
@@ -92,10 +102,10 @@ export class EnginesStack extends Stack {
         ),
       );
     }
-    const scaImage = props.config.environment === "production"
+    const scaImage = props.config.environment !== "fixture"
       ? (() => {
           if (!props.config.scaImageDigest) {
-            throw new Error("Production SCA image digest is required");
+            throw new Error("AWS SCA image digest is required");
           }
           return ecs.ContainerImage.fromEcrRepository(
             props.data.scaImageRepository,

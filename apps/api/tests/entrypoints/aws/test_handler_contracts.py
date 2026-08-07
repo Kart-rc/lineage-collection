@@ -66,7 +66,17 @@ def test_each_lambda_handler_uses_a_port_and_returns_a_bounded_reference(
 
     result = module.handler(event(), object())
 
-    assert fake.calls == [(module.STAGE, event())]
+    if module_name == "deployment":
+        assert [call[1]["stageId"] for call in fake.calls] == [
+            "D1",
+            "D2",
+            "D3",
+            "D4",
+            "D5",
+            "D6",
+        ]
+    else:
+        assert fake.calls == [(module.STAGE, event())]
     assert result["schemaVersion"] == "1.0.0"
     assert result["commandId"] == "cmd-001"
     assert result["correlationId"] == "corr-001"

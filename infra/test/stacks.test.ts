@@ -20,15 +20,18 @@ function platform() {
   const recovery = new RecoveryStack(app, "Recovery", { config });
   const network = new NetworkStack(app, "Network", { config });
   const data = new DataStack(app, "Data", { config, network, recovery });
-  const intake = new IntakeStack(app, "Intake", { config, network, data });
+  const engines = new EnginesStack(app, "Engines", { config, network, data });
+  const runtime = new RuntimeStack(app, "Runtime", { config, network, data });
+  const publication = new PublicationStack(app, "Publication", { config, network, data });
   const orchestration = new OrchestrationStack(app, "Orchestration", {
     config,
     network,
     data,
+    engines,
+    runtime,
+    publication,
   });
-  const engines = new EnginesStack(app, "Engines", { config, network, data });
-  const runtime = new RuntimeStack(app, "Runtime", { config, network, data });
-  const publication = new PublicationStack(app, "Publication", { config, network, data });
+  const intake = new IntakeStack(app, "Intake", { config, network, data, orchestration });
   const api = new ApiStack(app, "Api", { config });
   const operations = new OperationsStack(app, "Operations", { config, network, data });
   return { app, recovery, network, data, intake, orchestration, engines, runtime, publication, api, operations };
@@ -65,6 +68,79 @@ describe("lineage platform stacks", () => {
       },
     });
     expect(() => loadPlatformConfig(app.node)).toThrow(/lambdaReservedConcurrency/);
+  });
+
+  it("bounds Baseline distributed-map concurrency to the Step Functions service limit", () => {
+    const app = new App({
+      context: {
+        environment: "production",
+        resourcePrefix: "lineage-prod",
+        account: "111111111111",
+        primaryRegion: "us-east-1",
+        secondaryRegion: "us-west-2",
+        primaryAvailabilityZones: "us-east-1a,us-east-1b,us-east-1c",
+        truthRetentionDays: "2555",
+        archiveRetentionDays: "90",
+        monthlyBudgetUsd: "1000",
+        baselineMapConcurrency: "10001",
+        lambdaReservedConcurrency:
+          "intake=20,control-stage=30,runtime-validation=20,consolidation=10,coverage=15,proposal=10,publication=5,deployment=2",
+        enterpriseEndpoint: "https://catalog.example.internal",
+        enterpriseEndpointServiceName:
+          "com.amazonaws.vpce.us-east-1.vpce-svc-0123456789abcdef0",
+        lambdaImageDigest: `sha256:${"a".repeat(64)}`,
+        scaImageDigest: `sha256:${"b".repeat(64)}`,
+        pagingTopicArn: "arn:aws:sns:us-east-1:111111111111:lineage-paging",
+        sourceRevision: "test",
+      },
+    });
+
+    expect(() => loadPlatformConfig(app.node)).toThrow(/baselineMapConcurrency.*10000/);
+  });
+
+  it("allows only disposable namespaced AWS smoke environments", () => {
+    const context = {
+      environment: "ephemeral",
+      resourcePrefix: "lineage-e2e-task19",
+      account: "111111111111",
+      primaryRegion: "us-east-1",
+      secondaryRegion: "us-west-2",
+      primaryAvailabilityZones: "us-east-1a,us-east-1b,us-east-1c",
+      truthRetentionDays: "1",
+      archiveRetentionDays: "1",
+      monthlyBudgetUsd: "25",
+      baselineMapConcurrency: "4",
+      lambdaReservedConcurrency:
+        "intake=6,control-stage=2,runtime-validation=2,consolidation=2,coverage=2,proposal=2,publication=1,deployment=1",
+      enterpriseEndpoint: "https://catalog.example.internal",
+      enterpriseEndpointServiceName:
+        "com.amazonaws.vpce.us-east-1.vpce-svc-0123456789abcdef0",
+      lambdaImageDigest: `sha256:${"a".repeat(64)}`,
+      scaImageDigest: `sha256:${"b".repeat(64)}`,
+      pagingTopicArn: "arn:aws:sns:us-east-1:111111111111:lineage-paging",
+      sourceRevision: "test",
+    };
+    const invalid = new App({ context: { ...context, resourcePrefix: "shared-dev" } });
+    expect(() => loadPlatformConfig(invalid.node)).toThrow(/lineage-e2e/);
+
+    const app = new App({ context });
+    const config = loadPlatformConfig(app.node);
+    applyExplicitAwsContext(app.node, config);
+    const network = new NetworkStack(app, "EphemeralNetwork", { config });
+    const recovery = new RecoveryStack(app, "EphemeralRecovery", { config });
+    const data = new DataStack(app, "EphemeralData", { config, network, recovery });
+    const template = Template.fromStack(data);
+
+    template.allResourcesProperties("AWS::DynamoDB::Table", {
+      DeletionProtectionEnabled: false,
+    });
+    template.hasResourceProperties("AWS::Neptune::DBCluster", {
+      DeletionProtection: false,
+    });
+    template.allResources("AWS::S3::Bucket", {
+      Properties: Match.not(Match.objectLike({ ObjectLockEnabled: true })),
+      DeletionPolicy: "Delete",
+    });
   });
 
   it("requires a declared private route to the enterprise endpoint", () => {
@@ -149,16 +225,38 @@ describe("lineage platform stacks", () => {
       env: { account: config.account, region: config.primaryRegion },
       crossRegionReferences: true,
     });
-    const intake = new IntakeStack(app, "ProductionIntake", {
+    const engines = new EnginesStack(app, "ProductionEngines", {
       config,
       network,
       data,
       env: { account: config.account, region: config.primaryRegion },
     });
-    const engines = new EnginesStack(app, "ProductionEngines", {
+    const runtime = new RuntimeStack(app, "ProductionRuntime", {
       config,
       network,
       data,
+      env: { account: config.account, region: config.primaryRegion },
+    });
+    const publication = new PublicationStack(app, "ProductionPublication", {
+      config,
+      network,
+      data,
+      env: { account: config.account, region: config.primaryRegion },
+    });
+    const orchestration = new OrchestrationStack(app, "ProductionOrchestration", {
+      config,
+      network,
+      data,
+      engines,
+      runtime,
+      publication,
+      env: { account: config.account, region: config.primaryRegion },
+    });
+    const intake = new IntakeStack(app, "ProductionIntake", {
+      config,
+      network,
+      data,
+      orchestration,
       env: { account: config.account, region: config.primaryRegion },
     });
 

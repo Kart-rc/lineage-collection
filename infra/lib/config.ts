@@ -2,7 +2,7 @@ import { Node } from "constructs";
 import { Fn, aws_logs as logs } from "aws-cdk-lib";
 
 export interface PlatformConfig {
-  readonly environment: "fixture" | "production";
+  readonly environment: "fixture" | "ephemeral" | "production";
   readonly resourcePrefix: string;
   readonly account?: string;
   readonly primaryRegion?: string;
@@ -67,6 +67,16 @@ function requiredPositiveNumber(node: Node, name: string): number {
   return value;
 }
 
+function requiredBoundedInteger(node: Node, name: string, maximum: number): number {
+  const value = Number(node.tryGetContext(name));
+  if (!Number.isInteger(value) || value <= 0 || value > maximum) {
+    throw new Error(
+      `Invalid production context: ${name} must be an integer between 1 and ${maximum}`,
+    );
+  }
+  return value;
+}
+
 function requiredSha256(node: Node, name: string): string {
   const value = requiredContext(node, name);
   if (!/^sha256:[0-9a-f]{64}$/.test(value)) {
@@ -111,19 +121,28 @@ function requiredConcurrency(node: Node): Record<string, number> {
   if (Object.keys(parsed).length !== COMPUTE_TARGETS.length) {
     throw new Error("Invalid production context: lambdaReservedConcurrency requires every target");
   }
+  if (parsed.intake < 6) {
+    throw new Error(
+      "Invalid production context: intake concurrency must be at least 6 to preserve lane headroom",
+    );
+  }
   return parsed;
 }
 
 export function loadPlatformConfig(node: Node): PlatformConfig {
   const environment = node.tryGetContext("environment") ?? "fixture";
   if (environment === "fixture") return fixtureConfig();
-  if (environment !== "production") {
+  if (environment !== "production" && environment !== "ephemeral") {
     throw new Error(`Unsupported environment context: ${String(environment)}`);
   }
   const primaryRegion = requiredContext(node, "primaryRegion");
+  const resourcePrefix = requiredContext(node, "resourcePrefix");
+  if (environment === "ephemeral" && !/^lineage-e2e-[a-z0-9][a-z0-9-]{2,32}$/.test(resourcePrefix)) {
+    throw new Error("Ephemeral resourcePrefix must be a scoped lineage-e2e-* namespace");
+  }
   return {
     environment,
-    resourcePrefix: requiredContext(node, "resourcePrefix"),
+    resourcePrefix,
     account: requiredContext(node, "account"),
     primaryRegion,
     secondaryRegion: requiredContext(node, "secondaryRegion"),
@@ -131,7 +150,7 @@ export function loadPlatformConfig(node: Node): PlatformConfig {
     truthRetentionDays: requiredPositiveNumber(node, "truthRetentionDays"),
     archiveRetentionDays: requiredPositiveNumber(node, "archiveRetentionDays"),
     monthlyBudgetUsd: requiredPositiveNumber(node, "monthlyBudgetUsd"),
-    baselineMapConcurrency: requiredPositiveNumber(node, "baselineMapConcurrency"),
+    baselineMapConcurrency: requiredBoundedInteger(node, "baselineMapConcurrency", 10_000),
     lambdaReservedConcurrency: requiredConcurrency(node),
     enterpriseEndpoint: requiredContext(node, "enterpriseEndpoint"),
     enterpriseEndpointServiceName: requiredContext(node, "enterpriseEndpointServiceName"),
@@ -139,13 +158,14 @@ export function loadPlatformConfig(node: Node): PlatformConfig {
     scaImageDigest: requiredSha256(node, "scaImageDigest"),
     pagingTopicArn: requiredContext(node, "pagingTopicArn"),
     sourceRevision: requiredContext(node, "sourceRevision"),
-    logRetention: logs.RetentionDays.THREE_MONTHS,
+    logRetention:
+      environment === "production" ? logs.RetentionDays.THREE_MONTHS : logs.RetentionDays.ONE_WEEK,
   };
 }
 
 export function applyExplicitAwsContext(node: Node, config: PlatformConfig): void {
   if (
-    config.environment !== "production" ||
+    config.environment === "fixture" ||
     !config.account ||
     !config.primaryRegion ||
     !config.primaryAvailabilityZones

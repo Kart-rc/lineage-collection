@@ -16,6 +16,9 @@
     "build": "npm run build --workspace apps/web && npm run build --workspace infra",
     "synth": "npm run synth --workspace infra",
     "package:aws": "npm run package --workspace infra",
+    "workflow:export": "uv run --project apps/api python scripts/export_workflow_definitions.py",
+    "workflow:check": "uv run --project apps/api python scripts/export_workflow_definitions.py --check",
+    "test:aws:ephemeral": "uv run --project apps/api --extra dev --extra aws pytest -q tests/aws/test_ephemeral_workflow.py",
     "verify": "npm test && npm run build"
   },
   "devDependencies": {

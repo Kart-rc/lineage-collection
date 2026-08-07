@@ -1,0 +1,242 @@
+from __future__ import annotations
+
+import json
+import hashlib
+import os
+import re
+from datetime import UTC, datetime
+from typing import Any, Mapping
+
+from lineage_api.infrastructure.aws.config import AwsRuntimeConfig
+from lineage_api.infrastructure.aws.dynamodb_control import DynamoDbControlAdapter
+from lineage_api.infrastructure.aws.errors import AwsConflictError, AwsRetryableError, aws_call
+from lineage_api.infrastructure.aws.kinesis_runtime import KinesisRuntimeAdapter
+from lineage_api.infrastructure.aws.neptune_projection import NeptuneProjectionAdapter
+from lineage_api.infrastructure.aws.s3_artifacts import S3ArtifactStore
+from lineage_api.infrastructure.aws.sqs_broker import SqsLaneBroker
+
+
+class StepFunctionsWorkflowStarter:
+    def __init__(
+        self,
+        client: Any,
+        alias_arns: Mapping[str, str],
+        *,
+        baseline_map_concurrency: int,
+    ) -> None:
+        if not 1 <= baseline_map_concurrency <= 10_000:
+            raise RuntimeError("LINEAGE_BASELINE_MAP_CONCURRENCY must be between 1 and 10000")
+        self.client = client
+        self.alias_arns = dict(alias_arns)
+        self.baseline_map_concurrency = baseline_map_concurrency
+
+    def start(self, envelope: dict[str, Any]) -> str:
+        kind = str(envelope.get("workflowKind", ""))
+        try:
+            alias_arn = self.alias_arns[kind]
+        except KeyError as error:
+            raise RuntimeError(f"no workflow alias configured for {kind}") from error
+        workflow_input = {**envelope, "baselineMapConcurrency": self.baseline_map_concurrency}
+        encoded = json.dumps(workflow_input, sort_keys=True, separators=(",", ":"))
+        digest = hashlib.sha256(encoded.encode()).hexdigest()[:24]
+        command = re.sub(r"[^A-Za-z0-9-_]", "-", str(envelope["commandId"]))[:48]
+        name = f"{command}-{digest}"[:80]
+        try:
+            response = aws_call(
+                "stepfunctions.start_execution",
+                self.client.start_execution,
+                stateMachineArn=alias_arn,
+                name=name,
+                input=encoded,
+                traceHeader=str(envelope.get("correlationId", ""))[:256],
+            )
+        except AwsConflictError:
+            return f"already-started:{name}"
+        return str(response["executionArn"])
+
+
+class AwsStageExecutor:
+    """Idempotent AWS stage checkpoint executor used by thin Lambda/Fargate entry points."""
+
+    def __init__(
+        self,
+        config: AwsRuntimeConfig,
+        control: DynamoDbControlAdapter,
+        artifacts: S3ArtifactStore,
+        runtime: KinesisRuntimeAdapter,
+        projection: NeptuneProjectionAdapter,
+        broker: SqsLaneBroker | None = None,
+        workflow_starter: StepFunctionsWorkflowStarter | None = None,
+    ) -> None:
+        self.config = config
+        self.control = control
+        self.artifacts = artifacts
+        self.runtime = runtime
+        self.projection = projection
+        self.broker = broker
+        self.workflow_starter = workflow_starter
+
+    def execute(self, target: str, envelope: dict[str, Any]) -> dict[str, Any]:
+        stage_id = str(envelope.get("stageId") or target)
+        command_id = str(envelope["commandId"])
+        idempotency_key = str(envelope["idempotencyKey"])
+        owner = os.environ.get("AWS_LAMBDA_LOG_STREAM_NAME", f"{target}-worker")
+        now = datetime.now(UTC)
+        try:
+            lease = self.control.claim_stage(
+                command_id,
+                stage_id,
+                idempotency_key,
+                owner,
+                300,
+                now,
+            )
+            if lease.get("status") == "COMPLETED":
+                return {"outcome": "SKIPPED", "output": lease["output"]}
+            input_body = self.artifacts.get(envelope["input"])
+            output_body = {
+                "schemaVersion": "1.0.0",
+                "commandId": command_id,
+                "correlationId": envelope["correlationId"],
+                "workflowKind": envelope.get("workflowKind"),
+                "workflowVersion": envelope.get("workflowVersion"),
+                "stageId": stage_id,
+                "stageName": envelope.get("stageName", target),
+                "target": target,
+                "input": envelope["input"],
+                "inputDocument": input_body,
+            }
+            # B5 is a distributed Map with an S3 JSON ItemReader. B4 therefore
+            # materializes an array of immutable work references, even for the
+            # minimum one-item implementation used by the executable slice.
+            persisted_body: object = [envelope["input"]] if stage_id == "B4" else output_body
+            reference = self.artifacts.put(
+                "stage-result",
+                f"commands/{command_id}/stages/{stage_id}/{idempotency_key}.json",
+                persisted_body,
+                "1.0.0",
+            )
+            if target == "intake":
+                if self.workflow_starter is None:
+                    raise RuntimeError("intake workflow aliases are not configured")
+                self.workflow_starter.start(envelope)
+            self.control.record_stage(
+                command_id=command_id,
+                stage_id=stage_id,
+                idempotency_key=idempotency_key,
+                lease_owner=owner,
+                lease_epoch=int(lease["leaseEpoch"]),
+                output=reference,
+                completed_at=now,
+            )
+            return {"outcome": "SUCCEEDED", "output": reference}
+        except AwsRetryableError:
+            return {"outcome": "REDRIVE_REQUIRED", "output": dict(envelope["input"])}
+        except AwsConflictError:
+            existing = self.control.get_stage(command_id, stage_id, idempotency_key)
+            if existing and existing.get("status") == "COMPLETED":
+                return {"outcome": "SKIPPED", "output": existing["output"]}
+            return {"outcome": "REDRIVE_REQUIRED", "output": dict(envelope["input"])}
+
+
+def _clients(config: AwsRuntimeConfig) -> dict[str, Any]:
+    try:
+        import boto3
+    except ModuleNotFoundError as error:
+        raise RuntimeError("boto3 AWS runtime extra is required") from error
+    session = boto3.session.Session(region_name=config.region)
+    return {
+        "dynamodb": session.client("dynamodb"),
+        "s3": session.client("s3"),
+        "sqs": session.client("sqs"),
+        "kinesis": session.client("kinesis"),
+        "neptunedata": session.client(
+            "neptunedata", endpoint_url=f"https://{config.neptune_endpoint}:8182"
+        ),
+        "stepfunctions": session.client("stepfunctions"),
+    }
+
+
+def build_stage_executor(
+    *,
+    env: Mapping[str, str] | None = None,
+    clients: Mapping[str, Any] | None = None,
+) -> AwsStageExecutor:
+    values = os.environ if env is None else env
+    config = AwsRuntimeConfig.from_env(values)
+    sdk = dict(_clients(config) if clients is None else clients)
+    control = DynamoDbControlAdapter(
+        sdk["dynamodb"], config.control_table, config.ledger_table, config.pointer_table
+    )
+    queues = {
+        lane: values[key]
+        for lane, key in {
+            "interactive": "LINEAGE_INTERACTIVE_QUEUE_URL",
+            "events": "LINEAGE_EVENTS_QUEUE_URL",
+            "batch": "LINEAGE_BATCH_QUEUE_URL",
+        }.items()
+        if values.get(key)
+    }
+    aliases = {
+        kind: values[key]
+        for kind, key in {
+            "BASELINE": "LINEAGE_BASELINE_WORKFLOW_ALIAS_ARN",
+            "INCREMENTAL": "LINEAGE_INCREMENTAL_WORKFLOW_ALIAS_ARN",
+            "PR_GATE": "LINEAGE_PR_GATE_WORKFLOW_ALIAS_ARN",
+            "NIGHTLY": "LINEAGE_NIGHTLY_WORKFLOW_ALIAS_ARN",
+        }.items()
+        if values.get(key)
+    }
+    if aliases and len(aliases) != 4:
+        raise RuntimeError("intake requires all four workflow aliases or none")
+    raw_concurrency = values.get("LINEAGE_BASELINE_MAP_CONCURRENCY", "1")
+    try:
+        baseline_concurrency = int(raw_concurrency)
+    except ValueError as error:
+        raise RuntimeError("LINEAGE_BASELINE_MAP_CONCURRENCY must be an integer") from error
+    return AwsStageExecutor(
+        config,
+        control,
+        S3ArtifactStore(sdk["s3"], config.evidence_bucket),
+        KinesisRuntimeAdapter(sdk["kinesis"], config.runtime_stream),
+        NeptuneProjectionAdapter(sdk["neptunedata"]),
+        SqsLaneBroker(sdk["sqs"], queues) if queues else None,
+        StepFunctionsWorkflowStarter(
+            sdk["stepfunctions"], aliases, baseline_map_concurrency=baseline_concurrency
+        )
+        if aliases
+        else None,
+    )
+
+
+def run_sca_worker(*, stepfunctions_client: Any | None = None) -> None:
+    token = os.environ.get("LINEAGE_TASK_TOKEN", "").strip()
+    raw_envelope = os.environ.get("LINEAGE_STAGE_ENVELOPE", "").strip()
+    if not token or not raw_envelope:
+        raise RuntimeError("LINEAGE_TASK_TOKEN and LINEAGE_STAGE_ENVELOPE are required")
+    envelope = json.loads(raw_envelope)
+    for key, environment_name in {
+        "stageId": "LINEAGE_STAGE_ID",
+        "stageName": "LINEAGE_STAGE_NAME",
+        "workflowKind": "LINEAGE_WORKFLOW_KIND",
+        "workflowVersion": "LINEAGE_WORKFLOW_VERSION",
+    }.items():
+        if key not in envelope and os.environ.get(environment_name):
+            envelope[key] = os.environ[environment_name]
+    executor = build_stage_executor()
+    client = stepfunctions_client
+    if client is None:
+        client = _clients(executor.config)["stepfunctions"]
+    try:
+        result = executor.execute("sca", envelope)
+        output = json.dumps(result, sort_keys=True, separators=(",", ":"))
+        if len(output.encode()) >= 8_192:
+            raise RuntimeError("SCA callback exceeds bounded result contract")
+        client.send_task_success(taskToken=token, output=output)
+    except Exception as error:
+        client.send_task_failure(
+            taskToken=token,
+            error=type(error).__name__[:256],
+            cause=str(error)[:32_768],
+        )
+        raise

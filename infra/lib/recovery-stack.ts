@@ -22,24 +22,29 @@ export class RecoveryStack extends Stack {
 
   constructor(scope: Construct, id: string, props: RecoveryStackProps) {
     super(scope, id, props);
+    const disposable = props.config.environment === "ephemeral";
     this.key = new kms.Key(this, "RecoveryKey", {
       alias: `alias/${props.config.resourcePrefix}-recovery`,
       enableKeyRotation: true,
       multiRegion: true,
-      removalPolicy: RemovalPolicy.RETAIN,
+      removalPolicy: disposable ? RemovalPolicy.DESTROY : RemovalPolicy.RETAIN,
     });
     const truthBucket = (name: string) =>
       new s3.Bucket(this, name, {
         encryption: s3.BucketEncryption.KMS,
         encryptionKey: this.key,
         versioned: true,
-        objectLockEnabled: true,
-        objectLockDefaultRetention: s3.ObjectLockRetention.governance(
-          Duration.days(props.config.truthRetentionDays),
-        ),
+        ...(disposable
+          ? { autoDeleteObjects: true }
+          : {
+              objectLockEnabled: true,
+              objectLockDefaultRetention: s3.ObjectLockRetention.governance(
+                Duration.days(props.config.truthRetentionDays),
+              ),
+            }),
         blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
         enforceSSL: true,
-        removalPolicy: RemovalPolicy.RETAIN,
+        removalPolicy: disposable ? RemovalPolicy.DESTROY : RemovalPolicy.RETAIN,
       });
     this.evidenceBucket = truthBucket("RecoveryEvidenceBucket");
     this.packageBucket = truthBucket("RecoveryPackageBucket");
