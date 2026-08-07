@@ -35,7 +35,10 @@ def test_contract_registry_loads_all_platform_contracts() -> None:
         "pr-gate-result",
         "proposal",
         "runtime-observation",
+        "runtime-instrumentation-profile",
+        "runtime-lease",
         "runtime-session-manifest",
+        "runtime-window-manifest",
         "stage-execution",
     }
 
@@ -81,6 +84,218 @@ def test_runtime_contracts_are_metadata_only_strict_and_completeness_explicit() 
     assert registry.validate("runtime-session-manifest", manifest) == []
     assert registry.validate("runtime-observation", {**observation, "value": "secret"})
     assert registry.validate("runtime-session-manifest", {**manifest, "unknown": True})
+
+
+def test_runtime_production_control_contracts_are_closed_and_loss_explicit() -> None:
+    registry = _contract_registry_type()(CONTRACTS_DIR)
+    profile = {
+        "schemaVersion": "1.0.0",
+        "profileId": "payments-service-otel",
+        "profileVersion": "1.0.0",
+        "owner": "payments-platform",
+        "workloadId": "payments-service",
+        "workloadIdentity": "spiffe://lineage.local/workload/payments-service",
+        "repo": "payments-service",
+        "environment": "production",
+        "environmentClass": "PRODUCTION",
+        "mechanism": "OTEL",
+        "installMode": "SHARED_COLLECTOR",
+        "framework": {"name": "fastapi", "versionRange": ">=0.116,<0.117"},
+        "allowedDatasets": ["snowflake://payments/raw.transactions"],
+        "allowedAttributes": ["db.system.name", "db.namespace", "db.collection.name"],
+        "artifactIdentityStrategy": "DIGEST",
+        "permittedGranularity": ["CONNECTIVITY", "DATASET"],
+        "parserContracts": [],
+        "bufferBudget": {
+            "maxRecords": 1000,
+            "maxBytes": 1048576,
+            "enqueueTimeoutMs": 2,
+            "maxRetries": 3,
+            "drainTimeoutSeconds": 10,
+        },
+        "overheadBudget": {
+            "maxCpuPercent": 5,
+            "maxMemoryBytes": 67108864,
+            "maxP95EnqueueMillis": 2,
+        },
+        "deploymentCriticality": "REQUIRED",
+        "canaryPercent": 5,
+        "packageDigest": "sha256:" + "b" * 64,
+    }
+    lease = {
+        "schemaVersion": "1.0.0",
+        "leaseId": "runtime-lease-001",
+        "profileId": profile["profileId"],
+        "profileVersion": profile["profileVersion"],
+        "profileDigest": "sha256:" + "e" * 64,
+        "workloadId": profile["workloadId"],
+        "workloadIdentity": profile["workloadIdentity"],
+        "repo": profile["repo"],
+        "environment": profile["environment"],
+        "artifactDigest": "sha256:" + "a" * 64,
+        "mechanism": profile["mechanism"],
+        "datasets": profile["allowedDatasets"],
+        "permittedGranularity": profile["permittedGranularity"],
+        "issuedAt": "2026-08-07T12:00:00Z",
+        "expiresAt": "2026-08-07T12:05:00Z",
+        "windowId": "runtime-window-001",
+        "policyEpoch": 1,
+        "state": "ACTIVE",
+        "token": "short-lived-signed-token",
+    }
+    manifest = {
+        "schemaVersion": "1.0.0",
+        "manifestId": "runtime-window-manifest-001",
+        "windowId": "runtime-window-001",
+        "leaseId": lease["leaseId"],
+        "profileId": profile["profileId"],
+        "profileVersion": profile["profileVersion"],
+        "workloadId": profile["workloadId"],
+        "repo": profile["repo"],
+        "environment": profile["environment"],
+        "artifactDigest": lease["artifactDigest"],
+        "mechanism": profile["mechanism"],
+        "outcome": "INCOMPLETE",
+        "attempted": 11,
+        "accepted": 9,
+        "rejected": 1,
+        "duplicates": 1,
+        "retried": 2,
+        "buffered": 1,
+        "dropped": 1,
+        "quarantined": 1,
+        "drained": 9,
+        "sourceChecksum": "sha256:" + "f" * 64,
+        "observationChecksum": "sha256:" + "1" * 64,
+        "reasons": [
+            "BUFFER_NOT_DRAINED",
+            "DROPPED_OBSERVATION",
+            "QUARANTINED_OBSERVATION",
+            "REJECTED_OBSERVATION",
+        ],
+        "reasonCounts": {
+            "BUFFER_NOT_DRAINED": 1,
+            "DROPPED_OBSERVATION": 1,
+            "QUARANTINED_OBSERVATION": 1,
+            "REJECTED_OBSERVATION": 1,
+        },
+        "emitterCounts": {
+            "otel-collector-v1": {
+                "attempted": 11,
+                "accepted": 9,
+                "rejected": 1,
+                "duplicates": 1,
+                "retried": 2,
+                "buffered": 1,
+                "dropped": 1,
+                "quarantined": 1,
+                "drained": 9,
+            }
+        },
+        "closedAt": "2026-08-07T12:05:00Z",
+    }
+
+    assert registry.validate("runtime-instrumentation-profile", profile) == []
+    assert registry.validate("runtime-lease", lease) == []
+    assert registry.validate("runtime-window-manifest", manifest) == []
+    assert registry.validate(
+        "runtime-instrumentation-profile", {**profile, "unexpected": True}
+    )
+    assert registry.validate("runtime-lease", {**lease, "datasets": ["outside-scope"]}) == []
+    assert registry.validate("runtime-window-manifest", {**manifest, "unknown": True})
+    invalid_complete = {
+        **manifest,
+        "outcome": "COMPLETE",
+        "buffered": 0,
+        "rejected": 0,
+        "quarantined": 0,
+        "drained": 9,
+    }
+    assert {error.path for error in registry.validate("runtime-window-manifest", invalid_complete)} >= {
+        "outcome"
+    }
+    complete = {
+        **invalid_complete,
+        "dropped": 0,
+        "reasons": [],
+        "reasonCounts": {},
+        "emitterCounts": {
+            "otel-collector-v1": {
+                "attempted": 9,
+                "accepted": 9,
+                "rejected": 0,
+                "duplicates": 0,
+                "retried": 0,
+                "buffered": 0,
+                "dropped": 0,
+                "quarantined": 0,
+                "drained": 9,
+            }
+        },
+        "attempted": 9,
+        "duplicates": 0,
+        "retried": 0,
+    }
+    assert registry.validate("runtime-window-manifest", complete) == []
+
+    invalid_emitter_arithmetic = {
+        **complete,
+        "emitterCounts": {
+            "otel-a": {
+                "attempted": 1,
+                "accepted": 2,
+                "rejected": 0,
+                "duplicates": 0,
+                "retried": 0,
+                "buffered": 0,
+                "dropped": 0,
+                "quarantined": 0,
+                "drained": 2,
+            },
+            "otel-b": {
+                "attempted": 8,
+                "accepted": 7,
+                "rejected": 0,
+                "duplicates": 0,
+                "retried": 0,
+                "buffered": 0,
+                "dropped": 0,
+                "quarantined": 0,
+                "drained": 7,
+            },
+        },
+    }
+    assert "emitterCounts.otel-a.attempted" in {
+        error.path
+        for error in registry.validate("runtime-window-manifest", invalid_emitter_arithmetic)
+    }
+
+    forged_reason_total = {
+        **manifest,
+        "reasonCounts": {
+            **manifest["reasonCounts"],
+            "DROPPED_OBSERVATION": 999,
+        },
+    }
+    assert "reasonCounts" in {
+        error.path for error in registry.validate("runtime-window-manifest", forged_reason_total)
+    }
+
+    expired_without_reason = {**complete, "outcome": "EXPIRED"}
+    assert "reasons" in {
+        error.path for error in registry.validate("runtime-window-manifest", expired_without_reason)
+    }
+
+    assert "expiresAt" in {
+        error.path
+        for error in registry.validate("runtime-lease", {**lease, "expiresAt": "not-a-time"})
+    }
+    assert "closedAt" in {
+        error.path
+        for error in registry.validate(
+            "runtime-window-manifest", {**complete, "closedAt": "not-a-time"}
+        )
+    }
 
 
 def test_deployment_event_is_strict_ordered_and_requires_digest_for_success() -> None:

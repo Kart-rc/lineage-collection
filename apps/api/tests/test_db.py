@@ -32,6 +32,10 @@ EXPECTED_TABLES = {
     "run_stages",
     "runs",
     "runtime_observations",
+    "runtime_artifact_attestations",
+    "runtime_kill_switches",
+    "runtime_leases",
+    "runtime_profiles",
     "runtime_sessions",
     "schema_migrations",
     "stage_results",
@@ -62,7 +66,7 @@ def test_database_enables_integrity_pragmas_and_creates_platform_tables(tmp_path
             ).fetchall()
         }
     assert tables >= EXPECTED_TABLES
-    assert database.schema_version() == 7
+    assert database.schema_version() == 8
 
 
 def test_transactions_roll_back_on_failure(tmp_path: Path) -> None:
@@ -110,7 +114,7 @@ def test_migration_upgrades_legacy_schema_without_losing_control_or_graph_data(
     assert database.schema_version() == 1
     database.initialize()
 
-    assert database.schema_version() == 7
+    assert database.schema_version() == 8
     with database.connection() as connection:
         event = connection.execute(
             "SELECT event_id, outcome FROM events WHERE event_id = 'delivery-legacy'"
@@ -151,6 +155,10 @@ def test_durable_control_schema_enforces_identity_and_has_due_work_indexes(tmp_p
         "idx_coverage_workflow_scope",
         "idx_lane_messages_eligible",
         "idx_lane_messages_group",
+        "idx_runtime_profiles_state",
+        "idx_runtime_leases_scope",
+        "idx_runtime_kill_switch_active",
+        "idx_runtime_artifact_attestation",
     }
     assert command_columns >= {
         "command_id",
@@ -200,7 +208,7 @@ def test_lane_broker_migration_preserves_pending_version_two_outbox_data(
 
     database.initialize()
 
-    assert database.schema_version() == 7
+    assert database.schema_version() == 8
     with database.connection() as connection:
         row = connection.execute(
             "SELECT status, payload_ref FROM outbox_events WHERE outbox_id = 'outbox-v2'"

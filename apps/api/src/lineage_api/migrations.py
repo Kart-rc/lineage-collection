@@ -4,7 +4,7 @@ import sqlite3
 from dataclasses import dataclass
 
 
-LATEST_SCHEMA_VERSION = 7
+LATEST_SCHEMA_VERSION = 8
 
 
 @dataclass(frozen=True, slots=True)
@@ -290,6 +290,85 @@ CREATE INDEX IF NOT EXISTS idx_publication_stage
 """
 
 
+RUNTIME_POLICY_SQL = """
+CREATE TABLE IF NOT EXISTS runtime_profiles (
+    profile_id TEXT NOT NULL,
+    profile_version TEXT NOT NULL,
+    profile_digest TEXT NOT NULL,
+    payload_json TEXT NOT NULL,
+    state TEXT NOT NULL CHECK(state IN ('DISABLED', 'ENABLED')),
+    policy_epoch INTEGER NOT NULL DEFAULT 0 CHECK(policy_epoch >= 0),
+    actor TEXT NOT NULL,
+    enabled_by TEXT,
+    enabled_reason TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    PRIMARY KEY(profile_id, profile_version)
+);
+
+CREATE TABLE IF NOT EXISTS runtime_kill_switches (
+    scope_type TEXT NOT NULL CHECK(scope_type IN ('GLOBAL', 'ENVIRONMENT', 'WORKLOAD', 'MECHANISM', 'PROFILE', 'DATASET')),
+    scope_value TEXT NOT NULL,
+    active INTEGER NOT NULL CHECK(active IN (0, 1)),
+    actor TEXT NOT NULL,
+    reason TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    PRIMARY KEY(scope_type, scope_value)
+);
+
+CREATE TABLE IF NOT EXISTS runtime_artifact_attestations (
+    profile_id TEXT NOT NULL,
+    profile_version TEXT NOT NULL,
+    artifact_digest TEXT NOT NULL,
+    state TEXT NOT NULL CHECK(state IN ('APPROVED', 'REVOKED')),
+    evidence_ref TEXT NOT NULL,
+    actor TEXT NOT NULL,
+    revoked_reason TEXT,
+    revoked_at TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    PRIMARY KEY(profile_id, profile_version, artifact_digest),
+    FOREIGN KEY(profile_id, profile_version) REFERENCES runtime_profiles(profile_id, profile_version)
+);
+
+CREATE TABLE IF NOT EXISTS runtime_leases (
+    lease_id TEXT PRIMARY KEY,
+    token_digest TEXT NOT NULL,
+    profile_id TEXT NOT NULL,
+    profile_version TEXT NOT NULL,
+    profile_digest TEXT NOT NULL,
+    workload_id TEXT NOT NULL,
+    repo TEXT NOT NULL,
+    environment TEXT NOT NULL,
+    artifact_digest TEXT NOT NULL,
+    mechanism TEXT NOT NULL CHECK(mechanism IN ('OPENLINEAGE', 'SDK', 'OTEL', 'DASK')),
+    datasets_json TEXT NOT NULL,
+    permitted_granularity_json TEXT NOT NULL,
+    workload_identity TEXT NOT NULL,
+    window_id TEXT NOT NULL,
+    policy_epoch INTEGER NOT NULL CHECK(policy_epoch >= 1),
+    state TEXT NOT NULL CHECK(state IN ('ACTIVE', 'REVOKED', 'EXPIRED', 'DISABLED')),
+    issued_at TEXT NOT NULL,
+    expires_at TEXT NOT NULL,
+    renewed_at TEXT,
+    revoked_reason TEXT,
+    actor TEXT NOT NULL,
+    payload_json TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    FOREIGN KEY(profile_id, profile_version) REFERENCES runtime_profiles(profile_id, profile_version)
+);
+
+CREATE INDEX IF NOT EXISTS idx_runtime_profiles_state
+    ON runtime_profiles(state, profile_id, profile_version);
+CREATE INDEX IF NOT EXISTS idx_runtime_leases_scope
+    ON runtime_leases(state, environment, workload_id, mechanism, expires_at);
+CREATE INDEX IF NOT EXISTS idx_runtime_artifact_attestation
+    ON runtime_artifact_attestations(state, profile_id, profile_version, artifact_digest);
+CREATE INDEX IF NOT EXISTS idx_runtime_kill_switch_active
+    ON runtime_kill_switches(active, scope_type, scope_value);
+"""
+
+
 MIGRATIONS = (
     Migration(2, DURABLE_CONTROL_SQL),
     Migration(3, LOCAL_LANE_BROKER_SQL),
@@ -297,6 +376,7 @@ MIGRATIONS = (
     Migration(5, DEPLOYMENT_SQL),
     Migration(6, RUNTIME_SQL),
     Migration(7, RESUMABLE_PUBLICATION_SQL),
+    Migration(8, RUNTIME_POLICY_SQL),
 )
 
 
