@@ -1,0 +1,21 @@
+{
+  "name": "@lineage-collector/infra",
+  "private": true,
+  "type": "module",
+  "version": "0.1.0",
+  "scripts": {
+    "build": "tsc --noEmit",
+    "test": "vitest --testTimeout=30000",
+    "synth": "cdk synth --app 'tsx bin/lineage-platform.ts' --quiet",
+    "package": "tsx lib/runtime-assets.ts package"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "aws-cdk": "2.1135.0",
+    "aws-cdk-lib": "2.263.0",
+    "constructs": "10.8.1",
+    "tsx": "4.23.9",
+    "typescript": "7.0.2",
+    "vitest": "4.1.10"
+  }
+}
