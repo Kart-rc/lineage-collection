@@ -78,3 +78,58 @@ def test_acceptance_spec_covers_every_build_unit_cadence_and_historical_referenc
 
     assert "AcceptanceEvidenceManifest" in acceptance
     assert "../acceptance/lineage-platform-acceptance.md" in readiness
+
+
+def test_build_prds_are_complete_traceable_and_linked_from_delivery_plan() -> None:
+    build_units = (
+        "contracts-and-correlation",
+        "catalog-and-resolver",
+        "evidence-and-control-stores",
+        "event-intake-and-lanes",
+        "classifier-and-orchestrator",
+        "sca-worker-and-rule-packs",
+        "llm-inference-gateway",
+        "runtime-session-and-ingestion",
+        "runtime-emitters-and-integrations",
+        "consolidation-and-confidence",
+        "proposal-review-and-policy",
+        "publisher-and-projection-manager",
+        "query-impact-and-pr-gate",
+        "review-and-operations-ui",
+        "operations-telemetry-and-recovery",
+        "platform-iac-and-delivery",
+    )
+    required_headings = (
+        "Ownership",
+        "Boundary",
+        "Contracts",
+        "State and failure model",
+        "Data ownership",
+        "Infrastructure bill of materials",
+        "Local adapter",
+        "Security and privacy",
+        "SLOs",
+        "Observability",
+        "Acceptance criteria",
+        "Deployment and rollback",
+        "Dependencies",
+        "Definition of Ready",
+        "Definition of Done",
+    )
+    index = _read("docs/build-prds/README.md")
+    delivery = _read("docs/component-prds/16-delivery-plan-and-dependencies.md")
+
+    for number, slug in enumerate(build_units, start=1):
+        build_id = f"B{number:02d}"
+        relative = f"docs/build-prds/{build_id}-{slug}.md"
+        prd = _read(relative)
+        assert f"# {build_id}" in prd
+        for heading in required_headings:
+            assert f"## {heading}" in prd, f"{build_id} missing {heading}"
+        assert re.search(rf"\| {build_id}-AC-\d{{3}} \|", prd)
+        assert re.search(r"\.\./component-prds/\d{2}-[^)]+\.md", prd)
+        assert f"{build_id}-{slug}.md" in index
+
+    assert "Build order" in index
+    assert "../acceptance/lineage-platform-acceptance.md" in index
+    assert "../build-prds/README.md" in delivery
