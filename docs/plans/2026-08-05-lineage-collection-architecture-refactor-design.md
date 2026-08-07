@@ -412,6 +412,12 @@ remain residue or quarantine; no parser or LLM may invent a catalog identity.
 
 ## 12. Runtime lineage, OpenLineage, and OTel
 
+The detailed, approved runtime design is
+[Runtime Lineage Instrumentation and Production Collection Design](2026-08-07-runtime-lineage-instrumentation-design.md).
+It supersedes the earlier test-only production-deny policy in this document: production collection
+starts disabled, is enabled only by an approved workload profile and short-lived artifact-bound
+lease, and can be centrally disabled without redeploying or interrupting the workload.
+
 The runtime plane has three distinct evidence mechanisms:
 
 - **OpenLineage integrations:** authoritative job/run/dataset events and column-lineage facets when
@@ -421,10 +427,11 @@ The runtime plane has three distinct evidence mechanisms:
 - **OpenTelemetry:** trace correlation, dependency/connectivity hints, health and performance. A
   generic span or `db.statement` parse is not automatically column-level proof.
 
-All mechanisms require a signed, scoped, expiring session bound to repository, environment and exact
-artifact digest. Production targets are rejected by both IAM and validator policy. A closed-schema
-validator rejects payload values, secrets, unknown fields, unresolvable identities, expired sessions
-and mismatched artifacts.
+All mechanisms require a signed, scoped, expiring session or lease bound to workload, repository,
+environment, instrumentation profile and exact artifact digest. Production additionally requires an
+explicit opt-in policy, workload identity, ATDD and canary evidence, bounded overhead and a central
+kill switch. A closed-schema validator rejects payload values, secrets, unknown fields, unresolvable
+identities, expired leases and mismatched artifacts.
 
 Session close writes a manifest with attempted, accepted, rejected, buffered, dropped and drained
 counts plus checksums. Only `COMPLETE` artifact-bound sessions can corroborate at their supported
@@ -435,8 +442,8 @@ normal consolidation; collection flows never wait indefinitely for it.
 
 ```mermaid
 sequenceDiagram
-    participant CI as Test or CI harness
-    participant G as Scoped session grant
+    participant CI as CI, ATDD or production workload
+    participant G as Scoped session or production lease
     participant OL as OpenLineage integration
     participant SDK as Metadata-only SDK
     participant OT as OTel adapter
@@ -445,8 +452,8 @@ sequenceDiagram
     participant C as Consolidation
     participant P as Proposal workflow
 
-    CI->>G: Request non-production artifact-bound session
-    G-->>CI: Signed scope, expiry and allowed granularity
+    CI->>G: Request artifact and profile-bound collection window
+    G-->>CI: Signed scope, expiry, environment and allowed granularity
     OL->>V: Dataset events and supported column facet
     SDK->>V: Explicit dataset or field mapping
     OT->>V: Trace correlation and connectivity hint
@@ -454,12 +461,13 @@ sequenceDiagram
     V->>K: Accepted metadata partitioned by dataset URN
     CI->>V: Drain and close session
     V-->>C: COMPLETE or explicit INCOMPLETE manifest
-    C->>C: Corroborate only discovered matching edges at supported granularity
-    C-->>P: Normal proposal or audited no-op
+    C->>C: Corroborate matching edges at supported granularity
+    C-->>P: Exact runtime-only discovery enters review; connectivity is audited only
 ```
 
 OpenLineage, custom SDK and OTel evidence never collapse into one mechanism. Generic OTel
 connectivity cannot become exact field lineage without an approved versioned parser contract.
+Collection failure never interrupts the business workload and never appears as complete evidence.
 
 ## 13. Consolidation, completeness, and review
 
