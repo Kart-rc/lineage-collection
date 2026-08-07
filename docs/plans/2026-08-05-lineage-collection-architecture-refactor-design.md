@@ -215,6 +215,45 @@ adapters.
 | Runtime stream | In-process buffered records | Kinesis and Firehose | Per-dataset ordering and no silent sampling |
 | Telemetry | Console/file exporter | OTel Collector and CloudWatch | Same correlation contract; telemetry is non-authoritative |
 
+### Local-to-production adapter view
+
+```mermaid
+flowchart LR
+    subgraph core["Shared domain and application core"]
+        contracts["Versioned commands and contracts"]
+        policy["Trigger, completeness and confidence policy"]
+        stages["Idempotent stage operations"]
+        publish["Fenced publication protocol"]
+    end
+    subgraph local["Local proof adapters"]
+        sqlite["SQLite control and projections"]
+        files["Write-once checksummed files"]
+        localQ["Durable local lane broker"]
+        pythonFlow["Python workflow runner"]
+    end
+    subgraph aws["AWS deployment adapters"]
+        dynamo["DynamoDB conditional state"]
+        s3["Versioned S3 truth"]
+        sqs["SQS FIFO and batch lanes"]
+        stepfn["Versioned Step Functions"]
+        neptune["Neptune projection"]
+    end
+    contracts --> sqlite
+    contracts --> dynamo
+    policy --> pythonFlow
+    policy --> stepfn
+    stages --> files
+    stages --> s3
+    stages --> localQ
+    stages --> sqs
+    publish --> sqlite
+    publish --> dynamo
+    publish --> neptune
+```
+
+The arrows are port bindings, not data duplication. Local results prove domain behavior; offline AWS
+synthesis proves wiring; only an approved deployed run can satisfy an `AWS_REQUIRED` row.
+
 ## 7. Durable command and stage contract
 
 Every workflow stage operates on a `StageExecution` envelope containing:
@@ -331,6 +370,31 @@ Nightly reconciles accepted events against receipts and archives, samples publis
 clean reanalysis, verifies projection checksums, drains bounded stale LLM cache entries, evaluates
 auto-publish audit samples, and raises proposals rather than mutating active lineage directly.
 
+### Trigger and orchestration view
+
+```mermaid
+flowchart TB
+    event["Canonical authenticated event or schedule"] --> decision{"Versioned trigger policy"}
+    decision -->|"Onboard, missing base, explicit rebaseline"| baseline["Baseline B1-B10"]
+    decision -->|"Push, determinant change, late evidence"| incremental["Incremental I1-I10"]
+    decision -->|"PR head or environment refresh"| prgate["PRGate P1-P8"]
+    decision -->|"Exact deployment outcome"| deployment["Deployment D1-D6 Lambda"]
+    decision -->|"Reconciliation schedule"| nightly["Nightly N1-N6"]
+    baseline --> review{"Review or governed policy"}
+    incremental --> review
+    review --> publish["Stage, verify, fence, activate"]
+    review --> nochange["No-lineage or explicit non-publish terminal"]
+    prgate --> verdict["PASS, WARN or BLOCK check only"]
+    deployment --> promote["Promote exact approved package or OUT_OF_SYNC"]
+    nightly --> reconcile["Proposal, alert or audited no-op"]
+    baseline -.->|Never every push| decision
+    prgate -.->|Never mutates lineage| decision
+    deployment -.->|Never source merge alone| decision
+```
+
+The four AWS workflows start through exact state-machine aliases and substitute immutable Lambda
+versions plus the exact SCA task revision. Deployment is intentionally not a fifth state machine.
+
 ## 11. Static collection and framework selection
 
 Collection uses the strongest deterministic artifact available:
@@ -367,6 +431,36 @@ counts plus checksums. Only `COMPLETE` artifact-bound sessions can corroborate a
 granularity. Runtime evidence may arrive after Baseline or Incremental and reopen a proposal through
 normal consolidation; collection flows never wait indefinitely for it.
 
+### Runtime evidence view
+
+```mermaid
+sequenceDiagram
+    participant CI as Test or CI harness
+    participant G as Scoped session grant
+    participant OL as OpenLineage integration
+    participant SDK as Metadata-only SDK
+    participant OT as OTel adapter
+    participant V as Runtime validator
+    participant K as Ordered runtime stream
+    participant C as Consolidation
+    participant P as Proposal workflow
+
+    CI->>G: Request non-production artifact-bound session
+    G-->>CI: Signed scope, expiry and allowed granularity
+    OL->>V: Dataset events and supported column facet
+    SDK->>V: Explicit dataset or field mapping
+    OT->>V: Trace correlation and connectivity hint
+    V->>V: Reject secrets, values, unknowns, expiry and digest mismatch
+    V->>K: Accepted metadata partitioned by dataset URN
+    CI->>V: Drain and close session
+    V-->>C: COMPLETE or explicit INCOMPLETE manifest
+    C->>C: Corroborate only discovered matching edges at supported granularity
+    C-->>P: Normal proposal or audited no-op
+```
+
+OpenLineage, custom SDK and OTel evidence never collapse into one mechanism. Generic OTel
+connectivity cannot become exact field lineage without an approved versioned parser contract.
+
 ## 13. Consolidation, completeness, and review
 
 Consolidation is idempotent by provenance ID and commutative across evidence arrival order. It keeps
@@ -393,14 +487,26 @@ sampling, disagreement monitoring and automatic narrowing.
 
 ## 14. Publication correctness
 
+### Correctness and recovery view
+
 ```mermaid
 sequenceDiagram
-    participant W as Workflow
+    participant I as Intake
+    participant C as Command, lease and stage ledger
+    participant W as Version-pinned workflow
     participant T as Immutable truth store
-    participant C as Control state
+    participant O as Transactional outbox
     participant P as Projection writer
     participant Q as Query API
 
+    I->>C: Conditional receipt plus durable command
+    I->>O: Enqueue in the same acceptance transaction
+    O-->>W: At-least-once delivery
+    W->>C: Claim current lease epoch and stage identity
+    W->>T: Write content-addressed stage output
+    W->>C: Checkpoint exact reference under the same epoch
+    Note over W,C: Crash redrive reuses a completed reference
+    W->>T: Write complete coverage manifest
     W->>T: Write approved manifest and checksum
     W->>C: Reserve token with expected prior pointer
     C-->>W: Return monotonic fence
@@ -409,6 +515,7 @@ sequenceDiagram
     W->>T: Record verification result
     W->>C: Activate if token and prior still match
     C-->>W: Return active pointer
+    W->>O: Commit activation audit and notification atomically
     W->>Q: Invalidate pointer cache
     Q->>C: Read active pointer and watermark
 ```
@@ -457,6 +564,38 @@ visibility gate.
 The system uses one authoritative writer region. Cross-Region truth replication, recoverable control
 state and disposable projections avoid active/active approval and pointer conflicts. Quarterly drills
 must restore/reconcile state, elect the writer, rebuild projections and verify pointers within RPO/RTO.
+
+### Multi-AZ and regional recovery view
+
+```mermaid
+flowchart LR
+    subgraph primary["Primary writer region, three AZs"]
+        ingress["EventBridge and three SQS lanes"]
+        compute["Lambda aliases and SCA Fargate"]
+        control["DynamoDB control and pointers"]
+        truth["Versioned Object-Locked S3 truth"]
+        graph["Three-instance Neptune projection"]
+        ingress --> compute --> control
+        compute --> truth
+        compute --> graph
+    end
+    subgraph recovery["Warm standby recovery region"]
+        replica["Replicated immutable truth"]
+        restore["Restored and reconciled control state"]
+        election["Single writer epoch election"]
+        rebuild["Rebuild disposable projections"]
+        verify["Verify package, pointer and watermark"]
+        replica --> restore --> election --> rebuild --> verify
+    end
+    truth -->|"S3 replication-time control"| replica
+    control -->|"AWS Backup restore evidence"| restore
+    graph -. "Never authoritative" .-> rebuild
+    verify -->|"Only after measured RPO/RTO gate"| consumers["Resume query and collection"]
+```
+
+No production recovery drill has run. CDK topology and local rebuild/fence tests are evidence for
+design correctness only; RPO, RTO, writer election, quota, multi-AZ failure and regional recovery
+remain `AWS_REQUIRED` until a retained quarterly drill manifest exists.
 
 ## 16. Security, privacy, cost, and operability
 
@@ -587,3 +726,23 @@ The refactor is architecture-complete only when:
 - every production adapter passes the same contract suite as its local adapter;
 - every NFR, security, cost and resilience claim passes its required load/fault/drill gate; and
 - a clean rebuild from immutable manifests reproduces active projections and pointer checksums.
+
+## 23. Current implementation and evidence checkpoint
+
+The repository has completed the local modular core and Tasks 17–21 of the delivery layer:
+
+- B01–B16 build PRDs are checked in with infrastructure and acceptance ownership;
+- eight versioned Lambda targets, the SCA Fargate task, ten CDK stacks and exact OCI packaging build;
+- concrete AWS request adapters and four generated Standard workflows pass hermetic contract,
+  topology and explicit production/ephemeral synth gates;
+- named fault injection, replay/fairness smoke and content-addressed acceptance manifests pass
+  locally; and
+- product, runtime, Baseline, Incremental, PRGate, Deployment, publication recovery and resilience
+  behavior pass their current local oracles.
+
+This is not production acceptance. No approved AWS account/profile/opt-in was available during the
+checkpoint. Live workflow execution, clean-account deployment, canary/rollback, service quotas,
+100/s and 10k burst, 10k-repository/12-hour Baseline, availability, unit cost, security controls and
+warm-standby recovery remain `AWS_REQUIRED`. Catalog, GitHub/Jenkins, Bedrock, enterprise runtime,
+identity, paging policy and organization audit integrations remain `NOT_CONFIGURED` until their CTX
+owners provide approved contracts and values.

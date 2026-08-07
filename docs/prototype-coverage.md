@@ -1,37 +1,73 @@
-# Prototype Coverage
+# Implementation and Evidence Coverage
 
-This matrix is an honest M1 slice, not a claim that every production requirement is complete. “Implemented” means exercised locally by code and tests. “Fixture adapter” preserves the component seam with deterministic data. “Interface only” means downstream contracts exist without the enterprise integration. “Deferred” means explicitly outside this prototype.
+This is an honest implementation matrix, not a production-readiness declaration. The earlier
+prototype labels remain useful: **Implemented**, **Fixture adapter**, **Interface only**, and
+**Deferred** describe code breadth. Evidence status is stricter:
 
-| Component | Status | Included in the prototype | Out of prototype scope |
-|---|---|---|---|
-| L01 URN and resolver | Implemented | Canonical URN grammar, ordered catalog resolution, catalog-backed aliases, element validation, quarantine, snapshot and resolver determinants | JVM build, per-platform case/quote data, enterprise catalog export, governed alias mutation |
-| L02 intake and queues | Implemented | HMAC verification, immutable event identity, dedupe, normalized envelope, correlation, lane policy, quarantine | GitHub/Jenkins receivers, EventBridge/SQS/DLQ infrastructure, TTL expiry, load targets |
-| L03 orchestration | Implemented | Synchronous Incremental workflow, durable ordered run stages, UNKNOWN classification block, approval continuation | Step Functions ASL, Baseline/PRGate/Nightly workflows, failed-stage redrive, quotas and scheduling |
-| L04 SCA engine | Implemented | Deterministic Python AST matcher for seeded `read_dataset`/`write_dataset`, exact citations, transforms, residue, byte replay | Full framework rule packs, SQL dialect matrix, config-manifest substitution, hostile-repo performance envelope |
-| L05 LLM gateway | Interface only | LLM provenance kind, confidence behavior, evidence-store namespace and rejection contract are accepted by consolidation | Bedrock call, prompt templates, tier budgets, cache, guardrail execution and staged rollout |
-| L06 runtime observation | Fixture adapter | Complete element-scope runtime assertions join SCA edges and independently set corroboration | Session JWTs, OTel extraction, Kinesis, Spark/Dask/SDK emitters, prod hard-deny probe |
-| L07 consolidation and confidence | Implemented | Stable edge keys, append-only versions, mechanism dedupe, ordinal band table, separate corroboration, transform conflict retention | Estate-scale decay/re-derivation and complete contradiction rule catalogue |
-| L08 evidence store and cache | Implemented | Canonical SHA-256 JSON, safe typed keys, write-once local objects, indexed references, checksum verification | S3 Object Lock, replication, lifecycle retention, LLM cache and enterprise KMS policy |
-| L09 proposals and review | Implemented | Deterministic proposal diff, server state machine, optimistic review lock, immutable approvals, correction successors, audit | MVP auto-publish sampling/narrowing, TAS routing, calibration corpus and authorization |
-| L10 fenced publication | Implemented | Checksummed manifest, monotonic reservation, inactive staging, content verification, atomic pointer swap, stale-writer rejection, audited rollback | Neptune/OpenSearch projections, deployment promotion, namespace expiry and rebuild drill |
-| L11 APIs, UI and PR gate | Implemented | Local API, common errors, run/review/operations UI, accessible lineage graph, edge provenance, bounded version-pinned impact | Async full-closure jobs, PR check integration, identity-aware RBAC/ABAC, quarantine triage workflow, production SLOs |
-| L12 security, observability and operations | Interface only | Sanitized intake quarantine, correlation propagation, local audit ledger, bounded inputs, CORS limited to local Vite origins | AWS IAM/KMS/WAF, CloudTrail/Config, OTel export, paging, DR and security drills |
-| L13 repository classification | Implemented | Versioned nine-class treatment table, evidence precedence, same-level conflict to UNKNOWN, immutable decision record | Estate inventory, path-level monorepo routing UI, overrides/expiry and policy preview |
-| L14 infrastructure and deployment | Deferred | Reproducible native local processes and locked dependencies | AWS CDK stacks, accounts/VPC endpoints, CI/CD canary/blue-green rollout, capacity and cost controls |
-| L15 NFR and resiliency | Interface only | Deterministic replay, fencing/tamper tests, failure contracts, bounded depth, local build/test gates | Availability/error-budget measurement, load tests, RPO/RTO drills and degradation fault injection |
-| L16 delivery plan | Implemented | Recommended M1 vertical slice from one signed push through manual proposal, fenced publish and query, plus review SPA polish for demonstration | M0 enterprise pipeline, M2 breadth/auto-publish, M3 PRGate/OTel, M4 full runtime and DR program |
+- `LOCAL_PASS` — behavior ran locally against its real local adapters and oracle.
+- `SYNTH_PASS` — AWS topology/configuration was asserted and synthesized without an AWS call.
+- `AWS_REQUIRED` — a live AWS deploy, scale, availability, security-control, canary, or recovery
+  result has not run in the required environment.
+- `NOT_CONFIGURED` — an enterprise-owned CTX value or integration is intentionally absent.
 
-## Walking-skeleton mapping
+`AWS_REQUIRED` and `NOT_CONFIGURED` never mean `PASS`.
+
+| Component | Implementation status | Current evidence | Included now | Out of prototype scope / remaining external gate |
+|---|---|---|---|---|
+| L01 URN and resolver | Implemented | `LOCAL_PASS` | Canonical URNs, ordered catalog resolution, aliases, element validation, quarantine, snapshot/version determinants | Enterprise catalog export/schema, platform case/quote corpus and governed alias mutation are `NOT_CONFIGURED` |
+| L02 intake and queues | Implemented | `LOCAL_PASS`, `SYNTH_PASS`, live `AWS_REQUIRED` | HMAC intake, dedupe, durable acceptance/outbox, FIFO groups, lease visibility, DLQ/redrive contracts, EventBridge/SQS routing and lane headroom | GitHub/Jenkins canonical receivers and 100/s plus 10k-burst AWS evidence |
+| L03 orchestration | Implemented | `LOCAL_PASS`, `SYNTH_PASS`, live `AWS_REQUIRED` | Versioned B1–B10, I1–I10, P1–P8, D1–D6 and N1–N6 definitions; generated ASL parity; immutable handler versions; crash redrive | Live Step Functions execution/canary and production quota evidence |
+| L04 SCA engine | Implemented seed pack | `LOCAL_PASS`, packaged target `SYNTH_PASS` | Deterministic Python AST matcher, exact citations/transforms/residue and bounded callback Fargate target | Complete framework/SQL/config rule-pack matrix, hostile-estate load corpus and enterprise repository conventions are `NOT_CONFIGURED` |
+| L05 LLM gateway | Interface only | `LOCAL_PASS` for skip/no-fabrication contracts; `NOT_CONFIGURED` externally | LLM provenance/confidence contract, residue boundary and no-fabrication behavior | Approved Bedrock gateway, models, prompts, budgets, cache and guardrails |
+| L06 runtime observation | Implemented contracts and local plane | `LOCAL_PASS`; live integrations `NOT_CONFIGURED` | Signed expiring non-production sessions, revoke/drain/close manifests, OpenLineage facets, metadata-only SDK mapping, OTel connectivity mapping and artifact binding | Spark/Dask listener installation, OTel collector topology and weekly production hard-deny probe |
+| L07 consolidation and confidence | Implemented | `LOCAL_PASS` | Stable edge/provenance identities, commutative/idempotent merge, band/corroboration separation, transform conflict, late runtime reconciliation | Estate-scale partition/hot-key and full contradiction/decay corpus |
+| L08 evidence and control stores | Implemented local + AWS adapters | `LOCAL_PASS`, `SYNTH_PASS`, live `AWS_REQUIRED` | Canonical SHA-256 objects, overwrite/tamper refusal, SQLite/Dynamo conditional control, versioned S3 references, production Object Lock/replication topology | Live retention, replication-time and restore evidence with compliance-approved periods |
+| L09 proposals and review | Implemented | `LOCAL_PASS` | Deterministic diffs, lifecycle, optimistic lock, immutable approvals/corrections/audit and manual publish | TAS/RBAC ownership, governed auto-publish sampling and calibration corpus are `NOT_CONFIGURED` |
+| L10 fenced publication | Implemented local + AWS seams | `LOCAL_PASS`, `SYNTH_PASS`, live `AWS_REQUIRED` | Durable resumable publication operation, immutable manifest, bounded batches, verify, fence, atomic pointer/outbox and failure retain/discard | Live Neptune namespace verification, contention and rebuild drill |
+| L11 APIs, UI and PR gate | Implemented | `LOCAL_PASS` | FastAPI/product UI, resilience ledger, accessible graph/evidence, bounded impact, proposal flow and conservative read-only PRGate with freshness recheck | GitHub check credential/install scope and identity-aware enterprise authorization are `NOT_CONFIGURED` |
+| L12 security, observability and operations | Implemented local signals; external controls Interface only | `LOCAL_PASS`, `SYNTH_PASS`, live controls `AWS_REQUIRED`/`NOT_CONFIGURED` | Correlation, typed degradation, audit, strict contracts, private/no-NAT CDK, scoped actions, KMS, alarms, paging seam and backups | Org CloudTrail/Config/WAF baseline, paging/severity policy, penetration and live security-negative evidence |
+| L13 repository classification | Implemented | `LOCAL_PASS` | Versioned nine-class table, precedence/conflict-to-UNKNOWN, immutable decision record | Estate inventory, monorepo routing UI, override owner/expiry and policy preview |
+| L14 infrastructure and deployment | Implemented (formerly Deferred) | `SYNTH_PASS`, package `LOCAL_PASS`, live `AWS_REQUIRED` | Ten CDK stacks, eight Lambda aliases/canaries, SCA Fargate, queues/DLQs, DynamoDB/S3/Kinesis/Neptune/API/budget/backup/recovery and exact OCI digests | Clean-account deploy, canary rollback and service-quota validation |
+| L15 NFR and resiliency | Implemented local harness | `LOCAL_PASS`; scale/availability/DR `AWS_REQUIRED` | Named failpoints, replay equivalence, publication crash matrix, lane fairness smoke, truthful resilience UI and content-addressed acceptance evidence | 12-hour Baseline, sustained/burst, error-budget, cost, multi-AZ failure and RPO/RTO drills |
+| L16 delivery plan | Implemented through Task 21 | Tasks 17–21 `LOCAL_PASS`/`SYNTH_PASS`; Task 22 pending | Build-ready B01–B16 PRDs, deployable packages, executable AWS workflow spine, acceptance harness and operator/diagram handoff | Task 22 PR/review loop and all external evidence above |
+
+## Tasks 17–21 delivery status (Tasks 17–20 implementation plus handoff)
+
+| Task | Result | Commit |
+|---|---|---|
+| 17 — build-ready PRDs | 16 B-series PRDs with infrastructure, ownership and acceptance rows | `6a23e4a` |
+| 18 — deployable units/IaC | Eight Lambda handlers, SCA task, CDK topology and deterministic packages | `b236b9f` |
+| 19 — AWS adapters/workflows | Concrete SDK requests, generated four-workflow ASL, exact handler versions and guarded AWS smoke | `831a21b` |
+| 20 — acceptance harness | Named faults, local load/fairness smoke and content-addressed manifests | `5c28569` |
+| 21 — operator/architecture handoff | Commands, trigger/mapping tables, evidence coverage, resolved ambiguities and six normative Mermaid views | Current documentation commit |
+
+## Current gate summary
+
+| Gate | Outcome | Meaning |
+|---|---|---|
+| Backend domain/API/adapter/acceptance tests | `LOCAL_PASS` | Local correctness and fault oracles ran |
+| React tests and production build | `LOCAL_PASS` | Product surfaces and accessibility contracts ran |
+| CDK assertions, fixture synth and explicit production synth | `SYNTH_PASS` | Templates are coherent and fail closed; no cloud resource was created |
+| Lambda/SCA OCI package build | `LOCAL_PASS` | Pinned multi-architecture images and metadata were produced locally |
+| Local acceptance smoke | 3 `PASS`, 5 `AWS_REQUIRED` | Replay/fairness/evidence passed; AWS-only NFRs stayed external |
+| Ephemeral AWS deploy/smoke | `AWS_REQUIRED` | No approved profile/account/opt-in was present |
+| Production canary, scale, security and DR | `AWS_REQUIRED` | Must run in the specified environment and cadence |
+| Enterprise catalog/GitHub/Bedrock/runtime/identity integrations | `NOT_CONFIGURED` | CTX owners must provide approved contracts/values |
+
+## End-to-end local mapping
 
 ```text
 Signed push (L02)
-  → classification + run ledger (L13/L03)
-  → Python evidence + catalog URNs (L04/L01)
-  → immutable SCA and runtime fixture evidence (L08/L06)
-  → confidence merge (L07)
-  → manual proposal and approval (L09/L11)
-  → fenced projection v2 (L10)
-  → lineage and impact query (L11)
+  → durable command + classification (L03/L13)
+  → deterministic Python evidence + catalog URNs (L04/L01)
+  → optional exact-artifact runtime join (L06)
+  → immutable evidence and complete coverage (L08/L15)
+  → confidence merge and proposal (L07/L09)
+  → manual approval + resumable fenced publication (L10)
+  → exact deployment promotion / read-only PRGate (L03/L11)
+  → lineage, impact and resilience product surfaces (L11/L12)
 ```
 
-The local design intentionally pulls UI and impact forward from L16 M2 so the prototype can demonstrate and verify the complete product decision loop. That does not redefine the production delivery plan.
+The repository proves the architecture's hard local correctness properties and that the AWS shape
+can be synthesized and packaged. It deliberately does not convert unexecuted AWS, enterprise,
+scale, availability or recovery work into a passing claim.

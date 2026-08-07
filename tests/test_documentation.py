@@ -23,6 +23,35 @@ def test_readme_documents_every_local_operator_command_and_url() -> None:
     assert "## Demo walkthrough" in readme
 
 
+def test_operator_handoff_documents_workflows_generated_safety_and_acceptance() -> None:
+    readme = _read("README.md")
+
+    for command in (
+        "worker --drain --max-messages 100",
+        "make workflow-check",
+        "make acceptance-smoke",
+        "make aws-deploy",
+        "make aws-smoke",
+        "make aws-cleanup",
+    ):
+        assert command in readme
+    for heading in (
+        "## Workflow trigger table",
+        "## Local-to-AWS mapping",
+        "## Generated workflow safety",
+        "## Fault injection and acceptance evidence",
+        "## AWS ephemeral verification",
+    ):
+        assert heading in readme
+    for link in (
+        "docs/plans/2026-08-05-lineage-collection-architecture-refactor-design.md",
+        "docs/plans/2026-08-05-lineage-collection-architecture-refactor.md",
+        "docs/acceptance/lineage-platform-acceptance.md",
+        "docs/build-prds/README.md",
+    ):
+        assert link in readme
+
+
 def test_coverage_matrix_accounts_for_every_component() -> None:
     coverage = _read("docs/prototype-coverage.md")
 
@@ -31,6 +60,9 @@ def test_coverage_matrix_accounts_for_every_component() -> None:
     for state in ("Implemented", "Fixture adapter", "Interface only", "Deferred"):
         assert state in coverage
     assert "Out of prototype scope" in coverage
+    for state in ("LOCAL_PASS", "SYNTH_PASS", "AWS_REQUIRED", "NOT_CONFIGURED"):
+        assert state in coverage
+    assert "Tasks 17–20" in coverage
 
 
 def test_ambiguity_register_has_required_fields_ctx_items_and_inconsistencies() -> None:
@@ -133,3 +165,20 @@ def test_build_prds_are_complete_traceable_and_linked_from_delivery_plan() -> No
     assert "Build order" in index
     assert "../acceptance/lineage-platform-acceptance.md" in index
     assert "../build-prds/README.md" in delivery
+
+
+def test_normative_design_contains_all_six_diagram_views_and_honest_limits() -> None:
+    design = _read("docs/plans/2026-08-05-lineage-collection-architecture-refactor-design.md")
+
+    assert design.count("```mermaid") >= 6
+    for view in (
+        "Trigger and orchestration view",
+        "Runtime evidence view",
+        "Correctness and recovery view",
+        "Multi-AZ and regional recovery view",
+        "Local-to-production adapter view",
+    ):
+        assert view in design
+    assert "AWS_REQUIRED" in design
+    assert "five-minute stage-to-swap" in design
+    assert "No production recovery drill has run" in design
