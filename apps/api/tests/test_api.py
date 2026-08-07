@@ -70,6 +70,167 @@ def test_health_reset_overview_and_quarantine_routes(client) -> None:
     overview = client.get("/api/overview").json()
     assert overview["activeVersion"] == "v1"
     assert overview["counts"] == {"runs": 0, "inReview": 0, "quarantined": 1}
+    assert overview["resilience"]["coverage"]["status"] == "NOT_AVAILABLE"
+    assert overview["resilience"]["correlation"]["status"] == "COMPLETE"
+    assert overview["resilience"]["productionSignals"]["replication"]["status"] == (
+        "NOT_CONFIGURED"
+    )
+
+
+def test_resilience_snapshot_marks_a_dangling_projection_pointer_out_of_sync(client) -> None:
+    client.post("/api/demo/reset")
+    with client.app.state.services.database.transaction() as connection:
+        connection.execute(
+            "UPDATE pointers SET active_version = 'v404' WHERE env = 'staging'"
+        )
+
+    snapshot = client.get("/api/operations/resilience").json()
+
+    assert snapshot["status"] == "OUT_OF_SYNC"
+    assert snapshot["publication"]["pointerPackage"] == {
+        "status": "OUT_OF_SYNC",
+        "activeVersion": "v404",
+        "packageVersion": None,
+    }
+
+
+def test_resilience_snapshot_exposes_degradation_completeness_and_placeholders(client) -> None:
+    client.post("/api/demo/reset")
+    services = client.app.state.services
+    old = "2026-08-01T12:00:00Z"
+    recent = "2026-08-06T12:00:00Z"
+    with services.database.transaction() as connection:
+        connection.execute(
+            """
+            INSERT INTO coverage_manifests(
+                manifest_id, workflow_kind, scope, artifact_digest,
+                determinant_digest, state, payload_json, created_at, updated_at
+            ) VALUES (?, 'BASELINE', 'repo:payments', 'digest-baseline', 'det-baseline',
+                      'COMPLETE', ?, ?, ?)
+            """,
+            (
+                "coverage-baseline-old",
+                json.dumps({"runtimeEvidence": {"status": "NOT_PROVIDED"}}),
+                old,
+                old,
+            ),
+        )
+        connection.execute(
+            """
+            INSERT INTO coverage_manifests(
+                manifest_id, workflow_kind, scope, artifact_digest,
+                determinant_digest, state, payload_json, created_at, updated_at
+            ) VALUES (?, 'INCREMENTAL', 'repo:payments', 'digest-incremental', 'det-incremental',
+                      'INCOMPLETE', ?, ?, ?)
+            """,
+            (
+                "coverage-incomplete",
+                json.dumps({"runtimeEvidence": {"status": "INCOMPLETE"}}),
+                recent,
+                recent,
+            ),
+        )
+        connection.execute(
+            """
+            INSERT INTO lane_messages(
+                message_id, lane, group_key, payload_ref, correlation_id, status,
+                available_at, attempts, max_attempts, delivery_epoch, published_at,
+                dead_at, last_error
+            ) VALUES ('message-dead', 'INCREMENTAL', 'payments', 'object://dead',
+                      'corr-dead', 'DEAD', ?, 5, 5, 5, ?, ?, 'POISON')
+            """,
+            (old, old, recent),
+        )
+        connection.execute(
+            """
+            INSERT INTO commands(
+                command_id, idempotency_key, workflow_kind, workflow_version, scope,
+                artifact_digest, determinant_digest, status, attempt, max_attempts,
+                input_ref, correlation_id, created_at, deadline_at, lease_epoch,
+                updated_at
+            ) VALUES ('command-retried', 'idem-retried', 'INCREMENTAL', '1.0.0',
+                      'repo:payments', 'digest', 'det', 'RETRY_WAIT', 2, 5,
+                      'object://command', 'corr-command', ?, '2026-08-07T12:00:00Z',
+                      2, ?)
+            """,
+            (old, recent),
+        )
+        connection.execute(
+            """
+            INSERT INTO command_attempts(
+                command_id, attempt, lease_epoch, owner, status, started_at,
+                completed_at, error_code
+            ) VALUES ('command-retried', 1, 2, 'worker-2', 'LEASE_EXPIRED', ?, ?,
+                      'LEASE_EXPIRED')
+            """,
+            (old, recent),
+        )
+        connection.execute(
+            """
+            INSERT INTO proposals(
+                proposal_id, version, system, state, expected_base_version,
+                payload_json, lock_version, created_at, updated_at
+            ) VALUES ('proposal-waiting', 1, 'payments', 'IN_REVIEW', 'v1', '{}', 1, ?, ?)
+            """,
+            (old, recent),
+        )
+        connection.execute(
+            """
+            INSERT INTO deployment_events(
+                event_id, event_type, provider, provider_sequence, attempt, system,
+                environment, outcome, artifact_digest, correlation_id, audit_ref,
+                occurred_at, status, created_at, updated_at
+            ) VALUES ('deployment-out-of-sync', 'DEPLOYMENT', 'test', 1, 1, 'payments',
+                      'staging', 'SUCCEEDED', 'artifact-new', 'corr-deploy', 'audit://deploy',
+                      ?, 'LINEAGE_OUT_OF_SYNC', ?, ?)
+            """,
+            (recent, recent, recent),
+        )
+        connection.execute(
+            """
+            INSERT INTO deployment_state(
+                system, environment, provider, provider_sequence, attempt, event_id,
+                deployed_artifact_digest, graph_version, state, audit_ref,
+                correlation_id, updated_at
+            ) VALUES ('payments', 'staging', 'test', 1, 1, 'deployment-out-of-sync',
+                      'artifact-new', 'v99', 'LINEAGE_OUT_OF_SYNC', 'audit://deploy',
+                      'corr-deploy', ?)
+            """,
+            (recent,),
+        )
+
+    response = client.get("/api/operations/resilience")
+
+    assert response.status_code == 200
+    snapshot = response.json()
+    assert snapshot["status"] == "OUT_OF_SYNC"
+    assert set(snapshot) >= {
+        "capturedAt",
+        "correlation",
+        "queue",
+        "coverage",
+        "review",
+        "publication",
+        "productionSignals",
+    }
+    assert snapshot["queue"]["status"] == "DEGRADED"
+    assert snapshot["queue"]["oldestAgeSeconds"] > 0
+    assert snapshot["queue"]["saturation"]["status"] == "NOT_CONFIGURED"
+    assert snapshot["queue"]["retryCount"] == 1
+    assert snapshot["queue"]["deadLetterCount"] == 1
+    assert snapshot["queue"]["leaseStealCount"] == 1
+    assert snapshot["coverage"]["status"] == "INCOMPLETE"
+    assert snapshot["coverage"]["runtimeJoin"]["status"] == "INCOMPLETE"
+    assert snapshot["coverage"]["baseline"]["status"] == "STALE"
+    assert snapshot["review"]["oldestApprovalAgeSeconds"] > 0
+    assert snapshot["publication"]["pointerPackage"]["status"] == "OUT_OF_SYNC"
+    assert set(snapshot["publication"]) >= {"publishLagSeconds", "watermark"}
+    assert snapshot["productionSignals"] == {
+        "replication": {"status": "NOT_CONFIGURED", "value": None},
+        "errorBudgetBurn": {"status": "NOT_CONFIGURED", "value": None},
+        "unitCost": {"status": "NOT_CONFIGURED", "value": None},
+    }
+    assert client.get("/api/overview").json()["resilience"]["status"] == "OUT_OF_SYNC"
 
 
 def test_duplicate_missing_resource_depth_and_concurrent_error_shapes(client) -> None:

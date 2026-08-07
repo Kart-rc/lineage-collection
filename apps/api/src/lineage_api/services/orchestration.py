@@ -1376,6 +1376,122 @@ class OrchestrationService:
             ).fetchall()
         return [self.get_run(row["run_id"]) for row in rows]
 
+    def operational_observations(self) -> dict[str, Any]:
+        """Return local durable facts; policy and status labels live in observability."""
+        with self._database.connection() as connection:
+            queue_rows = connection.execute(
+                """
+                SELECT created_at AS queued_at FROM commands
+                WHERE status IN ('QUEUED', 'RUNNING', 'RETRY_WAIT', 'FAILED_REDRIVABLE')
+                UNION ALL
+                SELECT published_at AS queued_at FROM lane_messages
+                WHERE status IN ('AVAILABLE', 'IN_FLIGHT')
+                UNION ALL
+                SELECT created_at AS queued_at FROM outbox_events
+                WHERE status = 'PENDING'
+                """
+            ).fetchall()
+            retry_count = int(
+                connection.execute(
+                    """
+                    SELECT
+                        (SELECT COUNT(*) FROM commands WHERE attempt > 1) +
+                        (SELECT COUNT(*) FROM lane_messages
+                         WHERE attempts > 1 AND status != 'DEAD')
+                    """
+                ).fetchone()[0]
+            )
+            dead_letter_count = int(
+                connection.execute(
+                    """
+                    SELECT
+                        (SELECT COUNT(*) FROM lane_messages WHERE status = 'DEAD') +
+                        (SELECT COUNT(*) FROM commands WHERE status = 'FAILED_TERMINAL')
+                    """
+                ).fetchone()[0]
+            )
+            lease_steal_count = int(
+                connection.execute(
+                    "SELECT COUNT(*) FROM command_attempts WHERE lease_epoch > 1"
+                ).fetchone()[0]
+            )
+            coverage_rows = connection.execute(
+                """
+                SELECT workflow_kind, state, payload_json, updated_at
+                FROM coverage_manifests ORDER BY updated_at, manifest_id
+                """
+            ).fetchall()
+            oldest_approval = connection.execute(
+                "SELECT MIN(created_at) FROM proposals WHERE state = 'IN_REVIEW'"
+            ).fetchone()[0]
+            in_progress_publication = connection.execute(
+                """
+                SELECT MIN(created_at) FROM publication_operations
+                WHERE terminal_outcome IS NULL
+                """
+            ).fetchone()[0]
+            completed_publication = connection.execute(
+                """
+                SELECT created_at, terminal_at FROM publication_operations
+                WHERE terminal_outcome = 'SUCCEEDED'
+                ORDER BY terminal_at DESC, operation_id DESC LIMIT 1
+                """
+            ).fetchone()
+            correlation = connection.execute(
+                """
+                SELECT COUNT(*) AS tracked,
+                       SUM(CASE WHEN correlation_id = '' THEN 1 ELSE 0 END) AS missing
+                FROM (
+                    SELECT correlation_id FROM runs
+                    UNION ALL SELECT correlation_id FROM commands
+                    UNION ALL SELECT correlation_id FROM lane_messages
+                    UNION ALL SELECT correlation_id FROM deployment_events
+                    UNION ALL SELECT correlation_id FROM publication_operations
+                    UNION ALL SELECT correlation_id FROM audit_events
+                    UNION ALL SELECT correlation_id FROM quarantines
+                )
+                """
+            ).fetchone()
+
+        coverage = []
+        for row in coverage_rows:
+            try:
+                payload = json.loads(row["payload_json"])
+            except (json.JSONDecodeError, TypeError):
+                payload = {}
+            if not isinstance(payload, dict):
+                payload = {}
+            runtime = payload.get("runtimeEvidence", {})
+            coverage.append(
+                {
+                    "workflowKind": row["workflow_kind"],
+                    "state": row["state"],
+                    "runtimeStatus": runtime.get("status", "NOT_RECORDED"),
+                    "updatedAt": row["updated_at"],
+                }
+            )
+        completed_window = None
+        if completed_publication is not None:
+            completed_window = {
+                "createdAt": completed_publication["created_at"],
+                "terminalAt": completed_publication["terminal_at"],
+            }
+        return {
+            "queueDepth": len(queue_rows),
+            "oldestQueuedAt": min(
+                (str(row["queued_at"]) for row in queue_rows), default=None
+            ),
+            "retryCount": retry_count,
+            "deadLetterCount": dead_letter_count,
+            "leaseStealCount": lease_steal_count,
+            "coverage": coverage,
+            "oldestApprovalAt": oldest_approval,
+            "inProgressPublicationAt": in_progress_publication,
+            "completedPublication": completed_window,
+            "correlationTracked": int(correlation["tracked"] or 0),
+            "correlationMissing": int(correlation["missing"] or 0),
+        }
+
     def get_run(self, run_id: str) -> dict[str, Any]:
         with self._database.connection() as connection:
             row = connection.execute(

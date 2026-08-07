@@ -143,6 +143,58 @@ class QueryService:
             "summary": summary,
         }
 
+    def projection_observations(self) -> dict[str, Any]:
+        """Read pointer/projection/deployment facts without assigning health policy."""
+        with self._database.connection() as connection:
+            pointer = connection.execute(
+                """
+                SELECT p.active_version, p.fencing_token, p.updated_at, g.checksum
+                FROM pointers p
+                LEFT JOIN graph_versions g
+                  ON g.env = p.env AND g.version = p.active_version
+                WHERE p.env = ?
+                """,
+                (self._env,),
+            ).fetchone()
+            deployment = connection.execute(
+                """
+                SELECT graph_version, lineage_package_digest, state, updated_at
+                FROM deployment_state WHERE environment = ?
+                ORDER BY updated_at DESC, system LIMIT 1
+                """,
+                (self._env,),
+            ).fetchone()
+        if pointer is None:
+            return {
+                "pointerPackageStatus": "NOT_AVAILABLE",
+                "activeVersion": None,
+                "packageVersion": None,
+                "watermarkAt": None,
+                "fencingToken": None,
+                "checksum": None,
+            }
+        package_version = None if deployment is None else deployment["graph_version"]
+        if pointer["checksum"] is None:
+            pointer_package_status = "OUT_OF_SYNC"
+        elif deployment is None:
+            pointer_package_status = "NOT_AVAILABLE"
+        elif (
+            deployment["state"] == "LINEAGE_OUT_OF_SYNC"
+            or package_version != pointer["active_version"]
+            or deployment["lineage_package_digest"] is None
+        ):
+            pointer_package_status = "OUT_OF_SYNC"
+        else:
+            pointer_package_status = "IN_SYNC"
+        return {
+            "pointerPackageStatus": pointer_package_status,
+            "activeVersion": pointer["active_version"],
+            "packageVersion": package_version,
+            "watermarkAt": pointer["updated_at"],
+            "fencingToken": int(pointer["fencing_token"]),
+            "checksum": pointer["checksum"],
+        }
+
     def _resolve_version(self, requested: str | None) -> str:
         with self._database.connection() as connection:
             if requested is None:

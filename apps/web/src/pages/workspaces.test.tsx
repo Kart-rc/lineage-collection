@@ -14,6 +14,39 @@ const overview = {
   fencingToken: 0,
   counts: { runs: 1, inReview: 1, quarantined: 0 },
   recentRuns: [],
+  resilience: {
+    schemaVersion: "1.0.0",
+    capturedAt: "2026-08-06T12:00:00Z",
+    status: "OUT_OF_SYNC",
+    correlation: { status: "COMPLETE", trackedCount: 8, missingCount: 0 },
+    queue: {
+      status: "DEGRADED",
+      depth: 4,
+      oldestAgeSeconds: 95,
+      saturation: { status: "NOT_CONFIGURED", observedDepth: 4, capacity: null },
+      retryCount: 2,
+      deadLetterCount: 1,
+      leaseStealCount: 1,
+    },
+    coverage: {
+      status: "INCOMPLETE",
+      incompleteCount: 2,
+      runtimeJoin: { status: "INCOMPLETE", joined: 3, eligible: 5, rate: 0.6 },
+      baseline: { status: "STALE", ageSeconds: 90000, maxAgeSeconds: 86400 },
+    },
+    review: { status: "DEGRADED", oldestApprovalAgeSeconds: 480 },
+    publication: {
+      status: "OUT_OF_SYNC",
+      publishLagSeconds: 72,
+      pointerPackage: { status: "OUT_OF_SYNC", activeVersion: "v1", packageVersion: "v2" },
+      watermark: { status: "STALE", version: "v1", updatedAt: "2026-08-05T12:00:00Z", ageSeconds: 86400 },
+    },
+    productionSignals: {
+      replication: { status: "NOT_CONFIGURED", value: null },
+      errorBudgetBurn: { status: "NOT_CONFIGURED", value: null },
+      unitCost: { status: "NOT_CONFIGURED", value: null },
+    },
+  },
 };
 
 const edge = {
@@ -128,6 +161,30 @@ test("operations exposes gate values and runs the signed seeded collection", asy
   expect(await screen.findByText("v1")).toBeVisible();
   expect(screen.getByText("Human review")).toBeVisible();
   expect(screen.getByText("1 waiting")).toBeVisible();
+  expect(screen.getByText("Operational snapshot")).toBeVisible();
+  expect(screen.getAllByText("DEGRADED").length).toBeGreaterThan(0);
+  expect(screen.getAllByText("INCOMPLETE").length).toBeGreaterThan(0);
+  expect(screen.getAllByText("STALE").length).toBeGreaterThan(0);
+  expect(screen.getAllByText("OUT OF SYNC").length).toBeGreaterThan(0);
+  expect(screen.getAllByText("NOT CONFIGURED").length).toBeGreaterThan(0);
+  for (const label of [
+    "Oldest queue age",
+    "Queue saturation",
+    "Retries / DLQ",
+    "Lease steals",
+    "Incomplete coverage",
+    "Runtime join rate",
+    "Baseline freshness",
+    "Approval age",
+    "Publish lag",
+    "Pointer / package",
+    "Projection watermark",
+    "Replication",
+    "Error-budget burn",
+    "Unit cost",
+  ]) {
+    expect(screen.getByText(label)).toBeVisible();
+  }
 
   await userEvent.click(screen.getByRole("button", { name: "Run seeded collection" }));
   expect(await screen.findByText("Delivery accepted into review")).toBeVisible();

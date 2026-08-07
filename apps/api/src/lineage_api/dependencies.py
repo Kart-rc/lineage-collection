@@ -29,6 +29,7 @@ from lineage_api.infrastructure.sqlite_control import (
     SQLiteCommandStore,
     SQLiteIntakeUnitOfWork,
 )
+from lineage_api.observability import LocalMetricsSnapshot, MetricsSnapshotPort
 from lineage_api.seed import SeedSummary, reset_demo
 from lineage_api.services.classification import ClassificationService
 from lineage_api.services.consolidation import ConsolidationService
@@ -60,6 +61,7 @@ class AppServices:
     orchestration: OrchestrationService
     pr_gate: PRGateWorkflow
     deployment: DeploymentWorkflow
+    observability: MetricsSnapshotPort
 
     def reset(self) -> dict[str, Any]:
         if self.settings.object_directory.exists():
@@ -214,6 +216,11 @@ def build_services(settings: Settings) -> AppServices:
         publisher=publisher,
         authenticator=HmacDeploymentAuthenticator(settings.webhook_secret),
     )
+    observability = LocalMetricsSnapshot(
+        orchestration,
+        query,
+        clock=clock.now,
+    )
     services = AppServices(
         settings=settings,
         database=database,
@@ -225,6 +232,7 @@ def build_services(settings: Settings) -> AppServices:
         orchestration=orchestration,
         pr_gate=pr_gate,
         deployment=deployment,
+        observability=observability,
     )
     services.ensure_seeded()
     return services

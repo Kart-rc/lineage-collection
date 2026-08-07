@@ -112,6 +112,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     def overview(request: Request) -> dict[str, Any]:
         current = _services(request)
         pointer = current.publisher.pointer("staging")
+        resilience = current.observability.snapshot()
         with current.database.connection() as connection:
             counts = {
                 "runs": int(connection.execute("SELECT COUNT(*) FROM runs").fetchone()[0]),
@@ -131,7 +132,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             "fencingToken": pointer.fencing_token,
             "counts": counts,
             "recentRuns": current.orchestration.list_runs()[:5],
+            "resilience": resilience,
         }
+
+    @application.get("/api/operations/resilience")
+    def resilience(request: Request) -> dict[str, Any]:
+        return _services(request).observability.snapshot()
 
     @application.get("/api/runs")
     def list_runs(request: Request) -> list[dict[str, Any]]:

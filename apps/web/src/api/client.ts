@@ -7,6 +7,7 @@ import type {
   LineageResponse,
   Overview,
   Proposal,
+  ResilienceSnapshot,
   Run,
 } from "./types";
 
@@ -49,6 +50,8 @@ async function request<T>(
 
 export const api = {
   overview: (signal?: AbortSignal) => request<Overview>("/api/overview", {}, signal),
+  resilience: (signal?: AbortSignal) =>
+    request<ResilienceSnapshot>("/api/operations/resilience", {}, signal),
   reset: () => request<DemoReset>("/api/demo/reset", { method: "POST" }),
   collect: (demo: DemoReset["demoDelivery"]) =>
     request<CollectionResult>("/api/events/push", {
