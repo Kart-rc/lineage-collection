@@ -19,6 +19,7 @@
     "workflow:export": "uv run --project apps/api python scripts/export_workflow_definitions.py",
     "workflow:check": "uv run --project apps/api python scripts/export_workflow_definitions.py --check",
     "test:aws:ephemeral": "uv run --project apps/api --extra dev --extra aws pytest -q tests/aws/test_ephemeral_workflow.py",
+    "acceptance:smoke": "./scripts/run_acceptance.sh",
     "verify": "npm test && npm run build"
   },
   "devDependencies": {

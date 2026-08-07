@@ -1,4 +1,4 @@
-.PHONY: setup test dev reset build synth package-aws workflow-export workflow-check aws-deploy aws-smoke aws-cleanup verify
+.PHONY: setup test dev reset build synth package-aws workflow-export workflow-check aws-deploy aws-smoke aws-cleanup acceptance-smoke verify
 
 setup:
 	uv sync --project apps/api --extra dev
@@ -36,6 +36,9 @@ aws-smoke:
 
 aws-cleanup:
 	./scripts/cleanup_ephemeral_aws.sh
+
+acceptance-smoke:
+	npm run acceptance:smoke
 
 verify:
 	npm run verify
