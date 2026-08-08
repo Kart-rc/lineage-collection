@@ -545,5 +545,5 @@ The runtime hardening track is complete only when R1–R8 are independently comm
 available verification is green, generated artifacts name the final source revision and exact
 digests, external gates are truthfully labeled, and `/tmp/refactor-lineagecollector.md` contains the
 review/evidence checkpoint for every task. Task 22 (push, PR to `main`, GitHub/Codex bot review loop)
-starts only after this gate.
-
+starts only after this gate and the independently reviewed production AWS application-completion
+A1–A9 track in `2026-08-08-production-aws-application-completion.md`.

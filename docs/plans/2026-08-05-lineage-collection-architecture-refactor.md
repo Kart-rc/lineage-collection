@@ -1036,6 +1036,17 @@ git add README.md docs/prototype-coverage.md docs/prd-ambiguities.md docs/plans/
 git commit -m "docs: hand off resilient lineage collector"
 ```
 
+### Production AWS application-completion prerequisite (A1–A9)
+
+The AWS workflow topology checkpoint exposed a distinction between deployable handler shells and
+real production application execution. Before Task 22, complete the independently reviewed A1–A9
+track in
+[the production AWS application completion plan](2026-08-08-production-aws-application-completion.md):
+closed stage ownership and classification compute; real functional bindings; SCA execution; complete
+stage-artifact evidence; product APIs; CloudFront delivery; identity/RBAC; immutable promotion; and a
+retained signed-event-to-queryable-graph AWS proof. Runtime hardening R1–R8 remains a parallel
+prerequisite. Structural synth/package evidence alone cannot satisfy either track.
+
 ### Task 22: Publish the PR to main and close the automated review loop
 
 **Files:**
