@@ -144,12 +144,17 @@ class RuntimeLineageService:
         )
         self._increment(session_id, "attempted")
         try:
-            observation = self._parse_observation(session, mechanism, payload)
-            result = self._store_observation(session, observation)
+            observations = self._parse_observation(session, mechanism, payload)
+            results = self._store_observations(session, observations)
         except DomainError:
             self._increment(session_id, "rejected")
             raise
-        return result
+        if len(results) == 1:
+            return results[0]
+        return {
+            "observations": results,
+            "duplicate": bool(results) and all(bool(item["duplicate"]) for item in results),
+        }
 
     def begin_drain(self, session_id: str, token: str) -> dict[str, object]:
         row = self._active_session(
@@ -384,7 +389,7 @@ class RuntimeLineageService:
         session,
         mechanism: str,
         payload: dict[str, object],
-    ) -> dict[str, object]:
+    ) -> list[dict[str, object]]:
         if mechanism not in {"OPENLINEAGE", "SDK", "OTEL"}:
             raise DomainError(
                 "RUNTIME_MECHANISM_UNSUPPORTED",
@@ -403,27 +408,44 @@ class RuntimeLineageService:
             "SDK": self._parse_sdk,
             "OTEL": self._parse_otel,
         }[mechanism]
-        observation = parser(payload, session["session_id"])
+        parsed = parser(payload, session["session_id"])
+        parsed_observations = parsed if isinstance(parsed, list) else [parsed]
         scoped = set(json.loads(session["datasets_json"]))
-        observed_datasets = set(observation["sourceDatasets"]) | {
-            str(observation["targetDataset"])
-        }
-        if not observed_datasets <= scoped:
-            raise DomainError(
-                "RUNTIME_SCOPE_VIOLATION",
-                "Runtime observation references a dataset outside the signed session scope",
-                session["session_id"],
-                {"outsideScope": sorted(observed_datasets - scoped)},
+        normalized: list[dict[str, object]] = []
+        for index, observation in enumerate(parsed_observations):
+            observed_datasets = set(observation["sourceDatasets"]) | {
+                str(observation["targetDataset"])
+            }
+            if not observed_datasets <= scoped:
+                raise DomainError(
+                    "RUNTIME_SCOPE_VIOLATION",
+                    "Runtime observation references a dataset outside the signed session scope",
+                    session["session_id"],
+                    {"outsideScope": sorted(observed_datasets - scoped)},
+                )
+            normalized.append(
+                {
+                    "schemaVersion": "1.0.0",
+                    "observationId": str(
+                        observation.get(
+                            "observationId",
+                            payload["observationId"]
+                            if len(parsed_observations) == 1
+                            else f"{payload['observationId']}:{index}",
+                        )
+                    ),
+                    "sessionId": session["session_id"],
+                    "sequence": int(payload["sequence"]),
+                    "artifactDigest": session["artifact_digest"],
+                    "mechanism": mechanism,
+                    **{
+                        key: value
+                        for key, value in observation.items()
+                        if key != "observationId"
+                    },
+                }
             )
-        return {
-            "schemaVersion": "1.0.0",
-            "observationId": str(payload["observationId"]),
-            "sessionId": session["session_id"],
-            "sequence": int(payload["sequence"]),
-            "artifactDigest": session["artifact_digest"],
-            "mechanism": mechanism,
-            **observation,
-        }
+        return normalized
 
     def _parse_sdk(self, payload: dict[str, object], correlation_id: str) -> dict[str, object]:
         allowed = {
@@ -456,8 +478,15 @@ class RuntimeLineageService:
 
     def _parse_openlineage(
         self, payload: dict[str, object], correlation_id: str
-    ) -> dict[str, object]:
+    ) -> list[dict[str, object]]:
+        from lineage_api.runtime.adapters.openlineage import (
+            OpenLineageAdapter,
+            OpenLineageProfile,
+        )
+
         allowed = {
+            "schemaURL",
+            "producer",
             "schemaVersion",
             "observationId",
             "sequence",
@@ -470,45 +499,70 @@ class RuntimeLineageService:
             "outputs",
         }
         self._assert_allowed(payload, allowed, correlation_id)
-        outputs = payload.get("outputs")
-        if not isinstance(outputs, list) or len(outputs) != 1 or not isinstance(outputs[0], dict):
+        result = OpenLineageAdapter().normalize(
+            payload,
+            OpenLineageProfile(
+                supported_schema_urls=frozenset(
+                    {
+                        "",
+                        "https://openlineage.io/spec/2-0-2/OpenLineage.json",
+                    }
+                ),
+                supported_facet_schema_urls=frozenset(
+                    {
+                        "https://openlineage.io/spec/facets/1-0-1/ParentRunFacet.json",
+                        "https://openlineage.io/spec/facets/1-2-0/ColumnLineageDatasetFacet.json",
+                    }
+                ),
+                permitted_granularity=frozenset({"DATASET", "ELEMENT"}),
+                control=None,
+                supported_producer_prefixes=frozenset(
+                    {
+                        "https://github.com/OpenLineage/OpenLineage/tree/1.39.0/integration/spark"
+                    }
+                ),
+            ),
+        )
+        if result.quarantined:
             raise DomainError(
                 "RUNTIME_SHAPE_INVALID",
-                "OpenLineage observation must contain one output dataset",
+                "OpenLineage event could not be normalized",
                 correlation_id,
+                {"code": result.quarantined[0].code},
             )
-        output = outputs[0]
-        facets = self._object(output, "facets", correlation_id)
-        column_lineage = self._object(facets, "columnLineage", correlation_id)
-        fields = self._object(column_lineage, "fields", correlation_id)
-        if len(fields) != 1:
+        if result.unsupported:
             raise DomainError(
-                "RUNTIME_SHAPE_INVALID",
-                "OpenLineage fixture must contain one target field mapping",
+                "RUNTIME_COVERAGE_UNSUPPORTED",
+                "OpenLineage event contains unsupported versioned coverage",
                 correlation_id,
+                {"code": result.unsupported[0].code},
             )
-        target_field, mapping_value = next(iter(fields.items()))
-        if not isinstance(mapping_value, dict):
-            raise DomainError("RUNTIME_SHAPE_INVALID", "Invalid column mapping", correlation_id)
-        mapping = mapping_value
-        inputs = mapping.get("inputFields")
-        if not isinstance(inputs, list) or not inputs or not all(isinstance(item, dict) for item in inputs):
-            raise DomainError("RUNTIME_SHAPE_INVALID", "Column inputs are required", correlation_id)
-        source_datasets = [self._dataset(item) for item in inputs]
-        source_fields = [str(item["field"]) for item in inputs]
-        return {
-            "granularity": "ELEMENT",
-            "sourceDatasets": source_datasets,
-            "targetDataset": self._dataset(output),
-            "sourceFields": source_fields,
-            "targetField": target_field,
-            "edgeType": "DERIVES",
-            "transform": str(mapping.get("transformationDescription", "runtime mapping")),
-            "exact": True,
-            "observedAt": str(payload["eventTime"]),
+        body_fields = {
+            "granularity",
+            "sourceDatasets",
+            "targetDataset",
+            "sourceFields",
+            "targetField",
+            "edgeType",
+            "transform",
+            "exact",
+            "observedAt",
         }
+        return [
+            {
+                "observationId": observation["observationId"],
+                **{
+                    key: value
+                    for key, value in observation.items()
+                    if key in body_fields
+                },
+            }
+            for observation in result.observations
+        ]
 
     def _parse_otel(self, payload: dict[str, object], correlation_id: str) -> dict[str, object]:
+        from lineage_api.runtime.adapters.otel import normalize_legacy_span
+
         allowed = {
             "schemaVersion",
             "observationId",
@@ -534,67 +588,36 @@ class RuntimeLineageService:
             },
             correlation_id,
         )
-        result: dict[str, object] = {
-            "granularity": "CONNECTIVITY",
-            "sourceDatasets": [str(attributes["lineage.source.dataset"])],
-            "targetDataset": str(attributes["lineage.target.dataset"]),
-            "edgeType": "CONNECTS",
-            "exact": False,
-            "traceId": str(payload["traceId"]),
-            "spanId": str(payload["spanId"]),
-            "observedAt": str(payload["observedAt"]),
-        }
-        parser_contract = payload.get("parserContract")
-        if parser_contract is not None:
-            if parser_contract not in self._approved_otel_parsers:
-                raise DomainError(
-                    "RUNTIME_PARSER_NOT_APPROVED",
-                    "OTel parser contract is not approved for exact field lineage",
-                    correlation_id,
-                )
+        if payload.get("fieldMapping") is not None:
             mapping = self._object(payload, "fieldMapping", correlation_id)
             self._assert_allowed(mapping, {"sourceField", "targetField"}, correlation_id)
-            result.update(
-                {
-                    "granularity": "ELEMENT",
-                    "sourceFields": [str(mapping["sourceField"])],
-                    "targetField": str(mapping["targetField"]),
-                    "edgeType": "DERIVES",
-                    "exact": True,
-                    "parserContract": str(parser_contract),
-                }
+        result, issue = normalize_legacy_span(
+            payload,
+            approved_parser_contracts=self._approved_otel_parsers,
+        )
+        if issue is not None:
+            code = (
+                "RUNTIME_PARSER_NOT_APPROVED"
+                if issue.code == "OTEL_PARSER_NOT_APPROVED"
+                else "RUNTIME_SHAPE_INVALID"
+            )
+            raise DomainError(code, "OTel span could not be normalized", correlation_id)
+        if result is None:
+            raise DomainError(
+                "RUNTIME_SHAPE_INVALID", "OTel span produced no evidence", correlation_id
             )
         return result
 
     def _store_observation(
         self, session, observation: dict[str, object]
     ) -> dict[str, object]:
-        payload_checksum = _checksum(observation)
-        dataset_scope = sorted(
-            set(observation["sourceDatasets"]) | {str(observation["targetDataset"])}
-        )
+        return self._store_observations(session, [observation])[0]
+
+    def _store_observations(
+        self, session, observations: list[dict[str, object]]
+    ) -> list[dict[str, object]]:
         now = _utc_text(self._now())
         with self._database.transaction() as connection:
-            existing = connection.execute(
-                """
-                SELECT payload_checksum, payload_json FROM runtime_observations
-                WHERE session_id = ? AND observation_id = ?
-                """,
-                (session["session_id"], observation["observationId"]),
-            ).fetchone()
-            if existing is not None:
-                if existing["payload_checksum"] != payload_checksum:
-                    raise DomainError(
-                        "RUNTIME_OBSERVATION_CONFLICT",
-                        "Observation identity was reused with different metadata",
-                        session["session_id"],
-                    )
-                connection.execute(
-                    "UPDATE runtime_sessions SET duplicates = duplicates + 1, updated_at = ? WHERE session_id = ?",
-                    (now, session["session_id"]),
-                )
-                return {**json.loads(existing["payload_json"]), "duplicate": True}
-
             rows = connection.execute(
                 """
                 SELECT sequence, datasets_json FROM runtime_observations
@@ -602,53 +625,96 @@ class RuntimeLineageService:
                 """,
                 (session["session_id"],),
             ).fetchall()
-            for row in rows:
-                if set(json.loads(row["datasets_json"])) & set(dataset_scope) and int(
-                    observation["sequence"]
-                ) <= int(row["sequence"]):
-                    raise DomainError(
-                        "RUNTIME_SEQUENCE_CONFLICT",
-                        "Runtime sequence must increase for every observed dataset",
-                        session["session_id"],
-                    )
+            results: list[dict[str, object] | None] = [None] * len(observations)
+            pending: list[tuple[int, dict[str, object], str, list[str]]] = []
+            duplicate_count = 0
+            for index, observation in enumerate(observations):
+                payload_checksum = _checksum(observation)
+                dataset_scope = sorted(
+                    set(observation["sourceDatasets"])
+                    | {str(observation["targetDataset"])}
+                )
+                existing = connection.execute(
+                    """
+                    SELECT payload_checksum, payload_json FROM runtime_observations
+                    WHERE session_id = ? AND observation_id = ?
+                    """,
+                    (session["session_id"], observation["observationId"]),
+                ).fetchone()
+                if existing is not None:
+                    if existing["payload_checksum"] != payload_checksum:
+                        raise DomainError(
+                            "RUNTIME_OBSERVATION_CONFLICT",
+                            "Observation identity was reused with different metadata",
+                            session["session_id"],
+                        )
+                    results[index] = {
+                        **json.loads(existing["payload_json"]),
+                        "duplicate": True,
+                    }
+                    duplicate_count += 1
+                    continue
+                for row in rows:
+                    if set(json.loads(row["datasets_json"])) & set(dataset_scope) and int(
+                        observation["sequence"]
+                    ) <= int(row["sequence"]):
+                        raise DomainError(
+                            "RUNTIME_SEQUENCE_CONFLICT",
+                            "Runtime sequence must increase for every observed dataset",
+                            session["session_id"],
+                        )
+                pending.append((index, observation, payload_checksum, dataset_scope))
             current = connection.execute(
                 "SELECT state FROM runtime_sessions WHERE session_id = ?",
                 (session["session_id"],),
             ).fetchone()
-            if current is None or current["state"] not in {"READY", "OBSERVING"}:
+            if pending and (
+                current is None or current["state"] not in {"READY", "OBSERVING"}
+            ):
                 raise DomainError(
                     "RUNTIME_STATE_CONFLICT",
                     "Runtime session stopped accepting observations",
                     session["session_id"],
                 )
-            connection.execute(
-                """
-                INSERT INTO runtime_observations(
-                    session_id, observation_id, sequence, mechanism, granularity,
-                    datasets_json, payload_checksum, payload_json, created_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    session["session_id"],
-                    observation["observationId"],
-                    observation["sequence"],
-                    observation["mechanism"],
-                    observation["granularity"],
-                    _canonical(dataset_scope),
-                    payload_checksum,
-                    _canonical(observation),
-                    now,
-                ),
-            )
+            for index, observation, payload_checksum, dataset_scope in pending:
+                connection.execute(
+                    """
+                    INSERT INTO runtime_observations(
+                        session_id, observation_id, sequence, mechanism, granularity,
+                        datasets_json, payload_checksum, payload_json, created_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        session["session_id"],
+                        observation["observationId"],
+                        observation["sequence"],
+                        observation["mechanism"],
+                        observation["granularity"],
+                        _canonical(dataset_scope),
+                        payload_checksum,
+                        _canonical(observation),
+                        now,
+                    ),
+                )
+                results[index] = {**observation, "duplicate": False}
             connection.execute(
                 """
                 UPDATE runtime_sessions
-                SET state = 'OBSERVING', accepted = accepted + 1, updated_at = ?
+                SET state = CASE WHEN ? > 0 THEN 'OBSERVING' ELSE state END,
+                    accepted = accepted + ?, duplicates = duplicates + ?, updated_at = ?
                 WHERE session_id = ?
                 """,
-                (now, session["session_id"]),
+                (
+                    len(pending),
+                    len(pending),
+                    duplicate_count,
+                    now,
+                    session["session_id"],
+                ),
             )
-        return {**observation, "duplicate": False}
+        if any(result is None for result in results):
+            raise RuntimeError("runtime observation batch produced an incomplete result")
+        return [result for result in results if result is not None]
 
     def _expire(self, row) -> None:
         observations = self._observation_payloads(row["session_id"])

@@ -277,6 +277,83 @@ def test_openlineage_sdk_and_otel_retain_mechanism_and_supported_granularity(run
     )
 
 
+def test_multi_output_openlineage_event_is_stored_atomically_and_replay_is_idempotent(
+    runtime,
+) -> None:
+    service, database, _ = runtime
+    payload = json.loads(
+        (RUNTIME_FIXTURES / "openlineage" / "multi-output.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    datasets = (
+        SOURCE_DATASET,
+        TARGET_DATASET,
+        "snowflake://payments/raw.refunds",
+        "snowflake://payments/analytics.refund_summary",
+    )
+    grant = service.grant_session(
+        repo="payments-pipeline",
+        environment="staging",
+        artifact_digest=ARTIFACT,
+        datasets=datasets,
+        ttl_seconds=300,
+        actor="runtime-test",
+    )
+    service.mark_ready(grant["sessionId"], grant["token"])
+
+    first = service.observe(grant["sessionId"], grant["token"], "OPENLINEAGE", payload)
+    replay = service.observe(grant["sessionId"], grant["token"], "OPENLINEAGE", payload)
+
+    assert len(first["observations"]) == 2
+    assert [item["granularity"] for item in first["observations"]] == ["ELEMENT", "DATASET"]
+    assert replay["duplicate"] is True
+    assert all(item["duplicate"] is True for item in replay["observations"])
+    with database.connection() as connection:
+        stored = connection.execute(
+            "SELECT COUNT(*) FROM runtime_observations WHERE session_id = ?",
+            (grant["sessionId"],),
+        ).fetchone()[0]
+        counters = connection.execute(
+            "SELECT attempted, accepted, duplicates FROM runtime_sessions WHERE session_id = ?",
+            (grant["sessionId"],),
+        ).fetchone()
+    assert stored == 2
+    assert dict(counters) == {"attempted": 2, "accepted": 2, "duplicates": 2}
+
+
+def test_openlineage_unknown_connector_is_rejected_as_unsupported_coverage(runtime) -> None:
+    service, _, _ = runtime
+    payload = json.loads(
+        (RUNTIME_FIXTURES / "openlineage" / "multi-output.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    payload["producer"] = (
+        "https://github.com/OpenLineage/OpenLineage/tree/9.0.0/integration/spark"
+    )
+    grant = service.grant_session(
+        repo="payments-pipeline",
+        environment="staging",
+        artifact_digest=ARTIFACT,
+        datasets=(
+            SOURCE_DATASET,
+            TARGET_DATASET,
+            "snowflake://payments/raw.refunds",
+            "snowflake://payments/analytics.refund_summary",
+        ),
+        ttl_seconds=300,
+        actor="runtime-test",
+    )
+    service.mark_ready(grant["sessionId"], grant["token"])
+
+    with pytest.raises(DomainError) as rejected:
+        service.observe(grant["sessionId"], grant["token"], "OPENLINEAGE", payload)
+
+    assert rejected.value.code == "RUNTIME_COVERAGE_UNSUPPORTED"
+    assert rejected.value.details == {"code": "OPENLINEAGE_CONNECTOR_UNSUPPORTED"}
+
+
 def test_otel_requires_a_separately_approved_parser_contract_for_exact_columns(runtime) -> None:
     service, _, _ = runtime
     grant = _grant_ready(service)
