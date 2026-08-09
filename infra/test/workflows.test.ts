@@ -98,6 +98,52 @@ describe("exported executable workflow topology", () => {
     expect(baseline.States.B5.ItemProcessor.States.B5WorkerFailed.Type).toBe("Fail");
   });
 
+  it("passes each Fargate SCA stage the exact prior immutable work reference", () => {
+    const baseline = JSON.parse(readFileSync(resolve(workflowsRoot, "baseline.asl.json"), "utf8"));
+    const incremental = JSON.parse(
+      readFileSync(resolve(workflowsRoot, "incremental.asl.json"), "utf8"),
+    );
+    const nightly = JSON.parse(readFileSync(resolve(workflowsRoot, "nightly.asl.json"), "utf8"));
+    const environments = (task: any) =>
+      Object.fromEntries(
+        task.Parameters.Overrides.ContainerOverrides[0].Environment.map((entry: any) => [
+          entry.Name,
+          entry,
+        ]),
+      );
+
+    expect(environments(baseline.States.B5.ItemProcessor.States.B5Worker)).toMatchObject({
+      LINEAGE_STAGE_INPUT: { "Value.$": "States.JsonToString($.input)" },
+      LINEAGE_STAGE_IDEMPOTENCY_KEY: { "Value.$": "$.idempotencyKey" },
+    });
+    expect(environments(incremental.States.I5)).toMatchObject({
+      LINEAGE_STAGE_INPUT: { "Value.$": "States.JsonToString($._I4.Payload.output)" },
+      LINEAGE_STAGE_IDEMPOTENCY_KEY: {
+        "Value.$": "States.Format('{}:I5', $.idempotencyKey)",
+      },
+    });
+    expect(environments(nightly.States.N2)).toMatchObject({
+      LINEAGE_STAGE_INPUT: { "Value.$": "States.JsonToString($._N1.Payload.output)" },
+      LINEAGE_STAGE_IDEMPOTENCY_KEY: {
+        "Value.$": "States.Format('{}:N2', $.idempotencyKey)",
+      },
+    });
+    for (const task of [
+      baseline.States.B5.ItemProcessor.States.B5Worker,
+      incremental.States.I5,
+      nightly.States.N2,
+    ]) {
+      expect(environments(task)).toMatchObject({
+        LINEAGE_STAGE_SCHEMA_VERSION: { "Value.$": "$.schemaVersion" },
+        LINEAGE_STAGE_COMMAND_ID: { "Value.$": "$.commandId" },
+        LINEAGE_STAGE_CORRELATION_ID: { "Value.$": "$.correlationId" },
+        LINEAGE_STAGE_CAUSATION_ID: { "Value.$": "$.causationId" },
+        LINEAGE_STAGE_DETERMINANT_DIGEST: { "Value.$": "$.determinantDigest" },
+      });
+      expect(environments(task)).not.toHaveProperty("LINEAGE_STAGE_ENVELOPE");
+    }
+  });
+
   it("routes Baseline classification to the immutable classification target", () => {
     const baseline = JSON.parse(readFileSync(resolve(workflowsRoot, "baseline.asl.json"), "utf8"));
 

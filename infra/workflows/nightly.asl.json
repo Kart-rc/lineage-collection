@@ -104,8 +104,32 @@
                   "Value.$": "$$.Task.Token"
                 },
                 {
-                  "Name": "LINEAGE_STAGE_ENVELOPE",
-                  "Value.$": "States.JsonToString($)"
+                  "Name": "LINEAGE_STAGE_SCHEMA_VERSION",
+                  "Value.$": "$.schemaVersion"
+                },
+                {
+                  "Name": "LINEAGE_STAGE_COMMAND_ID",
+                  "Value.$": "$.commandId"
+                },
+                {
+                  "Name": "LINEAGE_STAGE_CORRELATION_ID",
+                  "Value.$": "$.correlationId"
+                },
+                {
+                  "Name": "LINEAGE_STAGE_CAUSATION_ID",
+                  "Value.$": "$.causationId"
+                },
+                {
+                  "Name": "LINEAGE_STAGE_DETERMINANT_DIGEST",
+                  "Value.$": "$.determinantDigest"
+                },
+                {
+                  "Name": "LINEAGE_STAGE_INPUT",
+                  "Value.$": "States.JsonToString($._N1.Payload.output)"
+                },
+                {
+                  "Name": "LINEAGE_STAGE_IDEMPOTENCY_KEY",
+                  "Value.$": "States.Format('{}:N2', $.idempotencyKey)"
                 },
                 {
                   "Name": "LINEAGE_STAGE_ID",

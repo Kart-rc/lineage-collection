@@ -71,10 +71,23 @@ def test_intake_composition_rejects_a_partial_workflow_alias_set() -> None:
 def test_sca_worker_requires_a_task_token_and_returns_only_a_bounded_reference(monkeypatch: pytest.MonkeyPatch) -> None:
     from lineage_api.infrastructure.aws import composition
 
+    stage_input = {
+        "bucket": "evidence",
+        "key": "work-units/b5.json",
+        "versionId": "work-v1",
+        "sha256": "b" * 64,
+        "sizeBytes": 100,
+    }
+
     class FakeExecutor:
         def execute(self, stage: str, envelope: dict[str, Any]) -> dict[str, Any]:
             assert stage == "sca"
             assert envelope["stageId"] == "B5"
+            assert envelope["stageName"] == "RUN_BOUNDED_STATIC_ANALYSIS"
+            assert envelope["workflowKind"] == "BASELINE"
+            assert envelope["workflowVersion"] == "1.0.0"
+            assert envelope["idempotencyKey"] == "idem-root:B5:7"
+            assert envelope["input"] == stage_input
             return {
                 "outcome": "SUCCEEDED",
                 "output": {"bucket": "evidence", "key": "b5.json", "versionId": "v1", "sha256": "a" * 64, "sizeBytes": 10},
@@ -94,10 +107,17 @@ def test_sca_worker_requires_a_task_token_and_returns_only_a_bounded_reference(m
     stepfunctions = StepFunctions()
     monkeypatch.setattr(composition, "build_stage_executor", lambda: FakeExecutor())
     monkeypatch.setenv("LINEAGE_TASK_TOKEN", "token-1")
-    monkeypatch.setenv(
-        "LINEAGE_STAGE_ENVELOPE",
-        json.dumps({"stageId": "B5", "schemaVersion": "1.0.0"}),
-    )
+    monkeypatch.setenv("LINEAGE_STAGE_INPUT", json.dumps(stage_input))
+    monkeypatch.setenv("LINEAGE_STAGE_IDEMPOTENCY_KEY", "idem-root:B5:7")
+    monkeypatch.setenv("LINEAGE_STAGE_SCHEMA_VERSION", "1.0.0")
+    monkeypatch.setenv("LINEAGE_STAGE_COMMAND_ID", "cmd-root")
+    monkeypatch.setenv("LINEAGE_STAGE_CORRELATION_ID", "corr-root")
+    monkeypatch.setenv("LINEAGE_STAGE_CAUSATION_ID", "cause-root")
+    monkeypatch.setenv("LINEAGE_STAGE_DETERMINANT_DIGEST", "d" * 64)
+    monkeypatch.setenv("LINEAGE_STAGE_ID", "B5")
+    monkeypatch.setenv("LINEAGE_STAGE_NAME", "RUN_BOUNDED_STATIC_ANALYSIS")
+    monkeypatch.setenv("LINEAGE_WORKFLOW_KIND", "BASELINE")
+    monkeypatch.setenv("LINEAGE_WORKFLOW_VERSION", "1.0.0")
     composition.run_sca_worker(stepfunctions_client=stepfunctions)
 
     assert stepfunctions.success is not None
@@ -653,3 +673,37 @@ def test_direct_executor_target_mismatch_fails_before_claim_or_artifact_io() -> 
 
     with pytest.raises(StageTargetMismatchError):
         executor.execute("control-stage", envelope)
+
+
+def test_executor_rejects_an_unmapped_workflow_state_before_claim_or_artifact_io() -> None:
+    class NoIo:
+        def __getattr__(self, name: str):
+            raise AssertionError(f"unexpected I/O through {name}")
+
+    executor = AwsStageExecutor(
+        AwsRuntimeConfig.from_env(REQUIRED_ENV),
+        NoIo(),
+        NoIo(),
+        NoIo(),
+        NoIo(),
+        dispatcher=StageDispatcher({}),
+    )
+    envelope = {
+        "commandId": "cmd-1",
+        "correlationId": "corr-1",
+        "idempotencyKey": "idem-1:B3",
+        "workflowKind": "BASELINE",
+        "workflowVersion": "1.0.0",
+        "stageId": "B3",
+        "stageName": "CLASSIFY_REPOSITORY_AND_PATHS",
+        "input": {
+            "bucket": "evidence",
+            "key": "input.json",
+            "versionId": "v1",
+            "sha256": "b" * 64,
+            "sizeBytes": 10,
+        },
+    }
+
+    with pytest.raises(RuntimeError, match="no production use case"):
+        executor.execute("classification", envelope)

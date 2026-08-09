@@ -97,6 +97,28 @@ def _work_unit() -> dict[str, object]:
     }
 
 
+def _nightly_context() -> dict[str, object]:
+    return {
+        "runId": "nightly-run-1",
+        "sampleScopeUrns": [
+            "urn:ldp:staging:snowflake:payments:analytics.daily_revenue#gross_revenue"
+        ],
+        "eventReconciliation": {
+            "status": "RECONCILED",
+            "acceptedCount": 1,
+            "receiptCount": 1,
+            "archiveCount": 1,
+            "missingReceiptEventIds": [],
+            "missingArchiveEventIds": [],
+            "orphanReceiptEventIds": [],
+        },
+        "staleCacheRef": _reference("nightly/cache.json", "cache-v1", "8"),
+        "auditSampleRef": _reference("nightly/audit.json", "audit-v1", "9"),
+        "pinnedGraphChecksum": "a" * 64,
+        "cacheDrainLimit": 50,
+    }
+
+
 def _context(workflow: str, stage: str, name: str) -> StageExecutionContext:
     return StageExecutionContext(
         target="sca",
@@ -125,8 +147,11 @@ def test_sca_stages_materialize_pinned_source_and_emit_deterministic_assertion_r
     sources = Sources()
     use_case = ScaStageUseCase(artifacts, sources)
 
-    first = use_case.execute(_work_unit(), _context(workflow, stage, name))
-    replay = use_case.execute(_work_unit(), _context(workflow, stage, name))
+    work = _work_unit()
+    if workflow == "NIGHTLY":
+        work["nightly"] = _nightly_context()
+    first = use_case.execute(work, _context(workflow, stage, name))
+    replay = use_case.execute(work, _context(workflow, stage, name))
 
     assert replay == first
     assert first.artifact_kind == "sca-stage-result"
@@ -144,7 +169,9 @@ def test_sca_stages_materialize_pinned_source_and_emit_deterministic_assertion_r
         "residueCount": 1,
         "quarantinedCount": 0,
     }
-    assert sources.references == [_work_unit()["repositorySource"], _work_unit()["repositorySource"]]
+    assert sources.references == [work["repositorySource"], work["repositorySource"]]
+    if workflow == "NIGHTLY":
+        assert first.document["context"]["nightly"] == _nightly_context()
 
 
 def test_sca_rejects_path_escape_before_materializing_source() -> None:
@@ -156,6 +183,24 @@ def test_sca_rejects_path_escape_before_materializing_source() -> None:
     with pytest.raises(ValueError, match="repository path"):
         ScaStageUseCase(artifacts, sources).execute(
             work, _context("BASELINE", "B5", "RUN_BOUNDED_STATIC_ANALYSIS")
+        )
+
+    assert sources.references == []
+    assert artifacts.writes == []
+
+
+def test_nightly_sca_rejects_drifted_reconciliation_context_before_source_io() -> None:
+    artifacts = Artifacts()
+    sources = Sources()
+    work = _work_unit()
+    work["nightly"] = {**_nightly_context(), "unexpected": True}
+
+    with pytest.raises(ValueError, match="Nightly reconciliation context"):
+        ScaStageUseCase(artifacts, sources).execute(
+            work,
+            _context(
+                "NIGHTLY", "N2", "SAMPLE_PUBLISHED_LINEAGE_AGAINST_CLEAN_ANALYSIS"
+            ),
         )
 
     assert sources.references == []

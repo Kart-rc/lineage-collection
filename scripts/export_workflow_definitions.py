@@ -171,8 +171,16 @@ def _lambda_task(
 def _ecs_task(
     workflow: WorkflowDefinition,
     stage: StageDefinition,
+    input_path: str,
     next_state: str,
+    *,
+    item_idempotency_key: bool = False,
 ) -> dict[str, Any]:
+    idempotency_path = (
+        "$.idempotencyKey"
+        if item_idempotency_key
+        else f"States.Format('{{}}:{stage.stage_id}', $.idempotencyKey)"
+    )
     return {
         "Type": "Task",
         "Resource": "arn:aws:states:::ecs:runTask.waitForTaskToken",
@@ -195,7 +203,34 @@ def _ecs_task(
                         "Name": "lineage-sca",
                         "Environment": [
                             {"Name": "LINEAGE_TASK_TOKEN", "Value.$": "$$.Task.Token"},
-                            {"Name": "LINEAGE_STAGE_ENVELOPE", "Value.$": "States.JsonToString($)"},
+                            {
+                                "Name": "LINEAGE_STAGE_SCHEMA_VERSION",
+                                "Value.$": "$.schemaVersion",
+                            },
+                            {
+                                "Name": "LINEAGE_STAGE_COMMAND_ID",
+                                "Value.$": "$.commandId",
+                            },
+                            {
+                                "Name": "LINEAGE_STAGE_CORRELATION_ID",
+                                "Value.$": "$.correlationId",
+                            },
+                            {
+                                "Name": "LINEAGE_STAGE_CAUSATION_ID",
+                                "Value.$": "$.causationId",
+                            },
+                            {
+                                "Name": "LINEAGE_STAGE_DETERMINANT_DIGEST",
+                                "Value.$": "$.determinantDigest",
+                            },
+                            {
+                                "Name": "LINEAGE_STAGE_INPUT",
+                                "Value.$": f"States.JsonToString({input_path})",
+                            },
+                            {
+                                "Name": "LINEAGE_STAGE_IDEMPOTENCY_KEY",
+                                "Value.$": idempotency_path,
+                            },
                             {"Name": "LINEAGE_STAGE_ID", "Value": stage.stage_id},
                             {"Name": "LINEAGE_STAGE_NAME", "Value": stage.name},
                             {"Name": "LINEAGE_WORKFLOW_KIND", "Value": workflow.kind},
@@ -238,7 +273,13 @@ def asl_document(workflow: WorkflowDefinition) -> dict[str, Any]:
         next_state = workflow.stages[index + 1].stage_id if index + 1 < len(workflow.stages) else "TerminalRoute"
         input_path = _input_path(previous, previous_target)
         if stage.stage_id == "B5":
-            worker = _ecs_task(workflow, stage, "B5WorkerOutcome")
+            worker = _ecs_task(
+                workflow,
+                stage,
+                "$.input",
+                "B5WorkerOutcome",
+                item_idempotency_key=True,
+            )
             worker["Catch"] = [
                 {
                     "ErrorEquals": ["States.ALL"],
@@ -304,7 +345,9 @@ def asl_document(workflow: WorkflowDefinition) -> dict[str, Any]:
                 "Next": next_state,
             }
         elif target == "ScaTask":
-            states[stage.stage_id] = _ecs_task(workflow, stage, next_state)
+            states[stage.stage_id] = _ecs_task(
+                workflow, stage, input_path, next_state
+            )
             states[f"{stage.stage_id}Outcome"] = _outcome_route(
                 stage, next_state, target, _error_terminal(workflow)
             )

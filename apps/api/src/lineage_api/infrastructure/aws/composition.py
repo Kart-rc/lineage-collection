@@ -105,6 +105,7 @@ class AwsStageExecutor:
         stage_id = str(envelope.get("stageId") or target)
         command_id = str(envelope["commandId"])
         idempotency_key = str(envelope["idempotencyKey"])
+        workflow_kind = str(envelope.get("workflowKind", ""))
         if target != "intake":
             # This duplicate boundary guard is intentional: entry points reject
             # misrouting, and the executor remains safe when called directly by
@@ -119,6 +120,10 @@ class AwsStageExecutor:
                 correlation_id=str(envelope.get("correlationId", "")),
                 input_reference=envelope.get("input", {}),
             )
+            if not self.dispatcher.has_use_case(workflow_kind, stage_id):
+                raise RuntimeError(
+                    f"no production use case for {workflow_kind}/{stage_id}"
+                )
         owner = os.environ.get("AWS_LAMBDA_LOG_STREAM_NAME", f"{target}-worker")
         now = datetime.now(UTC)
         try:
@@ -138,9 +143,7 @@ class AwsStageExecutor:
                     stage_id,
                 )
             input_body = self.artifacts.get(envelope["input"])
-            if self.dispatcher.has_use_case(
-                str(envelope.get("workflowKind", "")), stage_id
-            ):
+            if target != "intake":
                 execution = self.dispatcher.execute(target, envelope, input_body)
                 artifact_kind = execution.artifact_kind
                 artifact_version = execution.schema_version
@@ -158,10 +161,7 @@ class AwsStageExecutor:
                     "input": envelope["input"],
                     "inputDocument": input_body,
                 }
-                # B5 is a distributed Map with an S3 JSON ItemReader. B4 therefore
-                # materializes an array of immutable work references, even for the
-                # minimum one-item implementation used by the executable slice.
-                persisted_body = [envelope["input"]] if stage_id == "B4" else output_body
+                persisted_body = output_body
                 artifact_kind = "stage-result"
                 artifact_version = "1.0.0"
             reference = self.artifacts.put(
@@ -312,17 +312,56 @@ def run_sca_worker(
 ) -> None:
     token = os.environ.get("LINEAGE_TASK_TOKEN", "").strip()
     raw_envelope = os.environ.get("LINEAGE_STAGE_ENVELOPE", "").strip()
-    if not token or not raw_envelope:
-        raise RuntimeError("LINEAGE_TASK_TOKEN and LINEAGE_STAGE_ENVELOPE are required")
-    envelope = json.loads(raw_envelope)
+    if not token:
+        raise RuntimeError("LINEAGE_TASK_TOKEN is required")
+    if raw_envelope:
+        envelope = json.loads(raw_envelope)
+        if not isinstance(envelope, dict):
+            raise RuntimeError("LINEAGE_STAGE_ENVELOPE must be a JSON object")
+    else:
+        envelope = {}
     for key, environment_name in {
+        "schemaVersion": "LINEAGE_STAGE_SCHEMA_VERSION",
+        "commandId": "LINEAGE_STAGE_COMMAND_ID",
+        "correlationId": "LINEAGE_STAGE_CORRELATION_ID",
+        "causationId": "LINEAGE_STAGE_CAUSATION_ID",
+        "determinantDigest": "LINEAGE_STAGE_DETERMINANT_DIGEST",
         "stageId": "LINEAGE_STAGE_ID",
         "stageName": "LINEAGE_STAGE_NAME",
         "workflowKind": "LINEAGE_WORKFLOW_KIND",
         "workflowVersion": "LINEAGE_WORKFLOW_VERSION",
     }.items():
-        if key not in envelope and os.environ.get(environment_name):
-            envelope[key] = os.environ[environment_name]
+        authoritative = os.environ.get(environment_name, "").strip()
+        if authoritative:
+            envelope[key] = authoritative
+    raw_stage_input = os.environ.get("LINEAGE_STAGE_INPUT", "").strip()
+    if raw_stage_input:
+        try:
+            envelope["input"] = json.loads(raw_stage_input)
+        except json.JSONDecodeError as error:
+            raise RuntimeError("LINEAGE_STAGE_INPUT must be valid JSON") from error
+    stage_idempotency_key = os.environ.get(
+        "LINEAGE_STAGE_IDEMPOTENCY_KEY", ""
+    ).strip()
+    if stage_idempotency_key:
+        envelope["idempotencyKey"] = stage_idempotency_key
+    if not raw_envelope and not all(
+        envelope.get(name)
+        for name in (
+            "schemaVersion",
+            "commandId",
+            "correlationId",
+            "causationId",
+            "determinantDigest",
+            "idempotencyKey",
+            "input",
+            "stageId",
+            "stageName",
+            "workflowKind",
+            "workflowVersion",
+        )
+    ):
+        raise RuntimeError("exact SCA stage environment is incomplete")
     executor = build_stage_executor()
     client = stepfunctions_client
     if client is None:

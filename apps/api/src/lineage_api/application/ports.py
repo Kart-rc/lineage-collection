@@ -109,6 +109,19 @@ class ImpactProjectionPort(Protocol):
 
 
 @runtime_checkable
+class NightlyControlPort(Protocol):
+    def active_pointer(self, environment: str) -> dict[str, Any]: ...
+
+    def invalidate_llm_cache(
+        self, cache_key: str, determinant_digest: str, run_id: str
+    ) -> dict[str, Any]: ...
+
+    def complete_nightly(
+        self, report: dict[str, Any], proposal: dict[str, Any] | None
+    ) -> dict[str, Any]: ...
+
+
+@runtime_checkable
 class OutboxPort(Protocol):
     def append(self, event: OutboxEvent) -> OutboxEvent: ...
 

@@ -285,6 +285,188 @@ class DynamoDbControlAdapter:
             raise ValueError("stored PR check document is invalid")
         return document
 
+    def invalidate_llm_cache(
+        self, cache_key: str, determinant_digest: str, run_id: str
+    ) -> dict[str, Any]:
+        key = {
+            "pk": {"S": f"LLM_CACHE#{cache_key}"},
+            "sk": {"S": "ENTRY"},
+        }
+        try:
+            aws_call(
+                "dynamodb.invalidate_llm_cache",
+                self.client.update_item,
+                TableName=self.control_table,
+                Key=key,
+                UpdateExpression=(
+                    "SET #status = :invalidated, invalidatedBy = :runId"
+                ),
+                ConditionExpression=(
+                    "determinantDigest = :determinantDigest AND "
+                    "(attribute_not_exists(invalidatedBy) OR invalidatedBy = :runId)"
+                ),
+                ExpressionAttributeNames={"#status": "status"},
+                ExpressionAttributeValues={
+                    ":invalidated": {"S": "INVALIDATED"},
+                    ":runId": {"S": run_id},
+                    ":determinantDigest": {"S": determinant_digest},
+                },
+            )
+        except AwsConflictError:
+            response = aws_call(
+                "dynamodb.get_llm_cache",
+                self.client.get_item,
+                TableName=self.control_table,
+                Key=key,
+                ConsistentRead=True,
+            )
+            item = response.get("Item")
+            if not item:
+                disposition = "MISSING"
+            elif item.get("determinantDigest", {}).get("S") != determinant_digest:
+                disposition = "SUPERSEDED"
+            elif item.get("invalidatedBy", {}).get("S") == run_id:
+                disposition = "DUPLICATE"
+            else:
+                raise
+            return {
+                "cacheKey": cache_key,
+                "determinantDigest": determinant_digest,
+                "runId": run_id,
+                "disposition": disposition,
+            }
+        return {
+            "cacheKey": cache_key,
+            "determinantDigest": determinant_digest,
+            "runId": run_id,
+            "disposition": "INVALIDATED",
+        }
+
+    def complete_nightly(
+        self, report: dict[str, Any], proposal: dict[str, Any] | None
+    ) -> dict[str, Any]:
+        encoded_report = _json(report)
+        if len(encoded_report.encode()) > 300_000:
+            raise ValueError("Nightly report exceeds its DynamoDB safety bound")
+        context = report.get("context")
+        if not isinstance(context, dict) or not isinstance(context.get("nightly"), dict):
+            raise ValueError("Nightly report context is invalid")
+        run_id = str(context["nightly"]["runId"])
+        created_at = str(context["acceptedAt"])
+        report_digest = hashlib.sha256(encoded_report.encode()).hexdigest()
+        transaction: list[dict[str, Any]] = []
+        if proposal is not None:
+            if self.proposal_table is None:
+                raise RuntimeError("proposal table is not configured")
+            encoded_proposal = _json(proposal)
+            if len(encoded_proposal.encode()) > 350_000:
+                raise ValueError("Nightly proposal exceeds its DynamoDB safety bound")
+            transaction.append(
+                {
+                    "Put": {
+                        "TableName": self.proposal_table,
+                        "Item": {
+                            "pk": {"S": f"PROPOSAL#{proposal['proposalId']}"},
+                            "sk": {"S": f"VERSION#{int(proposal['version']):010d}"},
+                            "document": {"S": encoded_proposal},
+                            "state": {"S": str(proposal["state"])},
+                            "system": {"S": str(proposal["system"])},
+                            "expectedBaseVersion": {
+                                "S": str(proposal["expectedBaseVersion"])
+                            },
+                        },
+                        "ConditionExpression": (
+                            "attribute_not_exists(pk) OR document = :proposalDocument"
+                        ),
+                        "ExpressionAttributeValues": {
+                            ":proposalDocument": {"S": encoded_proposal}
+                        },
+                    }
+                }
+            )
+        transaction.extend(
+            [
+                {
+                    "Put": {
+                        "TableName": self.control_table,
+                        "Item": {
+                            "pk": {"S": f"NIGHTLY#{run_id}"},
+                            "sk": {"S": "RESULT"},
+                            "document": {"S": encoded_report},
+                            "resultDigest": {"S": report_digest},
+                            "terminalOutcome": {
+                                "S": str(report["terminalOutcome"])
+                            },
+                            "correlationId": {
+                                "S": str(report["correlationId"])
+                            },
+                            "createdAt": {"S": created_at},
+                        },
+                        "ConditionExpression": (
+                            "attribute_not_exists(pk) OR resultDigest = :resultDigest"
+                        ),
+                        "ExpressionAttributeValues": {
+                            ":resultDigest": {"S": report_digest}
+                        },
+                    }
+                },
+                {
+                    "Put": {
+                        "TableName": self.ledger_table,
+                        "Item": {
+                            "pk": {"S": f"OUTBOX#NIGHTLY#{run_id}#{report_digest[:24]}"},
+                            "sk": {"S": "EVENT"},
+                            "topic": {"S": "NIGHTLY_RECONCILIATION"},
+                            "correlationId": {
+                                "S": str(report["correlationId"])
+                            },
+                            "payload": {"S": encoded_report},
+                            "status": {"S": "PENDING"},
+                            "createdAt": {"S": created_at},
+                        },
+                        "ConditionExpression": "attribute_not_exists(pk)",
+                    }
+                },
+            ]
+        )
+        try:
+            aws_call(
+                "dynamodb.complete_nightly",
+                self.client.transact_write_items,
+                TransactItems=transaction,
+                ClientRequestToken=report_digest[:36],
+            )
+        except AwsConflictError:
+            existing = self.nightly_result(run_id)
+            proposal_matches = True
+            if proposal is not None:
+                proposal_matches = (
+                    self.get_proposal(
+                        str(proposal["proposalId"]), int(proposal["version"])
+                    )
+                    == proposal
+                )
+            if existing == report and proposal_matches:
+                return existing
+            raise
+        return json.loads(encoded_report)
+
+    def nightly_result(self, run_id: str) -> dict[str, Any] | None:
+        response = aws_call(
+            "dynamodb.get_nightly_result",
+            self.client.get_item,
+            TableName=self.control_table,
+            Key={"pk": {"S": f"NIGHTLY#{run_id}"}, "sk": {"S": "RESULT"}},
+            ConsistentRead=True,
+        )
+        item = response.get("Item")
+        if not item:
+            return None
+        document = json.loads(item["document"]["S"])
+        if not isinstance(document, dict):
+            raise ValueError("stored Nightly result is invalid")
+        return document
+
     def accept_receipt(
         self,
         event_id: str,

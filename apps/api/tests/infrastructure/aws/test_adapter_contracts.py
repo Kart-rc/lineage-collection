@@ -262,6 +262,72 @@ def test_dynamodb_does_not_treat_a_conflicting_pr_event_digest_as_a_duplicate() 
     assert result["disposition"] == "STALE"
 
 
+def test_dynamodb_invalidates_a_pinned_llm_cache_entry_and_completes_nightly_atomically() -> None:
+    report = {
+        "schemaVersion": "1.0.0",
+        "artifactType": "nightly-reconciliation-result",
+        "correlationId": "corr-nightly-1",
+        "context": {
+            "acceptedAt": "2026-08-08T03:00:00Z",
+            "nightly": {"runId": "nightly-run-1"},
+        },
+        "terminalOutcome": "PROPOSALS_RAISED",
+    }
+    proposal = {
+        "schemaVersion": "1.0.0",
+        "proposalId": "proposal-nightly-1",
+        "version": 1,
+        "state": "IN_REVIEW",
+        "system": "payments",
+        "expectedBaseVersion": "graph-v1",
+    }
+    client = FakeClient(update_item=[{}], transact_write_items=[{}])
+    adapter = DynamoDbControlAdapter(
+        client, "control", "ledger", "pointer", proposal_table="proposal"
+    )
+
+    invalidated = adapter.invalidate_llm_cache(
+        "cache-1", "d" * 64, "nightly-run-1"
+    )
+    completed = adapter.complete_nightly(report, proposal)
+
+    assert invalidated["disposition"] == "INVALIDATED"
+    invalidation = client.calls[0][1]
+    assert "determinantDigest = :determinantDigest" in invalidation[
+        "ConditionExpression"
+    ]
+    assert completed == report
+    transaction = client.calls[1][1]["TransactItems"]
+    assert [item["Put"]["TableName"] for item in transaction] == [
+        "proposal",
+        "control",
+        "ledger",
+    ]
+    assert transaction[-1]["Put"]["Item"]["topic"] == {
+        "S": "NIGHTLY_RECONCILIATION"
+    }
+
+
+def test_dynamodb_accepts_only_an_exact_nightly_transaction_replay() -> None:
+    report = {
+        "correlationId": "corr-nightly-1",
+        "context": {
+            "acceptedAt": "2026-08-08T03:00:00Z",
+            "nightly": {"runId": "nightly-run-1"},
+        },
+        "terminalOutcome": "RECONCILED",
+    }
+    client = FakeClient(
+        transact_write_items=[FakeServiceError("TransactionCanceledException")],
+        get_item=[{"Item": {"document": {"S": json.dumps(report)}}}],
+    )
+    adapter = DynamoDbControlAdapter(
+        client, "control", "ledger", "pointer", proposal_table="proposal"
+    )
+
+    assert adapter.complete_nightly(report, None) == report
+
+
 def test_dynamodb_reads_and_atomically_activates_pointer_with_outbox() -> None:
     package_reference = {
         "bucket": "packages",

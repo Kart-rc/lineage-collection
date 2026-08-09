@@ -22,12 +22,14 @@ from lineage_api.application.ports import (
     ArtifactStorePort,
     DeploymentControlPort,
     ImpactProjectionPort,
+    NightlyControlPort,
     PrGateControlPort,
     ProposalStorePort,
     PublicationControlPort,
     SourceArchivePort,
     StageProjectionPort,
 )
+from lineage_api.application.nightly_execution import NightlyStageUseCase
 from lineage_api.application.pr_gate_execution import PrGateStageUseCase
 from lineage_api.application.sca_execution import ScaStageUseCase
 from lineage_api.application.consolidation import derive_consolidation, edge_key_for
@@ -2272,6 +2274,13 @@ def production_stage_use_cases(
             )
             for index in range(1, 7):
                 use_cases[("DEPLOYMENT", f"D{index}")] = deployment
+            nightly = NightlyStageUseCase(
+                artifacts,
+                cast(NightlyControlPort, publication_control),
+                projection,
+            )
+            for stage_id in ("N1", "N3", "N4", "N5", "N6"):
+                use_cases[("NIGHTLY", stage_id)] = nightly
     return use_cases
 
 

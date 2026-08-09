@@ -5,6 +5,7 @@ from pathlib import PurePosixPath
 from typing import Any, Mapping
 
 from lineage_api.application.ports import ArtifactStorePort, SourceArchivePort
+from lineage_api.application.nightly_execution import validate_nightly_context
 from lineage_api.application.stage_execution import (
     MAX_STAGE_DOCUMENT_BYTES,
     StageExecutionContext,
@@ -164,6 +165,11 @@ class ScaStageUseCase:
             "failedScope",
         ):
             normalized_coverage.setdefault(name, [])
+        nightly_context: dict[str, Any] | None = None
+        if context.workflow_kind == "NIGHTLY":
+            nightly_context = validate_nightly_context(input_document.get("nightly"))
+        elif "nightly" in input_document:
+            raise ValueError("only Nightly SCA may carry reconciliation context")
         catalog = self._artifacts.get(catalog_ref)
         if not isinstance(catalog, dict):
             raise ValueError("SCA catalog snapshot must be an object")
@@ -298,6 +304,8 @@ class ScaStageUseCase:
             "residueRefs": [residue_ref],
             "coverage": normalized_coverage,
         }
+        if nightly_context is not None:
+            common["nightly"] = nightly_context
         return StageExecutionResult(
             artifact_kind="sca-stage-result",
             schema_version="1.0.0",
