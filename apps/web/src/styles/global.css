@@ -1026,6 +1026,7 @@ h1 {
   text-transform: uppercase;
 }
 
+.decision-form input,
 .decision-form textarea {
   width: 100%;
   padding: 0.9rem;
@@ -1034,6 +1035,9 @@ h1 {
   background: var(--white);
   color: var(--ink);
   line-height: 1.5;
+}
+
+.decision-form textarea {
   resize: vertical;
 }
 

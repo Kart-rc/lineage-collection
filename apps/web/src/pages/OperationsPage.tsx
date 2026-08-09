@@ -5,6 +5,7 @@ import { ApiError, api } from "../api/client";
 import { FlowRail } from "../components/operations/FlowRail";
 import { GateCard } from "../components/operations/GateCard";
 import type { OperationalStatus } from "../api/types";
+import { readRuntimeConfig } from "../config/runtime";
 
 
 const displayStatus = (status: OperationalStatus) => status.replaceAll("_", " ");
@@ -26,9 +27,15 @@ const formatDuration = (seconds: number | null) => {
 
 export function OperationsPage() {
   const queryClient = useQueryClient();
+  const runtime = readRuntimeConfig();
   const overview = useQuery({
     queryKey: ["overview"],
     queryFn: ({ signal }) => api.overview(signal),
+  });
+  const resilienceQuery = useQuery({
+    queryKey: ["resilience"],
+    queryFn: ({ signal }) => api.resilience(signal),
+    enabled: !overview.data?.resilience,
   });
   const collection = useMutation({
     mutationFn: async () => {
@@ -45,7 +52,7 @@ export function OperationsPage() {
   });
 
   const data = overview.data;
-  const resilience = data?.resilience;
+  const resilience = data?.resilience ?? resilienceQuery.data;
   const signals = resilience
     ? [
         { label: "Oldest queue age", value: formatDuration(resilience.queue.oldestAgeSeconds), status: resilience.queue.status },
@@ -75,32 +82,44 @@ export function OperationsPage() {
             versioned lineage projection.
           </p>
         </div>
-        <aside className="launch-card">
-          <span className="launch-card__label">Recommended demo</span>
-          <h2>Collect the payments pipeline</h2>
-          <p>Reset local state, verify a signed push, and stop at the human review gate.</p>
-          <button
-            className="button button--primary"
-            type="button"
-            onClick={() => collection.mutate()}
-            disabled={collection.isPending}
-          >
-            {collection.isPending ? "Collecting evidence…" : "Run seeded collection"}
-          </button>
-          {collection.data?.run && (
-            <div className="action-result" role="status">
-              <strong>Delivery accepted into review</strong>
-              <Link to={`/runs/${collection.data.run.runId}`}>Open run timeline</Link>
-            </div>
-          )}
-          {collection.error && (
-            <p className="inline-error" role="alert">
-              {collection.error instanceof ApiError
-                ? collection.error.message
-                : "Collection could not be completed."}
+        {runtime.demoActions ? (
+          <aside className="launch-card">
+            <span className="launch-card__label">Local verification</span>
+            <h2>Collect the payments pipeline</h2>
+            <p>Reset local state, verify a signed push, and stop at the human review gate.</p>
+            <button
+              className="button button--primary"
+              type="button"
+              onClick={() => collection.mutate()}
+              disabled={collection.isPending}
+            >
+              {collection.isPending ? "Collecting evidence…" : "Run seeded collection"}
+            </button>
+            {collection.data?.run && (
+              <div className="action-result" role="status">
+                <strong>Delivery accepted into review</strong>
+                <Link to={`/runs/${collection.data.run.runId}`}>Open run timeline</Link>
+              </div>
+            )}
+            {collection.error && (
+              <p className="inline-error" role="alert">
+                {collection.error instanceof ApiError
+                  ? collection.error.message
+                  : "Collection could not be completed."}
+              </p>
+            )}
+          </aside>
+        ) : (
+          <aside className="launch-card">
+            <span className="launch-card__label">{runtime.environment} environment</span>
+            <h2>Provider-driven collection</h2>
+            <p>
+              Production collection starts from authenticated repository, deployment,
+              scheduled baseline, or runtime events. Seed and reset controls are disabled.
             </p>
-          )}
-        </aside>
+            <Link className="button button--primary" to="/runs">Inspect durable runs</Link>
+          </aside>
+        )}
       </section>
 
       <FlowRail snapshot={resilience} />
@@ -128,7 +147,7 @@ export function OperationsPage() {
             <GateCard
               index="02"
               label="Human review"
-              value={`${data?.counts.inReview ?? 0} waiting`}
+              value={`${data?.counts.inReview ?? 0}${data?.countsAreComplete === false ? "+ sampled" : " waiting"}`}
               detail="M1 deliberately keeps parser-exact edges behind review."
               tone={(data?.counts.inReview ?? 0) > 0 ? "attention" : "trusted"}
               statusLabel={(data?.counts.inReview ?? 0) > 0 ? "ATTENTION" : "CLEAR"}
@@ -161,7 +180,11 @@ export function OperationsPage() {
           </div>
           <span>
             {resilience
-              ? `${displayStatus(resilience.status)} · ${new Date(resilience.capturedAt).toLocaleString()}`
+              ? `${displayStatus(resilience.status)} · ${
+                  resilience.capturedAt
+                    ? new Date(resilience.capturedAt).toLocaleString()
+                    : "control-plane evidence only"
+                }`
               : "Loading durable signals…"}
           </span>
         </div>
@@ -215,7 +238,7 @@ export function OperationsPage() {
               ))}
             </dl>
           </>
-        ) : overview.isError ? (
+        ) : overview.isError || resilienceQuery.isError ? (
           <p className="inline-error" role="alert">Resilience signals are unavailable.</p>
         ) : (
           <p className="empty-state">Reading durable control and projection state…</p>
@@ -228,7 +251,7 @@ export function OperationsPage() {
           <Link to="/runs">View all runs</Link>
         </div>
         {!data?.recentRuns.length ? (
-          <p className="empty-state">No run has been collected in this local state.</p>
+          <p className="empty-state">No durable run is available in this environment.</p>
         ) : (
           <div className="table-list">
             {data.recentRuns.map((run) => (

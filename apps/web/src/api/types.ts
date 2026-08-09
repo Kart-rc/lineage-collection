@@ -56,7 +56,15 @@ export interface Proposal {
   system: string;
   state: string;
   expectedBaseVersion: string;
-  diff: { added: LineageEdge[]; removed: LineageEdge[]; bandChanged: LineageEdge[] };
+  diff: {
+    added: LineageEdge[];
+    removed: LineageEdge[];
+    bandChanged: LineageEdge[];
+    addedEdgeIds: string[];
+    removedEdgeIds: string[];
+    bandChangedEdgeIds: string[];
+    edgeSetRef?: Record<string, unknown>;
+  };
   correlationId: string;
   createdAt: string;
   updatedAt: string;
@@ -97,11 +105,19 @@ export interface Run {
 }
 
 export interface Overview {
-  activeVersion: string;
+  environment: string;
+  activeVersion: string | null;
   fencingToken: number;
   counts: { runs: number; inReview: number; quarantined: number };
+  countsAreComplete: boolean;
   recentRuns: Run[];
-  resilience: ResilienceSnapshot;
+  inReviewSample: Proposal[];
+  resilience?: ResilienceSnapshot;
+}
+
+export interface Page<T> {
+  items: T[];
+  nextCursor: string | null;
 }
 
 export type OperationalStatus =
@@ -118,7 +134,7 @@ export type OperationalStatus =
 
 export interface ResilienceSnapshot {
   schemaVersion: string;
-  capturedAt: string;
+  capturedAt: string | null;
   status: OperationalStatus;
   correlation: {
     status: OperationalStatus;

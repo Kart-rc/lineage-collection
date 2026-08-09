@@ -6,6 +6,11 @@ import { MemoryRouter } from "../routing";
 import { App } from "../App";
 
 
+const runtimeGlobal = globalThis as typeof globalThis & {
+  __LINEAGE_RUNTIME_CONFIG__?: unknown;
+};
+
+
 const SOURCE = "urn:ldp:staging:snowflake:payments:raw.transactions#amount";
 const TARGET = "urn:ldp:staging:snowflake:payments:analytics.daily_revenue#gross_revenue";
 
@@ -135,7 +140,52 @@ function renderApp(path: string) {
   );
 }
 
-afterEach(() => vi.unstubAllGlobals());
+afterEach(() => {
+  delete runtimeGlobal.__LINEAGE_RUNTIME_CONFIG__;
+  vi.unstubAllGlobals();
+});
+
+
+test("deployed operations removes local demo controls", async () => {
+  runtimeGlobal.__LINEAGE_RUNTIME_CONFIG__ = {
+    schemaVersion: "1.0.0",
+    environment: "production",
+    apiBasePath: "/api",
+    sourceRevision: "abc123",
+    demoActions: false,
+  };
+  vi.stubGlobal(
+    "fetch",
+    vi.fn((input: string | URL) => {
+      const url = String(input);
+      if (url === "/api/overview") {
+        return ok({
+          environment: "production",
+          activeVersion: "graph-v7",
+          fencingToken: 42,
+          recentRuns: [],
+          inReviewSample: [],
+          countsAreComplete: false,
+        });
+      }
+      if (url === "/api/operations/resilience") {
+        return ok({
+          environment: "production",
+          activeGraph: { graphVersion: "graph-v7", fence: 42 },
+          runtimeControls: [],
+          controlPlaneStatus: "AVAILABLE",
+        });
+      }
+      throw new Error(`Unexpected fetch ${url}`);
+    }),
+  );
+
+  renderApp("/");
+
+  expect(await screen.findByText("Provider-driven collection")).toBeVisible();
+  expect(screen.queryByRole("button", { name: "Run seeded collection" })).toBeNull();
+  expect(screen.getByText("production")).toBeVisible();
+});
 
 test("operations exposes gate values and runs the signed seeded collection", async () => {
   vi.stubGlobal(
@@ -250,9 +300,9 @@ test("proposal approval confirms intent and recovers from a concurrent server er
     "Static and runtime evidence agree.",
   );
   expect(screen.getByRole("button", { name: "Reject proposal" })).toBeEnabled();
-  await userEvent.click(screen.getByRole("button", { name: "Approve and publish" }));
+  await userEvent.click(screen.getByRole("button", { name: "Approve for publication" }));
   expect(await screen.findByRole("alert")).toHaveTextContent("Another reviewer changed");
 
-  await userEvent.click(screen.getByRole("button", { name: "Approve and publish" }));
+  await userEvent.click(screen.getByRole("button", { name: "Approve for publication" }));
   expect(await screen.findByText("Published into active graph v2")).toBeVisible();
 });

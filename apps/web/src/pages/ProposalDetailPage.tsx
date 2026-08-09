@@ -6,10 +6,15 @@ import { ApiError, api } from "../api/client";
 import { EdgeDiff } from "../components/review/EdgeDiff";
 import { ProvenancePanel } from "../components/review/ProvenancePanel";
 import { StatusPill } from "../components/shared/StatusPill";
+import { readRuntimeConfig } from "../config/runtime";
 
 
 export function ProposalDetailPage() {
   const { proposalId = "" } = useParams();
+  const runtime = readRuntimeConfig();
+  const [actor, setActor] = useState(
+    runtime.demoActions ? "demo.reviewer@example.test" : "",
+  );
   const [rationale, setRationale] = useState("");
   const queryClient = useQueryClient();
   const proposal = useQuery({
@@ -21,7 +26,7 @@ export function ProposalDetailPage() {
     mutationFn: () =>
       api.approve(proposalId, {
         version: proposal.data!.version,
-        actor: "demo.reviewer@example.test",
+        actor,
         rationale,
         expectedLockVersion: proposal.data!.lockVersion,
       }),
@@ -37,7 +42,7 @@ export function ProposalDetailPage() {
     mutationFn: () =>
       api.reject(proposalId, {
         version: proposal.data!.version,
-        actor: "demo.reviewer@example.test",
+        actor,
         rationale,
         expectedLockVersion: proposal.data!.lockVersion,
       }),
@@ -59,18 +64,36 @@ export function ProposalDetailPage() {
         <div><dt>Proposal</dt><dd><code>{proposal.data.proposalId}</code></dd></div>
         <div><dt>Expected base</dt><dd>{proposal.data.expectedBaseVersion}</dd></div>
         <div><dt>Correlation</dt><dd><code>{proposal.data.correlationId}</code></dd></div>
-        <div><dt>Diff</dt><dd>{proposal.data.diff.added.length} added</dd></div>
+        <div><dt>Diff</dt><dd>{proposal.data.diff.addedEdgeIds.length} added</dd></div>
       </dl>
       <section aria-labelledby="edge-diff-heading">
         <div className="section-heading"><div><p className="eyebrow">Before / after</p><h2 id="edge-diff-heading">Proposed graph change</h2></div></div>
         <div className="edge-stack">
           {proposal.data.diff.added.map((item, index) => <EdgeDiff key={item.edgeKey} edge={item} index={index} />)}
+          {!proposal.data.diff.added.length && (
+            <div className="empty-state">
+              <p>Canonical edge evidence is stored under the immutable edge-set reference.</p>
+              <ul>
+                {proposal.data.diff.addedEdgeIds.map((edgeId) => (
+                  <li key={edgeId}><code>{edgeId}</code></li>
+                ))}
+              </ul>
+            </div>
+          )}
         </div>
       </section>
-      <ProvenancePanel provenance={allProvenance} />
+      {allProvenance.length ? <ProvenancePanel provenance={allProvenance} /> : null}
       <section className="decision-panel" aria-labelledby="decision-heading">
         <div><p className="eyebrow">Human decision</p><h2 id="decision-heading">Record review outcome</h2><p>The rationale is written to the immutable approval and audit records.</p></div>
         <div className="decision-form">
+          <label htmlFor="review-actor">Reviewer identity</label>
+          <input
+            id="review-actor"
+            value={actor}
+            onChange={(event) => setActor(event.target.value)}
+            placeholder="name@example.com"
+            autoComplete="username"
+          />
           <label htmlFor="review-rationale">Review rationale</label>
           <textarea
             id="review-rationale"
@@ -84,13 +107,22 @@ export function ProposalDetailPage() {
               {mutationError instanceof ApiError ? mutationError.message : "Decision could not be recorded."}
             </p>
           )}
-          {approve.data && <p className="success-message" role="status">Published into active graph {approve.data.pointer.activeVersion}</p>}
+          {approve.data?.pointer && (
+            <p className="success-message" role="status">
+              Published into active graph {approve.data.pointer.activeVersion}
+            </p>
+          )}
+          {approve.data?.publication && !approve.data.pointer && (
+            <p className="success-message" role="status">
+              Approval recorded. Publication is queued through the durable outbox.
+            </p>
+          )}
           {reject.data && <p className="success-message" role="status">Proposal rejected with an immutable decision record.</p>}
           <div className="decision-actions">
-            <button className="button button--primary" type="button" disabled={!rationale.trim() || approve.isPending || Boolean(approve.data)} onClick={() => approve.mutate()}>
-              {approve.isPending ? "Publishing…" : "Approve and publish"}
+            <button className="button button--primary" type="button" disabled={!actor.trim() || !rationale.trim() || approve.isPending || Boolean(approve.data)} onClick={() => approve.mutate()}>
+              {approve.isPending ? "Recording approval…" : "Approve for publication"}
             </button>
-            <button className="button button--secondary" type="button" disabled={!rationale.trim() || reject.isPending || Boolean(approve.data)} onClick={() => reject.mutate()}>
+            <button className="button button--secondary" type="button" disabled={!actor.trim() || !rationale.trim() || reject.isPending || Boolean(approve.data)} onClick={() => reject.mutate()}>
               Reject proposal
             </button>
           </div>
