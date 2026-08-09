@@ -96,6 +96,8 @@ class AwsStageExecutor:
                 publication_control=control,
                 projection=projection,
                 sources=sources,
+                pr_gate_control=control,
+                impact_projection=projection,
             )
         )
 
@@ -129,7 +131,12 @@ class AwsStageExecutor:
                 now,
             )
             if lease.get("status") == "COMPLETED":
-                return {"outcome": "SKIPPED", "output": lease["output"]}
+                return self._response(
+                    "SKIPPED",
+                    lease["output"],
+                    str(envelope.get("workflowKind", "")),
+                    stage_id,
+                )
             input_body = self.artifacts.get(envelope["input"])
             if self.dispatcher.has_use_case(
                 str(envelope.get("workflowKind", "")), stage_id
@@ -178,14 +185,48 @@ class AwsStageExecutor:
                 output=reference,
                 completed_at=now,
             )
-            return {"outcome": "SUCCEEDED", "output": reference}
+            return self._response(
+                "SUCCEEDED",
+                reference,
+                str(envelope.get("workflowKind", "")),
+                stage_id,
+                persisted_body,
+            )
         except AwsRetryableError:
             return {"outcome": "REDRIVE_REQUIRED", "output": dict(envelope["input"])}
         except AwsConflictError:
             existing = self.control.get_stage(command_id, stage_id, idempotency_key)
             if existing and existing.get("status") == "COMPLETED":
-                return {"outcome": "SKIPPED", "output": existing["output"]}
+                return self._response(
+                    "SKIPPED",
+                    existing["output"],
+                    str(envelope.get("workflowKind", "")),
+                    stage_id,
+                )
             return {"outcome": "REDRIVE_REQUIRED", "output": dict(envelope["input"])}
+
+    def _response(
+        self,
+        outcome: str,
+        reference: dict[str, Any],
+        workflow_kind: str,
+        stage_id: str,
+        document: object | None = None,
+    ) -> dict[str, Any]:
+        response: dict[str, Any] = {"outcome": outcome, "output": reference}
+        final_stage = {
+            ("BASELINE", "B10"),
+            ("INCREMENTAL", "I10"),
+            ("PR_GATE", "P8"),
+            ("NIGHTLY", "N6"),
+        }
+        if (workflow_kind, stage_id) in final_stage:
+            stored = self.artifacts.get(reference) if document is None else document
+            if isinstance(stored, Mapping) and isinstance(
+                stored.get("terminalOutcome"), str
+            ):
+                response["terminalOutcome"] = stored["terminalOutcome"]
+        return response
 
 
 def _clients(config: AwsRuntimeConfig) -> dict[str, Any]:

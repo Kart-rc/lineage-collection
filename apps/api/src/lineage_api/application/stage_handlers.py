@@ -5,7 +5,7 @@ import json
 from collections import Counter
 from datetime import UTC, datetime
 from pathlib import PurePosixPath
-from typing import Any, Mapping
+from typing import Any, Mapping, cast
 
 from lineage_api.application.classification import (
     ClassificationEvidence,
@@ -21,11 +21,14 @@ from lineage_api.application.stage_execution import (
 from lineage_api.application.ports import (
     ArtifactStorePort,
     DeploymentControlPort,
+    ImpactProjectionPort,
+    PrGateControlPort,
     ProposalStorePort,
     PublicationControlPort,
     SourceArchivePort,
     StageProjectionPort,
 )
+from lineage_api.application.pr_gate_execution import PrGateStageUseCase
 from lineage_api.application.sca_execution import ScaStageUseCase
 from lineage_api.application.consolidation import derive_consolidation, edge_key_for
 from lineage_api.application.runtime_validation import runtime_window_manifest_errors
@@ -1483,6 +1486,7 @@ class PublicationStageUseCase:
         ):
             raise ValueError("publication edge set is invalid")
         rows: list[dict[str, str]] = []
+        merge_rows: list[dict[str, str]] = []
         stored_ids: list[str] = []
         for edge in edge_set["edges"]:
             if not isinstance(edge, Mapping) or edge.get("system") != common["system"]:
@@ -1493,6 +1497,14 @@ class PublicationStageUseCase:
                 raise ValueError("publication edge sources are invalid")
             target = _required_text("publication edge target", edge.get("to"))
             edge_type = _required_text("publication edge type", edge.get("edgeType"))
+            band = _required_text("publication edge band", edge.get("band"))
+            corroboration = _required_text(
+                "publication edge corroboration", edge.get("corroboration")
+            )
+            if band not in {"LOWEST", "SINGLE", "MEDIUM", "HIGH", "HIGHEST"}:
+                raise ValueError("publication edge band is invalid")
+            if corroboration not in {"NONE", "DATASET", "ELEMENT"}:
+                raise ValueError("publication edge corroboration is invalid")
             target_urn = LineageUrn.parse(target)
             if (
                 target_urn.env != common["environment"]
@@ -1505,13 +1517,15 @@ class PublicationStageUseCase:
             for source in normalized_sources:
                 if LineageUrn.parse(source).env != common["environment"]:
                     raise ValueError("publication edge source is outside the pinned environment")
-                rows.append(
-                    {
-                        "edgeId": edge_id,
-                        "source": source,
-                        "target": target,
-                        "type": edge_type,
-                    }
+                row = {
+                    "edgeId": edge_id,
+                    "source": source,
+                    "target": target,
+                    "type": edge_type,
+                }
+                rows.append(row)
+                merge_rows.append(
+                    {**row, "band": band, "corroboration": corroboration}
                 )
             stored_ids.append(edge_id)
         if stored_ids != sorted(set(stored_ids)) or stored_ids != write_ids:
@@ -1584,7 +1598,11 @@ class PublicationStageUseCase:
         if removed:
             self._projection.delete_edges(graph_version, removed)
         if write_rows:
-            self._projection.merge_edges(graph_version, write_rows, fence=next_fence)
+            self._projection.merge_edges(
+                graph_version,
+                sorted(merge_rows, key=lambda row: (row["edgeId"], row["source"])),
+                fence=next_fence,
+            )
         actual_rows = _projection_rows(self._projection.namespace_checksum(graph_version))
         if actual_rows != expected_rows or _projection_checksum(actual_rows) != graph_checksum:
             raise ValueError("staged projection verification failed")
@@ -2189,6 +2207,8 @@ def production_stage_use_cases(
     publication_control: PublicationControlPort | None = None,
     projection: StageProjectionPort | None = None,
     sources: SourceArchivePort | None = None,
+    pr_gate_control: PrGateControlPort | None = None,
+    impact_projection: ImpactProjectionPort | None = None,
 ) -> dict[tuple[str, str], StageUseCase]:
     use_cases: dict[tuple[str, str], StageUseCase] = {
         ("BASELINE", "B3"): ClassificationStageUseCase(policy_version="1.0.0")
@@ -2221,6 +2241,16 @@ def production_stage_use_cases(
         use_cases[("BASELINE", "B8")] = consolidation
         use_cases[("INCREMENTAL", "I7")] = consolidation
         use_cases[("PR_GATE", "P4")] = consolidation
+        pr_control = pr_gate_control or cast(
+            PrGateControlPort | None, publication_control
+        )
+        pr_projection = impact_projection or cast(
+            ImpactProjectionPort | None, projection
+        )
+        if pr_control is not None and pr_projection is not None:
+            pr_gate = PrGateStageUseCase(artifacts, pr_control, pr_projection)
+            for index in range(1, 9):
+                use_cases[("PR_GATE", f"P{index}")] = pr_gate
         if proposal_store is not None:
             proposal = ProposalStageUseCase(artifacts, proposal_store)
             use_cases[("BASELINE", "B9")] = proposal

@@ -74,11 +74,12 @@ def _terminal_state(name: str, workflow: WorkflowDefinition) -> dict[str, Any]:
 
 def _terminal_route(workflow: WorkflowDefinition) -> dict[str, Any]:
     default = workflow.terminal_states[0]
+    final_stage = workflow.stages[-1].stage_id
     return {
         "Type": "Choice",
         "Choices": [
             {
-                "Variable": "$.terminalOutcome",
+                "Variable": f"$._{final_stage}.Payload.terminalOutcome",
                 "StringEquals": terminal,
                 "Next": terminal,
             }

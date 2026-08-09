@@ -399,17 +399,17 @@
         {
           "Next": "PROPOSALS_RAISED",
           "StringEquals": "PROPOSALS_RAISED",
-          "Variable": "$.terminalOutcome"
+          "Variable": "$._N6.Payload.terminalOutcome"
         },
         {
           "Next": "FAILED_REDRIVABLE",
           "StringEquals": "FAILED_REDRIVABLE",
-          "Variable": "$.terminalOutcome"
+          "Variable": "$._N6.Payload.terminalOutcome"
         },
         {
           "Next": "FAILED_TERMINAL",
           "StringEquals": "FAILED_TERMINAL",
-          "Variable": "$.terminalOutcome"
+          "Variable": "$._N6.Payload.terminalOutcome"
         }
       ],
       "Default": "RECONCILED",

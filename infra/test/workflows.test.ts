@@ -106,6 +106,18 @@ describe("exported executable workflow topology", () => {
     expect(baseline.States.B4.Parameters.FunctionName).toBe("${CoverageAliasArn}");
   });
 
+  it("routes terminal outcomes from the exact final Lambda result", () => {
+    const prGate = JSON.parse(readFileSync(resolve(workflowsRoot, "pr-gate.asl.json"), "utf8"));
+    const nightly = JSON.parse(readFileSync(resolve(workflowsRoot, "nightly.asl.json"), "utf8"));
+
+    expect(prGate.States.TerminalRoute.Choices[0].Variable).toBe(
+      "$._P8.Payload.terminalOutcome",
+    );
+    expect(nightly.States.TerminalRoute.Choices[0].Variable).toBe(
+      "$._N6.Payload.terminalOutcome",
+    );
+  });
+
   it("exports D1-D6 for the promotion Lambda without creating a fifth ASL workflow", () => {
     expect(contracts.workflows.DEPLOYMENT.stages.map((stage: any) => stage.stageId)).toEqual([
       "D1",

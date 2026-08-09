@@ -443,12 +443,12 @@
         {
           "Next": "WARN",
           "StringEquals": "WARN",
-          "Variable": "$.terminalOutcome"
+          "Variable": "$._P8.Payload.terminalOutcome"
         },
         {
           "Next": "BLOCK",
           "StringEquals": "BLOCK",
-          "Variable": "$.terminalOutcome"
+          "Variable": "$._P8.Payload.terminalOutcome"
         }
       ],
       "Default": "PASS",

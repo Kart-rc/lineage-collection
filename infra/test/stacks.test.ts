@@ -463,6 +463,13 @@ describe("lineage platform stacks", () => {
     });
   });
 
+  it("grants the PR gate control and impact stages their exact pointer and graph reads", () => {
+    const orchestration = JSON.stringify(Template.fromStack(stacks.orchestration).toJSON());
+
+    expect(orchestration).toContain("neptune-db:Connect");
+    expect(orchestration).toContain("PointerTable");
+  });
+
   it("backs up control state and primary truth stores into a locked encrypted vault", () => {
     const template = Template.fromStack(stacks.operations);
     template.hasResourceProperties("AWS::Backup::BackupVault", {

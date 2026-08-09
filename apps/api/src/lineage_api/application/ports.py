@@ -73,6 +73,42 @@ class SourceArchivePort(Protocol):
 
 
 @runtime_checkable
+class PrGateControlPort(Protocol):
+    def pin_pr_head(
+        self,
+        event: dict[str, Any],
+        event_digest: str,
+        policy_version: str,
+        cohort_version: str,
+    ) -> dict[str, Any]: ...
+
+    def current_pr_head(
+        self, repository: str, pr_number: int
+    ) -> dict[str, Any] | None: ...
+
+    def active_pointer(self, environment: str) -> dict[str, Any]: ...
+
+    def deployment_state(
+        self, system: str, environment: str
+    ) -> dict[str, Any] | None: ...
+
+    def upsert_pr_check(self, check: dict[str, Any]) -> dict[str, Any]: ...
+
+
+@runtime_checkable
+class ImpactProjectionPort(Protocol):
+    def impact(
+        self,
+        namespace: str,
+        subject: str,
+        change_type: str,
+        *,
+        depth: int,
+        limit: int,
+    ) -> dict[str, Any]: ...
+
+
+@runtime_checkable
 class OutboxPort(Protocol):
     def append(self, event: OutboxEvent) -> OutboxEvent: ...
 

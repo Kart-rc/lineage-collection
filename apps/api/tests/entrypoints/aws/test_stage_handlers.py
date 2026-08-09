@@ -69,6 +69,33 @@ def test_stage_handlers_pass_workflow_identity_to_aws_composition(
     assert result["output"]["versionId"] == "v1"
 
 
+def test_stage_handler_preserves_a_bounded_terminal_outcome_for_workflow_routing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    common = importlib.import_module("lineage_api.entrypoints.aws.common")
+    module = importlib.import_module("lineage_api.entrypoints.aws.control_stage")
+
+    class Executor:
+        def execute(self, _stage: str, envelope: dict[str, Any]) -> dict[str, Any]:
+            return {
+                "outcome": "SUCCEEDED",
+                "output": envelope["input"],
+                "terminalOutcome": "WARN",
+            }
+
+    monkeypatch.setattr(common, "executor_factory", lambda: Executor())
+    result = module.handler(
+        _event(
+            workflow_kind="PR_GATE",
+            stage_id="P8",
+            stage_name="UPSERT_STABLE_GITHUB_CHECK",
+        ),
+        object(),
+    )
+
+    assert result["terminalOutcome"] == "WARN"
+
+
 @pytest.mark.parametrize(
     ("module_name", "event"),
     (

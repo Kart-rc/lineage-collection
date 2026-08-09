@@ -219,7 +219,7 @@ export class DataStack extends Stack {
   dataPlaneStatements(target: string): iam.PolicyStatement[] {
     const tablesByTarget: Record<string, dynamodb.Table[]> = {
       intake: [this.ledgerTable],
-      "control-stage": [this.controlTable, this.ledgerTable],
+      "control-stage": [this.controlTable, this.ledgerTable, this.pointerTable],
       classification: [this.controlTable, this.ledgerTable],
       "runtime-validation": [this.controlTable, this.ledgerTable],
       consolidation: [this.controlTable, this.ledgerTable],
@@ -277,7 +277,7 @@ export class DataStack extends Stack {
         }),
       );
     }
-    if (target === "publication" || target === "deployment") {
+    if (target === "coverage" || target === "publication" || target === "deployment") {
       statements.push(
         new iam.PolicyStatement({
           actions: ["neptune-db:Connect"],

@@ -95,6 +95,196 @@ class DynamoDbControlAdapter:
             raise ValueError("stored proposal document is invalid")
         return document
 
+    def pin_pr_head(
+        self,
+        event: dict[str, Any],
+        event_digest: str,
+        policy_version: str,
+        cohort_version: str,
+    ) -> dict[str, Any]:
+        repository = str(event["repository"])
+        pr_number = int(event["prNumber"])
+        head_sha = str(event["headSha"])
+        provider_sequence = int(event["providerSequence"])
+        key = self._pr_head_key(repository, pr_number)
+        try:
+            aws_call(
+                "dynamodb.pin_pr_head",
+                self.client.update_item,
+                TableName=self.control_table,
+                Key=key,
+                UpdateExpression=(
+                    "SET repository = :repository, prNumber = :prNumber, "
+                    "headSha = :headSha, providerSequence = :providerSequence, "
+                    "eventId = :eventId, eventDigest = :eventDigest, "
+                    "policyVersion = :policyVersion, cohortVersion = :cohortVersion, "
+                    "correlationId = :correlationId"
+                ),
+                ConditionExpression=(
+                    "attribute_not_exists(providerSequence) OR "
+                    "providerSequence < :providerSequence OR "
+                    "(providerSequence = :providerSequence AND headSha = :headSha "
+                    "AND eventDigest = :eventDigest)"
+                ),
+                ExpressionAttributeValues={
+                    ":repository": {"S": repository},
+                    ":prNumber": {"N": str(pr_number)},
+                    ":headSha": {"S": head_sha},
+                    ":providerSequence": {"N": str(provider_sequence)},
+                    ":eventId": {"S": str(event["eventId"])},
+                    ":eventDigest": {"S": event_digest},
+                    ":policyVersion": {"S": policy_version},
+                    ":cohortVersion": {"S": cohort_version},
+                    ":correlationId": {"S": str(event["correlationId"])},
+                },
+                ReturnValues="ALL_NEW",
+            )
+        except AwsConflictError:
+            current = self.current_pr_head(repository, pr_number)
+            if (
+                current is not None
+                and current.get("headSha") == head_sha
+                and current.get("providerSequence") == provider_sequence
+                and current.get("eventDigest") == event_digest
+            ):
+                disposition = "DUPLICATE"
+            else:
+                disposition = "STALE"
+            return {
+                "disposition": disposition,
+                "headSha": None if current is None else current.get("headSha"),
+                "providerSequence": (
+                    None if current is None else current.get("providerSequence")
+                ),
+                "eventDigest": event_digest,
+                "policyVersion": policy_version,
+                "cohortVersion": cohort_version,
+            }
+        return {
+            "disposition": "CURRENT",
+            "headSha": head_sha,
+            "providerSequence": provider_sequence,
+            "eventDigest": event_digest,
+            "policyVersion": policy_version,
+            "cohortVersion": cohort_version,
+        }
+
+    def current_pr_head(
+        self, repository: str, pr_number: int
+    ) -> dict[str, Any] | None:
+        response = aws_call(
+            "dynamodb.current_pr_head",
+            self.client.get_item,
+            TableName=self.control_table,
+            Key=self._pr_head_key(repository, pr_number),
+            ConsistentRead=True,
+        )
+        item = response.get("Item")
+        if not item:
+            return None
+        current: dict[str, Any] = {
+            "repository": item["repository"]["S"],
+            "prNumber": int(item["prNumber"]["N"]),
+            "headSha": item["headSha"]["S"],
+            "providerSequence": int(item["providerSequence"]["N"]),
+        }
+        for name in ("eventDigest", "policyVersion", "cohortVersion"):
+            if name in item:
+                current[name] = item[name]["S"]
+        return current
+
+    def upsert_pr_check(self, check: dict[str, Any]) -> dict[str, Any]:
+        encoded = _json(check)
+        if len(encoded.encode()) > 350_000:
+            raise ValueError("PR check exceeds its DynamoDB safety bound")
+        check_id = str(check["checkId"])
+        head_sha = str(check["headSha"])
+        evaluated_at = str(check["evaluatedAt"])
+        if not evaluated_at:
+            raise ValueError("PR check evaluatedAt is required")
+        payload_digest = hashlib.sha256(encoded.encode()).hexdigest()
+        try:
+            aws_call(
+                "dynamodb.upsert_pr_check",
+                self.client.transact_write_items,
+                TransactItems=[
+                    {
+                        "Update": {
+                            "TableName": self.control_table,
+                            "Key": {
+                                "pk": {"S": f"PR_CHECK#{check_id}"},
+                                "sk": {"S": "STATE"},
+                            },
+                            "UpdateExpression": (
+                                "SET headSha = :headSha, repository = :repository, "
+                                "prNumber = :prNumber, verdict = :verdict, "
+                                "correlationId = :correlationId, document = :document, "
+                                "payloadDigest = :payloadDigest"
+                            ),
+                            "ConditionExpression": (
+                                "attribute_not_exists(headSha) OR headSha = :headSha"
+                            ),
+                            "ExpressionAttributeValues": {
+                                ":headSha": {"S": head_sha},
+                                ":repository": {"S": str(check["repository"])},
+                                ":prNumber": {"N": str(check["prNumber"])},
+                                ":verdict": {"S": str(check["verdict"])},
+                                ":correlationId": {"S": str(check["correlationId"])},
+                                ":document": {"S": encoded},
+                                ":payloadDigest": {"S": payload_digest},
+                            },
+                        }
+                    },
+                    {
+                        "Put": {
+                            "TableName": self.ledger_table,
+                            "Item": {
+                                "pk": {
+                                    "S": (
+                                        f"OUTBOX#PR_CHECK#{check_id}#{payload_digest[:24]}"
+                                    )
+                                },
+                                "sk": {"S": "EVENT"},
+                                "topic": {"S": "PR_CHECK_UPSERT"},
+                                "correlationId": {
+                                    "S": str(check["correlationId"])
+                                },
+                                "payload": {"S": encoded},
+                                "status": {"S": "PENDING"},
+                                "createdAt": {"S": evaluated_at},
+                            },
+                            "ConditionExpression": "attribute_not_exists(pk)",
+                        }
+                    },
+                ],
+                ClientRequestToken=payload_digest[:36],
+            )
+        except AwsConflictError:
+            existing = self.pr_check(check_id)
+            if existing == check:
+                return existing
+            raise
+        return json.loads(encoded)
+
+    def pr_check(self, check_id: str) -> dict[str, Any] | None:
+        response = aws_call(
+            "dynamodb.get_pr_check",
+            self.client.get_item,
+            TableName=self.control_table,
+            Key={
+                "pk": {"S": f"PR_CHECK#{check_id}"},
+                "sk": {"S": "STATE"},
+            },
+            ConsistentRead=True,
+        )
+        item = response.get("Item")
+        if not item:
+            return None
+        document = json.loads(item["document"]["S"])
+        if not isinstance(document, dict):
+            raise ValueError("stored PR check document is invalid")
+        return document
+
     def accept_receipt(
         self,
         event_id: str,
@@ -791,6 +981,15 @@ class DynamoDbControlAdapter:
         return {
             "pk": {"S": f"DEPLOYMENT#{system}#{environment}"},
             "sk": {"S": "STATE"},
+        }
+
+    @staticmethod
+    def _pr_head_key(
+        repository: str, pr_number: int
+    ) -> dict[str, dict[str, str]]:
+        return {
+            "pk": {"S": f"PR#{repository}#{pr_number}"},
+            "sk": {"S": "HEAD"},
         }
 
     def swap_pointer(

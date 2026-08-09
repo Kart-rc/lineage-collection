@@ -165,6 +165,103 @@ def test_dynamodb_conditionally_persists_and_replays_one_proposal_version() -> N
         conflict.put_proposal(proposal)
 
 
+def test_dynamodb_pins_current_pr_head_and_writes_check_with_provider_outbox() -> None:
+    event = {
+        "eventId": "github-pr-42-head-abc",
+        "provider": "github",
+        "providerSequence": 17,
+        "repository": "payments-pipeline",
+        "prNumber": 42,
+        "headSha": "head-abc",
+        "correlationId": "corr-pr-42",
+    }
+    check = {
+        "schemaVersion": "1.0.0",
+        "checkId": "pr-check-abc",
+        "repository": "payments-pipeline",
+        "prNumber": 42,
+        "headSha": "head-abc",
+        "verdict": "PASS",
+        "evaluatedAt": "2026-08-08T16:00:00Z",
+        "correlationId": "corr-pr-42",
+    }
+    client = FakeClient(
+        update_item=[
+            {
+                "Attributes": {
+                    "headSha": {"S": "head-abc"},
+                    "providerSequence": {"N": "17"},
+                }
+            }
+        ],
+        get_item=[
+            {
+                "Item": {
+                    "repository": {"S": "payments-pipeline"},
+                    "prNumber": {"N": "42"},
+                    "headSha": {"S": "head-abc"},
+                    "providerSequence": {"N": "17"},
+                }
+            }
+        ],
+        transact_write_items=[{}],
+    )
+    adapter = DynamoDbControlAdapter(client, "control", "ledger", "pointer")
+
+    pinned = adapter.pin_pr_head(event, "d" * 64, "policy-v1", "enforce-v1")
+    current = adapter.current_pr_head("payments-pipeline", 42)
+    persisted = adapter.upsert_pr_check(check)
+
+    assert pinned["disposition"] == "CURRENT"
+    assert current == {
+        "repository": "payments-pipeline",
+        "prNumber": 42,
+        "headSha": "head-abc",
+        "providerSequence": 17,
+    }
+    assert persisted == check
+    pin_request = client.calls[0][1]
+    assert "providerSequence < :providerSequence" in pin_request["ConditionExpression"]
+    transaction = client.calls[-1][1]["TransactItems"]
+    assert transaction[0]["Update"]["TableName"] == "control"
+    assert transaction[1]["Put"]["TableName"] == "ledger"
+    assert transaction[1]["Put"]["Item"]["topic"] == {"S": "PR_CHECK_UPSERT"}
+    assert transaction[1]["Put"]["Item"]["createdAt"] == {
+        "S": "2026-08-08T16:00:00Z"
+    }
+
+
+def test_dynamodb_does_not_treat_a_conflicting_pr_event_digest_as_a_duplicate() -> None:
+    event = {
+        "eventId": "github-pr-42-head-abc",
+        "provider": "github",
+        "providerSequence": 17,
+        "repository": "payments-pipeline",
+        "prNumber": 42,
+        "headSha": "head-abc",
+        "correlationId": "corr-pr-42",
+    }
+    client = FakeClient(
+        update_item=[FakeServiceError("ConditionalCheckFailedException")],
+        get_item=[
+            {
+                "Item": {
+                    "repository": {"S": "payments-pipeline"},
+                    "prNumber": {"N": "42"},
+                    "headSha": {"S": "head-abc"},
+                    "providerSequence": {"N": "17"},
+                    "eventDigest": {"S": "e" * 64},
+                }
+            }
+        ],
+    )
+    adapter = DynamoDbControlAdapter(client, "control", "ledger", "pointer")
+
+    result = adapter.pin_pr_head(event, "d" * 64, "policy-v1", "enforce-v1")
+
+    assert result["disposition"] == "STALE"
+
+
 def test_dynamodb_reads_and_atomically_activates_pointer_with_outbox() -> None:
     package_reference = {
         "bucket": "packages",
@@ -322,6 +419,54 @@ def test_neptune_copies_applies_tombstones_and_reads_a_staged_namespace() -> Non
     assert "ORDER BY edgeId" in queries[3]
     assert parameters[0]["targetNamespace"] == "graph-v2"
     assert parameters[1]["edgeIds"] == ["edge-old"]
+
+
+def test_neptune_runs_a_version_pinned_bounded_impact_traversal() -> None:
+    subject = "urn:ldp:staging:snowflake:payments:raw.transactions#amount"
+    target = "urn:ldp:staging:snowflake:payments:analytics.daily_revenue#gross_revenue"
+    client = FakeClient(
+        execute_open_cypher_query=[
+            {
+                "results": [
+                    {
+                        "urn": target,
+                        "pathLength": 1,
+                        "edgeIds": ["edge-1"],
+                        "bands": ["HIGH"],
+                    }
+                ]
+            }
+        ]
+    )
+    projection = NeptuneProjectionAdapter(client)
+
+    result = projection.impact(
+        "graph-v1", subject, "COLUMN_DROP", depth=5, limit=100
+    )
+
+    assert result == {
+        "namespaceVersion": "graph-v1",
+        "subject": subject,
+        "changeType": "COLUMN_DROP",
+        "depthSearched": 5,
+        "truncated": False,
+        "affected": [
+            {
+                "urn": target,
+                "severity": "BLOCK",
+                "band": "HIGH",
+                "pathLength": 1,
+                "viaEdges": ["edge-1"],
+            }
+        ],
+        "summary": {"block": 1, "warn": 0, "info": 0},
+    }
+    request = client.calls[0][1]
+    assert "LINEAGE*1..5 {namespace: $namespace}" in request["openCypherQuery"]
+    assert "all(" not in request["openCypherQuery"]
+    assert "LIMIT 101" in request["openCypherQuery"]
+    assert json.loads(request["parameters"])["namespace"] == "graph-v1"
+    assert "limit" not in json.loads(request["parameters"])
 
 
 def test_dynamodb_coordinates_ordered_deployment_promotion_and_readback() -> None:

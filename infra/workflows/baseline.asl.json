@@ -693,27 +693,27 @@
         {
           "Next": "NO_LINEAGE",
           "StringEquals": "NO_LINEAGE",
-          "Variable": "$.terminalOutcome"
+          "Variable": "$._B10.Payload.terminalOutcome"
         },
         {
           "Next": "REJECTED",
           "StringEquals": "REJECTED",
-          "Variable": "$.terminalOutcome"
+          "Variable": "$._B10.Payload.terminalOutcome"
         },
         {
           "Next": "QUARANTINED",
           "StringEquals": "QUARANTINED",
-          "Variable": "$.terminalOutcome"
+          "Variable": "$._B10.Payload.terminalOutcome"
         },
         {
           "Next": "FAILED_REDRIVABLE",
           "StringEquals": "FAILED_REDRIVABLE",
-          "Variable": "$.terminalOutcome"
+          "Variable": "$._B10.Payload.terminalOutcome"
         },
         {
           "Next": "FAILED_TERMINAL",
           "StringEquals": "FAILED_TERMINAL",
-          "Variable": "$.terminalOutcome"
+          "Variable": "$._B10.Payload.terminalOutcome"
         }
       ],
       "Default": "PUBLISHED",

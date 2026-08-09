@@ -536,6 +536,91 @@ def test_classification_target_executes_the_domain_use_case_and_persists_its_sch
     assert control.recorded["lease_epoch"] == 7
 
 
+def test_final_stage_preserves_terminal_outcome_on_success_and_checkpoint_replay() -> None:
+    class Control:
+        def __init__(self) -> None:
+            self.completed: dict[str, object] | None = None
+
+        def claim_stage(self, *_args: Any) -> dict[str, Any]:
+            if self.completed is not None:
+                return {"status": "COMPLETED", "output": self.completed}
+            return {"status": "RUNNING", "leaseEpoch": 1}
+
+        def record_stage(self, **kwargs: Any) -> None:
+            self.completed = kwargs["output"]
+
+    class Artifacts:
+        def __init__(self) -> None:
+            self.documents: dict[str, object] = {
+                "input.json": {
+                    "schemaVersion": "1.0.0",
+                    "artifactType": "pr-freshness-decision",
+                }
+            }
+
+        def get(self, reference: object) -> object:
+            assert isinstance(reference, dict)
+            return self.documents[str(reference["key"])]
+
+        def put(
+            self, _kind: str, key: str, body: object, _version: str
+        ) -> dict[str, object]:
+            self.documents[key] = body
+            return {
+                "bucket": "evidence",
+                "key": key,
+                "versionId": "v1",
+                "sha256": "a" * 64,
+                "sizeBytes": 100,
+            }
+
+    class FinalUseCase:
+        def execute(self, _document: object, _context: object) -> StageExecutionResult:
+            return StageExecutionResult(
+                "pr-gate-check",
+                "1.0.0",
+                {
+                    "schemaVersion": "1.0.0",
+                    "artifactType": "pr-gate-check",
+                    "terminalOutcome": "WARN",
+                },
+            )
+
+    control = Control()
+    artifacts = Artifacts()
+    executor = AwsStageExecutor(
+        AwsRuntimeConfig.from_env(REQUIRED_ENV),
+        control,
+        artifacts,
+        FakeClient(),
+        FakeClient(),
+        dispatcher=StageDispatcher({("PR_GATE", "P8"): FinalUseCase()}),
+    )
+    envelope = {
+        "commandId": "cmd-pr",
+        "correlationId": "corr-pr",
+        "idempotencyKey": "idem-pr:P8",
+        "workflowKind": "PR_GATE",
+        "workflowVersion": "1.0.0",
+        "stageId": "P8",
+        "stageName": "UPSERT_STABLE_GITHUB_CHECK",
+        "input": {
+            "bucket": "evidence",
+            "key": "input.json",
+            "versionId": "input-v1",
+            "sha256": "b" * 64,
+            "sizeBytes": 10,
+        },
+    }
+
+    first = executor.execute("control-stage", envelope)
+    replay = executor.execute("control-stage", envelope)
+
+    assert first["outcome"] == "SUCCEEDED"
+    assert replay["outcome"] == "SKIPPED"
+    assert first["terminalOutcome"] == replay["terminalOutcome"] == "WARN"
+
+
 def test_direct_executor_target_mismatch_fails_before_claim_or_artifact_io() -> None:
     class NoIo:
         def __getattr__(self, name: str):

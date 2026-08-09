@@ -16,6 +16,7 @@ from lineage_api.application.stage_ownership import (
 SCHEMA_VERSION = "1.0.0"
 MAX_RESULT_BYTES = 8_192
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
+_TERMINAL_OUTCOME = re.compile(r"^[A-Z][A-Z0-9_]{0,63}$")
 _REFERENCE_KEYS = frozenset({"bucket", "key", "versionId", "sha256", "sizeBytes"})
 _LOG = logging.getLogger("lineage.aws.stage")
 
@@ -92,6 +93,14 @@ def create_handler(stage: str):
             "outcome": outcome,
             "output": validate_reference(executed.get("output")),
         }
+        terminal_outcome = executed.get("terminalOutcome")
+        if terminal_outcome is not None:
+            if (
+                not isinstance(terminal_outcome, str)
+                or _TERMINAL_OUTCOME.fullmatch(terminal_outcome) is None
+            ):
+                raise ValueError("invalid terminal outcome")
+            result["terminalOutcome"] = terminal_outcome
         _LOG.info(
             json.dumps(
                 {

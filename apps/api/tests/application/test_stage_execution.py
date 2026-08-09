@@ -339,7 +339,14 @@ class PublicationProjection:
     def namespace_checksum(self, namespace: str) -> list[dict[str, object]]:
         if self.corrupt_readback and namespace != "graph-v1":
             return []
-        return deepcopy(self.namespaces.get(namespace, []))
+        return [
+            {
+                key: value
+                for key, value in row.items()
+                if key in {"edgeId", "source", "target", "type"}
+            }
+            for row in deepcopy(self.namespaces.get(namespace, []))
+        ]
 
 
 class PackageArtifacts:
