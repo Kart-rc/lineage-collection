@@ -34,12 +34,51 @@ def test_contract_registry_loads_all_platform_contracts() -> None:
         "outbox-event",
         "pr-gate-result",
         "proposal",
+        "repository-checkout",
         "runtime-observation",
         "runtime-instrumentation-profile",
         "runtime-lease",
         "runtime-session-manifest",
         "runtime-window-manifest",
         "stage-execution",
+    }
+
+
+def test_repository_checkout_contract_is_closed_and_exact() -> None:
+    registry = _contract_registry_type()(CONTRACTS_DIR)
+    checkout = {
+        "schemaVersion": "1.0.0",
+        "origin": "https://github.com/spring-projects/spring-petclinic",
+        "repository": "spring-petclinic",
+        "revision": "88e37c15cf6fc8490b01bc3e8e2c800cec1ac272",
+        "checkoutRoot": "/tmp/spring-petclinic",
+        "environment": "test",
+        "platform": "local",
+        "system": "petclinic",
+        "analyzerPack": "java-spring-data-jpa-v1",
+        "ruleset": "java-spring-v1",
+    }
+
+    assert registry.validate("repository-checkout", checkout) == []
+    assert registry.validate("repository-checkout", {**checkout, "revision": "a" * 64}) == []
+    assert registry.validate("repository-checkout", {**checkout, "unknown": True})
+    assert registry.validate(
+        "repository-checkout",
+        {**checkout, "origin": "https://user:secret@github.com/acme/repo"},
+    )
+    assert registry.validate(
+        "repository-checkout", {**checkout, "origin": "http://github.com/acme/repo"}
+    )
+    assert registry.validate(
+        "repository-checkout",
+        {**checkout, "origin": "https://GitHub.com/spring-projects/spring-petclinic.git"},
+    )
+    assert registry.validate("repository-checkout", {**checkout, "revision": "A" * 40})
+    assert registry.validate("repository-checkout", {**checkout, "revision": "a" * 39})
+    missing_ruleset = dict(checkout)
+    missing_ruleset.pop("ruleset")
+    assert {error.path for error in registry.validate("repository-checkout", missing_ruleset)} == {
+        "ruleset"
     }
 
 
