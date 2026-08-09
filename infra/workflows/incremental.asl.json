@@ -2,6 +2,9 @@
   "Comment": "Generated INCREMENTAL 1.0.0; large payloads remain versioned S3 references",
   "StartAt": "I1",
   "States": {
+    "AWAITING_APPROVAL": {
+      "Type": "Succeed"
+    },
     "FAILED_REDRIVABLE": {
       "Error": "FAILED_REDRIVABLE",
       "Type": "Fail"
@@ -643,6 +646,11 @@
     },
     "TerminalRoute": {
       "Choices": [
+        {
+          "Next": "AWAITING_APPROVAL",
+          "StringEquals": "AWAITING_APPROVAL",
+          "Variable": "$._I10.Payload.terminalOutcome"
+        },
         {
           "Next": "NO_LINEAGE_IMPACT",
           "StringEquals": "NO_LINEAGE_IMPACT",

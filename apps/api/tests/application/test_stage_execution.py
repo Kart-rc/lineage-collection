@@ -768,6 +768,58 @@ def test_runtime_stage_records_optional_absence_without_reading_or_inventing_evi
 
 
 @pytest.mark.parametrize(
+    ("workflow_kind", "stage_id", "stage_name"),
+    (
+        ("BASELINE", "B6", "VALIDATE_OPTIONAL_RUNTIME_EVIDENCE"),
+        ("INCREMENTAL", "I6", "VALIDATE_OPTIONAL_RUNTIME_EVIDENCE"),
+    ),
+)
+def test_runtime_stage_preserves_static_evidence_and_coverage_for_consolidation(
+    workflow_kind: str, stage_id: str, stage_name: str
+) -> None:
+    artifacts = RuntimeArtifacts({})
+    document = {
+        "schemaVersion": "1.0.0",
+        "context": {
+            "repository": "payments-pipeline",
+            "artifactDigest": RUNTIME_ARTIFACT,
+            "environment": "staging",
+            "system": "payments",
+            "runtimeManifestRefs": [],
+            "assertionRefs": [_assertion_reference()],
+            "residueRefs": [_runtime_reference(7)],
+            "coverage": {
+                "expectedScope": ["pipeline.py"],
+                "completedScope": ["pipeline.py"],
+                "reusedScope": [],
+                "skippedScope": [],
+                "unsupportedScope": [],
+                "quarantinedScope": [],
+                "failedScope": [],
+            },
+            "tombstoneEdgeIds": ["edge-old-001"],
+        },
+    }
+    context = StageExecutionContext(
+        target="runtime-validation",
+        workflow_kind=workflow_kind,
+        workflow_version="1.0.0",
+        stage_id=stage_id,
+        stage_name=stage_name,
+        command_id="cmd-runtime-carry",
+        correlation_id="corr-runtime-carry",
+        input_reference=_context().input_reference,
+    )
+
+    result = RuntimeValidationStageUseCase(artifacts).execute(document, context)
+
+    assert result.document["context"]["assertionRefs"] == [_assertion_reference()]
+    assert result.document["context"]["residueRefs"] == [_runtime_reference(7)]
+    assert result.document["context"]["coverage"]["state"] == "COMPLETE"
+    assert result.document["context"]["tombstoneEdgeIds"] == ["edge-old-001"]
+
+
+@pytest.mark.parametrize(
     ("mutation", "status", "reason"),
     (
         (

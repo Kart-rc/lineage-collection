@@ -164,6 +164,19 @@ describe("exported executable workflow topology", () => {
     );
   });
 
+  it("routes manual-review publication outcomes without reporting a false publish", () => {
+    for (const file of ["baseline.asl.json", "incremental.asl.json"]) {
+      const definition = JSON.parse(readFileSync(resolve(workflowsRoot, file), "utf8"));
+      expect(definition.States.AWAITING_APPROVAL).toEqual({ Type: "Succeed" });
+      expect(definition.States.TerminalRoute.Choices).toContainEqual(
+        expect.objectContaining({
+          Next: "AWAITING_APPROVAL",
+          StringEquals: "AWAITING_APPROVAL",
+        }),
+      );
+    }
+  });
+
   it("exports D1-D6 for the promotion Lambda without creating a fifth ASL workflow", () => {
     expect(contracts.workflows.DEPLOYMENT.stages.map((stage: any) => stage.stageId)).toEqual([
       "D1",

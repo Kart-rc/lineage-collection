@@ -228,6 +228,7 @@ BASELINE = _linear_workflow(
     ),
     terminal_states=(
         "PUBLISHED",
+        "AWAITING_APPROVAL",
         "NO_LINEAGE",
         "REJECTED",
         "QUARANTINED",
@@ -270,6 +271,7 @@ INCREMENTAL = _linear_workflow(
     ),
     terminal_states=(
         "PUBLISHED",
+        "AWAITING_APPROVAL",
         "NO_LINEAGE_IMPACT",
         "REJECTED",
         "QUARANTINED",

@@ -2,6 +2,9 @@
   "Comment": "Generated BASELINE 1.0.0; large payloads remain versioned S3 references",
   "StartAt": "B1",
   "States": {
+    "AWAITING_APPROVAL": {
+      "Type": "Succeed"
+    },
     "B1": {
       "Catch": [
         {
@@ -714,6 +717,11 @@
     },
     "TerminalRoute": {
       "Choices": [
+        {
+          "Next": "AWAITING_APPROVAL",
+          "StringEquals": "AWAITING_APPROVAL",
+          "Variable": "$._B10.Payload.terminalOutcome"
+        },
         {
           "Next": "NO_LINEAGE",
           "StringEquals": "NO_LINEAGE",

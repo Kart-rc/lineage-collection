@@ -68,7 +68,16 @@ def contract_document() -> dict[str, Any]:
 
 
 def _terminal_state(name: str, workflow: WorkflowDefinition) -> dict[str, Any]:
-    successful = name in {workflow.terminal_states[0], "NO_LINEAGE", "NO_LINEAGE_IMPACT", "PASS", "WARN", "BLOCK", "PROPOSALS_RAISED"}
+    successful = name in {
+        workflow.terminal_states[0],
+        "AWAITING_APPROVAL",
+        "NO_LINEAGE",
+        "NO_LINEAGE_IMPACT",
+        "PASS",
+        "WARN",
+        "BLOCK",
+        "PROPOSALS_RAISED",
+    }
     return {"Type": "Succeed"} if successful else {"Type": "Fail", "Error": name}
 
 

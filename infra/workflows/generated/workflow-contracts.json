@@ -278,6 +278,7 @@
       ],
       "terminalStates": [
         "PUBLISHED",
+        "AWAITING_APPROVAL",
         "NO_LINEAGE",
         "REJECTED",
         "QUARANTINED",
@@ -741,6 +742,7 @@
       ],
       "terminalStates": [
         "PUBLISHED",
+        "AWAITING_APPROVAL",
         "NO_LINEAGE_IMPACT",
         "REJECTED",
         "QUARANTINED",

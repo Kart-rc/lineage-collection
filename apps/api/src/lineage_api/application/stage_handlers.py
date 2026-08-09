@@ -768,6 +768,24 @@ class RuntimeValidationStageUseCase:
             raise ValueError("unsupported runtime validation input schema")
         lineage_context = _lineage_context(input_document)
         common = _common_context(lineage_context)
+        if "assertionRefs" in lineage_context:
+            common["assertionRefs"] = _references(
+                "assertionRefs", lineage_context["assertionRefs"], limit=1_000
+            )
+        if "residueRefs" in lineage_context:
+            common["residueRefs"] = _references(
+                "residueRefs", lineage_context["residueRefs"], limit=1_000
+            )
+        if "coverage" in lineage_context:
+            common["coverage"] = _coverage(
+                lineage_context["coverage"], max_scope=10_000
+            )
+        if "tombstoneEdgeIds" in lineage_context:
+            common["tombstoneEdgeIds"] = _edge_ids(
+                "tombstone edge IDs",
+                lineage_context["tombstoneEdgeIds"],
+                limit=10_000,
+            )
         raw_references = lineage_context.get("runtimeManifestRefs", [])
         if not isinstance(raw_references, list):
             raise ValueError("runtime manifest references must be an array")
