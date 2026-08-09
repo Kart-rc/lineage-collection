@@ -11,6 +11,7 @@ from lineage_api.application.stage_execution import (
 )
 from lineage_api.application.stage_handlers import (
     ClassificationStageUseCase,
+    ConsolidationStageUseCase,
     CoverageStageUseCase,
     RuntimeValidationStageUseCase,
 )
@@ -177,6 +178,87 @@ class RuntimeArtifacts:
 
     def put(self, *_args: object) -> object:
         raise AssertionError("runtime use case result is persisted by the executor")
+
+
+FROM_URN = "urn:ldp:staging:snowflake:payments:raw.transactions#amount"
+TO_URN = "urn:ldp:staging:snowflake:payments:analytics.daily_revenue#gross_revenue"
+
+
+def _assertion(mechanism: str, provenance_id: str) -> dict[str, object]:
+    runtime = mechanism == "RUNTIME"
+    return {
+        "provenanceId": provenance_id,
+        "from": [FROM_URN],
+        "to": TO_URN,
+        "edgeType": "DERIVES",
+        "transform": None if runtime else "SUM(amount)",
+        "mechanism": mechanism,
+        "exact": not runtime,
+        "evidenceRef": {
+            "bucket": "evidence",
+            "key": f"assertions/{provenance_id}.json",
+            "versionId": "v1",
+            "sha256": "7" * 64,
+            "sizeBytes": 200,
+        },
+        "repo": "payments-pipeline",
+        "runId": "run-001",
+        "correlationId": "corr-consolidate",
+        "runtimeScope": "ELEMENT" if runtime else None,
+        "sessionComplete": True,
+    }
+
+
+class ConsolidationArtifacts:
+    def __init__(self, documents: dict[str, object]) -> None:
+        self.documents = documents
+        self.writes: list[tuple[str, str, object, str]] = []
+
+    def get(self, reference: object) -> object:
+        return deepcopy(self.documents[reference["key"]])
+
+    def put(self, kind: str, key: str, body: object, version: str) -> dict[str, object]:
+        self.writes.append((kind, key, body, version))
+        return {
+            "bucket": "evidence",
+            "key": key,
+            "versionId": f"edge-v{len(self.writes)}",
+            "sha256": f"{len(self.writes) + 40:064x}",
+            "sizeBytes": 1024,
+        }
+
+
+def _assertion_reference() -> dict[str, object]:
+    return {
+        "bucket": "evidence",
+        "key": "assertion-sets/run-001.json",
+        "versionId": "assertions-v1",
+        "sha256": "6" * 64,
+        "sizeBytes": 4096,
+    }
+
+
+def _consolidation_document() -> dict[str, object]:
+    return {
+        "schemaVersion": "1.0.0",
+        "context": {
+            "repository": "payments-pipeline",
+            "artifactDigest": RUNTIME_ARTIFACT,
+            "environment": "staging",
+            "system": "payments",
+            "assertionRefs": [_assertion_reference()],
+            "coverage": {
+                "expectedScope": ["pipeline.py"],
+                "completedScope": ["pipeline.py"],
+                "reusedScope": [],
+                "skippedScope": [],
+                "unsupportedScope": [],
+                "quarantinedScope": [],
+                "failedScope": [],
+            },
+            "tombstoneEdgeIds": ["edge-removed-1"],
+        },
+    }
 
 
 def _mark_runtime_incomplete(manifest: dict[str, object]) -> None:
@@ -538,6 +620,232 @@ def test_runtime_stage_never_promotes_incomplete_mismatched_or_invalid_evidence(
     assert reason in coverage["reasons"]
     assert coverage["manifestRefs"] == []
     assert coverage["observationChecksums"] == []
+
+
+def test_baseline_consolidation_persists_one_deterministic_edge_set_and_complete_coverage() -> None:
+    reference = _assertion_reference()
+    artifacts = ConsolidationArtifacts(
+        {
+            reference["key"]: {
+                "schemaVersion": "1.0.0",
+                "assertions": [
+                    _assertion("RUNTIME", "runtime-001"),
+                    _assertion("SCA", "sca-001"),
+                    _assertion("SCA", "sca-001"),
+                ],
+            }
+        }
+    )
+    context = StageExecutionContext(
+        target="consolidation",
+        workflow_kind="BASELINE",
+        workflow_version="1.0.0",
+        stage_id="B8",
+        stage_name="CONSOLIDATE_AND_VERIFY_COVERAGE",
+        command_id="cmd-consolidate",
+        correlation_id="corr-consolidate",
+        input_reference=_context().input_reference,
+    )
+
+    result = ConsolidationStageUseCase(artifacts).execute(
+        _consolidation_document(), context
+    )
+
+    assert result.artifact_kind == "consolidation-result"
+    assert result.document["artifactType"] == "consolidation-result"
+    assert result.document["edgeCount"] == 1
+    assert result.document["coverage"]["state"] == "COMPLETE"
+    assert result.document["bands"] == {"HIGH": 1}
+    assert result.document["tombstoneEdgeIds"] == []
+    assert len(result.document["edgeIds"]) == 1
+    assert [write[0] for write in artifacts.writes] == ["consolidated-edge-set"]
+    edges = artifacts.writes[0][2]["edges"]
+    assert len(edges) == 1
+    assert edges[0]["band"] == "HIGH"
+    assert edges[0]["corroboration"] == "ELEMENT"
+    assert [item["provenanceId"] for item in edges[0]["provenance"]] == [
+        "runtime-001",
+        "sca-001",
+    ]
+
+
+@pytest.mark.parametrize(
+    ("workflow_kind", "stage_id", "stage_name", "expected_tombstones"),
+    (
+        (
+            "INCREMENTAL",
+            "I7",
+            "CONSOLIDATE_DELTAS_AND_TOMBSTONES",
+            ["edge-removed-1"],
+        ),
+        ("PR_GATE", "P4", "ANALYZE_RELEVANT_CHANGED_PATHS", []),
+    ),
+)
+def test_incremental_and_pr_gate_consolidation_use_the_same_derivation(
+    workflow_kind: str,
+    stage_id: str,
+    stage_name: str,
+    expected_tombstones: list[str],
+) -> None:
+    reference = _assertion_reference()
+    artifacts = ConsolidationArtifacts(
+        {
+            reference["key"]: {
+                "schemaVersion": "1.0.0",
+                "assertions": [_assertion("SCA", "sca-001")],
+            }
+        }
+    )
+    context = StageExecutionContext(
+        target="consolidation",
+        workflow_kind=workflow_kind,
+        workflow_version="1.0.0",
+        stage_id=stage_id,
+        stage_name=stage_name,
+        command_id=f"cmd-{stage_id.lower()}",
+        correlation_id="corr-consolidate",
+        input_reference=_context().input_reference,
+    )
+
+    result = ConsolidationStageUseCase(artifacts).execute(
+        _consolidation_document(), context
+    )
+
+    assert result.document["edgeCount"] == 1
+    assert result.document["bands"] == {"SINGLE": 1}
+    assert result.document["tombstoneEdgeIds"] == expected_tombstones
+
+
+def test_baseline_residue_stage_records_disabled_policy_and_carries_only_refs() -> None:
+    artifacts = ConsolidationArtifacts({})
+    context = StageExecutionContext(
+        target="consolidation",
+        workflow_kind="BASELINE",
+        workflow_version="1.0.0",
+        stage_id="B7",
+        stage_name="ANALYZE_RESIDUE_WITH_POLICY",
+        command_id="cmd-b7",
+        correlation_id="corr-consolidate",
+        input_reference=_context().input_reference,
+    )
+    document = _consolidation_document()
+    document["context"]["residueRefs"] = [_runtime_reference(7)]
+
+    result = ConsolidationStageUseCase(artifacts).execute(document, context)
+
+    assert result.artifact_kind == "residue-decision"
+    assert result.document["residue"] == {
+        "status": "SKIPPED_WITH_RECORD",
+        "count": 1,
+        "reason": "LLM_NOT_CONFIGURED",
+    }
+    assert result.document["context"]["assertionRefs"] == [_assertion_reference()]
+    assert result.document["context"]["residueRefs"] == [_runtime_reference(7)]
+    assert artifacts.writes == []
+
+
+def test_consolidation_rejects_conflicting_reuse_of_one_provenance_identity() -> None:
+    reference = _assertion_reference()
+    first = _assertion("SCA", "shared-provenance")
+    second = {**first, "transform": "amount * 2"}
+    artifacts = ConsolidationArtifacts(
+        {
+            reference["key"]: {
+                "schemaVersion": "1.0.0",
+                "assertions": [first, second],
+            }
+        }
+    )
+    context = StageExecutionContext(
+        target="consolidation",
+        workflow_kind="INCREMENTAL",
+        workflow_version="1.0.0",
+        stage_id="I7",
+        stage_name="CONSOLIDATE_DELTAS_AND_TOMBSTONES",
+        command_id="cmd-conflict",
+        correlation_id="corr-consolidate",
+        input_reference=_context().input_reference,
+    )
+
+    with pytest.raises(ValueError, match="provenance identity conflict"):
+        ConsolidationStageUseCase(artifacts).execute(_consolidation_document(), context)
+
+    assert artifacts.writes == []
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    (
+        lambda assertion: assertion.update(repo="another-repository"),
+        lambda assertion: assertion.update(
+            to="urn:ldp:staging:snowflake:another_system:analytics.daily_revenue#gross_revenue"
+        ),
+        lambda assertion: assertion.update(
+            to="urn:ldp:production:snowflake:payments:analytics.daily_revenue#gross_revenue"
+        ),
+    ),
+)
+def test_consolidation_rejects_assertions_outside_the_pinned_scope(mutation) -> None:
+    reference = _assertion_reference()
+    assertion = _assertion("SCA", "sca-out-of-scope")
+    mutation(assertion)
+    artifacts = ConsolidationArtifacts(
+        {
+            reference["key"]: {
+                "schemaVersion": "1.0.0",
+                "assertions": [assertion],
+            }
+        }
+    )
+    context = StageExecutionContext(
+        target="consolidation",
+        workflow_kind="INCREMENTAL",
+        workflow_version="1.0.0",
+        stage_id="I7",
+        stage_name="CONSOLIDATE_DELTAS_AND_TOMBSTONES",
+        command_id="cmd-out-of-scope",
+        correlation_id="corr-consolidate",
+        input_reference=_context().input_reference,
+    )
+
+    with pytest.raises(ValueError, match="assertion scope mismatch"):
+        ConsolidationStageUseCase(artifacts).execute(_consolidation_document(), context)
+
+    assert artifacts.writes == []
+
+
+def test_consolidation_rejects_unbounded_or_secret_bearing_citation_metadata() -> None:
+    reference = _assertion_reference()
+    assertion = _assertion("SCA", "sca-secret-citation")
+    assertion["citation"] = {
+        "file": "pipeline.py",
+        "line": 10,
+        "astPath": "Module.Assign",
+        "secret": "must-not-cross-the-boundary",
+    }
+    artifacts = ConsolidationArtifacts(
+        {
+            reference["key"]: {
+                "schemaVersion": "1.0.0",
+                "assertions": [assertion],
+            }
+        }
+    )
+    context = StageExecutionContext(
+        target="consolidation",
+        workflow_kind="BASELINE",
+        workflow_version="1.0.0",
+        stage_id="B8",
+        stage_name="CONSOLIDATE_AND_VERIFY_COVERAGE",
+        command_id="cmd-secret-citation",
+        correlation_id="corr-consolidate",
+        input_reference=_context().input_reference,
+    )
+
+    with pytest.raises(ValueError, match="citation schema"):
+        ConsolidationStageUseCase(artifacts).execute(_consolidation_document(), context)
+
+    assert artifacts.writes == []
 
 
 def test_context_fails_closed_when_target_does_not_own_the_exact_stage() -> None:

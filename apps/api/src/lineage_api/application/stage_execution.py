@@ -142,6 +142,7 @@ class StageDispatcher:
 
 
 __all__ = [
+    "MAX_STAGE_DOCUMENT_BYTES",
     "StageDispatcher",
     "StageExecutionContext",
     "StageExecutionResult",

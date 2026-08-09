@@ -1,13 +1,15 @@
 from __future__ import annotations
 
-import hashlib
 import json
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any, Callable
 
+from lineage_api.application.consolidation import (
+    derive_consolidation,
+    edge_key_for as derive_edge_key,
+)
 from lineage_api.db import Database
-from lineage_api.domain.confidence import derive_band, normalize_transform
 from lineage_api.domain.evidence import EvidenceRef, ScaEdgeEvidence
 from lineage_api.domain.urns import LineageUrn
 
@@ -333,16 +335,7 @@ class ConsolidationService:
 
     @staticmethod
     def edge_key_for(assertion: MechanismAssertion) -> str:
-        identity = json.dumps(
-            {
-                "from": sorted(assertion.from_urns),
-                "to": assertion.to_urn,
-                "edgeType": assertion.edge_type,
-            },
-            sort_keys=True,
-            separators=(",", ":"),
-        )
-        return f"edge-{hashlib.sha256(identity.encode()).hexdigest()[:24]}"
+        return derive_edge_key(assertion.from_urns, assertion.to_urn, assertion.edge_type)
 
     def _derive(
         self,
@@ -350,51 +343,7 @@ class ConsolidationService:
         version: int,
         provenance: tuple[MechanismAssertion, ...],
     ) -> ConsolidatedEdge:
-        mechanisms: set[str] = set()
-        for item in provenance:
-            if item.mechanism != "RUNTIME":
-                mechanisms.add(item.mechanism)
-            elif item.session_complete and item.runtime_scope == "ELEMENT":
-                mechanisms.add("RUNTIME")
-
-        runtime_scopes = {
-            item.runtime_scope
-            for item in provenance
-            if item.mechanism == "RUNTIME" and item.session_complete
-        }
-        if "ELEMENT" in runtime_scopes:
-            corroboration = "ELEMENT"
-        elif "DATASET" in runtime_scopes:
-            corroboration = "DATASET"
-        else:
-            corroboration = "NONE"
-
-        transform_assertions = [
-            item
-            for item in provenance
-            if item.mechanism in {"SCA", "LLM"} and item.transform is not None
-        ]
-        normalized_transforms = {
-            normalize_transform(item.transform) for item in transform_assertions if item.transform
-        }
-        conflicting = len(normalized_transforms) > 1
-        selected = next(
-            (
-                item
-                for item in provenance
-                if item.mechanism == "SCA" and item.exact and item.transform is not None
-            ),
-            transform_assertions[0] if transform_assertions else None,
-        )
-        transform = None if conflicting or selected is None else selected.transform
-        status = "CONFLICTING" if conflicting else "PROPOSED"
-        auto_publishable = bool(
-            not conflicting
-            and any(
-                item.mechanism == "SCA" and item.exact and item.transform is not None
-                for item in provenance
-            )
-        )
+        decision = derive_consolidation([item.as_dict() for item in provenance])
         first = provenance[0]
         system = LineageUrn.parse(first.to_urn).system
         return ConsolidatedEdge(
@@ -404,12 +353,12 @@ class ConsolidationService:
             from_urns=tuple(sorted(first.from_urns)),
             to_urn=first.to_urn,
             edge_type=first.edge_type,
-            band=derive_band(mechanisms),
-            corroboration=corroboration,
-            status=status,
-            transform=transform,
+            band=decision.band,
+            corroboration=decision.corroboration,
+            status=decision.status,
+            transform=decision.transform,
             provenance=provenance,
-            auto_publishable=auto_publishable,
+            auto_publishable=decision.auto_publishable,
             system=system,
             updated_at=self._clock(),
         )
