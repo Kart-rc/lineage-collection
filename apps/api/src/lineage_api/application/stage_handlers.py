@@ -14,6 +14,7 @@ from lineage_api.application.stage_execution import (
     validate_artifact_reference,
 )
 from lineage_api.application.ports import ArtifactStorePort
+from lineage_api.application.runtime_validation import runtime_window_manifest_errors
 
 
 _CONTEXT_FIELDS = {
@@ -327,6 +328,105 @@ class CoverageStageUseCase:
         )
 
 
+class RuntimeValidationStageUseCase:
+    def __init__(self, artifacts: ArtifactStorePort, *, max_manifests: int = 100) -> None:
+        if not 1 <= max_manifests <= 1_000:
+            raise ValueError("runtime manifest limit must be between 1 and 1000")
+        self._artifacts = artifacts
+        self._max_manifests = max_manifests
+
+    def execute(
+        self, input_document: object, context: StageExecutionContext
+    ) -> StageExecutionResult:
+        if not isinstance(input_document, Mapping):
+            raise ValueError("runtime validation input must be an object")
+        if input_document.get("schemaVersion") != "1.0.0":
+            raise ValueError("unsupported runtime validation input schema")
+        lineage_context = _lineage_context(input_document)
+        common = _common_context(lineage_context)
+        raw_references = lineage_context.get("runtimeManifestRefs", [])
+        if not isinstance(raw_references, list):
+            raise ValueError("runtime manifest references must be an array")
+        if len(raw_references) > self._max_manifests:
+            raise ValueError("runtime manifest references exceed the limit")
+        references_by_identity: dict[tuple[object, ...], dict[str, Any]] = {}
+        for raw_reference in raw_references:
+            reference = validate_artifact_reference(raw_reference)
+            identity = tuple(reference[name] for name in sorted(reference))
+            references_by_identity[identity] = reference
+        references = sorted(
+            references_by_identity.values(), key=lambda item: (item["bucket"], item["key"], item["versionId"])
+        )
+
+        status = "NOT_PROVIDED"
+        reasons: set[str] = {"NO_RUNTIME_MANIFESTS"} if not references else set()
+        complete: list[tuple[dict[str, Any], Mapping[str, Any]]] = []
+        incomplete = False
+        quarantined = False
+        for reference in references:
+            manifest = self._artifacts.get(reference)
+            errors = runtime_window_manifest_errors(manifest)
+            if errors or not isinstance(manifest, Mapping):
+                quarantined = True
+                reasons.add("INVALID_RUNTIME_MANIFEST")
+                continue
+            mismatch = None
+            for field, expected in (
+                ("repo", common["repository"]),
+                ("environment", common["environment"]),
+                ("artifactDigest", common["artifactDigest"]),
+            ):
+                if manifest[field] != expected:
+                    mismatch = f"{field.replace('artifactDigest', 'artifact_digest').upper()}_MISMATCH"
+                    break
+            if mismatch is not None:
+                quarantined = True
+                reasons.add(mismatch)
+                continue
+            if manifest["outcome"] != "COMPLETE":
+                incomplete = True
+                reasons.update(str(reason) for reason in manifest["reasons"])
+                continue
+            complete.append((reference, manifest))
+
+        if quarantined:
+            status = "QUARANTINED"
+        elif incomplete:
+            status = "INCOMPLETE"
+        elif references:
+            status = "VALIDATED"
+        trusted = complete if status == "VALIDATED" else []
+        coverage = {
+            "status": status,
+            "windowIds": sorted(str(manifest["windowId"]) for _, manifest in trusted),
+            "mechanisms": sorted({str(manifest["mechanism"]) for _, manifest in trusted}),
+            "manifestRefs": [reference for reference, _ in trusted],
+            "observationChecksums": sorted(
+                str(manifest["observationChecksum"]) for _, manifest in trusted
+            ),
+            "accepted": sum(int(manifest["accepted"]) for _, manifest in trusted),
+            "drained": sum(int(manifest["drained"]) for _, manifest in trusted),
+            "reasons": sorted(reasons),
+        }
+        return StageExecutionResult(
+            artifact_kind="runtime-validation",
+            schema_version="1.0.0",
+            document={
+                "schemaVersion": "1.0.0",
+                "artifactType": "runtime-validation",
+                "workflowKind": context.workflow_kind,
+                "workflowVersion": context.workflow_version,
+                "stageId": context.stage_id,
+                "stageName": context.stage_name,
+                "commandId": context.command_id,
+                "correlationId": context.correlation_id,
+                "source": dict(context.input_reference),
+                "context": common,
+                "runtimeCoverage": coverage,
+            },
+        )
+
+
 def production_stage_use_cases(
     artifacts: ArtifactStorePort | None = None,
 ) -> dict[tuple[str, str], StageUseCase]:
@@ -337,11 +437,15 @@ def production_stage_use_cases(
         coverage = CoverageStageUseCase(artifacts)
         use_cases[("BASELINE", "B4")] = coverage
         use_cases[("INCREMENTAL", "I3")] = coverage
+        runtime_validation = RuntimeValidationStageUseCase(artifacts)
+        use_cases[("BASELINE", "B6")] = runtime_validation
+        use_cases[("INCREMENTAL", "I6")] = runtime_validation
     return use_cases
 
 
 __all__ = [
     "ClassificationStageUseCase",
     "CoverageStageUseCase",
+    "RuntimeValidationStageUseCase",
     "production_stage_use_cases",
 ]

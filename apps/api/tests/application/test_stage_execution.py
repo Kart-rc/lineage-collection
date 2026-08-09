@@ -12,6 +12,7 @@ from lineage_api.application.stage_execution import (
 from lineage_api.application.stage_handlers import (
     ClassificationStageUseCase,
     CoverageStageUseCase,
+    RuntimeValidationStageUseCase,
 )
 
 
@@ -106,6 +107,88 @@ class RecordingArtifacts:
 
     def get(self, _reference: object) -> object:
         raise AssertionError("coverage planning must not read an unpinned secondary object")
+
+
+def _runtime_reference(index: int = 1) -> dict[str, object]:
+    return {
+        "bucket": "evidence",
+        "key": f"runtime/windows/window-{index}.json",
+        "versionId": f"runtime-v{index}",
+        "sha256": f"{index + 20:064x}",
+        "sizeBytes": 2048,
+    }
+
+
+RUNTIME_ARTIFACT = "sha256:" + "a" * 64
+
+
+def _complete_runtime_manifest(index: int = 1) -> dict[str, object]:
+    return {
+        "schemaVersion": "1.0.0",
+        "manifestId": f"runtime-window-manifest-{index}",
+        "windowId": f"runtime-window-{index}",
+        "leaseId": f"runtime-lease-{index}",
+        "profileId": "payments-spark-openlineage",
+        "profileVersion": "1.0.0",
+        "workloadId": "payments-pipeline",
+        "repo": "payments-pipeline",
+        "environment": "staging",
+        "artifactDigest": RUNTIME_ARTIFACT,
+        "mechanism": "OPENLINEAGE",
+        "outcome": "COMPLETE",
+        "attempted": 2,
+        "accepted": 2,
+        "rejected": 0,
+        "duplicates": 0,
+        "retried": 0,
+        "buffered": 0,
+        "dropped": 0,
+        "quarantined": 0,
+        "drained": 2,
+        "sourceChecksum": "sha256:" + "e" * 64,
+        "observationChecksum": "sha256:" + "f" * 64,
+        "reasons": [],
+        "reasonCounts": {},
+        "emitterCounts": {
+            "spark-openlineage-v1": {
+                "attempted": 2,
+                "accepted": 2,
+                "rejected": 0,
+                "duplicates": 0,
+                "retried": 0,
+                "buffered": 0,
+                "dropped": 0,
+                "quarantined": 0,
+                "drained": 2,
+            }
+        },
+        "closedAt": "2026-08-08T12:05:00Z",
+    }
+
+
+class RuntimeArtifacts:
+    def __init__(self, manifests: dict[str, object]) -> None:
+        self.manifests = manifests
+        self.reads: list[object] = []
+
+    def get(self, reference: object) -> object:
+        self.reads.append(reference)
+        return deepcopy(self.manifests[reference["key"]])
+
+    def put(self, *_args: object) -> object:
+        raise AssertionError("runtime use case result is persisted by the executor")
+
+
+def _mark_runtime_incomplete(manifest: dict[str, object]) -> None:
+    emitter = deepcopy(manifest["emitterCounts"])
+    emitter["spark-openlineage-v1"]["dropped"] = 1
+    manifest.update(
+        outcome="INCOMPLETE",
+        reasons=["DROPPED_OBSERVATION"],
+        reasonCounts={"DROPPED_OBSERVATION": 1},
+        emitterCounts=emitter,
+        dropped=1,
+    )
 
 
 def test_classification_stage_emits_an_immutable_domain_decision_not_an_input_echo() -> None:
@@ -308,6 +391,153 @@ def test_coverage_rejects_scope_overflow_before_writing_any_artifact() -> None:
         CoverageStageUseCase(artifacts, max_scope=3, chunk_size=1).execute(document, context)
 
     assert artifacts.writes == []
+
+
+@pytest.mark.parametrize(
+    ("workflow_kind", "stage_id", "stage_name"),
+    (
+        ("BASELINE", "B6", "VALIDATE_OPTIONAL_RUNTIME_EVIDENCE"),
+        ("INCREMENTAL", "I6", "VALIDATE_OPTIONAL_RUNTIME_EVIDENCE"),
+    ),
+)
+def test_runtime_stage_validates_only_complete_artifact_bound_closing_manifests(
+    workflow_kind: str, stage_id: str, stage_name: str
+) -> None:
+    reference = _runtime_reference()
+    artifacts = RuntimeArtifacts({reference["key"]: _complete_runtime_manifest()})
+    context = StageExecutionContext(
+        target="runtime-validation",
+        workflow_kind=workflow_kind,
+        workflow_version="1.0.0",
+        stage_id=stage_id,
+        stage_name=stage_name,
+        command_id="cmd-runtime",
+        correlation_id="corr-runtime",
+        input_reference=_context().input_reference,
+    )
+    document = {
+        "schemaVersion": "1.0.0",
+        "context": {
+            "repository": "payments-pipeline",
+            "artifactDigest": RUNTIME_ARTIFACT,
+            "environment": "staging",
+            "system": "payments",
+            "runtimeManifestRefs": [reference],
+        },
+    }
+
+    result = RuntimeValidationStageUseCase(artifacts).execute(document, context)
+
+    assert result.artifact_kind == "runtime-validation"
+    assert result.document["artifactType"] == "runtime-validation"
+    assert result.document["runtimeCoverage"] == {
+        "status": "VALIDATED",
+        "windowIds": ["runtime-window-1"],
+        "mechanisms": ["OPENLINEAGE"],
+        "manifestRefs": [reference],
+        "observationChecksums": ["sha256:" + "f" * 64],
+        "accepted": 2,
+        "drained": 2,
+        "reasons": [],
+    }
+    assert "emitterCounts" not in result.document
+    assert artifacts.reads == [reference]
+
+
+def test_runtime_stage_records_optional_absence_without_reading_or_inventing_evidence() -> None:
+    artifacts = RuntimeArtifacts({})
+    context = StageExecutionContext(
+        target="runtime-validation",
+        workflow_kind="BASELINE",
+        workflow_version="1.0.0",
+        stage_id="B6",
+        stage_name="VALIDATE_OPTIONAL_RUNTIME_EVIDENCE",
+        command_id="cmd-runtime-none",
+        correlation_id="corr-runtime-none",
+        input_reference=_context().input_reference,
+    )
+    document = {
+        "schemaVersion": "1.0.0",
+        "context": {
+            "repository": "payments-pipeline",
+            "artifactDigest": RUNTIME_ARTIFACT,
+            "environment": "staging",
+            "system": "payments",
+            "runtimeManifestRefs": [],
+        },
+    }
+
+    result = RuntimeValidationStageUseCase(artifacts).execute(document, context)
+
+    assert result.document["runtimeCoverage"] == {
+        "status": "NOT_PROVIDED",
+        "windowIds": [],
+        "mechanisms": [],
+        "manifestRefs": [],
+        "observationChecksums": [],
+        "accepted": 0,
+        "drained": 0,
+        "reasons": ["NO_RUNTIME_MANIFESTS"],
+    }
+    assert artifacts.reads == []
+
+
+@pytest.mark.parametrize(
+    ("mutation", "status", "reason"),
+    (
+        (
+            _mark_runtime_incomplete,
+            "INCOMPLETE",
+            "DROPPED_OBSERVATION",
+        ),
+        (
+            lambda manifest: manifest.update(artifactDigest="sha256:" + "9" * 64),
+            "QUARANTINED",
+            "ARTIFACT_DIGEST_MISMATCH",
+        ),
+        (
+            lambda manifest: manifest.update(dropped=1),
+            "QUARANTINED",
+            "INVALID_RUNTIME_MANIFEST",
+        ),
+    ),
+)
+def test_runtime_stage_never_promotes_incomplete_mismatched_or_invalid_evidence(
+    mutation, status: str, reason: str
+) -> None:
+    reference = _runtime_reference()
+    manifest = _complete_runtime_manifest()
+    mutation(manifest)
+    artifacts = RuntimeArtifacts({reference["key"]: manifest})
+    context = StageExecutionContext(
+        target="runtime-validation",
+        workflow_kind="INCREMENTAL",
+        workflow_version="1.0.0",
+        stage_id="I6",
+        stage_name="VALIDATE_OPTIONAL_RUNTIME_EVIDENCE",
+        command_id="cmd-runtime-bad",
+        correlation_id="corr-runtime-bad",
+        input_reference=_context().input_reference,
+    )
+    document = {
+        "schemaVersion": "1.0.0",
+        "context": {
+            "repository": "payments-pipeline",
+            "artifactDigest": RUNTIME_ARTIFACT,
+            "environment": "staging",
+            "system": "payments",
+            "runtimeManifestRefs": [reference],
+        },
+    }
+
+    coverage = RuntimeValidationStageUseCase(artifacts).execute(document, context).document[
+        "runtimeCoverage"
+    ]
+
+    assert coverage["status"] == status
+    assert reason in coverage["reasons"]
+    assert coverage["manifestRefs"] == []
+    assert coverage["observationChecksums"] == []
 
 
 def test_context_fails_closed_when_target_does_not_own_the_exact_stage() -> None:
