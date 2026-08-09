@@ -9,7 +9,10 @@ from lineage_api.application.stage_execution import (
     StageExecutionResult,
     StageTargetMismatchError,
 )
-from lineage_api.application.stage_handlers import ClassificationStageUseCase
+from lineage_api.application.stage_handlers import (
+    ClassificationStageUseCase,
+    CoverageStageUseCase,
+)
 
 
 def _context() -> StageExecutionContext:
@@ -53,6 +56,56 @@ def _input() -> dict[str, object]:
             },
         ],
     }
+
+
+def _coverage_input() -> dict[str, object]:
+    return {
+        "schemaVersion": "1.0.0",
+        "artifactType": "classification-decision",
+        "context": {
+            "artifactDigest": "sha256:source-v1",
+            "environment": "staging",
+            "repository": "payments-pipeline",
+            "system": "payments",
+            "repositorySource": {
+                "bucket": "evidence",
+                "key": "source/payments-pipeline.zip",
+                "versionId": "source-v1",
+                "sha256": "d" * 64,
+                "sizeBytes": 4096,
+            },
+            "repositoryInventory": [
+                "README.md",
+                "job.scala",
+                "pipeline.py",
+                "src/helpers.py",
+            ],
+        },
+        "decision": {
+            "decisionId": "class-001",
+            "repositoryClass": "DATA_PIPELINE",
+            "policyVersion": "1.0.0",
+            "status": "EVALUATED",
+        },
+    }
+
+
+class RecordingArtifacts:
+    def __init__(self) -> None:
+        self.writes: list[tuple[str, str, object, str]] = []
+
+    def put(self, kind: str, key: str, body: object, version: str) -> dict[str, object]:
+        self.writes.append((kind, key, body, version))
+        return {
+            "bucket": "evidence",
+            "key": key,
+            "versionId": f"v{len(self.writes)}",
+            "sha256": f"{len(self.writes):064x}",
+            "sizeBytes": 512,
+        }
+
+    def get(self, _reference: object) -> object:
+        raise AssertionError("coverage planning must not read an unpinned secondary object")
 
 
 def test_classification_stage_emits_an_immutable_domain_decision_not_an_input_echo() -> None:
@@ -106,6 +159,26 @@ def test_classification_is_deterministic_across_evidence_order_and_records_unkno
     assert result["reason"] == "NO_DECISIVE_EVIDENCE"
 
 
+def test_classification_carries_only_the_bounded_repository_inputs_needed_by_coverage() -> None:
+    body = _input()
+    body["repositorySource"] = {
+        "bucket": "evidence",
+        "key": "source/payments-pipeline.zip",
+        "versionId": "source-v1",
+        "sha256": "d" * 64,
+        "sizeBytes": 4096,
+    }
+    body["repositoryInventory"] = ["src/helpers.py", "pipeline.py", "pipeline.py"]
+
+    result = ClassificationStageUseCase(policy_version="1.0.0").execute(body, _context())
+
+    assert result.document["context"]["repositorySource"] == body["repositorySource"]
+    assert result.document["context"]["repositoryInventory"] == [
+        "pipeline.py",
+        "src/helpers.py",
+    ]
+
+
 @pytest.mark.parametrize(
     "change",
     (
@@ -131,6 +204,110 @@ def test_stage_result_detaches_nested_mutable_input() -> None:
     nested["payload"]["items"].append("two")
 
     assert result.document["payload"] == {"items": ["one"]}
+
+
+def test_baseline_coverage_writes_a_bounded_plan_and_immutable_sca_work_units() -> None:
+    artifacts = RecordingArtifacts()
+    context = StageExecutionContext(
+        target="coverage",
+        workflow_kind="BASELINE",
+        workflow_version="1.0.0",
+        stage_id="B4",
+        stage_name="BUILD_COVERAGE_PLAN",
+        command_id="cmd-001",
+        correlation_id="corr-001",
+        input_reference=_context().input_reference,
+    )
+
+    result = CoverageStageUseCase(artifacts, max_scope=100, chunk_size=1).execute(
+        _coverage_input(), context
+    )
+
+    assert result.artifact_kind == "work-inventory"
+    assert isinstance(result.document, list)
+    assert len(result.document) == 2
+    assert [write[0] for write in artifacts.writes] == [
+        "coverage-plan",
+        "sca-work-unit",
+        "sca-work-unit",
+    ]
+    plan = artifacts.writes[0][2]
+    assert plan["coverage"] == {
+        "expectedScope": ["README.md", "job.scala", "pipeline.py", "src/helpers.py"],
+        "recomputedScope": ["pipeline.py", "src/helpers.py"],
+        "skippedScope": ["README.md"],
+        "unsupportedScope": ["job.scala"],
+    }
+    work_units = [write[2] for write in artifacts.writes[1:]]
+    assert [unit["paths"] for unit in work_units] == [["pipeline.py"], ["src/helpers.py"]]
+    assert all(unit["pack"] == "python-ast" for unit in work_units)
+    plan_reference = {
+        "bucket": "evidence",
+        "key": artifacts.writes[0][1],
+        "versionId": "v1",
+        "sha256": f"{1:064x}",
+        "sizeBytes": 512,
+    }
+    assert all(unit["coveragePlan"] == plan_reference for unit in work_units)
+    assert all("inputDocument" not in unit and "target" not in unit for unit in work_units)
+
+
+def test_incremental_coverage_emits_a_typed_differential_plan_without_work_unit_writes() -> None:
+    artifacts = RecordingArtifacts()
+    context = StageExecutionContext(
+        target="coverage",
+        workflow_kind="INCREMENTAL",
+        workflow_version="1.0.0",
+        stage_id="I3",
+        stage_name="BUILD_DIFFERENTIAL_COVERAGE_PLAN",
+        command_id="cmd-002",
+        correlation_id="corr-002",
+        input_reference=_context().input_reference,
+    )
+    document = {
+        "schemaVersion": "1.0.0",
+        "context": {
+            **_coverage_input()["context"],
+            "changedPaths": ["src/helpers.py", "pipeline.py", "pipeline.py"],
+            "removedPaths": ["old.py"],
+        },
+    }
+
+    result = CoverageStageUseCase(artifacts, max_scope=100, chunk_size=20).execute(
+        document, context
+    )
+
+    assert result.artifact_kind == "coverage-plan"
+    assert result.document["artifactType"] == "coverage-plan"
+    assert result.document["coverage"] == {
+        "expectedScope": ["old.py", "pipeline.py", "src/helpers.py"],
+        "recomputedScope": ["pipeline.py", "src/helpers.py"],
+        "removedScope": ["old.py"],
+        "reusedScope": [],
+        "unsupportedScope": [],
+    }
+    assert artifacts.writes == []
+
+
+def test_coverage_rejects_scope_overflow_before_writing_any_artifact() -> None:
+    artifacts = RecordingArtifacts()
+    document = _coverage_input()
+    document["context"]["repositoryInventory"] = [f"src/{index}.py" for index in range(4)]
+    context = StageExecutionContext(
+        target="coverage",
+        workflow_kind="BASELINE",
+        workflow_version="1.0.0",
+        stage_id="B4",
+        stage_name="BUILD_COVERAGE_PLAN",
+        command_id="cmd-003",
+        correlation_id="corr-003",
+        input_reference=_context().input_reference,
+    )
+
+    with pytest.raises(ValueError, match="scope limit"):
+        CoverageStageUseCase(artifacts, max_scope=3, chunk_size=1).execute(document, context)
+
+    assert artifacts.writes == []
 
 
 def test_context_fails_closed_when_target_does_not_own_the_exact_stage() -> None:

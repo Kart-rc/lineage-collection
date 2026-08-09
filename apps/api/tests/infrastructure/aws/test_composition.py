@@ -132,18 +132,39 @@ def test_baseline_inventory_stage_materializes_an_s3_map_item_array() -> None:
 
     class Artifacts:
         def __init__(self) -> None:
-            self.body: object | None = None
+            self.writes: list[tuple[str, str, object, str]] = []
 
-        def get(self, _reference: object) -> dict[str, str]:
-            return {"repository": "example/repo"}
+        def get(self, _reference: object) -> dict[str, object]:
+            return {
+                "schemaVersion": "1.0.0",
+                "artifactType": "classification-decision",
+                "context": {
+                    "repository": "example/repo",
+                    "artifactDigest": "sha256:source-v1",
+                    "environment": "staging",
+                    "system": "example",
+                    "repositorySource": {
+                        "bucket": "evidence",
+                        "key": "source/repo.zip",
+                        "versionId": "source-v1",
+                        "sha256": "d" * 64,
+                        "sizeBytes": 100,
+                    },
+                    "repositoryInventory": ["pipeline.py"],
+                },
+                "decision": {
+                    "status": "EVALUATED",
+                    "repositoryClass": "DATA_PIPELINE",
+                },
+            }
 
-        def put(self, _kind: str, _key: str, body: object, _version: str) -> dict[str, object]:
-            self.body = body
+        def put(self, kind: str, key: str, body: object, version: str) -> dict[str, object]:
+            self.writes.append((kind, key, body, version))
             return {
                 "bucket": "evidence",
-                "key": "inventory.json",
-                "versionId": "v1",
-                "sha256": "a" * 64,
+                "key": key,
+                "versionId": f"v{len(self.writes)}",
+                "sha256": f"{len(self.writes):064x}",
                 "sizeBytes": 10,
             }
 
@@ -172,9 +193,25 @@ def test_baseline_inventory_stage_materializes_an_s3_map_item_array() -> None:
         },
     }
 
-    executor.execute("coverage", envelope)
+    result = executor.execute("coverage", envelope)
 
-    assert artifacts.body == [envelope["input"]]
+    assert result["outcome"] == "SUCCEEDED"
+    assert [write[0] for write in artifacts.writes] == [
+        "coverage-plan",
+        "sca-work-unit",
+        "work-inventory",
+    ]
+    inventory = artifacts.writes[-1][2]
+    assert isinstance(inventory, list)
+    assert inventory == [
+        {
+            "bucket": "evidence",
+            "key": "commands/cmd-1/work-units/00000.json",
+            "versionId": "v2",
+            "sha256": f"{2:064x}",
+            "sizeBytes": 10,
+        }
+    ]
 
 
 def test_classification_target_executes_the_domain_use_case_and_persists_its_schema() -> None:

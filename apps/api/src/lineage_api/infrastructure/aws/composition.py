@@ -78,7 +78,7 @@ class AwsStageExecutor:
         self.projection = projection
         self.broker = broker
         self.workflow_starter = workflow_starter
-        self.dispatcher = dispatcher or StageDispatcher(production_stage_use_cases())
+        self.dispatcher = dispatcher or StageDispatcher(production_stage_use_cases(artifacts))
 
     def execute(self, target: str, envelope: dict[str, Any]) -> dict[str, Any]:
         stage_id = str(envelope.get("stageId") or target)
@@ -234,7 +234,6 @@ def build_stage_executor(
         )
         if aliases
         else None,
-        StageDispatcher(production_stage_use_cases()),
     )
 
 

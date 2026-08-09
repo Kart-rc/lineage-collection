@@ -84,16 +84,16 @@ class StageExecutionContext:
 class StageExecutionResult:
     artifact_kind: str
     schema_version: str
-    document: Mapping[str, Any]
+    document: object
 
     def __post_init__(self) -> None:
         if _ARTIFACT_KIND.fullmatch(self.artifact_kind) is None:
             raise ValueError("invalid stage artifact kind")
         _required_text("stage artifact schema version", self.schema_version)
-        if not isinstance(self.document, Mapping):
-            raise TypeError("stage result document must be an object")
-        document = dict(self.document)
-        if "target" in document or "inputDocument" in document:
+        document = self.document
+        if isinstance(document, Mapping) and (
+            "target" in document or "inputDocument" in document
+        ):
             raise ValueError("generic stage checkpoint documents are forbidden")
         encoded = json.dumps(
             document, sort_keys=True, separators=(",", ":"), ensure_ascii=False
@@ -148,4 +148,8 @@ __all__ = [
     "StageTargetMismatchError",
     "StageUseCase",
     "StageUseCaseMissingError",
+    "validate_artifact_reference",
 ]
+
+
+validate_artifact_reference = _reference
