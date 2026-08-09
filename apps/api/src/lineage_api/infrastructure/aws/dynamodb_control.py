@@ -24,11 +24,75 @@ def _json(value: object) -> str:
 class DynamoDbControlAdapter:
     """Conditional control/ledger/pointer operations over low-level DynamoDB clients."""
 
-    def __init__(self, client: Any, control_table: str, ledger_table: str, pointer_table: str) -> None:
+    def __init__(
+        self,
+        client: Any,
+        control_table: str,
+        ledger_table: str,
+        pointer_table: str,
+        *,
+        proposal_table: str | None = None,
+    ) -> None:
         self.client = client
         self.control_table = control_table
         self.ledger_table = ledger_table
         self.pointer_table = pointer_table
+        self.proposal_table = proposal_table
+
+    def put_proposal(self, proposal: dict[str, Any]) -> dict[str, Any]:
+        if self.proposal_table is None:
+            raise RuntimeError("proposal table is not configured")
+        proposal_id = str(proposal["proposalId"])
+        version = int(proposal["version"])
+        encoded = _json(proposal)
+        if len(encoded.encode()) > 350_000:
+            raise ValueError("proposal document exceeds its DynamoDB safety bound")
+        try:
+            aws_call(
+                "dynamodb.put_proposal",
+                self.client.put_item,
+                TableName=self.proposal_table,
+                Item={
+                    "pk": {"S": f"PROPOSAL#{proposal_id}"},
+                    "sk": {"S": f"VERSION#{version:010d}"},
+                    "document": {"S": encoded},
+                    "state": {"S": str(proposal["state"])},
+                    "system": {"S": str(proposal["system"])},
+                    "expectedBaseVersion": {
+                        "S": str(proposal["expectedBaseVersion"])
+                    },
+                },
+                ConditionExpression="attribute_not_exists(pk)",
+            )
+        except AwsConflictError:
+            existing = self.get_proposal(proposal_id, version)
+            if existing == proposal:
+                return existing
+            raise
+        return json.loads(encoded)
+
+    def get_proposal(
+        self, proposal_id: str, version: int
+    ) -> dict[str, Any] | None:
+        if self.proposal_table is None:
+            raise RuntimeError("proposal table is not configured")
+        response = aws_call(
+            "dynamodb.get_proposal",
+            self.client.get_item,
+            TableName=self.proposal_table,
+            Key={
+                "pk": {"S": f"PROPOSAL#{proposal_id}"},
+                "sk": {"S": f"VERSION#{version:010d}"},
+            },
+            ConsistentRead=True,
+        )
+        item = response.get("Item")
+        if not item:
+            return None
+        document = json.loads(item["document"]["S"])
+        if not isinstance(document, dict):
+            raise ValueError("stored proposal document is invalid")
+        return document
 
     def accept_receipt(
         self,

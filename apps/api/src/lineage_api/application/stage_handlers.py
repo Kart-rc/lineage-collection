@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from pathlib import PurePosixPath
 from collections import Counter
+from datetime import UTC, datetime
+import hashlib
 import json
 from typing import Any, Mapping
 
@@ -16,7 +18,7 @@ from lineage_api.application.stage_execution import (
     StageUseCase,
     validate_artifact_reference,
 )
-from lineage_api.application.ports import ArtifactStorePort
+from lineage_api.application.ports import ArtifactStorePort, ProposalStorePort
 from lineage_api.application.consolidation import derive_consolidation, edge_key_for
 from lineage_api.application.runtime_validation import runtime_window_manifest_errors
 from lineage_api.domain.urns import LineageUrn
@@ -170,6 +172,9 @@ def _common_context(context: Mapping[str, Any]) -> dict[str, Any]:
     source = context.get("repositorySource")
     if source is not None:
         normalized["repositorySource"] = validate_artifact_reference(source)
+    for name in ("activeBaseVersion", "acceptedAt"):
+        if name in context:
+            normalized[name] = _required_text(name, context[name])
     return normalized
 
 
@@ -749,8 +754,189 @@ class ConsolidationStageUseCase:
         )
 
 
+_PROPOSAL_TYPES = {
+    ("BASELINE", "B9"): "BASELINE",
+    ("INCREMENTAL", "I9"): "DELTA",
+    ("NIGHTLY", "N6"): "RECONCILIATION",
+}
+_MAX_PROPOSAL_DOCUMENT_BYTES = 350_000
+
+
+def _edge_ids(name: str, value: object, *, limit: int) -> list[str]:
+    if not isinstance(value, list) or len(value) > limit:
+        raise ValueError(f"{name} must be a bounded array")
+    normalized = [_required_text(name, item) for item in value]
+    if any(len(item.encode()) > 256 for item in normalized):
+        raise ValueError(f"{name} contains an oversized identity")
+    if normalized != sorted(set(normalized)):
+        raise ValueError(f"{name} must contain sorted unique identities")
+    return normalized
+
+
+def _accepted_at(value: object) -> str:
+    text = _required_text("acceptedAt", value)
+    try:
+        parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
+    except ValueError as error:
+        raise ValueError("acceptedAt must be an RFC3339 timestamp") from error
+    if parsed.tzinfo is None:
+        raise ValueError("acceptedAt must include a timezone")
+    return parsed.astimezone(UTC).isoformat().replace("+00:00", "Z")
+
+
+class ProposalStageUseCase:
+    def __init__(
+        self,
+        artifacts: ArtifactStorePort,
+        proposals: ProposalStorePort,
+        *,
+        max_edge_ids: int = 5_000,
+    ) -> None:
+        if not 1 <= max_edge_ids <= 5_000:
+            raise ValueError("proposal edge ID limit is invalid")
+        self._artifacts = artifacts
+        self._proposals = proposals
+        self._max_edge_ids = max_edge_ids
+
+    def execute(
+        self, input_document: object, context: StageExecutionContext
+    ) -> StageExecutionResult:
+        if not isinstance(input_document, Mapping):
+            raise ValueError("proposal input must be an object")
+        if (
+            input_document.get("schemaVersion") != "1.0.0"
+            or input_document.get("artifactType") != "consolidation-result"
+        ):
+            raise ValueError("proposal input must be a versioned consolidation result")
+        try:
+            proposal_type = _PROPOSAL_TYPES[(context.workflow_kind, context.stage_id)]
+        except KeyError as error:
+            raise ValueError("proposal use case received an unsupported stage") from error
+
+        lineage_context = _lineage_context(input_document)
+        common = _common_context(lineage_context)
+        coverage = input_document.get("coverage")
+        if not isinstance(coverage, Mapping):
+            raise ValueError("proposal input is missing coverage state")
+        coverage_state = coverage.get("state")
+        if coverage_state not in {"COMPLETE", "INCOMPLETE"}:
+            raise ValueError("proposal coverage state is invalid")
+        if coverage_state != "COMPLETE":
+            return self._decision(context, common, "INCOMPLETE_COVERAGE", None)
+
+        edge_count = input_document.get("edgeCount")
+        if not isinstance(edge_count, int) or isinstance(edge_count, bool) or edge_count < 0:
+            raise ValueError("proposal edge count is invalid")
+        edge_ids = _edge_ids(
+            "proposal edge IDs", input_document.get("edgeIds"), limit=self._max_edge_ids
+        )
+        if edge_count != len(edge_ids):
+            raise ValueError("proposal edge count does not match its identities")
+        if edge_count == 0:
+            return self._decision(context, common, "NO_LINEAGE", None)
+
+        edge_set_ref = validate_artifact_reference(input_document.get("edgeSetRef"))
+        edge_set = self._artifacts.get(edge_set_ref)
+        if (
+            not isinstance(edge_set, Mapping)
+            or edge_set.get("schemaVersion") != "1.0.0"
+            or edge_set.get("artifactType") != "consolidated-edge-set"
+            or not isinstance(edge_set.get("edges"), list)
+            or len(edge_set["edges"]) > self._max_edge_ids
+        ):
+            raise ValueError("proposal edge set is invalid")
+        stored_edge_ids: list[str] = []
+        for edge in edge_set["edges"]:
+            if not isinstance(edge, Mapping):
+                raise ValueError("proposal edge set contains an invalid edge")
+            edge_id = _required_text("stored edge ID", edge.get("edgeKey"))
+            if len(edge_id.encode()) > 256:
+                raise ValueError("stored edge ID is oversized")
+            if edge.get("system") != common["system"]:
+                raise ValueError("proposal edge set crosses system boundaries")
+            stored_edge_ids.append(edge_id)
+        if stored_edge_ids != sorted(set(stored_edge_ids)) or stored_edge_ids != edge_ids:
+            raise ValueError("proposal edge set identities do not match consolidation")
+
+        tombstones = _edge_ids(
+            "proposal tombstone edge IDs",
+            input_document.get("tombstoneEdgeIds", []),
+            limit=self._max_edge_ids,
+        )
+        expected_base = _required_text(
+            "activeBaseVersion", common.get("activeBaseVersion")
+        )
+        created_at = _accepted_at(common.get("acceptedAt"))
+        identity = {
+            "proposalType": proposal_type,
+            "system": common["system"],
+            "environment": common["environment"],
+            "artifactDigest": common["artifactDigest"],
+            "edgeSetRef": edge_set_ref,
+            "addedEdgeIds": edge_ids,
+            "removedEdgeIds": tombstones,
+            "expectedBaseVersion": expected_base,
+            "correlationId": context.correlation_id,
+        }
+        proposal_id = "proposal-" + hashlib.sha256(
+            json.dumps(identity, sort_keys=True, separators=(",", ":")).encode()
+        ).hexdigest()
+        proposal = {
+            "schemaVersion": "1.0.0",
+            "proposalId": proposal_id,
+            "version": 1,
+            "proposalType": proposal_type,
+            "system": common["system"],
+            "environment": common["environment"],
+            "state": "IN_REVIEW",
+            "expectedBaseVersion": expected_base,
+            "diff": {
+                "edgeSetRef": edge_set_ref,
+                "addedEdgeIds": edge_ids,
+                "removedEdgeIds": tombstones,
+                "bandChangedEdgeIds": [],
+            },
+            "correlationId": context.correlation_id,
+            "createdAt": created_at,
+            "lockVersion": 1,
+        }
+        if len(json.dumps(proposal, sort_keys=True, separators=(",", ":")).encode()) > (
+            _MAX_PROPOSAL_DOCUMENT_BYTES
+        ):
+            raise ValueError("proposal document exceeds its DynamoDB safety bound")
+        persisted = self._proposals.put_proposal(proposal)
+        return self._decision(context, common, "PROPOSAL_CREATED", persisted)
+
+    @staticmethod
+    def _decision(
+        context: StageExecutionContext,
+        common: dict[str, Any],
+        decision: str,
+        proposal: dict[str, Any] | None,
+    ) -> StageExecutionResult:
+        return StageExecutionResult(
+            artifact_kind="proposal-decision",
+            schema_version="1.0.0",
+            document={
+                "schemaVersion": "1.0.0",
+                "artifactType": "proposal-decision",
+                "workflowKind": context.workflow_kind,
+                "workflowVersion": context.workflow_version,
+                "stageId": context.stage_id,
+                "stageName": context.stage_name,
+                "commandId": context.command_id,
+                "correlationId": context.correlation_id,
+                "source": dict(context.input_reference),
+                "context": common,
+                "decision": decision,
+                "proposal": proposal,
+            },
+        )
+
+
 def production_stage_use_cases(
     artifacts: ArtifactStorePort | None = None,
+    proposal_store: ProposalStorePort | None = None,
 ) -> dict[tuple[str, str], StageUseCase]:
     use_cases: dict[tuple[str, str], StageUseCase] = {
         ("BASELINE", "B3"): ClassificationStageUseCase(policy_version="1.0.0")
@@ -767,6 +953,11 @@ def production_stage_use_cases(
         use_cases[("BASELINE", "B8")] = consolidation
         use_cases[("INCREMENTAL", "I7")] = consolidation
         use_cases[("PR_GATE", "P4")] = consolidation
+        if proposal_store is not None:
+            proposal = ProposalStageUseCase(artifacts, proposal_store)
+            use_cases[("BASELINE", "B9")] = proposal
+            use_cases[("INCREMENTAL", "I9")] = proposal
+            use_cases[("NIGHTLY", "N6")] = proposal
     return use_cases
 
 
@@ -774,6 +965,7 @@ __all__ = [
     "ClassificationStageUseCase",
     "CoverageStageUseCase",
     "ConsolidationStageUseCase",
+    "ProposalStageUseCase",
     "RuntimeValidationStageUseCase",
     "production_stage_use_cases",
 ]

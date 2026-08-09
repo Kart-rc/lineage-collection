@@ -116,6 +116,55 @@ def test_dynamodb_translates_conditional_and_throttling_failures() -> None:
         )
 
 
+def test_dynamodb_conditionally_persists_and_replays_one_proposal_version() -> None:
+    proposal = {
+        "schemaVersion": "1.0.0",
+        "proposalId": "proposal-001",
+        "version": 1,
+        "state": "IN_REVIEW",
+        "system": "payments",
+        "expectedBaseVersion": "graph-v1",
+    }
+    client = FakeClient(put_item=[{}])
+    adapter = DynamoDbControlAdapter(
+        client, "control", "ledger", "pointer", proposal_table="proposal"
+    )
+
+    assert adapter.put_proposal(proposal) == proposal
+    request = client.calls[0][1]
+    assert request["TableName"] == "proposal"
+    assert request["ConditionExpression"] == "attribute_not_exists(pk)"
+    assert request["Item"]["pk"] == {"S": "PROPOSAL#proposal-001"}
+    assert request["Item"]["sk"] == {"S": "VERSION#0000000001"}
+
+    replay_client = FakeClient(
+        put_item=[FakeServiceError("ConditionalCheckFailedException")],
+        get_item=[{"Item": {"document": {"S": json.dumps(proposal)}}}],
+    )
+    replay = DynamoDbControlAdapter(
+        replay_client, "control", "ledger", "pointer", proposal_table="proposal"
+    )
+    assert replay.put_proposal(proposal) == proposal
+
+    conflict_client = FakeClient(
+        put_item=[FakeServiceError("ConditionalCheckFailedException")],
+        get_item=[
+            {
+                "Item": {
+                    "document": {
+                        "S": json.dumps({**proposal, "state": "APPROVED"})
+                    }
+                }
+            }
+        ],
+    )
+    conflict = DynamoDbControlAdapter(
+        conflict_client, "control", "ledger", "pointer", proposal_table="proposal"
+    )
+    with pytest.raises(AwsConflictError):
+        conflict.put_proposal(proposal)
+
+
 def test_s3_uses_versioned_checksum_references_and_immutable_puts() -> None:
     body = {"commandId": "cmd-1", "stage": "I1"}
     encoded = json.dumps(body, sort_keys=True, separators=(",", ":")).encode()

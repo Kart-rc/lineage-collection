@@ -13,6 +13,7 @@ from lineage_api.application.stage_handlers import (
     ClassificationStageUseCase,
     ConsolidationStageUseCase,
     CoverageStageUseCase,
+    ProposalStageUseCase,
     RuntimeValidationStageUseCase,
 )
 
@@ -226,6 +227,24 @@ class ConsolidationArtifacts:
             "sha256": f"{len(self.writes) + 40:064x}",
             "sizeBytes": 1024,
         }
+
+
+class ProposalStore:
+    def __init__(self) -> None:
+        self.proposals: dict[str, dict[str, object]] = {}
+        self.calls = 0
+
+    def put_proposal(self, proposal: dict[str, object]) -> dict[str, object]:
+        self.calls += 1
+        proposal_id = proposal["proposalId"]
+        existing = self.proposals.setdefault(proposal_id, deepcopy(proposal))
+        if existing != proposal:
+            raise ValueError("proposal identity conflict")
+        return deepcopy(existing)
+
+    def get_proposal(self, proposal_id: str, version: int) -> dict[str, object] | None:
+        proposal = self.proposals.get(proposal_id)
+        return deepcopy(proposal) if proposal and proposal["version"] == version else None
 
 
 def _assertion_reference() -> dict[str, object]:
@@ -846,6 +865,201 @@ def test_consolidation_rejects_unbounded_or_secret_bearing_citation_metadata() -
         ConsolidationStageUseCase(artifacts).execute(_consolidation_document(), context)
 
     assert artifacts.writes == []
+
+
+def _proposal_input(*, edge_count: int = 1, coverage_state: str = "COMPLETE") -> dict[str, object]:
+    return {
+        "schemaVersion": "1.0.0",
+        "artifactType": "consolidation-result",
+        "context": {
+            "repository": "payments-pipeline",
+            "artifactDigest": RUNTIME_ARTIFACT,
+            "environment": "staging",
+            "system": "payments",
+            "activeBaseVersion": "graph-v1",
+            "acceptedAt": "2026-08-08T12:00:00Z",
+        },
+        "edgeSetRef": {
+            "bucket": "evidence",
+            "key": "commands/cmd-proposal/edge-sets/I7.json",
+            "versionId": "edges-v1",
+            "sha256": "5" * 64,
+            "sizeBytes": 2048,
+        },
+        "edgeIds": ["edge-001"] if edge_count else [],
+        "edgeCount": edge_count,
+        "bands": {"HIGH": edge_count} if edge_count else {},
+        "coverage": {
+            "state": coverage_state,
+            "expectedScope": ["pipeline.py"],
+            "completedScope": ["pipeline.py"] if coverage_state == "COMPLETE" else [],
+            "reusedScope": [],
+            "skippedScope": [],
+            "unsupportedScope": [] if coverage_state == "COMPLETE" else ["pipeline.py"],
+            "quarantinedScope": [],
+            "failedScope": [],
+        },
+        "tombstoneEdgeIds": ["edge-old-001"],
+    }
+
+
+def _edge_set() -> dict[str, object]:
+    return {
+        "schemaVersion": "1.0.0",
+        "artifactType": "consolidated-edge-set",
+        "edges": [
+            {
+                "schemaVersion": "1.0.0",
+                "edgeKey": "edge-001",
+                "version": 1,
+                "from": [FROM_URN],
+                "to": TO_URN,
+                "edgeType": "DERIVES",
+                "band": "HIGH",
+                "corroboration": "ELEMENT",
+                "status": "PROPOSED",
+                "provenance": [_assertion("SCA", "sca-001")],
+                "autoPublishable": True,
+                "system": "payments",
+                "transform": "SUM(amount)",
+            }
+        ],
+    }
+
+
+@pytest.mark.parametrize(
+    ("workflow_kind", "stage_id", "stage_name", "proposal_type"),
+    (
+        ("BASELINE", "B9", "CREATE_PROPOSAL_OR_AUTOPUBLISH_DECISION", "BASELINE"),
+        ("INCREMENTAL", "I9", "CREATE_DELTA_PROPOSAL", "DELTA"),
+        ("NIGHTLY", "N6", "EMIT_PROPOSALS_ALERTS_AND_EVIDENCE", "RECONCILIATION"),
+    ),
+)
+def test_proposal_stages_conditionally_persist_one_reference_based_proposal(
+    workflow_kind: str, stage_id: str, stage_name: str, proposal_type: str
+) -> None:
+    document = _proposal_input()
+    edge_reference = document["edgeSetRef"]
+    artifacts = ConsolidationArtifacts({edge_reference["key"]: _edge_set()})
+    store = ProposalStore()
+    context = StageExecutionContext(
+        target="proposal",
+        workflow_kind=workflow_kind,
+        workflow_version="1.0.0",
+        stage_id=stage_id,
+        stage_name=stage_name,
+        command_id=f"cmd-{stage_id.lower()}",
+        correlation_id="corr-proposal",
+        input_reference=_context().input_reference,
+    )
+    use_case = ProposalStageUseCase(artifacts, store)
+
+    first = use_case.execute(document, context)
+    replay = use_case.execute(document, context)
+
+    assert replay == first
+    assert first.artifact_kind == "proposal-decision"
+    assert first.document["decision"] == "PROPOSAL_CREATED"
+    proposal = first.document["proposal"]
+    assert proposal["proposalType"] == proposal_type
+    assert proposal["state"] == "IN_REVIEW"
+    assert proposal["expectedBaseVersion"] == "graph-v1"
+    assert proposal["diff"] == {
+        "edgeSetRef": edge_reference,
+        "addedEdgeIds": ["edge-001"],
+        "removedEdgeIds": ["edge-old-001"],
+        "bandChangedEdgeIds": [],
+    }
+    assert "edges" not in proposal
+    assert store.calls == 2
+    assert len(store.proposals) == 1
+
+
+@pytest.mark.parametrize(
+    ("document", "decision"),
+    (
+        (_proposal_input(edge_count=0), "NO_LINEAGE"),
+        (_proposal_input(coverage_state="INCOMPLETE"), "INCOMPLETE_COVERAGE"),
+    ),
+)
+def test_proposal_stage_records_no_proposal_decisions_without_mutating_dynamodb(
+    document: dict[str, object], decision: str
+) -> None:
+    artifacts = ConsolidationArtifacts({})
+    store = ProposalStore()
+    context = StageExecutionContext(
+        target="proposal",
+        workflow_kind="BASELINE",
+        workflow_version="1.0.0",
+        stage_id="B9",
+        stage_name="CREATE_PROPOSAL_OR_AUTOPUBLISH_DECISION",
+        command_id="cmd-no-proposal",
+        correlation_id="corr-proposal",
+        input_reference=_context().input_reference,
+    )
+
+    result = ProposalStageUseCase(artifacts, store).execute(document, context)
+
+    assert result.document["decision"] == decision
+    assert result.document["proposal"] is None
+    assert store.calls == 0
+    assert artifacts.writes == []
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    (
+        lambda document: document.update(edgeCount=2),
+        lambda document: document["context"].update(acceptedAt="not-a-timestamp"),
+    ),
+)
+def test_proposal_stage_rejects_drift_before_persisting(
+    mutation: object,
+) -> None:
+    document = _proposal_input()
+    mutation(document)
+    edge_reference = document["edgeSetRef"]
+    artifacts = ConsolidationArtifacts({edge_reference["key"]: _edge_set()})
+    store = ProposalStore()
+    context = StageExecutionContext(
+        target="proposal",
+        workflow_kind="BASELINE",
+        workflow_version="1.0.0",
+        stage_id="B9",
+        stage_name="CREATE_PROPOSAL_OR_AUTOPUBLISH_DECISION",
+        command_id="cmd-drifted-proposal",
+        correlation_id="corr-proposal",
+        input_reference=_context().input_reference,
+    )
+
+    with pytest.raises(ValueError):
+        ProposalStageUseCase(artifacts, store).execute(document, context)
+
+    assert store.calls == 0
+
+
+def test_proposal_stage_rejects_an_edge_set_from_another_system() -> None:
+    document = _proposal_input()
+    edge_reference = document["edgeSetRef"]
+    edge_set = _edge_set()
+    edge_set["edges"][0]["system"] = "orders"
+    artifacts = ConsolidationArtifacts({edge_reference["key"]: edge_set})
+    store = ProposalStore()
+    context = StageExecutionContext(
+        target="proposal",
+        workflow_kind="BASELINE",
+        workflow_version="1.0.0",
+        stage_id="B9",
+        stage_name="CREATE_PROPOSAL_OR_AUTOPUBLISH_DECISION",
+        command_id="cmd-cross-system-proposal",
+        correlation_id="corr-proposal",
+        input_reference=_context().input_reference,
+    )
+
+    with pytest.raises(ValueError, match="system boundaries"):
+        ProposalStageUseCase(artifacts, store).execute(document, context)
+
+    assert store.calls == 0
 
 
 def test_context_fails_closed_when_target_does_not_own_the_exact_stage() -> None:

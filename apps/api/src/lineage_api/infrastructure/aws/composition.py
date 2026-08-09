@@ -78,7 +78,9 @@ class AwsStageExecutor:
         self.projection = projection
         self.broker = broker
         self.workflow_starter = workflow_starter
-        self.dispatcher = dispatcher or StageDispatcher(production_stage_use_cases(artifacts))
+        self.dispatcher = dispatcher or StageDispatcher(
+            production_stage_use_cases(artifacts, control)
+        )
 
     def execute(self, target: str, envelope: dict[str, Any]) -> dict[str, Any]:
         stage_id = str(envelope.get("stageId") or target)
@@ -194,7 +196,11 @@ def build_stage_executor(
     config = AwsRuntimeConfig.from_env(values)
     sdk = dict(_clients(config) if clients is None else clients)
     control = DynamoDbControlAdapter(
-        sdk["dynamodb"], config.control_table, config.ledger_table, config.pointer_table
+        sdk["dynamodb"],
+        config.control_table,
+        config.ledger_table,
+        config.pointer_table,
+        proposal_table=config.proposal_table,
     )
     queues = {
         lane: values[key]

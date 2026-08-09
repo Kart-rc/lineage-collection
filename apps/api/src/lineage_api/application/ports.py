@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 from datetime import datetime
-from typing import Protocol, runtime_checkable
+from typing import Any, Protocol, runtime_checkable
 
 from lineage_api.application.models import (
     Command,
@@ -118,6 +118,15 @@ class ProposalPort(Protocol):
     def create(self, payload: object, expected_base_version: str, correlation_id: str) -> object: ...
 
     def get(self, proposal_id: str, version: int | None = None) -> object: ...
+
+
+@runtime_checkable
+class ProposalStorePort(Protocol):
+    def put_proposal(self, proposal: dict[str, Any]) -> dict[str, Any]: ...
+
+    def get_proposal(
+        self, proposal_id: str, version: int
+    ) -> dict[str, Any] | None: ...
 
 
 @runtime_checkable
