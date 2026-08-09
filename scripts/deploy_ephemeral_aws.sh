@@ -69,6 +69,7 @@ if [[ "$actual_account" != "$AWS_ACCOUNT_ID" ]]; then
 fi
 
 npm run package:aws
+npm run build --workspace apps/web
 metadata="$repo_root/infra/dist/runtime-build-metadata.json"
 lambda_digest="$(node -e 'const m=require(process.argv[1]); process.stdout.write(m.images.lambda.digest)' "$metadata")"
 sca_digest="$(node -e 'const m=require(process.argv[1]); process.stdout.write(m.images.sca.digest)' "$metadata")"

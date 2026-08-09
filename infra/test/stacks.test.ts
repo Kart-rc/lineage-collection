@@ -1,5 +1,6 @@
 import { App } from "aws-cdk-lib";
 import { Match, Template } from "aws-cdk-lib/assertions";
+import { fileURLToPath } from "node:url";
 import { beforeAll, describe, expect, it } from "vitest";
 
 import { applyExplicitAwsContext, fixtureConfig, loadPlatformConfig } from "../lib/config.js";
@@ -13,6 +14,9 @@ import { OrchestrationStack } from "../lib/orchestration-stack.js";
 import { PublicationStack } from "../lib/publication-stack.js";
 import { RecoveryStack } from "../lib/recovery-stack.js";
 import { RuntimeStack } from "../lib/runtime-stack.js";
+import { renderRuntimeConfig, WebStack } from "../lib/web-stack.js";
+
+const WEB_ASSET_PATH = fileURLToPath(new URL("./fixtures/web-build", import.meta.url));
 
 function platform() {
   const app = new App();
@@ -33,8 +37,13 @@ function platform() {
   });
   const intake = new IntakeStack(app, "Intake", { config, network, data, orchestration });
   const api = new ApiStack(app, "Api", { config, network, data });
+  const web = new WebStack(app, "Web", {
+    config,
+    api,
+    webAssetPath: WEB_ASSET_PATH,
+  });
   const operations = new OperationsStack(app, "Operations", { config, network, data });
-  return { app, recovery, network, data, intake, orchestration, engines, runtime, publication, api, operations };
+  return { app, recovery, network, data, intake, orchestration, engines, runtime, publication, api, web, operations };
 }
 
 describe("lineage platform stacks", () => {
@@ -490,6 +499,71 @@ describe("lineage platform stacks", () => {
     Template.fromStack(stacks.operations).hasResourceProperties("AWS::Budgets::Budget", {
       Budget: Match.anyValue(),
     });
+  });
+
+  it("delivers one environment-bound SPA through private S3 and CloudFront", () => {
+    const template = Template.fromStack(stacks.web);
+    const rendered = JSON.stringify(template.toJSON());
+
+    template.resourceCountIs("AWS::S3::Bucket", 2);
+    template.allResourcesProperties("AWS::S3::Bucket", {
+      BucketEncryption: Match.anyValue(),
+      PublicAccessBlockConfiguration: {
+        BlockPublicAcls: true,
+        BlockPublicPolicy: true,
+        IgnorePublicAcls: true,
+        RestrictPublicBuckets: true,
+      },
+    });
+    template.hasResourceProperties("AWS::CloudFront::Distribution", {
+      DistributionConfig: Match.objectLike({
+        DefaultRootObject: "index.html",
+        DefaultCacheBehavior: Match.objectLike({
+          CachePolicyId: "4135ea2d-6df8-44a3-9df3-4b5a84be39ad",
+        }),
+        Enabled: true,
+        HttpVersion: "http2and3",
+        IPV6Enabled: true,
+        Logging: Match.anyValue(),
+        CacheBehaviors: Match.arrayWith([
+          Match.objectLike({
+            CachePolicyId: "658327ea-f89d-4fab-a63d-7e88639e58f6",
+            PathPattern: "assets/*",
+            ViewerProtocolPolicy: "redirect-to-https",
+          }),
+          Match.objectLike({
+            PathPattern: "api/*",
+            ViewerProtocolPolicy: "redirect-to-https",
+          }),
+        ]),
+      }),
+    });
+    template.resourceCountIs("AWS::CloudFront::Function", 1);
+    template.hasResourceProperties("AWS::CloudFront::ResponseHeadersPolicy", {
+      ResponseHeadersPolicyConfig: {
+        SecurityHeadersConfig: Match.objectLike({
+          ContentSecurityPolicy: Match.objectLike({
+            ContentSecurityPolicy: Match.stringLikeRegexp("default-src.*frame-ancestors"),
+          }),
+          StrictTransportSecurity: Match.objectLike({
+            AccessControlMaxAgeSec: 63_072_000,
+          }),
+        }),
+        CustomHeadersConfig: Match.anyValue(),
+      },
+    });
+    template.resourceCountIs("Custom::CDKBucketDeployment", 3);
+    expect(rendered).toContain("OriginAccessControlId");
+    expect(rendered).toContain("cloudfront-js-2.0");
+    expect(rendered).toContain("Permissions-Policy");
+    expect(rendered).toContain("max-age=31536000");
+    expect(rendered).toContain("immutable");
+    expect(rendered).toContain("no-store");
+    expect(rendered).toContain("runtime-config.js");
+    const runtimeConfig = renderRuntimeConfig(fixtureConfig());
+    expect(runtimeConfig).toContain('"environment":"fixture"');
+    expect(runtimeConfig).toContain('"demoActions":false');
+    expect(runtimeConfig).not.toContain("enterpriseEndpoint");
   });
 
   it("grants the PR gate control and impact stages their exact pointer and graph reads", () => {

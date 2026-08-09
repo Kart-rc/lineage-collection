@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { App, Tags } from "aws-cdk-lib";
+import { fileURLToPath } from "node:url";
 
 import { ApiStack } from "../lib/api-stack.js";
 import { applyExplicitAwsContext, loadPlatformConfig } from "../lib/config.js";
@@ -12,6 +13,7 @@ import { OrchestrationStack } from "../lib/orchestration-stack.js";
 import { PublicationStack } from "../lib/publication-stack.js";
 import { RecoveryStack } from "../lib/recovery-stack.js";
 import { RuntimeStack } from "../lib/runtime-stack.js";
+import { WebStack } from "../lib/web-stack.js";
 
 const app = new App();
 const config = loadPlatformConfig(app.node);
@@ -80,11 +82,18 @@ new IntakeStack(app, "LineageIntake", {
   stackName: `${config.resourcePrefix}-intake`,
   env,
 });
-new ApiStack(app, "LineageApi", {
+const api = new ApiStack(app, "LineageApi", {
   config,
   network,
   data,
   stackName: `${config.resourcePrefix}-api`,
+  env,
+});
+new WebStack(app, "LineageWeb", {
+  config,
+  api,
+  webAssetPath: fileURLToPath(new URL("../../apps/web/dist", import.meta.url)),
+  stackName: `${config.resourcePrefix}-web`,
   env,
 });
 new OperationsStack(app, "LineageOperations", {
