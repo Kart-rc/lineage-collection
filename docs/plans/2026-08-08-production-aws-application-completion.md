@@ -286,7 +286,8 @@ git commit -m "test: prove every aws workflow stage artifact"
 - Modify: `infra/lib/runtime-assets.ts`
 - Modify: `infra/lib/api-stack.ts`
 - Modify: `infra/bin/lineage-platform.ts`
-- Test: `apps/api/tests/entrypoints/aws/test_product_api.py`
+- Test: `apps/api/tests/application/test_product_api.py`
+- Test: `apps/api/tests/entrypoints/aws/test_aws_product_api_entrypoint.py`
 - Test: `apps/api/tests/infrastructure/aws/test_query_projection.py`
 - Test: `infra/test/stacks.test.ts`
 
