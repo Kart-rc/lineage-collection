@@ -122,6 +122,13 @@ class NightlyControlPort(Protocol):
 
 
 @runtime_checkable
+class MapResultReaderPort(Protocol):
+    def read_succeeded(
+        self, bucket: str, manifest_key: str, map_run_arn: str, command_id: str
+    ) -> dict[str, Any]: ...
+
+
+@runtime_checkable
 class OutboxPort(Protocol):
     def append(self, event: OutboxEvent) -> OutboxEvent: ...
 

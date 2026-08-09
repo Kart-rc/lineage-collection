@@ -587,8 +587,9 @@ def test_baseline_coverage_writes_a_bounded_plan_and_immutable_sca_work_units() 
     )
 
     assert result.artifact_kind == "work-inventory"
-    assert isinstance(result.document, list)
-    assert len(result.document) == 2
+    assert result.document["artifactType"] == "work-inventory"
+    assert result.document["coveragePlanRef"]["versionId"] == "v1"
+    assert len(result.document["workUnitRefs"]) == 2
     assert [write[0] for write in artifacts.writes] == [
         "coverage-plan",
         "sca-work-unit",

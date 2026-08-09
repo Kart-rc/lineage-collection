@@ -13,6 +13,7 @@ from lineage_api.application.stage_execution import (
 )
 from lineage_api.application.stage_handlers import production_stage_use_cases
 from lineage_api.infrastructure.aws.composition import (
+    AwsScaAggregationExecutor,
     AwsStageExecutor,
     StepFunctionsWorkflowStarter,
     build_stage_executor,
@@ -361,7 +362,7 @@ def test_workflow_starter_uses_exact_alias_and_deterministic_execution_identity(
     assert json.loads(request["input"])["baselineMapConcurrency"] == 17
 
 
-def test_baseline_inventory_stage_materializes_an_s3_map_item_array() -> None:
+def test_baseline_inventory_stage_materializes_a_pinned_s3_map_inventory() -> None:
     class Control:
         def claim_stage(self, *_args: Any) -> dict[str, Any]:
             return {"status": "CLAIMED", "leaseEpoch": 1}
@@ -457,8 +458,10 @@ def test_baseline_inventory_stage_materializes_an_s3_map_item_array() -> None:
         "work-inventory",
     ]
     inventory = artifacts.writes[-1][2]
-    assert isinstance(inventory, list)
-    assert inventory == [
+    assert isinstance(inventory, dict)
+    assert inventory["artifactType"] == "work-inventory"
+    assert inventory["coveragePlanRef"]["versionId"] == "v1"
+    assert inventory["workUnitRefs"] == [
         {
             "bucket": "evidence",
             "key": "commands/cmd-1/work-units/00000.json",
@@ -707,3 +710,56 @@ def test_executor_rejects_an_unmapped_workflow_state_before_claim_or_artifact_io
 
     with pytest.raises(RuntimeError, match="no production use case"):
         executor.execute("classification", envelope)
+
+
+def test_sca_aggregation_executor_checkpoints_an_exact_immutable_result() -> None:
+    class Control:
+        recorded: dict[str, Any] | None = None
+
+        def claim_stage(self, *_args: Any) -> dict[str, Any]:
+            return {"status": "CLAIMED", "leaseEpoch": 3}
+
+        def record_stage(self, **kwargs: Any) -> None:
+            self.recorded = kwargs
+
+    class Artifacts:
+        document: object | None = None
+
+        def put(
+            self, kind: str, key: str, body: object, version: str
+        ) -> dict[str, object]:
+            assert (kind, version) == ("sca-batch-result", "1.0.0")
+            self.document = body
+            return {
+                "bucket": "evidence",
+                "key": key,
+                "versionId": "aggregate-v1",
+                "sha256": "a" * 64,
+                "sizeBytes": 1024,
+            }
+
+        def get(self, _reference: object) -> object:
+            return self.document
+
+    class UseCase:
+        def execute(self, _event: object) -> StageExecutionResult:
+            return StageExecutionResult(
+                "sca-batch-result",
+                "1.0.0",
+                {"schemaVersion": "1.0.0", "artifactType": "sca-batch-result"},
+            )
+
+    control = Control()
+    artifacts = Artifacts()
+    executor = AwsScaAggregationExecutor(control, artifacts, UseCase())
+    event = {
+        "commandId": "cmd-baseline",
+        "idempotencyKey": "idem-baseline:B5A",
+    }
+
+    result = executor.execute(event)
+
+    assert result["outcome"] == "SUCCEEDED"
+    assert result["output"]["versionId"] == "aggregate-v1"
+    assert control.recorded is not None
+    assert control.recorded["stage_id"] == "B5A"

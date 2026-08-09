@@ -408,7 +408,20 @@ class CoverageStageUseCase:
         return StageExecutionResult(
             artifact_kind="work-inventory",
             schema_version="1.0.0",
-            document=inventory_references,
+            document={
+                "schemaVersion": "1.0.0",
+                "artifactType": "work-inventory",
+                "workflowKind": context.workflow_kind,
+                "workflowVersion": context.workflow_version,
+                "stageId": context.stage_id,
+                "stageName": context.stage_name,
+                "commandId": context.command_id,
+                "correlationId": context.correlation_id,
+                "source": dict(context.input_reference),
+                "context": common,
+                "coveragePlanRef": plan_reference,
+                "workUnitRefs": inventory_references,
+            },
         )
 
     def _incremental(

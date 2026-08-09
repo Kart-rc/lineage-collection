@@ -318,7 +318,7 @@
               }
             ],
             "HeartbeatSeconds": 300,
-            "Next": "B5Outcome",
+            "Next": "B5WorkerOutcome",
             "Parameters": {
               "Cluster": "${ScaClusterArn}",
               "LaunchType": "FARGATE",
@@ -440,7 +440,8 @@
           "VersionId.$": "$._B4.Payload.output.versionId"
         },
         "ReaderConfig": {
-          "InputType": "JSON"
+          "InputType": "JSON",
+          "ItemsPointer": "/workUnitRefs"
         },
         "Resource": "arn:aws:states:::s3:getObject"
       },
@@ -454,16 +455,76 @@
         "schemaVersion.$": "$.schemaVersion"
       },
       "MaxConcurrencyPath": "$.baselineMapConcurrency",
-      "Next": "B6",
+      "Next": "B5Aggregate",
       "ResultPath": "$._B5",
       "ResultWriter": {
         "Parameters": {
           "Bucket": "${EvidenceBucketName}",
           "Prefix.$": "States.Format('workflow-results/{}/B5', $.commandId)"
         },
-        "Resource": "arn:aws:states:::s3:putObject"
+        "Resource": "arn:aws:states:::s3:putObject",
+        "WriterConfig": {
+          "OutputType": "JSON",
+          "Transformation": "COMPACT"
+        }
       },
       "Type": "Map"
+    },
+    "B5Aggregate": {
+      "Catch": [
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "Next": "FAILED_REDRIVABLE",
+          "ResultPath": "$.workflowError"
+        }
+      ],
+      "Next": "B5AggregateOutcome",
+      "Parameters": {
+        "FunctionName": "${ControlAliasArn}",
+        "Payload": {
+          "causationId.$": "$.causationId",
+          "commandId.$": "$.commandId",
+          "correlationId.$": "$.correlationId",
+          "determinantDigest.$": "$.determinantDigest",
+          "idempotencyKey.$": "States.Format('{}:B5A', $.idempotencyKey)",
+          "mapResult.$": "$._B5",
+          "operation": "BASELINE_SCA_AGGREGATE",
+          "schemaVersion.$": "$.schemaVersion",
+          "workInventory.$": "$._B4.Payload.output",
+          "workflowKind": "BASELINE",
+          "workflowVersion": "1.0.0"
+        }
+      },
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "ResultPath": "$._B5Aggregate",
+      "Retry": [
+        {
+          "BackoffRate": 2,
+          "ErrorEquals": [
+            "Lambda.ServiceException",
+            "Lambda.SdkClientException",
+            "Lambda.TooManyRequestsException",
+            "States.Timeout"
+          ],
+          "IntervalSeconds": 2,
+          "MaxAttempts": 3
+        }
+      ],
+      "TimeoutSeconds": 300,
+      "Type": "Task"
+    },
+    "B5AggregateOutcome": {
+      "Choices": [
+        {
+          "Next": "FAILED_REDRIVABLE",
+          "StringEquals": "REDRIVE_REQUIRED",
+          "Variable": "$._B5Aggregate.Payload.outcome"
+        }
+      ],
+      "Default": "B6",
+      "Type": "Choice"
     },
     "B6": {
       "Catch": [
@@ -484,7 +545,7 @@
           "correlationId.$": "$.correlationId",
           "determinantDigest.$": "$.determinantDigest",
           "idempotencyKey.$": "States.Format('{}:B6', $.idempotencyKey)",
-          "input.$": "$.input",
+          "input.$": "$._B5Aggregate.Payload.output",
           "schemaVersion.$": "$.schemaVersion",
           "stageId": "B6",
           "stageName": "VALIDATE_OPTIONAL_RUNTIME_EVIDENCE",

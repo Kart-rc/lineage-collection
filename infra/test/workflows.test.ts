@@ -81,7 +81,10 @@ describe("exported executable workflow topology", () => {
     expect(baseline.States.B5).toMatchObject({
       Type: "Map",
       MaxConcurrencyPath: "$.baselineMapConcurrency",
-      ItemReader: { Resource: "arn:aws:states:::s3:getObject" },
+      ItemReader: {
+        Resource: "arn:aws:states:::s3:getObject",
+        ReaderConfig: { InputType: "JSON", ItemsPointer: "/workUnitRefs" },
+      },
       ResultWriter: { Resource: "arn:aws:states:::s3:putObject" },
       ItemProcessor: { ProcessorConfig: { Mode: "DISTRIBUTED", ExecutionType: "STANDARD" } },
     });
@@ -95,7 +98,38 @@ describe("exported executable workflow topology", () => {
         },
       ],
     });
+    expect(baseline.States.B5.ItemProcessor.States.B5Worker.Next).toBe(
+      "B5WorkerOutcome",
+    );
     expect(baseline.States.B5.ItemProcessor.States.B5WorkerFailed.Type).toBe("Fail");
+    expect(baseline.States.B5.Next).toBe("B5Aggregate");
+    expect(baseline.States.B5.ResultWriter.WriterConfig).toEqual({
+      Transformation: "COMPACT",
+      OutputType: "JSON",
+    });
+    expect(baseline.States.B5Aggregate).toMatchObject({
+      Type: "Task",
+      Parameters: {
+        FunctionName: "${ControlAliasArn}",
+        Payload: {
+          operation: "BASELINE_SCA_AGGREGATE",
+          "workInventory.$": "$._B4.Payload.output",
+          "mapResult.$": "$._B5",
+        },
+      },
+      Next: "B5AggregateOutcome",
+    });
+    expect(baseline.States.B6.Parameters.Payload["input.$"]).toBe(
+      "$._B5Aggregate.Payload.output",
+    );
+    const incremental = JSON.parse(
+      readFileSync(resolve(workflowsRoot, "incremental.asl.json"), "utf8"),
+    );
+    const nightly = JSON.parse(
+      readFileSync(resolve(workflowsRoot, "nightly.asl.json"), "utf8"),
+    );
+    expect(incremental.States.I5.Next).toBe("I5Outcome");
+    expect(nightly.States.N2.Next).toBe("N2Outcome");
   });
 
   it("passes each Fargate SCA stage the exact prior immutable work reference", () => {

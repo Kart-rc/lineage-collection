@@ -8,9 +8,11 @@ import threading
 from datetime import UTC, datetime
 from typing import Any, Mapping
 
+from lineage_api.application.sca_aggregation import BaselineScaAggregationUseCase
 from lineage_api.application.stage_execution import (
     StageDispatcher,
     StageExecutionContext,
+    StageExecutionResult,
     validate_artifact_reference,
 )
 from lineage_api.application.stage_handlers import production_stage_use_cases
@@ -20,6 +22,7 @@ from lineage_api.infrastructure.aws.errors import AwsConflictError, AwsRetryable
 from lineage_api.infrastructure.aws.kinesis_runtime import KinesisRuntimeAdapter
 from lineage_api.infrastructure.aws.neptune_projection import NeptuneProjectionAdapter
 from lineage_api.infrastructure.aws.s3_artifacts import S3ArtifactStore
+from lineage_api.infrastructure.aws.s3_map_results import S3MapResultReader
 from lineage_api.infrastructure.aws.s3_sources import S3SourceArchiveStore
 from lineage_api.infrastructure.aws.sqs_broker import SqsLaneBroker
 
@@ -229,6 +232,68 @@ class AwsStageExecutor:
         return response
 
 
+class AwsScaAggregationExecutor:
+    """Lease, persist and replay the Baseline Distributed Map aggregate."""
+
+    def __init__(self, control: Any, artifacts: Any, use_case: Any) -> None:
+        self.control = control
+        self.artifacts = artifacts
+        self.use_case = use_case
+
+    def execute(self, event: dict[str, Any]) -> dict[str, Any]:
+        command_id = str(event["commandId"])
+        idempotency_key = str(event["idempotencyKey"])
+        stage_id = "B5A"
+        owner = os.environ.get("AWS_LAMBDA_LOG_STREAM_NAME", "sca-aggregate-worker")
+        now = datetime.now(UTC)
+        try:
+            lease = self.control.claim_stage(
+                command_id,
+                stage_id,
+                idempotency_key,
+                owner,
+                300,
+                now,
+            )
+            if lease.get("status") == "COMPLETED":
+                return {"outcome": "SKIPPED", "output": lease["output"]}
+            execution = self.use_case.execute(event)
+            if not isinstance(execution, StageExecutionResult):
+                raise RuntimeError("SCA aggregation use case returned an invalid result")
+            if (
+                execution.artifact_kind != "sca-batch-result"
+                or execution.schema_version != "1.0.0"
+            ):
+                raise RuntimeError("SCA aggregation artifact contract is invalid")
+            reference = self.artifacts.put(
+                execution.artifact_kind,
+                f"commands/{command_id}/stages/{stage_id}/{idempotency_key}.json",
+                execution.document,
+                execution.schema_version,
+            )
+            if self.artifacts.get(reference) != execution.document:
+                raise RuntimeError(
+                    "SCA aggregation failed immutable read-back verification"
+                )
+            self.control.record_stage(
+                command_id=command_id,
+                stage_id=stage_id,
+                idempotency_key=idempotency_key,
+                lease_owner=owner,
+                lease_epoch=int(lease["leaseEpoch"]),
+                output=reference,
+                completed_at=now,
+            )
+            return {"outcome": "SUCCEEDED", "output": reference}
+        except AwsRetryableError:
+            return {"outcome": "REDRIVE_REQUIRED", "output": dict(event["workInventory"])}
+        except AwsConflictError:
+            existing = self.control.get_stage(command_id, stage_id, idempotency_key)
+            if existing and existing.get("status") == "COMPLETED":
+                return {"outcome": "SKIPPED", "output": existing["output"]}
+            return {"outcome": "REDRIVE_REQUIRED", "output": dict(event["workInventory"])}
+
+
 def _clients(config: AwsRuntimeConfig) -> dict[str, Any]:
     try:
         import boto3
@@ -302,6 +367,32 @@ def build_stage_executor(
         if aliases
         else None,
         S3SourceArchiveStore(sdk["s3"]),
+    )
+
+
+def build_sca_aggregation_executor(
+    *,
+    env: Mapping[str, str] | None = None,
+    clients: Mapping[str, Any] | None = None,
+) -> AwsScaAggregationExecutor:
+    values = os.environ if env is None else env
+    config = AwsRuntimeConfig.from_env(values)
+    sdk = dict(_clients(config) if clients is None else clients)
+    control = DynamoDbControlAdapter(
+        sdk["dynamodb"],
+        config.control_table,
+        config.ledger_table,
+        config.pointer_table,
+        proposal_table=config.proposal_table,
+    )
+    artifacts = S3ArtifactStore(sdk["s3"], config.evidence_bucket)
+    return AwsScaAggregationExecutor(
+        control,
+        artifacts,
+        BaselineScaAggregationUseCase(
+            artifacts,
+            S3MapResultReader(sdk["s3"], config.evidence_bucket),
+        ),
     )
 
 

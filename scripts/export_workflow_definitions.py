@@ -127,10 +127,10 @@ def _input_path(previous: StageDefinition | None, previous_target: str | None) -
     if previous is None:
         return "$.input"
     # A distributed Map's ResultWriter result is an export manifest, not a
-    # single stage artifact reference. The executable slice continues from the
-    # original pinned input while B5's individual outputs remain in S3.
+    # single stage artifact reference. B5Aggregate converts its exact S3 export
+    # into one immutable domain artifact before the normal stage chain resumes.
     if previous.stage_id == "B5":
-        return "$.input"
+        return "$._B5Aggregate.Payload.output"
     if previous_target == "ScaTask":
         return f"$._{previous.stage_id}.output"
     return f"$._{previous.stage_id}.Payload.output"
@@ -258,7 +258,7 @@ def _ecs_task(
                 "Next": _error_terminal(workflow),
             }
         ],
-        "Next": f"{stage.stage_id}Outcome",
+        "Next": next_state,
     }
 
 
@@ -300,7 +300,10 @@ def asl_document(workflow: WorkflowDefinition) -> dict[str, Any]:
                 "Type": "Map",
                 "ItemReader": {
                     "Resource": "arn:aws:states:::s3:getObject",
-                    "ReaderConfig": {"InputType": "JSON"},
+                    "ReaderConfig": {
+                        "InputType": "JSON",
+                        "ItemsPointer": "/workUnitRefs",
+                    },
                     "Parameters": {
                         "Bucket.$": "$._B4.Payload.output.bucket",
                         "Key.$": "$._B4.Payload.output.key",
@@ -342,6 +345,10 @@ def asl_document(workflow: WorkflowDefinition) -> dict[str, Any]:
                 "MaxConcurrencyPath": "$.baselineMapConcurrency",
                 "ResultWriter": {
                     "Resource": "arn:aws:states:::s3:putObject",
+                    "WriterConfig": {
+                        "Transformation": "COMPACT",
+                        "OutputType": "JSON",
+                    },
                     "Parameters": {
                         "Bucket": "${EvidenceBucketName}",
                         "Prefix.$": "States.Format('workflow-results/{}/B5', $.commandId)",
@@ -351,11 +358,67 @@ def asl_document(workflow: WorkflowDefinition) -> dict[str, Any]:
                 "Catch": [
                     {"ErrorEquals": ["States.ALL"], "ResultPath": "$.workflowError", "Next": _error_terminal(workflow)}
                 ],
-                "Next": next_state,
+                "Next": "B5Aggregate",
+            }
+            states["B5Aggregate"] = {
+                "Type": "Task",
+                "Resource": "arn:aws:states:::lambda:invoke",
+                "TimeoutSeconds": 300,
+                "Parameters": {
+                    "FunctionName": "${ControlAliasArn}",
+                    "Payload": {
+                        "schemaVersion.$": "$.schemaVersion",
+                        "operation": "BASELINE_SCA_AGGREGATE",
+                        "workflowKind": "BASELINE",
+                        "workflowVersion": workflow.version,
+                        "commandId.$": "$.commandId",
+                        "correlationId.$": "$.correlationId",
+                        "causationId.$": "$.causationId",
+                        "idempotencyKey.$": (
+                            "States.Format('{}:B5A', $.idempotencyKey)"
+                        ),
+                        "determinantDigest.$": "$.determinantDigest",
+                        "workInventory.$": "$._B4.Payload.output",
+                        "mapResult.$": "$._B5",
+                    },
+                },
+                "ResultPath": "$._B5Aggregate",
+                "Retry": [
+                    {
+                        "ErrorEquals": [
+                            "Lambda.ServiceException",
+                            "Lambda.SdkClientException",
+                            "Lambda.TooManyRequestsException",
+                            "States.Timeout",
+                        ],
+                        "IntervalSeconds": 2,
+                        "BackoffRate": 2,
+                        "MaxAttempts": 3,
+                    }
+                ],
+                "Catch": [
+                    {
+                        "ErrorEquals": ["States.ALL"],
+                        "ResultPath": "$.workflowError",
+                        "Next": _error_terminal(workflow),
+                    }
+                ],
+                "Next": "B5AggregateOutcome",
+            }
+            states["B5AggregateOutcome"] = {
+                "Type": "Choice",
+                "Choices": [
+                    {
+                        "Variable": "$._B5Aggregate.Payload.outcome",
+                        "StringEquals": "REDRIVE_REQUIRED",
+                        "Next": _error_terminal(workflow),
+                    }
+                ],
+                "Default": next_state,
             }
         elif target == "ScaTask":
             states[stage.stage_id] = _ecs_task(
-                workflow, stage, input_path, next_state
+                workflow, stage, input_path, f"{stage.stage_id}Outcome"
             )
             states[f"{stage.stage_id}Outcome"] = _outcome_route(
                 stage, next_state, target, _error_terminal(workflow)
