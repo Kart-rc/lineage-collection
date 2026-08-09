@@ -13,6 +13,7 @@ from lineage_api.application.stage_handlers import (
     ClassificationStageUseCase,
     ConsolidationStageUseCase,
     CoverageStageUseCase,
+    PublicationStageUseCase,
     ProposalStageUseCase,
     RuntimeValidationStageUseCase,
 )
@@ -245,6 +246,104 @@ class ProposalStore:
     def get_proposal(self, proposal_id: str, version: int) -> dict[str, object] | None:
         proposal = self.proposals.get(proposal_id)
         return deepcopy(proposal) if proposal and proposal["version"] == version else None
+
+
+class PublicationPointer:
+    def __init__(self) -> None:
+        self.pointer = {
+            "environment": "staging",
+            "graphVersion": "graph-v1",
+            "fence": 7,
+            "correlationId": "corr-prior",
+        }
+        self.activations = 0
+
+    def active_pointer(self, environment: str) -> dict[str, object]:
+        assert environment == "staging"
+        return deepcopy(self.pointer)
+
+    def activate_pointer(self, **request: object) -> dict[str, object]:
+        if self.pointer["graphVersion"] == request["graph_version"]:
+            return deepcopy(self.pointer)
+        assert self.pointer["graphVersion"] == request["expected_prior"]
+        assert self.pointer["fence"] == request["expected_fence"]
+        self.activations += 1
+        self.pointer = {
+            "environment": request["environment"],
+            "graphVersion": request["graph_version"],
+            "fence": request["next_fence"],
+            "correlationId": request["correlation_id"],
+            "package": deepcopy(request["package_reference"]),
+            "graphChecksum": request["graph_checksum"],
+        }
+        return deepcopy(self.pointer)
+
+
+class PublicationProjection:
+    def __init__(self, *, corrupt_readback: bool = False) -> None:
+        self.namespaces: dict[str, list[dict[str, object]]] = {
+            "graph-v1": [
+                {
+                    "edgeId": "edge-old-001",
+                    "source": FROM_URN,
+                    "target": TO_URN,
+                    "type": "DERIVES",
+                }
+            ]
+        }
+        self.corrupt_readback = corrupt_readback
+
+    def copy_namespace(self, source: str, target: str, *, fence: int) -> int:
+        self.namespaces[target] = deepcopy(self.namespaces.get(source, []))
+        return len(self.namespaces[target])
+
+    def delete_edges(self, namespace: str, edge_ids: list[str]) -> int:
+        before = len(self.namespaces[namespace])
+        self.namespaces[namespace] = [
+            row for row in self.namespaces[namespace] if row["edgeId"] not in edge_ids
+        ]
+        return before - len(self.namespaces[namespace])
+
+    def merge_edges(
+        self, namespace: str, edges: list[dict[str, object]], *, fence: int
+    ) -> int:
+        by_identity = {
+            (row["edgeId"], row["source"], row["target"]): row
+            for row in self.namespaces.setdefault(namespace, [])
+        }
+        for row in edges:
+            by_identity[(row["edgeId"], row["source"], row["target"])] = deepcopy(row)
+        self.namespaces[namespace] = list(by_identity.values())
+        return len(edges)
+
+    def namespace_checksum(self, namespace: str) -> list[dict[str, object]]:
+        if self.corrupt_readback and namespace != "graph-v1":
+            return []
+        return deepcopy(self.namespaces.get(namespace, []))
+
+
+class PackageArtifacts:
+    def __init__(self) -> None:
+        self.writes: list[tuple[str, str, object, str]] = []
+        self.references: dict[str, dict[str, object]] = {}
+
+    def put(self, kind: str, key: str, body: object, version: str) -> dict[str, object]:
+        self.writes.append((kind, key, deepcopy(body), version))
+        return deepcopy(
+            self.references.setdefault(
+                key,
+                {
+                    "bucket": "packages",
+                    "key": key,
+                    "versionId": "package-v1",
+                    "sha256": "8" * 64,
+                    "sizeBytes": 2048,
+                },
+            )
+        )
+
+    def get(self, reference: object) -> object:
+        raise AssertionError(f"unexpected package read: {reference}")
 
 
 def _assertion_reference() -> dict[str, object]:
@@ -1060,6 +1159,209 @@ def test_proposal_stage_rejects_an_edge_set_from_another_system() -> None:
         ProposalStageUseCase(artifacts, store).execute(document, context)
 
     assert store.calls == 0
+
+
+def _approved_proposal_decision() -> dict[str, object]:
+    document = _proposal_input()
+    return {
+        "schemaVersion": "1.0.0",
+        "artifactType": "proposal-decision",
+        "context": document["context"],
+        "decision": "PROPOSAL_CREATED",
+        "proposal": {
+            "schemaVersion": "1.0.0",
+            "proposalId": "proposal-approved",
+            "version": 2,
+            "proposalType": "DELTA",
+            "system": "payments",
+            "environment": "staging",
+            "state": "APPROVED",
+            "expectedBaseVersion": "graph-v1",
+            "diff": {
+                "edgeSetRef": document["edgeSetRef"],
+                "addedEdgeIds": ["edge-001"],
+                "removedEdgeIds": ["edge-old-001"],
+                "bandChangedEdgeIds": [],
+            },
+            "approvalRef": {
+                "bucket": "evidence",
+                "key": "approvals/proposal-approved.json",
+                "versionId": "approval-v1",
+                "sha256": "9" * 64,
+                "sizeBytes": 800,
+            },
+            "approvedAt": "2026-08-08T13:00:00Z",
+            "correlationId": "corr-publish",
+            "createdAt": "2026-08-08T12:00:00Z",
+            "lockVersion": 2,
+        },
+    }
+
+
+@pytest.mark.parametrize(
+    ("workflow_kind", "stage_id", "stage_name"),
+    (
+        ("BASELINE", "B10", "STAGE_VERIFY_FENCE_AND_ACTIVATE"),
+        ("INCREMENTAL", "I10", "PUBLISH_WITH_FENCED_PROTOCOL"),
+    ),
+)
+def test_publication_stages_build_verify_and_atomically_activate_a_reference_package(
+    workflow_kind: str, stage_id: str, stage_name: str
+) -> None:
+    document = _approved_proposal_decision()
+    edge_reference = document["proposal"]["diff"]["edgeSetRef"]
+    artifacts = ConsolidationArtifacts({edge_reference["key"]: _edge_set()})
+    packages = PackageArtifacts()
+    pointer = PublicationPointer()
+    projection = PublicationProjection()
+    context = StageExecutionContext(
+        target="publication",
+        workflow_kind=workflow_kind,
+        workflow_version="1.0.0",
+        stage_id=stage_id,
+        stage_name=stage_name,
+        command_id=f"cmd-{stage_id.lower()}",
+        correlation_id="corr-publish",
+        input_reference=_context().input_reference,
+    )
+    use_case = PublicationStageUseCase(artifacts, packages, pointer, projection)
+
+    first = use_case.execute(document, context)
+    replay = use_case.execute(document, context)
+
+    assert replay == first
+    assert first.artifact_kind == "publication-receipt"
+    assert first.document["terminalOutcome"] == "PUBLISHED"
+    assert first.document["pointer"]["fence"] == 8
+    assert first.document["pointer"]["graphVersion"].startswith("graph-")
+    assert first.document["graphChecksum"]
+    assert first.document["packageRef"]["bucket"] == "packages"
+    assert pointer.activations == 1
+    assert len(packages.writes) == 2
+    package = packages.writes[0][2]
+    assert package["edgeSetRef"] == edge_reference
+    assert "edges" not in package
+
+
+def test_publication_does_not_mutate_an_unapproved_proposal() -> None:
+    document = _approved_proposal_decision()
+    document["proposal"]["state"] = "IN_REVIEW"
+    artifacts = ConsolidationArtifacts({})
+    packages = PackageArtifacts()
+    pointer = PublicationPointer()
+    projection = PublicationProjection()
+    context = StageExecutionContext(
+        target="publication",
+        workflow_kind="BASELINE",
+        workflow_version="1.0.0",
+        stage_id="B10",
+        stage_name="STAGE_VERIFY_FENCE_AND_ACTIVATE",
+        command_id="cmd-awaiting-approval",
+        correlation_id="corr-publish",
+        input_reference=_context().input_reference,
+    )
+
+    result = PublicationStageUseCase(
+        artifacts, packages, pointer, projection
+    ).execute(document, context)
+
+    assert result.document["terminalOutcome"] == "AWAITING_APPROVAL"
+    assert pointer.activations == 0
+    assert packages.writes == []
+
+
+def test_publication_verification_mismatch_never_advances_the_pointer() -> None:
+    document = _approved_proposal_decision()
+    edge_reference = document["proposal"]["diff"]["edgeSetRef"]
+    artifacts = ConsolidationArtifacts({edge_reference["key"]: _edge_set()})
+    packages = PackageArtifacts()
+    pointer = PublicationPointer()
+    projection = PublicationProjection(corrupt_readback=True)
+    context = StageExecutionContext(
+        target="publication",
+        workflow_kind="INCREMENTAL",
+        workflow_version="1.0.0",
+        stage_id="I10",
+        stage_name="PUBLISH_WITH_FENCED_PROTOCOL",
+        command_id="cmd-corrupt-publication",
+        correlation_id="corr-publish",
+        input_reference=_context().input_reference,
+    )
+
+    with pytest.raises(ValueError, match="staged projection verification failed"):
+        PublicationStageUseCase(artifacts, packages, pointer, projection).execute(
+            document, context
+        )
+
+    assert pointer.activations == 0
+    assert packages.writes == []
+
+
+def test_publication_rejects_a_stale_expected_base_before_staging() -> None:
+    document = _approved_proposal_decision()
+    edge_reference = document["proposal"]["diff"]["edgeSetRef"]
+    artifacts = ConsolidationArtifacts({edge_reference["key"]: _edge_set()})
+    packages = PackageArtifacts()
+    pointer = PublicationPointer()
+    pointer.pointer["graphVersion"] = "graph-newer"
+    projection = PublicationProjection()
+    before = deepcopy(projection.namespaces)
+    context = StageExecutionContext(
+        target="publication",
+        workflow_kind="BASELINE",
+        workflow_version="1.0.0",
+        stage_id="B10",
+        stage_name="STAGE_VERIFY_FENCE_AND_ACTIVATE",
+        command_id="cmd-stale-publication",
+        correlation_id="corr-publish",
+        input_reference=_context().input_reference,
+    )
+
+    with pytest.raises(ValueError, match="differs from the approved proposal base"):
+        PublicationStageUseCase(artifacts, packages, pointer, projection).execute(
+            document, context
+        )
+
+    assert projection.namespaces == before
+    assert packages.writes == []
+    assert pointer.activations == 0
+
+
+def test_nightly_publication_stage_verifies_the_exact_projection_checksum() -> None:
+    document = _approved_proposal_decision()
+    edge_reference = document["proposal"]["diff"]["edgeSetRef"]
+    artifacts = ConsolidationArtifacts({edge_reference["key"]: _edge_set()})
+    packages = PackageArtifacts()
+    pointer = PublicationPointer()
+    projection = PublicationProjection()
+    publish_context = StageExecutionContext(
+        target="publication",
+        workflow_kind="BASELINE",
+        workflow_version="1.0.0",
+        stage_id="B10",
+        stage_name="STAGE_VERIFY_FENCE_AND_ACTIVATE",
+        command_id="cmd-publish-for-nightly",
+        correlation_id="corr-publish",
+        input_reference=_context().input_reference,
+    )
+    use_case = PublicationStageUseCase(artifacts, packages, pointer, projection)
+    published = use_case.execute(document, publish_context).document
+    nightly_context = StageExecutionContext(
+        target="publication",
+        workflow_kind="NIGHTLY",
+        workflow_version="1.0.0",
+        stage_id="N3",
+        stage_name="VERIFY_PROJECTION_CHECKSUMS",
+        command_id="cmd-nightly-verify",
+        correlation_id="corr-nightly",
+        input_reference=_context().input_reference,
+    )
+
+    verified = use_case.execute(published, nightly_context)
+
+    assert verified.artifact_kind == "projection-verification"
+    assert verified.document["status"] == "VERIFIED"
+    assert verified.document["graphVersion"] == published["graphVersion"]
 
 
 def test_context_fails_closed_when_target_does_not_own_the_exact_stage() -> None:

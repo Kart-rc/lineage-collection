@@ -257,7 +257,7 @@ export class DataStack extends Stack {
         resources: tables.map((table) => table.tableArn),
       }),
       new iam.PolicyStatement({
-        actions: ["s3:GetObjectVersion", "s3:PutObject"],
+        actions: ["s3:GetObject", "s3:GetObjectVersion", "s3:PutObject"],
         resources: buckets.map((bucket) => `${bucket.bucketArn}/*`),
       }),
       new iam.PolicyStatement({

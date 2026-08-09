@@ -50,6 +50,7 @@ def test_composition_injects_sdk_clients_without_local_adapters() -> None:
     assert executor.config.control_table == "control"
     assert executor.control.client is clients["dynamodb"]
     assert executor.artifacts.client is clients["s3"]
+    assert executor.packages.default_bucket == "packages"
 
 
 def test_intake_composition_rejects_a_partial_workflow_alias_set() -> None:

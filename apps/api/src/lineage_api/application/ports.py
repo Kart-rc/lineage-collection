@@ -130,6 +130,38 @@ class ProposalStorePort(Protocol):
 
 
 @runtime_checkable
+class PublicationControlPort(Protocol):
+    def active_pointer(self, environment: str) -> dict[str, Any]: ...
+
+    def activate_pointer(
+        self,
+        *,
+        environment: str,
+        graph_version: str,
+        graph_checksum: str,
+        package_reference: dict[str, Any],
+        expected_prior: str,
+        expected_fence: int,
+        next_fence: int,
+        correlation_id: str,
+        activated_at: datetime,
+    ) -> dict[str, Any]: ...
+
+
+@runtime_checkable
+class StageProjectionPort(Protocol):
+    def copy_namespace(self, source: str, target: str, *, fence: int) -> int: ...
+
+    def delete_edges(self, namespace: str, edge_ids: list[str]) -> int: ...
+
+    def merge_edges(
+        self, namespace: str, edges: list[dict[str, Any]], *, fence: int
+    ) -> int: ...
+
+    def namespace_checksum(self, namespace: str) -> list[dict[str, Any]]: ...
+
+
+@runtime_checkable
 class PublicationPort(Protocol):
     def publish(self, package: LineagePackage, expected_prior: str) -> object: ...
 

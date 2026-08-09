@@ -165,6 +165,132 @@ def test_dynamodb_conditionally_persists_and_replays_one_proposal_version() -> N
         conflict.put_proposal(proposal)
 
 
+def test_dynamodb_reads_and_atomically_activates_pointer_with_outbox() -> None:
+    package_reference = {
+        "bucket": "packages",
+        "key": "packages/package-001.json",
+        "versionId": "v1",
+        "sha256": "a" * 64,
+        "sizeBytes": 400,
+    }
+    client = FakeClient(
+        get_item=[
+            {
+                "Item": {
+                    "graphVersion": {"S": "graph-v1"},
+                    "fence": {"N": "7"},
+                    "correlationId": {"S": "corr-prior"},
+                }
+            }
+        ],
+        transact_write_items=[{}],
+    )
+    adapter = DynamoDbControlAdapter(client, "control", "ledger", "pointer")
+
+    assert adapter.active_pointer("staging")["graphVersion"] == "graph-v1"
+    activated = adapter.activate_pointer(
+        environment="staging",
+        graph_version="graph-v2",
+        graph_checksum="b" * 64,
+        package_reference=package_reference,
+        expected_prior="graph-v1",
+        expected_fence=7,
+        next_fence=8,
+        correlation_id="corr-publish",
+        activated_at=datetime(2026, 8, 8, 13, tzinfo=UTC),
+    )
+
+    assert activated["fence"] == 8
+    transaction = client.calls[-1][1]["TransactItems"]
+    pointer_update = transaction[0]["Update"]
+    assert "graphVersion = :expectedPrior" in pointer_update["ConditionExpression"]
+    assert pointer_update["ExpressionAttributeValues"][":nextFence"] == {"N": "8"}
+    outbox_put = transaction[1]["Put"]
+    assert outbox_put["TableName"] == "ledger"
+    assert outbox_put["Item"]["topic"] == {"S": "PUBLICATION_ACTIVATED"}
+
+    replay_client = FakeClient(
+        transact_write_items=[FakeServiceError("TransactionCanceledException")],
+        get_item=[
+            {
+                "Item": {
+                    "graphVersion": {"S": "graph-v2"},
+                    "graphChecksum": {"S": "b" * 64},
+                    "packageReference": {"S": json.dumps(package_reference)},
+                    "fence": {"N": "8"},
+                    "correlationId": {"S": "corr-publish"},
+                }
+            }
+        ],
+    )
+    replay = DynamoDbControlAdapter(
+        replay_client, "control", "ledger", "pointer"
+    )
+    assert (
+        replay.activate_pointer(
+            environment="staging",
+            graph_version="graph-v2",
+            graph_checksum="b" * 64,
+            package_reference=package_reference,
+            expected_prior="graph-v1",
+            expected_fence=7,
+            next_fence=8,
+            correlation_id="corr-publish",
+            activated_at=datetime(2026, 8, 8, 13, tzinfo=UTC),
+        )["graphVersion"]
+        == "graph-v2"
+    )
+
+
+def test_neptune_copies_applies_tombstones_and_reads_a_staged_namespace() -> None:
+    client = FakeClient(
+        execute_open_cypher_query=[
+            {"results": [{"written": 3}]},
+            {"results": [{"deleted": 1}]},
+            {"results": [{"written": 1}]},
+            {
+                "results": [
+                    {
+                        "edgeId": "edge-1",
+                        "source": "urn:a",
+                        "target": "urn:b",
+                        "type": "DERIVES",
+                    }
+                ]
+            },
+        ]
+    )
+    projection = NeptuneProjectionAdapter(client)
+
+    assert projection.copy_namespace("graph-v1", "graph-v2", fence=8) == 3
+    assert projection.delete_edges("graph-v2", ["edge-old"]) == 1
+    assert (
+        projection.merge_edges(
+            "graph-v2",
+            [
+                {
+                    "edgeId": "edge-1",
+                    "source": "urn:a",
+                    "target": "urn:b",
+                    "type": "DERIVES",
+                }
+            ],
+            fence=8,
+        )
+        == 1
+    )
+    assert projection.namespace_checksum("graph-v2")[0]["edgeId"] == "edge-1"
+
+    queries = [call[1]["openCypherQuery"] for call in client.calls]
+    parameters = [json.loads(call[1]["parameters"]) for call in client.calls]
+    assert "copy:LINEAGE" in queries[0]
+    assert "DELETE edge" in queries[1]
+    assert "MERGE (source)-[edge:LINEAGE" in queries[2]
+    assert "ORDER BY edgeId" in queries[3]
+    assert parameters[0]["targetNamespace"] == "graph-v2"
+    assert parameters[1]["edgeIds"] == ["edge-old"]
+
+
 def test_s3_uses_versioned_checksum_references_and_immutable_puts() -> None:
     body = {"commandId": "cmd-1", "stage": "I1"}
     encoded = json.dumps(body, sort_keys=True, separators=(",", ":")).encode()
@@ -276,4 +402,4 @@ def test_kinesis_and_neptune_requests_are_partitioned_and_idempotent() -> None:
     request = neptune.calls[0][1]
     assert "MERGE (source:Dataset" in request["openCypherQuery"]
     assert "MERGE (source)-[edge:LINEAGE" in request["openCypherQuery"]
-    assert request["parameters"]["fence"] == 4
+    assert json.loads(request["parameters"])["fence"] == 4

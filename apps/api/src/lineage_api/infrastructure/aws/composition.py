@@ -67,6 +67,7 @@ class AwsStageExecutor:
         artifacts: S3ArtifactStore,
         runtime: KinesisRuntimeAdapter,
         projection: NeptuneProjectionAdapter,
+        packages: S3ArtifactStore | None = None,
         broker: SqsLaneBroker | None = None,
         workflow_starter: StepFunctionsWorkflowStarter | None = None,
         dispatcher: StageDispatcher | None = None,
@@ -76,10 +77,17 @@ class AwsStageExecutor:
         self.artifacts = artifacts
         self.runtime = runtime
         self.projection = projection
+        self.packages = packages or artifacts
         self.broker = broker
         self.workflow_starter = workflow_starter
         self.dispatcher = dispatcher or StageDispatcher(
-            production_stage_use_cases(artifacts, control)
+            production_stage_use_cases(
+                artifacts,
+                control,
+                packages=self.packages,
+                publication_control=control,
+                projection=projection,
+            )
         )
 
     def execute(self, target: str, envelope: dict[str, Any]) -> dict[str, Any]:
@@ -234,6 +242,7 @@ def build_stage_executor(
         S3ArtifactStore(sdk["s3"], config.evidence_bucket),
         KinesisRuntimeAdapter(sdk["kinesis"], config.runtime_stream),
         NeptuneProjectionAdapter(sdk["neptunedata"]),
+        S3ArtifactStore(sdk["s3"], config.package_bucket),
         SqsLaneBroker(sdk["sqs"], queues) if queues else None,
         StepFunctionsWorkflowStarter(
             sdk["stepfunctions"], aliases, baseline_map_concurrency=baseline_concurrency

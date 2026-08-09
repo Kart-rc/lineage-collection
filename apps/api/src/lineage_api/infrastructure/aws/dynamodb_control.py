@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -334,6 +335,128 @@ class DynamoDbControlAdapter:
             },
             ConditionExpression="attribute_not_exists(pk)",
         )
+
+    def active_pointer(self, environment: str) -> dict[str, Any]:
+        response = aws_call(
+            "dynamodb.active_pointer",
+            self.client.get_item,
+            TableName=self.pointer_table,
+            Key={"pk": {"S": f"ENV#{environment}"}, "sk": {"S": "ACTIVE"}},
+            ConsistentRead=True,
+        )
+        item = response.get("Item")
+        if not item:
+            return {
+                "environment": environment,
+                "graphVersion": "NONE",
+                "fence": 0,
+                "correlationId": None,
+            }
+        pointer: dict[str, Any] = {
+            "environment": environment,
+            "graphVersion": item["graphVersion"]["S"],
+            "fence": int(item["fence"]["N"]),
+            "correlationId": item.get("correlationId", {"NULL": True}).get("S"),
+        }
+        if "graphChecksum" in item:
+            pointer["graphChecksum"] = item["graphChecksum"]["S"]
+        if "packageReference" in item:
+            pointer["package"] = json.loads(item["packageReference"]["S"])
+        return pointer
+
+    def activate_pointer(
+        self,
+        *,
+        environment: str,
+        graph_version: str,
+        graph_checksum: str,
+        package_reference: dict[str, Any],
+        expected_prior: str,
+        expected_fence: int,
+        next_fence: int,
+        correlation_id: str,
+        activated_at: datetime,
+    ) -> dict[str, Any]:
+        payload = {
+            "environment": environment,
+            "graphVersion": graph_version,
+            "graphChecksum": graph_checksum,
+            "packageRef": package_reference,
+            "fence": next_fence,
+        }
+        identity = hashlib.sha256(_json(payload).encode()).hexdigest()
+        try:
+            aws_call(
+                "dynamodb.activate_pointer",
+                self.client.transact_write_items,
+                TransactItems=[
+                    {
+                        "Update": {
+                            "TableName": self.pointer_table,
+                            "Key": {
+                                "pk": {"S": f"ENV#{environment}"},
+                                "sk": {"S": "ACTIVE"},
+                            },
+                            "UpdateExpression": (
+                                "SET graphVersion = :graphVersion, graphChecksum = :graphChecksum, "
+                                "packageReference = :packageReference, fence = :nextFence, "
+                                "correlationId = :correlationId, activatedAt = :activatedAt"
+                            ),
+                            "ConditionExpression": (
+                                "attribute_not_exists(fence) OR "
+                                "(fence = :expectedFence AND graphVersion = :expectedPrior)"
+                            ),
+                            "ExpressionAttributeValues": {
+                                ":graphVersion": {"S": graph_version},
+                                ":graphChecksum": {"S": graph_checksum},
+                                ":packageReference": {"S": _json(package_reference)},
+                                ":expectedPrior": {"S": expected_prior},
+                                ":expectedFence": {"N": str(expected_fence)},
+                                ":nextFence": {"N": str(next_fence)},
+                                ":correlationId": {"S": correlation_id},
+                                ":activatedAt": {"S": _utc(activated_at)},
+                            },
+                        }
+                    },
+                    {
+                        "Put": {
+                            "TableName": self.ledger_table,
+                            "Item": {
+                                "pk": {"S": f"OUTBOX#publication-{identity}"},
+                                "sk": {"S": "EVENT"},
+                                "topic": {"S": "PUBLICATION_ACTIVATED"},
+                                "correlationId": {"S": correlation_id},
+                                "payload": {"S": _json(payload)},
+                                "status": {"S": "PENDING"},
+                                "createdAt": {"S": _utc(activated_at)},
+                            },
+                            "ConditionExpression": "attribute_not_exists(pk)",
+                        }
+                    },
+                ],
+                ClientRequestToken=identity[:36],
+            )
+        except AwsConflictError as error:
+            existing = self.active_pointer(environment)
+            if (
+                existing.get("graphVersion") == graph_version
+                and existing.get("graphChecksum") == graph_checksum
+                and existing.get("package") == package_reference
+                and existing.get("fence") == next_fence
+                and existing.get("correlationId") == correlation_id
+            ):
+                return existing
+            raise AwsStaleFenceError(
+                f"pointer activation for {environment} lost fence {expected_fence}"
+            ) from error
+        return {
+            "environment": environment,
+            "graphVersion": graph_version,
+            "graphChecksum": graph_checksum,
+            "package": json.loads(_json(package_reference)),
+            "fence": next_fence,
+            "correlationId": correlation_id,
+        }
 
     def swap_pointer(
         self,

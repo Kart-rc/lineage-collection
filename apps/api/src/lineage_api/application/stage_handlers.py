@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-from pathlib import PurePosixPath
-from collections import Counter
-from datetime import UTC, datetime
 import hashlib
 import json
+from collections import Counter
+from datetime import UTC, datetime
+from pathlib import PurePosixPath
 from typing import Any, Mapping
 
 from lineage_api.application.classification import (
@@ -18,7 +18,12 @@ from lineage_api.application.stage_execution import (
     StageUseCase,
     validate_artifact_reference,
 )
-from lineage_api.application.ports import ArtifactStorePort, ProposalStorePort
+from lineage_api.application.ports import (
+    ArtifactStorePort,
+    ProposalStorePort,
+    PublicationControlPort,
+    StageProjectionPort,
+)
 from lineage_api.application.consolidation import derive_consolidation, edge_key_for
 from lineage_api.application.runtime_validation import runtime_window_manifest_errors
 from lineage_api.domain.urns import LineageUrn
@@ -934,9 +939,425 @@ class ProposalStageUseCase:
         )
 
 
+_PROJECTION_ROW_FIELDS = frozenset({"edgeId", "source", "target", "type"})
+
+
+def _projection_rows(value: object) -> list[dict[str, str]]:
+    if not isinstance(value, list) or len(value) > 100_000:
+        raise ValueError("projection rows must be a bounded array")
+    by_identity: dict[tuple[str, str, str], dict[str, str]] = {}
+    for raw in value:
+        if not isinstance(raw, Mapping) or set(raw) != _PROJECTION_ROW_FIELDS:
+            raise ValueError("projection row schema is invalid")
+        row = {
+            name: _required_text(f"projection {name}", raw[name])
+            for name in sorted(_PROJECTION_ROW_FIELDS)
+        }
+        identity = (row["edgeId"], row["source"], row["target"])
+        prior = by_identity.get(identity)
+        if prior is not None and prior != row:
+            raise ValueError("projection identity conflict")
+        by_identity[identity] = row
+    return [by_identity[key] for key in sorted(by_identity)]
+
+
+def _projection_checksum(rows: list[dict[str, str]]) -> str:
+    return hashlib.sha256(
+        json.dumps(rows, sort_keys=True, separators=(",", ":")).encode()
+    ).hexdigest()
+
+
+class PublicationStageUseCase:
+    def __init__(
+        self,
+        artifacts: ArtifactStorePort,
+        packages: ArtifactStorePort,
+        control: PublicationControlPort,
+        projection: StageProjectionPort,
+        *,
+        max_edge_ids: int = 5_000,
+    ) -> None:
+        if not 1 <= max_edge_ids <= 5_000:
+            raise ValueError("publication edge ID limit is invalid")
+        self._artifacts = artifacts
+        self._packages = packages
+        self._control = control
+        self._projection = projection
+        self._max_edge_ids = max_edge_ids
+
+    def execute(
+        self, input_document: object, context: StageExecutionContext
+    ) -> StageExecutionResult:
+        if context.workflow_kind == "NIGHTLY" and context.stage_id == "N3":
+            return self._verify_projection(input_document, context)
+        if (context.workflow_kind, context.stage_id) not in {
+            ("BASELINE", "B10"),
+            ("INCREMENTAL", "I10"),
+        }:
+            raise ValueError("publication use case received an unsupported stage")
+        return self._publish(input_document, context)
+
+    def _publish(
+        self, input_document: object, context: StageExecutionContext
+    ) -> StageExecutionResult:
+        if (
+            not isinstance(input_document, Mapping)
+            or input_document.get("schemaVersion") != "1.0.0"
+            or input_document.get("artifactType") != "proposal-decision"
+        ):
+            raise ValueError("publication input must be a versioned proposal decision")
+        common = _common_context(_lineage_context(input_document))
+        decision = input_document.get("decision")
+        if decision == "NO_LINEAGE":
+            outcome = (
+                "NO_LINEAGE"
+                if context.workflow_kind == "BASELINE"
+                else "NO_LINEAGE_IMPACT"
+            )
+            return self._receipt(context, common, outcome)
+        if decision == "INCOMPLETE_COVERAGE":
+            return self._receipt(context, common, "QUARANTINED")
+        if decision != "PROPOSAL_CREATED":
+            raise ValueError("publication proposal decision is invalid")
+        proposal = input_document.get("proposal")
+        if not isinstance(proposal, Mapping):
+            raise ValueError("publication input is missing its proposal")
+        state = proposal.get("state")
+        if state == "IN_REVIEW":
+            return self._receipt(context, common, "AWAITING_APPROVAL")
+        if state == "REJECTED":
+            return self._receipt(context, common, "REJECTED")
+        if state not in {"APPROVED", "FINALIZED"}:
+            raise ValueError("proposal is not publishable")
+        if (
+            proposal.get("schemaVersion") != "1.0.0"
+            or proposal.get("system") != common["system"]
+            or proposal.get("environment") != common["environment"]
+            or proposal.get("correlationId") != context.correlation_id
+        ):
+            raise ValueError("approved proposal scope does not match publication")
+
+        proposal_id = _required_text("proposal ID", proposal.get("proposalId"))
+        proposal_version = proposal.get("version")
+        if (
+            not isinstance(proposal_version, int)
+            or isinstance(proposal_version, bool)
+            or proposal_version < 1
+        ):
+            raise ValueError("proposal version is invalid")
+        expected_prior = _required_text(
+            "proposal expected base", proposal.get("expectedBaseVersion")
+        )
+        approval_ref = validate_artifact_reference(proposal.get("approvalRef"))
+        approved_at = _accepted_at(proposal.get("approvedAt"))
+        diff = proposal.get("diff")
+        if not isinstance(diff, Mapping):
+            raise ValueError("approved proposal diff is invalid")
+        edge_set_ref = validate_artifact_reference(diff.get("edgeSetRef"))
+        added = _edge_ids(
+            "published edge IDs", diff.get("addedEdgeIds"), limit=self._max_edge_ids
+        )
+        changed = _edge_ids(
+            "band-changed edge IDs",
+            diff.get("bandChangedEdgeIds", []),
+            limit=self._max_edge_ids,
+        )
+        removed = _edge_ids(
+            "removed edge IDs", diff.get("removedEdgeIds", []), limit=self._max_edge_ids
+        )
+        write_ids = sorted(set(added) | set(changed))
+        if set(write_ids) & set(removed):
+            raise ValueError("publication diff both writes and removes an edge")
+
+        edge_set = self._artifacts.get(edge_set_ref)
+        if (
+            not isinstance(edge_set, Mapping)
+            or edge_set.get("schemaVersion") != "1.0.0"
+            or edge_set.get("artifactType") != "consolidated-edge-set"
+            or not isinstance(edge_set.get("edges"), list)
+            or len(edge_set["edges"]) > self._max_edge_ids
+        ):
+            raise ValueError("publication edge set is invalid")
+        rows: list[dict[str, str]] = []
+        stored_ids: list[str] = []
+        for edge in edge_set["edges"]:
+            if not isinstance(edge, Mapping) or edge.get("system") != common["system"]:
+                raise ValueError("publication edge set crosses system boundaries")
+            edge_id = _required_text("publication edge ID", edge.get("edgeKey"))
+            sources = edge.get("from")
+            if not isinstance(sources, list) or not 1 <= len(sources) <= 64:
+                raise ValueError("publication edge sources are invalid")
+            target = _required_text("publication edge target", edge.get("to"))
+            edge_type = _required_text("publication edge type", edge.get("edgeType"))
+            target_urn = LineageUrn.parse(target)
+            if (
+                target_urn.env != common["environment"]
+                or target_urn.system != common["system"]
+            ):
+                raise ValueError("publication edge target is outside the pinned scope")
+            normalized_sources = sorted(
+                {_required_text("publication edge source", item) for item in sources}
+            )
+            for source in normalized_sources:
+                if LineageUrn.parse(source).env != common["environment"]:
+                    raise ValueError("publication edge source is outside the pinned environment")
+                rows.append(
+                    {
+                        "edgeId": edge_id,
+                        "source": source,
+                        "target": target,
+                        "type": edge_type,
+                    }
+                )
+            stored_ids.append(edge_id)
+        if stored_ids != sorted(set(stored_ids)) or stored_ids != write_ids:
+            raise ValueError("publication edge identities do not match the approved diff")
+        write_rows = _projection_rows(rows)
+
+        operation_identity = {
+            "proposalId": proposal_id,
+            "proposalVersion": proposal_version,
+            "approvalRef": approval_ref,
+            "expectedPrior": expected_prior,
+            "diff": {
+                "edgeSetRef": edge_set_ref,
+                "writeIds": write_ids,
+                "removedIds": removed,
+            },
+            "environment": common["environment"],
+            "system": common["system"],
+        }
+        operation_digest = hashlib.sha256(
+            json.dumps(operation_identity, sort_keys=True, separators=(",", ":")).encode()
+        ).hexdigest()
+        graph_version = f"graph-{operation_digest[:32]}"
+        pointer = self._control.active_pointer(common["environment"])
+        active_version = pointer.get("graphVersion")
+        active_fence = pointer.get("fence")
+        if not isinstance(active_fence, int) or isinstance(active_fence, bool) or active_fence < 0:
+            raise ValueError("active pointer fence is invalid")
+
+        if active_version == graph_version:
+            actual_rows = _projection_rows(
+                self._projection.namespace_checksum(graph_version)
+            )
+            graph_checksum = _projection_checksum(actual_rows)
+            if (
+                pointer.get("graphChecksum") not in {None, graph_checksum}
+                or pointer.get("correlationId") != context.correlation_id
+            ):
+                raise ValueError("active publication replay does not match its pointer")
+            package_ref = self._write_package(
+                common,
+                proposal_id,
+                proposal_version,
+                approval_ref,
+                edge_set_ref,
+                expected_prior,
+                graph_version,
+                graph_checksum,
+                active_fence,
+                approved_at,
+            )
+            if pointer.get("package") != package_ref:
+                raise ValueError("active publication replay package does not match its pointer")
+            return self._published_receipt(
+                context, common, pointer, package_ref, graph_version, graph_checksum
+            )
+        if active_version != expected_prior:
+            raise ValueError("active pointer differs from the approved proposal base")
+
+        prior_rows = (
+            []
+            if expected_prior == "NONE"
+            else _projection_rows(self._projection.namespace_checksum(expected_prior))
+        )
+        remaining = [row for row in prior_rows if row["edgeId"] not in set(removed)]
+        expected_rows = _projection_rows([*remaining, *write_rows])
+        graph_checksum = _projection_checksum(expected_rows)
+        next_fence = active_fence + 1
+        self._projection.copy_namespace(expected_prior, graph_version, fence=next_fence)
+        if removed:
+            self._projection.delete_edges(graph_version, removed)
+        if write_rows:
+            self._projection.merge_edges(graph_version, write_rows, fence=next_fence)
+        actual_rows = _projection_rows(self._projection.namespace_checksum(graph_version))
+        if actual_rows != expected_rows or _projection_checksum(actual_rows) != graph_checksum:
+            raise ValueError("staged projection verification failed")
+
+        package_ref = self._write_package(
+            common,
+            proposal_id,
+            proposal_version,
+            approval_ref,
+            edge_set_ref,
+            expected_prior,
+            graph_version,
+            graph_checksum,
+            next_fence,
+            approved_at,
+        )
+        activated = self._control.activate_pointer(
+            environment=common["environment"],
+            graph_version=graph_version,
+            graph_checksum=graph_checksum,
+            package_reference=package_ref,
+            expected_prior=expected_prior,
+            expected_fence=active_fence,
+            next_fence=next_fence,
+            correlation_id=context.correlation_id,
+            activated_at=datetime.fromisoformat(approved_at.replace("Z", "+00:00")),
+        )
+        return self._published_receipt(
+            context, common, activated, package_ref, graph_version, graph_checksum
+        )
+
+    def _write_package(
+        self,
+        common: dict[str, Any],
+        proposal_id: str,
+        proposal_version: int,
+        approval_ref: dict[str, Any],
+        edge_set_ref: dict[str, Any],
+        expected_prior: str,
+        graph_version: str,
+        graph_checksum: str,
+        fence: int,
+        approved_at: str,
+    ) -> dict[str, Any]:
+        content = {
+            "schemaVersion": "1.0.0",
+            "artifactType": "lineage-package",
+            "system": common["system"],
+            "environment": common["environment"],
+            "artifactDigest": common["artifactDigest"],
+            "proposalId": proposal_id,
+            "proposalVersion": proposal_version,
+            "approvalRef": approval_ref,
+            "edgeSetRef": edge_set_ref,
+            "expectedPrior": expected_prior,
+            "graphVersion": graph_version,
+            "graphChecksum": graph_checksum,
+            "fence": fence,
+            "approvedAt": approved_at,
+        }
+        package_id = "package-" + hashlib.sha256(
+            json.dumps(content, sort_keys=True, separators=(",", ":")).encode()
+        ).hexdigest()
+        package = {**content, "packageId": package_id}
+        return validate_artifact_reference(
+            self._packages.put(
+                "lineage-package",
+                f"packages/{common['environment']}/{package_id}.json",
+                package,
+                "1.0.0",
+            )
+        )
+
+    def _verify_projection(
+        self, input_document: object, context: StageExecutionContext
+    ) -> StageExecutionResult:
+        if not isinstance(input_document, Mapping):
+            raise ValueError("projection verification input must be an object")
+        if input_document.get("schemaVersion") != "1.0.0":
+            raise ValueError("unsupported projection verification schema")
+        common = _common_context(_lineage_context(input_document))
+        graph_version = _required_text("graph version", input_document.get("graphVersion"))
+        expected_checksum = _required_text(
+            "graph checksum", input_document.get("graphChecksum")
+        )
+        pointer = self._control.active_pointer(common["environment"])
+        actual_checksum = _projection_checksum(
+            _projection_rows(self._projection.namespace_checksum(graph_version))
+        )
+        if (
+            pointer.get("graphVersion") != graph_version
+            or pointer.get("graphChecksum") not in {None, expected_checksum}
+            or actual_checksum != expected_checksum
+        ):
+            raise ValueError("active projection checksum verification failed")
+        return StageExecutionResult(
+            artifact_kind="projection-verification",
+            schema_version="1.0.0",
+            document={
+                "schemaVersion": "1.0.0",
+                "artifactType": "projection-verification",
+                "workflowKind": context.workflow_kind,
+                "workflowVersion": context.workflow_version,
+                "stageId": context.stage_id,
+                "stageName": context.stage_name,
+                "commandId": context.command_id,
+                "correlationId": context.correlation_id,
+                "source": dict(context.input_reference),
+                "context": common,
+                "status": "VERIFIED",
+                "graphVersion": graph_version,
+                "graphChecksum": actual_checksum,
+                "pointerFence": pointer["fence"],
+            },
+        )
+
+    @staticmethod
+    def _receipt(
+        context: StageExecutionContext, common: dict[str, Any], outcome: str
+    ) -> StageExecutionResult:
+        return StageExecutionResult(
+            artifact_kind="publication-decision",
+            schema_version="1.0.0",
+            document={
+                "schemaVersion": "1.0.0",
+                "artifactType": "publication-decision",
+                "workflowKind": context.workflow_kind,
+                "workflowVersion": context.workflow_version,
+                "stageId": context.stage_id,
+                "stageName": context.stage_name,
+                "commandId": context.command_id,
+                "correlationId": context.correlation_id,
+                "source": dict(context.input_reference),
+                "context": common,
+                "terminalOutcome": outcome,
+            },
+        )
+
+    @staticmethod
+    def _published_receipt(
+        context: StageExecutionContext,
+        common: dict[str, Any],
+        pointer: dict[str, Any],
+        package_ref: dict[str, Any],
+        graph_version: str,
+        graph_checksum: str,
+    ) -> StageExecutionResult:
+        return StageExecutionResult(
+            artifact_kind="publication-receipt",
+            schema_version="1.0.0",
+            document={
+                "schemaVersion": "1.0.0",
+                "artifactType": "publication-receipt",
+                "workflowKind": context.workflow_kind,
+                "workflowVersion": context.workflow_version,
+                "stageId": context.stage_id,
+                "stageName": context.stage_name,
+                "commandId": context.command_id,
+                "correlationId": context.correlation_id,
+                "source": dict(context.input_reference),
+                "context": common,
+                "terminalOutcome": "PUBLISHED",
+                "graphVersion": graph_version,
+                "graphChecksum": graph_checksum,
+                "packageRef": package_ref,
+                "pointer": pointer,
+            },
+        )
+
+
 def production_stage_use_cases(
     artifacts: ArtifactStorePort | None = None,
     proposal_store: ProposalStorePort | None = None,
+    *,
+    packages: ArtifactStorePort | None = None,
+    publication_control: PublicationControlPort | None = None,
+    projection: StageProjectionPort | None = None,
 ) -> dict[tuple[str, str], StageUseCase]:
     use_cases: dict[tuple[str, str], StageUseCase] = {
         ("BASELINE", "B3"): ClassificationStageUseCase(policy_version="1.0.0")
@@ -958,6 +1379,17 @@ def production_stage_use_cases(
             use_cases[("BASELINE", "B9")] = proposal
             use_cases[("INCREMENTAL", "I9")] = proposal
             use_cases[("NIGHTLY", "N6")] = proposal
+        if (
+            packages is not None
+            and publication_control is not None
+            and projection is not None
+        ):
+            publication = PublicationStageUseCase(
+                artifacts, packages, publication_control, projection
+            )
+            use_cases[("BASELINE", "B10")] = publication
+            use_cases[("INCREMENTAL", "I10")] = publication
+            use_cases[("NIGHTLY", "N3")] = publication
     return use_cases
 
 
@@ -966,6 +1398,7 @@ __all__ = [
     "CoverageStageUseCase",
     "ConsolidationStageUseCase",
     "ProposalStageUseCase",
+    "PublicationStageUseCase",
     "RuntimeValidationStageUseCase",
     "production_stage_use_cases",
 ]
