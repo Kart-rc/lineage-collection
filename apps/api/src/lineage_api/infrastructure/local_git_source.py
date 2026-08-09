@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import os
+import shutil
 import stat
 import subprocess
 from dataclasses import dataclass
@@ -17,8 +18,7 @@ from lineage_api.application.repository_sources import (
 )
 
 
-_GIT_PREFIX = (
-    "git",
+_GIT_OPTIONS = (
     "--no-optional-locks",
     "-c",
     "core.fsmonitor=false",
@@ -66,11 +66,32 @@ class _BoundSnapshotReader:
 class LocalGitRepositorySource:
     """Builds an immutable, resource-bounded view of a clean local Git checkout."""
 
-    def __init__(self, limits: RepositorySourceLimits) -> None:
+    def __init__(
+        self,
+        limits: RepositorySourceLimits,
+        *,
+        git_executable: Path | str | None = None,
+    ) -> None:
         self._limits = limits
+        requested = Path(git_executable) if git_executable is not None else _default_git_executable()
+        if not requested.is_absolute():
+            raise ValueError("trusted Git executable must be an absolute executable file")
+        normalized = Path(os.path.abspath(requested))
+        try:
+            resolved = normalized.resolve(strict=True)
+        except OSError as error:
+            raise ValueError("trusted Git executable must be an absolute executable file") from error
+        if not resolved.is_file() or not os.access(resolved, os.X_OK):
+            raise ValueError("trusted Git executable must be an absolute executable file")
+        self._requested_git_executable = normalized
+        self._git_executable = resolved
 
     def snapshot(self, descriptor: RepositoryCheckoutDescriptor) -> RepositorySnapshot:
         root = self._validated_root(descriptor.checkout_root)
+        if _is_within(self._requested_git_executable, root) or _is_within(
+            self._git_executable, root
+        ):
+            raise RepositorySourceError("trusted Git executable must be outside the checkout")
         self._validate_git_state(root, descriptor)
         paths = self._tracked_paths(root)
         if len(paths) > self._limits.max_files:
@@ -207,11 +228,10 @@ class LocalGitRepositorySource:
         if committed != entries:
             raise RepositorySourceError("tracked content is not clean")
 
-    @staticmethod
-    def _git(root: Path, *arguments: str) -> str:
+    def _git(self, root: Path, *arguments: str) -> str:
         try:
             completed = subprocess.run(
-                [*_GIT_PREFIX, "-C", str(root), *arguments],
+                [str(self._git_executable), *_GIT_OPTIONS, "-C", str(root), *arguments],
                 shell=False,
                 check=True,
                 capture_output=True,
@@ -238,9 +258,25 @@ def _git_environment() -> dict[str, str]:
             "GIT_OPTIONAL_LOCKS": "0",
             "GIT_PAGER": "cat",
             "GIT_TERMINAL_PROMPT": "0",
+            "PATH": os.defpath,
         }
     )
     return environment
+
+
+def _default_git_executable() -> Path:
+    executable = shutil.which("git", path=os.defpath)
+    if executable is None:
+        raise ValueError("trusted Git executable was not found on the system search path")
+    return Path(executable)
+
+
+def _is_within(path: Path, root: Path) -> bool:
+    try:
+        path.relative_to(root)
+    except ValueError:
+        return False
+    return True
 
 
 def _git_blob_id(content: bytes, digest_length: int) -> str:

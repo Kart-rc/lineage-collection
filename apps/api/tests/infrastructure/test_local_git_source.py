@@ -197,6 +197,68 @@ def test_git_commands_ignore_caller_global_and_system_configuration(
     assert snapshot.read_bytes("README.md") == b"demo\n"
 
 
+def test_snapshot_never_resolves_git_from_a_checkout_controlled_path(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root, revision = _repository(tmp_path)
+    marker = tmp_path / "fake-git-ran"
+    fake_binary_directory = root / "checkout-tools"
+    fake_binary_directory.mkdir()
+    fake_git = fake_binary_directory / "git"
+    fake_git.write_text(
+        f"#!/bin/sh\ntouch '{marker}'\nexit 99\n",
+        encoding="utf-8",
+    )
+    fake_git.chmod(0o755)
+    monkeypatch.setenv(
+        "PATH",
+        os.pathsep.join((str(fake_binary_directory), os.environ.get("PATH", ""))),
+    )
+
+    snapshot = _source().snapshot(_descriptor(root, revision))
+
+    assert snapshot.read_bytes("README.md") == b"demo\n"
+    assert not marker.exists()
+
+
+def test_git_executable_injection_requires_an_absolute_usable_path() -> None:
+    with pytest.raises(ValueError, match="absolute executable"):
+        LocalGitRepositorySource(
+            RepositorySourceLimits(
+                max_files=1,
+                max_file_bytes=1,
+                max_total_bytes=1,
+            ),
+            git_executable=Path("git"),
+        )
+
+
+def test_snapshot_rejects_an_injected_git_executable_inside_the_checkout(
+    tmp_path: Path,
+) -> None:
+    root, revision = _repository(tmp_path)
+    marker = tmp_path / "injected-git-ran"
+    fake_git = root / "git"
+    fake_git.write_text(
+        f"#!/bin/sh\ntouch '{marker}'\nexit 99\n",
+        encoding="utf-8",
+    )
+    fake_git.chmod(0o755)
+    source = LocalGitRepositorySource(
+        RepositorySourceLimits(
+            max_files=100,
+            max_file_bytes=1024,
+            max_total_bytes=4096,
+        ),
+        git_executable=fake_git,
+    )
+
+    with pytest.raises(RepositorySourceError, match="outside the checkout"):
+        source.snapshot(_descriptor(root, revision))
+
+    assert not marker.exists()
+
+
 def test_snapshot_rejects_credential_bearing_remote_without_leaking_credentials(
     tmp_path: Path,
 ) -> None:
