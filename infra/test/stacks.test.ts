@@ -84,7 +84,7 @@ describe("lineage platform stacks", () => {
         monthlyBudgetUsd: "1000",
         baselineMapConcurrency: "10001",
         lambdaReservedConcurrency:
-          "intake=20,control-stage=30,runtime-validation=20,consolidation=10,coverage=15,proposal=10,publication=5,deployment=2",
+          "intake=20,control-stage=30,classification=20,runtime-validation=20,consolidation=10,coverage=15,proposal=10,publication=5,deployment=2",
         enterpriseEndpoint: "https://catalog.example.internal",
         enterpriseEndpointServiceName:
           "com.amazonaws.vpce.us-east-1.vpce-svc-0123456789abcdef0",
@@ -111,7 +111,7 @@ describe("lineage platform stacks", () => {
       monthlyBudgetUsd: "25",
       baselineMapConcurrency: "4",
       lambdaReservedConcurrency:
-        "intake=6,control-stage=2,runtime-validation=2,consolidation=2,coverage=2,proposal=2,publication=1,deployment=1",
+        "intake=6,control-stage=2,classification=2,runtime-validation=2,consolidation=2,coverage=2,proposal=2,publication=1,deployment=1",
       enterpriseEndpoint: "https://catalog.example.internal",
       enterpriseEndpointServiceName:
         "com.amazonaws.vpce.us-east-1.vpce-svc-0123456789abcdef0",
@@ -157,7 +157,7 @@ describe("lineage platform stacks", () => {
         monthlyBudgetUsd: "1000",
         baselineMapConcurrency: "25",
         lambdaReservedConcurrency:
-          "intake=20,control-stage=30,runtime-validation=20,consolidation=10,coverage=15,proposal=10,publication=5,deployment=2",
+          "intake=20,control-stage=30,classification=20,runtime-validation=20,consolidation=10,coverage=15,proposal=10,publication=5,deployment=2",
         enterpriseEndpoint: "https://catalog.example.internal",
         pagingTopicArn: "arn:aws:sns:us-east-1:111111111111:lineage-paging",
         sourceRevision: "test",
@@ -180,7 +180,7 @@ describe("lineage platform stacks", () => {
         monthlyBudgetUsd: "1000",
         baselineMapConcurrency: "25",
         lambdaReservedConcurrency:
-          "intake=20,control-stage=30,runtime-validation=20,consolidation=10,coverage=15,proposal=10,publication=5,deployment=2",
+          "intake=20,control-stage=30,classification=20,runtime-validation=20,consolidation=10,coverage=15,proposal=10,publication=5,deployment=2",
         enterpriseEndpoint: "https://catalog.example.internal",
         enterpriseEndpointServiceName:
           "com.amazonaws.vpce.us-east-1.vpce-svc-0123456789abcdef0",
@@ -377,7 +377,7 @@ describe("lineage platform stacks", () => {
           ),
       ),
     );
-    expect(eniPolicies).toHaveLength(8);
+    expect(eniPolicies).toHaveLength(9);
 
     const dynamoResourceScopes = eniPolicies.flatMap((resource: any) =>
       resource.Properties.PolicyDocument.Statement.filter((statement: any) =>
@@ -387,7 +387,7 @@ describe("lineage platform stacks", () => {
     expect(new Set(dynamoResourceScopes).size).toBeGreaterThanOrEqual(5);
   });
 
-  it("creates four Standard workflows and eight distinct versioned Lambda targets", () => {
+  it("creates four Standard workflows and nine distinct versioned Lambda targets", () => {
     const templates = [
       stacks.intake,
       stacks.orchestration,
@@ -407,10 +407,10 @@ describe("lineage platform stacks", () => {
     const stateMachines = resources.filter(
       (resource: any) => resource.Type === "AWS::StepFunctions::StateMachine",
     );
-    expect(functions).toHaveLength(8);
+    expect(functions).toHaveLength(9);
     expect(alarms.length).toBeGreaterThanOrEqual(15);
-    expect(aliases).toHaveLength(8);
-    expect(deploymentGroups).toHaveLength(8);
+    expect(aliases).toHaveLength(9);
+    expect(deploymentGroups).toHaveLength(9);
     expect(
       deploymentGroups.every(
         (resource: any) =>
@@ -420,7 +420,7 @@ describe("lineage platform stacks", () => {
     expect(roles.length).toBeGreaterThanOrEqual(9);
     expect(stateMachines).toHaveLength(4);
     expect(stateMachines.every((resource: any) => resource.Properties.StateMachineType === "STANDARD")).toBe(true);
-    expect(new Set(functions.map((resource: any) => JSON.stringify(resource.Properties.ImageConfig))).size).toBe(8);
+    expect(new Set(functions.map((resource: any) => JSON.stringify(resource.Properties.ImageConfig))).size).toBe(9);
     expect(
       functions.every(
         (resource: any) =>

@@ -98,6 +98,14 @@ describe("exported executable workflow topology", () => {
     expect(baseline.States.B5.ItemProcessor.States.B5WorkerFailed.Type).toBe("Fail");
   });
 
+  it("routes Baseline classification to the immutable classification target", () => {
+    const baseline = JSON.parse(readFileSync(resolve(workflowsRoot, "baseline.asl.json"), "utf8"));
+
+    expect(baseline.States.B3.Parameters.FunctionName).toBe("${ClassificationAliasArn}");
+    expect(baseline.States.B2.Parameters.FunctionName).toBe("${ControlAliasArn}");
+    expect(baseline.States.B4.Parameters.FunctionName).toBe("${CoverageAliasArn}");
+  });
+
   it("exports D1-D6 for the promotion Lambda without creating a fifth ASL workflow", () => {
     expect(contracts.workflows.DEPLOYMENT.stages.map((stage: any) => stage.stageId)).toEqual([
       "D1",
@@ -144,6 +152,9 @@ describe("exported executable workflow topology", () => {
       const rendered = JSON.stringify(machine.Properties);
       expect(machine.Properties.DefinitionS3Location).toBeDefined();
       expect(rendered).toContain("ControlAliasArn");
+      if (machine.Properties.StateMachineName.endsWith("baseline")) {
+        expect(rendered).toContain("ClassificationAliasArn");
+      }
       expect(rendered).toContain("ScaTaskDefinitionArn");
       expect(rendered).not.toContain("PinnedDefinition");
       const lambdaTargets = JSON.stringify(machine.Properties.DefinitionSubstitutions);

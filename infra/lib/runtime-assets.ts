@@ -81,6 +81,7 @@ export interface LambdaTargetDefinition {
 export const LAMBDA_TARGETS: readonly LambdaTargetDefinition[] = [
   { name: "intake", handler: "lineage_api.entrypoints.aws.intake.handler", memoryMiB: 512, timeoutSeconds: 30, reservedConcurrency: 20 },
   { name: "control-stage", handler: "lineage_api.entrypoints.aws.control_stage.handler", memoryMiB: 512, timeoutSeconds: 60, reservedConcurrency: 30 },
+  { name: "classification", handler: "lineage_api.entrypoints.aws.classification.handler", memoryMiB: 512, timeoutSeconds: 60, reservedConcurrency: 20 },
   { name: "runtime-validation", handler: "lineage_api.entrypoints.aws.runtime_validation.handler", memoryMiB: 1024, timeoutSeconds: 60, reservedConcurrency: 20 },
   { name: "consolidation", handler: "lineage_api.entrypoints.aws.consolidation.handler", memoryMiB: 1536, timeoutSeconds: 180, reservedConcurrency: 10 },
   { name: "coverage", handler: "lineage_api.entrypoints.aws.coverage.handler", memoryMiB: 768, timeoutSeconds: 90, reservedConcurrency: 15 },

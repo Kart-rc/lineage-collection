@@ -6,6 +6,12 @@ import re
 from collections.abc import Callable, Mapping
 from typing import Any, Protocol
 
+from lineage_api.application.stage_ownership import (
+    StageOwner,
+    UnknownStageError,
+    validate_stage_identity,
+)
+
 
 SCHEMA_VERSION = "1.0.0"
 MAX_RESULT_BYTES = 8_192
@@ -63,6 +69,18 @@ def validate_envelope(event: object) -> dict[str, Any]:
 def create_handler(stage: str):
     def handler(event: object, _context: object) -> dict[str, Any]:
         envelope = validate_envelope(event)
+        if stage != "intake":
+            try:
+                owner = validate_stage_identity(
+                    str(envelope.get("workflowKind", "")),
+                    str(envelope.get("workflowVersion", "")),
+                    str(envelope.get("stageId", "")),
+                    str(envelope.get("stageName", "")),
+                )
+            except UnknownStageError as error:
+                raise ValueError("stage target mismatch") from error
+            if owner is StageOwner.SCA or owner.value != stage:
+                raise ValueError("stage target mismatch")
         executed = executor_factory().execute(stage, envelope)
         outcome = executed.get("outcome")
         if outcome not in {"SUCCEEDED", "SKIPPED", "REDRIVE_REQUIRED"}:

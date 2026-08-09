@@ -10,8 +10,8 @@ and query behavior already proven by the local application.
 
 ## 1. Current boundary
 
-The repository already contains four versioned Standard Step Functions workflows, eight Lambda
-targets, an SCA Fargate task, AWS persistence adapters and guarded CDK packaging. Those assets prove
+At design approval the repository contained four versioned Standard Step Functions workflows, eight
+Lambda targets, an SCA Fargate task, AWS persistence adapters and guarded CDK packaging. Those assets prove
 deployment shape, immutable references, leases and redrive structure. They do not yet prove the full
 product behavior in AWS:
 

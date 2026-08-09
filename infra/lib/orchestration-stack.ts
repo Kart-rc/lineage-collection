@@ -37,6 +37,7 @@ const WORKFLOW_FILES = {
 
 export class OrchestrationStack extends Stack {
   readonly control: RuntimeTarget;
+  readonly classification: RuntimeTarget;
   readonly coverage: RuntimeTarget;
   readonly workflows: Record<string, sfn.StateMachine>;
   readonly workflowAliases: Record<string, sfn.CfnStateMachineAlias>;
@@ -50,6 +51,14 @@ export class OrchestrationStack extends Stack {
       target: lambdaTarget("control-stage"),
       environment: props.data.runtimeEnvironment(),
       policyStatements: props.data.dataPlaneStatements("control-stage"),
+    });
+    this.classification = new RuntimeTarget(this, "ClassificationTarget", {
+      config: props.config,
+      network: props.network,
+      imageRepository: props.data.lambdaImageRepository,
+      target: lambdaTarget("classification"),
+      environment: props.data.runtimeEnvironment(),
+      policyStatements: props.data.dataPlaneStatements("classification"),
     });
     this.coverage = new RuntimeTarget(this, "CoverageTarget", {
       config: props.config,
@@ -67,6 +76,7 @@ export class OrchestrationStack extends Stack {
 
     const lambdaVersions = [
       this.control.version,
+      this.classification.version,
       this.coverage.version,
       props.runtime.validation.version,
       props.engines.consolidation.version,
@@ -78,6 +88,7 @@ export class OrchestrationStack extends Stack {
       // deliberately point to immutable Lambda versions, so an in-flight
       // workflow cannot cross a handler rollout boundary.
       ControlAliasArn: this.control.version.functionArn,
+      ClassificationAliasArn: this.classification.version.functionArn,
       CoverageAliasArn: this.coverage.version.functionArn,
       RuntimeValidationAliasArn: props.runtime.validation.version.functionArn,
       ConsolidationAliasArn: props.engines.consolidation.version.functionArn,

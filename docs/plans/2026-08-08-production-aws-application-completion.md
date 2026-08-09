@@ -40,7 +40,12 @@ DynamoDB, SQS, Kinesis, Neptune, Cognito/OIDC, CloudWatch, pytest and Vitest.
 - Modify: `scripts/export_workflow_definitions.py`
 - Modify: `infra/lib/runtime-assets.ts`
 - Modify: `infra/lib/config.ts`
+- Modify: `infra/lib/data-stack.ts`
 - Modify: `infra/lib/orchestration-stack.ts`
+- Modify: `scripts/deploy_ephemeral_aws.sh`
+- Modify: `README.md`
+- Modify: `docs/build-prds/B16-platform-iac-and-delivery.md`
+- Modify: `docs/prototype-coverage.md`
 - Modify generated: `infra/workflows/baseline.asl.json`
 - Modify generated: `infra/workflows/incremental.asl.json`
 - Modify generated: `infra/workflows/pr-gate.asl.json`

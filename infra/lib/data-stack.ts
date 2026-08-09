@@ -220,6 +220,7 @@ export class DataStack extends Stack {
     const tablesByTarget: Record<string, dynamodb.Table[]> = {
       intake: [this.ledgerTable],
       "control-stage": [this.controlTable, this.ledgerTable],
+      classification: [this.controlTable, this.ledgerTable],
       "runtime-validation": [this.controlTable, this.ledgerTable],
       consolidation: [this.controlTable, this.ledgerTable],
       coverage: [this.controlTable, this.ledgerTable],
@@ -231,6 +232,7 @@ export class DataStack extends Stack {
     const bucketsByTarget: Record<string, s3.Bucket[]> = {
       intake: [this.evidenceBucket],
       "control-stage": [this.evidenceBucket, this.packageBucket],
+      classification: [this.evidenceBucket, this.packageBucket],
       "runtime-validation": [this.evidenceBucket],
       consolidation: [this.evidenceBucket],
       coverage: [this.evidenceBucket, this.packageBucket],

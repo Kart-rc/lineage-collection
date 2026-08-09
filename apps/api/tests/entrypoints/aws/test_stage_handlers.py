@@ -8,27 +8,50 @@ from typing import Any
 import pytest
 
 
-def _event() -> dict[str, Any]:
+def _event(
+    *,
+    workflow_kind: str = "INCREMENTAL",
+    stage_id: str = "I1",
+    stage_name: str = "DEDUPLICATE_AND_PIN_ACTIVE_BASE",
+) -> dict[str, Any]:
     return {
         "schemaVersion": "1.0.0",
         "commandId": "cmd-1",
         "correlationId": "corr-1",
         "causationId": "cause-1",
         "idempotencyKey": "idem-1",
-        "workflowKind": "INCREMENTAL",
+        "workflowKind": workflow_kind,
         "workflowVersion": "1.0.0",
-        "stageId": "I1",
-        "stageName": "DEDUPLICATE_AND_PIN_ACTIVE_BASE",
+        "stageId": stage_id,
+        "stageName": stage_name,
         "determinantDigest": "sha256:determinants",
         "input": {"bucket": "evidence", "key": "input.json", "versionId": "v1", "sha256": "a" * 64, "sizeBytes": 10},
     }
 
 
 @pytest.mark.parametrize(
-    "module_name",
-    ("intake", "control_stage", "runtime_validation", "consolidation", "coverage", "proposal", "publication"),
+    ("module_name", "event"),
+    (
+        ("intake", _event()),
+        ("control_stage", _event()),
+        (
+            "classification",
+            _event(
+                workflow_kind="BASELINE",
+                stage_id="B3",
+                stage_name="CLASSIFY_REPOSITORY_AND_PATHS",
+            ),
+        ),
+        ("runtime_validation", _event(stage_id="I6", stage_name="VALIDATE_OPTIONAL_RUNTIME_EVIDENCE")),
+        ("consolidation", _event(stage_id="I7", stage_name="CONSOLIDATE_DELTAS_AND_TOMBSTONES")),
+        ("coverage", _event(stage_id="I3", stage_name="BUILD_DIFFERENTIAL_COVERAGE_PLAN")),
+        ("proposal", _event(stage_id="I9", stage_name="CREATE_DELTA_PROPOSAL")),
+        ("publication", _event(stage_id="I10", stage_name="PUBLISH_WITH_FENCED_PROTOCOL")),
+    ),
 )
-def test_stage_handlers_pass_workflow_identity_to_aws_composition(module_name: str, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_stage_handlers_pass_workflow_identity_to_aws_composition(
+    module_name: str, event: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
     common = importlib.import_module("lineage_api.entrypoints.aws.common")
     module = importlib.import_module(f"lineage_api.entrypoints.aws.{module_name}")
     calls: list[tuple[str, dict[str, Any]]] = []
@@ -39,11 +62,45 @@ def test_stage_handlers_pass_workflow_identity_to_aws_composition(module_name: s
             return {"outcome": "REDRIVE_REQUIRED", "output": envelope["input"]}
 
     monkeypatch.setattr(common, "executor_factory", lambda: Executor())
-    result = module.handler(_event(), object())
+    result = module.handler(event, object())
 
-    assert calls == [(module.STAGE, _event())]
+    assert calls == [(module.STAGE, event)]
     assert result["outcome"] == "REDRIVE_REQUIRED"
     assert result["output"]["versionId"] == "v1"
+
+
+@pytest.mark.parametrize(
+    ("module_name", "event"),
+    (
+        (
+            "control_stage",
+            _event(
+                workflow_kind="BASELINE",
+                stage_id="B3",
+                stage_name="CLASSIFY_REPOSITORY_AND_PATHS",
+            ),
+        ),
+        ("classification", _event(stage_id="I1")),
+    ),
+)
+def test_wrong_functional_target_fails_before_executor_construction(
+    module_name: str, event: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    common = importlib.import_module("lineage_api.entrypoints.aws.common")
+    module = importlib.import_module(f"lineage_api.entrypoints.aws.{module_name}")
+    calls = 0
+
+    def executor_factory():
+        nonlocal calls
+        calls += 1
+        raise AssertionError("executor must not be constructed for a misrouted stage")
+
+    monkeypatch.setattr(common, "executor_factory", executor_factory)
+
+    with pytest.raises(ValueError, match="stage target mismatch"):
+        module.handler(event, object())
+
+    assert calls == 0
 
 
 def test_deployment_handler_checkpoints_d1_through_d6_without_a_fifth_workflow(monkeypatch: pytest.MonkeyPatch) -> None:

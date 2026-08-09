@@ -10,6 +10,7 @@ describe("runtime assets", () => {
     expect(LAMBDA_TARGETS.map((target) => target.name)).toEqual([
       "intake",
       "control-stage",
+      "classification",
       "runtime-validation",
       "consolidation",
       "coverage",
@@ -17,7 +18,7 @@ describe("runtime assets", () => {
       "publication",
       "deployment",
     ]);
-    expect(new Set(LAMBDA_TARGETS.map((target) => target.handler)).size).toBe(8);
+    expect(new Set(LAMBDA_TARGETS.map((target) => target.handler)).size).toBe(9);
     for (const target of LAMBDA_TARGETS) {
       expect(target.memoryMiB).toBeGreaterThanOrEqual(256);
       expect(target.timeoutSeconds).toBeGreaterThan(0);
@@ -50,7 +51,7 @@ describe("runtime assets", () => {
       images: first.images,
     });
     expect(first).toEqual(second);
-    expect(first.handlers).toHaveLength(8);
+    expect(first.handlers).toHaveLength(9);
     expect(first).toHaveProperty("imageAssetDigest", "sha256:image");
     expect(first).toHaveProperty("images.lambda.platform", "linux/amd64");
     expect(first).toHaveProperty("images.lambda.digest", `sha256:${"a".repeat(64)}`);

@@ -11,7 +11,7 @@ promotion and rollback. Component owners own handler entry points, sizing, alarm
 
 ## Boundary
 
-Package eight independently configured Lambda compute units plus the SCA Fargate worker and their
+Package nine independently configured Lambda compute units plus the SCA Fargate worker and their
 managed stores, queues, streams, workflow definitions, graph, telemetry and delivery controls.
 
 ## Contracts

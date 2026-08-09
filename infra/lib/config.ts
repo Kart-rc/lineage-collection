@@ -33,6 +33,7 @@ export function fixtureConfig(): PlatformConfig {
     lambdaReservedConcurrency: {
       intake: 20,
       "control-stage": 30,
+      classification: 20,
       "runtime-validation": 20,
       consolidation: 10,
       coverage: 15,
@@ -99,6 +100,7 @@ function requiredAvailabilityZones(node: Node, region: string): string[] {
 const COMPUTE_TARGETS = [
   "intake",
   "control-stage",
+  "classification",
   "runtime-validation",
   "consolidation",
   "coverage",

@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 from typing import Any
 
+from lineage_api.application.stage_ownership import StageOwner, owner_for_stage
 from lineage_api.application.workflows.definitions import WORKFLOWS, StageDefinition, WorkflowDefinition
 
 
@@ -17,41 +18,15 @@ ASL_PATHS = {
     "PR_GATE": ROOT / "infra/workflows/pr-gate.asl.json",
     "NIGHTLY": ROOT / "infra/workflows/nightly.asl.json",
 }
-TARGET_BY_STAGE = {
-    "B1": "ControlAliasArn",
-    "B2": "ControlAliasArn",
-    "B3": "ControlAliasArn",
-    "B4": "CoverageAliasArn",
-    "B5": "ScaTask",
-    "B6": "RuntimeValidationAliasArn",
-    "B7": "ConsolidationAliasArn",
-    "B8": "ConsolidationAliasArn",
-    "B9": "ProposalAliasArn",
-    "B10": "PublicationAliasArn",
-    "I1": "ControlAliasArn",
-    "I2": "ControlAliasArn",
-    "I3": "CoverageAliasArn",
-    "I4": "ControlAliasArn",
-    "I5": "ScaTask",
-    "I6": "RuntimeValidationAliasArn",
-    "I7": "ConsolidationAliasArn",
-    "I8": "ControlAliasArn",
-    "I9": "ProposalAliasArn",
-    "I10": "PublicationAliasArn",
-    "P1": "ControlAliasArn",
-    "P2": "ControlAliasArn",
-    "P3": "ControlAliasArn",
-    "P4": "ConsolidationAliasArn",
-    "P5": "CoverageAliasArn",
-    "P6": "ControlAliasArn",
-    "P7": "ControlAliasArn",
-    "P8": "ControlAliasArn",
-    "N1": "ControlAliasArn",
-    "N2": "ScaTask",
-    "N3": "PublicationAliasArn",
-    "N4": "ControlAliasArn",
-    "N5": "ControlAliasArn",
-    "N6": "ProposalAliasArn",
+TARGET_BY_OWNER = {
+    StageOwner.CONTROL: "ControlAliasArn",
+    StageOwner.CLASSIFICATION: "ClassificationAliasArn",
+    StageOwner.COVERAGE: "CoverageAliasArn",
+    StageOwner.SCA: "ScaTask",
+    StageOwner.RUNTIME_VALIDATION: "RuntimeValidationAliasArn",
+    StageOwner.CONSOLIDATION: "ConsolidationAliasArn",
+    StageOwner.PROPOSAL: "ProposalAliasArn",
+    StageOwner.PUBLICATION: "PublicationAliasArn",
 }
 
 
@@ -258,7 +233,7 @@ def asl_document(workflow: WorkflowDefinition) -> dict[str, Any]:
     previous: StageDefinition | None = None
     previous_target: str | None = None
     for index, stage in enumerate(workflow.stages):
-        target = TARGET_BY_STAGE[stage.stage_id]
+        target = TARGET_BY_OWNER[owner_for_stage(workflow.kind, stage.stage_id)]
         next_state = workflow.stages[index + 1].stage_id if index + 1 < len(workflow.stages) else "TerminalRoute"
         input_path = _input_path(previous, previous_target)
         if stage.stage_id == "B5":

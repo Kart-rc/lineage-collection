@@ -185,7 +185,7 @@
       ],
       "Next": "B3Outcome",
       "Parameters": {
-        "FunctionName": "${ControlAliasArn}",
+        "FunctionName": "${ClassificationAliasArn}",
         "Payload": {
           "causationId.$": "$.causationId",
           "commandId.$": "$.commandId",

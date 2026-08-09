@@ -11,6 +11,7 @@ import pytest
 MODULES = (
     "intake",
     "control_stage",
+    "classification",
     "runtime_validation",
     "consolidation",
     "coverage",
@@ -55,6 +56,43 @@ def event() -> dict[str, Any]:
     }
 
 
+def stage_event(
+    workflow_kind: str, stage_id: str, stage_name: str
+) -> dict[str, Any]:
+    return {
+        **event(),
+        "workflowKind": workflow_kind,
+        "workflowVersion": "1.0.0",
+        "stageId": stage_id,
+        "stageName": stage_name,
+    }
+
+
+HANDLER_EVENTS = {
+    "intake": event(),
+    "control_stage": stage_event(
+        "INCREMENTAL", "I1", "DEDUPLICATE_AND_PIN_ACTIVE_BASE"
+    ),
+    "classification": stage_event(
+        "BASELINE", "B3", "CLASSIFY_REPOSITORY_AND_PATHS"
+    ),
+    "runtime_validation": stage_event(
+        "INCREMENTAL", "I6", "VALIDATE_OPTIONAL_RUNTIME_EVIDENCE"
+    ),
+    "consolidation": stage_event(
+        "INCREMENTAL", "I7", "CONSOLIDATE_DELTAS_AND_TOMBSTONES"
+    ),
+    "coverage": stage_event(
+        "INCREMENTAL", "I3", "BUILD_DIFFERENTIAL_COVERAGE_PLAN"
+    ),
+    "proposal": stage_event("INCREMENTAL", "I9", "CREATE_DELTA_PROPOSAL"),
+    "publication": stage_event(
+        "INCREMENTAL", "I10", "PUBLISH_WITH_FENCED_PROTOCOL"
+    ),
+    "deployment": event(),
+}
+
+
 @pytest.mark.parametrize("module_name", MODULES)
 def test_each_lambda_handler_uses_a_port_and_returns_a_bounded_reference(
     module_name: str, monkeypatch: pytest.MonkeyPatch
@@ -64,7 +102,8 @@ def test_each_lambda_handler_uses_a_port_and_returns_a_bounded_reference(
     fake = FakeExecutor([])
     monkeypatch.setattr(common, "executor_factory", lambda: fake)
 
-    result = module.handler(event(), object())
+    handler_event = HANDLER_EVENTS[module_name]
+    result = module.handler(handler_event, object())
 
     if module_name == "deployment":
         assert [call[1]["stageId"] for call in fake.calls] == [
@@ -76,7 +115,7 @@ def test_each_lambda_handler_uses_a_port_and_returns_a_bounded_reference(
             "D6",
         ]
     else:
-        assert fake.calls == [(module.STAGE, event())]
+        assert fake.calls == [(module.STAGE, handler_event)]
     assert result["schemaVersion"] == "1.0.0"
     assert result["commandId"] == "cmd-001"
     assert result["correlationId"] == "corr-001"
