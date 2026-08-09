@@ -140,6 +140,8 @@ class PublicationControlPort(Protocol):
         graph_version: str,
         graph_checksum: str,
         package_reference: dict[str, Any],
+        system: str,
+        artifact_digest: str,
         expected_prior: str,
         expected_fence: int,
         next_fence: int,
@@ -159,6 +161,48 @@ class StageProjectionPort(Protocol):
     ) -> int: ...
 
     def namespace_checksum(self, namespace: str) -> list[dict[str, Any]]: ...
+
+
+@runtime_checkable
+class DeploymentControlPort(Protocol):
+    def claim_deployment_event(
+        self, event: dict[str, Any], event_digest: str
+    ) -> dict[str, Any]: ...
+
+    def establish_deployment_order(self, event: dict[str, Any]) -> dict[str, Any]: ...
+
+    def record_deployed_digest(self, event: dict[str, Any]) -> None: ...
+
+    def package_for(
+        self, system: str, environment: str, artifact_digest: str
+    ) -> dict[str, Any] | None: ...
+
+    def active_pointer(self, environment: str) -> dict[str, Any]: ...
+
+    def promote_deployment(
+        self,
+        *,
+        environment: str,
+        graph_version: str,
+        graph_checksum: str,
+        package_reference: dict[str, Any],
+        system: str,
+        artifact_digest: str,
+        expected_prior: str,
+        expected_fence: int,
+        next_fence: int,
+        correlation_id: str,
+        activated_at: datetime,
+        action: str,
+    ) -> dict[str, Any]: ...
+
+    def complete_deployment(
+        self, event: dict[str, Any], result: dict[str, Any]
+    ) -> dict[str, Any]: ...
+
+    def deployment_state(
+        self, system: str, environment: str
+    ) -> dict[str, Any] | None: ...
 
 
 @runtime_checkable

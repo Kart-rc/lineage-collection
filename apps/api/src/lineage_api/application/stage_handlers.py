@@ -20,12 +20,14 @@ from lineage_api.application.stage_execution import (
 )
 from lineage_api.application.ports import (
     ArtifactStorePort,
+    DeploymentControlPort,
     ProposalStorePort,
     PublicationControlPort,
     StageProjectionPort,
 )
 from lineage_api.application.consolidation import derive_consolidation, edge_key_for
 from lineage_api.application.runtime_validation import runtime_window_manifest_errors
+from lineage_api.application.workflows.deployment import DeploymentEvent
 from lineage_api.domain.urns import LineageUrn
 
 
@@ -1202,6 +1204,8 @@ class PublicationStageUseCase:
             graph_version=graph_version,
             graph_checksum=graph_checksum,
             package_reference=package_ref,
+            system=common["system"],
+            artifact_digest=common["artifactDigest"],
             expected_prior=expected_prior,
             expected_fence=active_fence,
             next_fence=next_fence,
@@ -1351,6 +1355,430 @@ class PublicationStageUseCase:
         )
 
 
+_DEPLOYMENT_TERMINALS = frozenset(
+    {
+        "FAILED_NO_CHANGE",
+        "LINEAGE_OUT_OF_SYNC",
+        "FAILED_TERMINAL",
+        "PROMOTED",
+        "ROLLED_BACK",
+    }
+)
+
+
+def _deployment_event(value: object) -> dict[str, Any]:
+    if not isinstance(value, Mapping):
+        raise ValueError("deployment event must be an object")
+    try:
+        event = DeploymentEvent(
+            event_id=_required_text("deployment event ID", value.get("eventId")),
+            event_type=value.get("eventType"),  # type: ignore[arg-type]
+            provider=_required_text("deployment provider", value.get("provider")),
+            provider_sequence=value.get("providerSequence"),  # type: ignore[arg-type]
+            attempt=value.get("attempt"),  # type: ignore[arg-type]
+            system=_required_text("deployment system", value.get("system")),
+            environment=_required_text(
+                "deployment environment", value.get("environment")
+            ),
+            outcome=value.get("outcome"),  # type: ignore[arg-type]
+            artifact_digest=value.get("artifactDigest"),  # type: ignore[arg-type]
+            correlation_id=_required_text(
+                "deployment correlation ID", value.get("correlationId")
+            ),
+            audit_ref=_required_text("deployment audit reference", value.get("auditRef")),
+            occurred_at=_required_text(
+                "deployment occurrence time", value.get("occurredAt")
+            ),
+        )
+    except (TypeError, ValueError) as error:
+        raise ValueError("deployment event schema is invalid") from error
+    if value.get("schemaVersion") != "1.0.0":
+        raise ValueError("deployment event schema is invalid")
+    return event.as_dict()
+
+
+def _hex_sha256(name: str, value: object) -> str:
+    text = _required_text(name, value)
+    if len(text) != 64 or any(character not in "0123456789abcdef" for character in text):
+        raise ValueError(f"{name} must be a lowercase SHA-256 digest")
+    return text
+
+
+class DeploymentStageUseCase:
+    def __init__(
+        self,
+        evidence: ArtifactStorePort,
+        packages: ArtifactStorePort,
+        control: DeploymentControlPort,
+        projection: StageProjectionPort,
+    ) -> None:
+        self._evidence = evidence
+        self._packages = packages
+        self._control = control
+        self._projection = projection
+
+    def execute(
+        self, input_document: object, context: StageExecutionContext
+    ) -> StageExecutionResult:
+        if context.workflow_kind != "DEPLOYMENT":
+            raise ValueError("deployment use case received another workflow")
+        if context.stage_id == "D1":
+            return self._authenticate(input_document, context)
+        document, common, event = self._prior(input_document, context)
+        terminal = document.get("terminalOutcome")
+        if terminal in _DEPLOYMENT_TERMINALS:
+            return self._result(context, common, event, self._carry(document))
+        if context.stage_id == "D2":
+            return self._order(document, common, event, context)
+        if context.stage_id == "D3":
+            return self._record_digest(document, common, event, context)
+        if context.stage_id == "D4":
+            return self._resolve_package(document, common, event, context)
+        if context.stage_id == "D5":
+            return self._promote(document, common, event, context)
+        if context.stage_id == "D6":
+            return self._read_back(document, common, event, context)
+        raise ValueError("deployment use case received an unsupported stage")
+
+    def _authenticate(
+        self, input_document: object, context: StageExecutionContext
+    ) -> StageExecutionResult:
+        if (
+            not isinstance(input_document, Mapping)
+            or input_document.get("schemaVersion") != "1.0.0"
+            or input_document.get("artifactType") != "deployment-event"
+        ):
+            raise ValueError("D1 requires a versioned deployment event")
+        common = _common_context(_lineage_context(input_document))
+        event = _deployment_event(input_document.get("event"))
+        event_artifact = event.get("artifactDigest", "NONE")
+        if (
+            event["system"] != common["system"]
+            or event["environment"] != common["environment"]
+            or event_artifact != common["artifactDigest"]
+            or event["correlationId"] != context.correlation_id
+        ):
+            raise ValueError("deployment event is outside the command scope")
+        authentication_ref = validate_artifact_reference(
+            input_document.get("authenticationRef")
+        )
+        receipt = self._evidence.get(authentication_ref)
+        event_digest = hashlib.sha256(
+            json.dumps(event, sort_keys=True, separators=(",", ":")).encode()
+        ).hexdigest()
+        if (
+            not isinstance(receipt, Mapping)
+            or set(receipt)
+            != {
+                "schemaVersion",
+                "artifactType",
+                "decision",
+                "eventDigest",
+                "provider",
+                "principal",
+                "verifiedAt",
+            }
+            or receipt.get("schemaVersion") != "1.0.0"
+            or receipt.get("artifactType") != "deployment-authentication-receipt"
+            or receipt.get("decision") != "AUTHENTICATED"
+            or receipt.get("eventDigest") != event_digest
+            or receipt.get("provider") != event["provider"]
+        ):
+            raise ValueError("deployment authentication receipt is invalid or unbound")
+        _required_text("authenticated principal", receipt.get("principal"))
+        _accepted_at(receipt.get("verifiedAt"))
+        if event["eventType"] == "MERGE":
+            return self._result(
+                context,
+                common,
+                event,
+                {
+                    "authenticationRef": authentication_ref,
+                    "eventDigest": event_digest,
+                    "terminalOutcome": "FAILED_NO_CHANGE",
+                    "reason": "NON_DEPLOYMENT_EVENT",
+                },
+            )
+        claim = self._control.claim_deployment_event(event, event_digest)
+        if claim.get("disposition") not in {"CLAIMED", "DUPLICATE"}:
+            raise ValueError("deployment event claim is invalid")
+        return self._result(
+            context,
+            common,
+            event,
+            {
+                "authenticationRef": authentication_ref,
+                "eventDigest": event_digest,
+                "claimDisposition": claim["disposition"],
+            },
+        )
+
+    def _order(
+        self,
+        document: Mapping[str, Any],
+        common: dict[str, Any],
+        event: dict[str, Any],
+        context: StageExecutionContext,
+    ) -> StageExecutionResult:
+        order = self._control.establish_deployment_order(event)
+        disposition = order.get("disposition")
+        if disposition not in {"AUTHORITATIVE", "STALE"}:
+            raise ValueError("deployment ordering result is invalid")
+        additions: dict[str, Any] = {
+            "authenticationRef": document["authenticationRef"],
+            "eventDigest": document["eventDigest"],
+            "orderingDisposition": disposition,
+        }
+        if disposition == "STALE":
+            additions.update(
+                terminalOutcome="FAILED_NO_CHANGE", reason="STALE_DEPLOYMENT_EVENT"
+            )
+        return self._result(context, common, event, additions)
+
+    def _record_digest(
+        self,
+        document: Mapping[str, Any],
+        common: dict[str, Any],
+        event: dict[str, Any],
+        context: StageExecutionContext,
+    ) -> StageExecutionResult:
+        self._control.record_deployed_digest(event)
+        additions = self._carry(document)
+        additions["deployedArtifactDigest"] = event.get("artifactDigest")
+        if event["outcome"] == "FAILED":
+            additions.update(
+                terminalOutcome="FAILED_NO_CHANGE", reason="DEPLOYMENT_FAILED"
+            )
+            additions = self._control.complete_deployment(event, additions)
+        return self._result(context, common, event, additions)
+
+    def _resolve_package(
+        self,
+        document: Mapping[str, Any],
+        common: dict[str, Any],
+        event: dict[str, Any],
+        context: StageExecutionContext,
+    ) -> StageExecutionResult:
+        artifact_digest = _required_text(
+            "deployed artifact digest", event.get("artifactDigest")
+        )
+        registry = self._control.package_for(
+            common["system"], common["environment"], artifact_digest
+        )
+        if registry is None:
+            outcome = {
+                **self._carry(document),
+                "terminalOutcome": "LINEAGE_OUT_OF_SYNC",
+                "reason": "EXACT_PACKAGE_NOT_FOUND",
+            }
+            outcome = self._control.complete_deployment(event, outcome)
+            return self._result(
+                context,
+                common,
+                event,
+                outcome,
+            )
+        package_ref = validate_artifact_reference(registry.get("packageReference"))
+        package = self._packages.get(package_ref)
+        if (
+            not isinstance(package, Mapping)
+            or package.get("schemaVersion") != "1.0.0"
+            or package.get("artifactType") != "lineage-package"
+            or package.get("packageId") != registry.get("packageId")
+            or package.get("system") != common["system"]
+            or package.get("environment") != common["environment"]
+            or package.get("artifactDigest") != artifact_digest
+            or package.get("graphVersion") != registry.get("graphVersion")
+            or package.get("graphChecksum") != registry.get("graphChecksum")
+        ):
+            raise ValueError("registered lineage package does not match its artifact")
+        validate_artifact_reference(package.get("approvalRef"))
+        validate_artifact_reference(package.get("edgeSetRef"))
+        graph_checksum = _hex_sha256(
+            "package graph checksum", package.get("graphChecksum")
+        )
+        actual_checksum = _projection_checksum(
+            _projection_rows(
+                self._projection.namespace_checksum(str(package["graphVersion"]))
+            )
+        )
+        if actual_checksum != graph_checksum:
+            raise ValueError("lineage package projection checksum does not match")
+        return self._result(
+            context,
+            common,
+            event,
+            {
+                **self._carry(document),
+                "lineagePackageId": package["packageId"],
+                "packageRef": package_ref,
+                "graphVersion": package["graphVersion"],
+                "graphChecksum": graph_checksum,
+            },
+        )
+
+    def _promote(
+        self,
+        document: Mapping[str, Any],
+        common: dict[str, Any],
+        event: dict[str, Any],
+        context: StageExecutionContext,
+    ) -> StageExecutionResult:
+        graph_version = _required_text("deployment graph version", document.get("graphVersion"))
+        graph_checksum = _hex_sha256(
+            "deployment graph checksum", document.get("graphChecksum")
+        )
+        package_ref = validate_artifact_reference(document.get("packageRef"))
+        pointer = self._control.active_pointer(common["environment"])
+        if (
+            pointer.get("graphVersion") == graph_version
+            and pointer.get("correlationId") == context.correlation_id
+        ):
+            if (
+                pointer.get("graphChecksum") not in {None, graph_checksum}
+                or (
+                    pointer.get("package") is not None
+                    and pointer.get("package") != package_ref
+                )
+            ):
+                raise ValueError("already active deployment package does not match")
+            promoted = pointer
+        else:
+            fence = pointer.get("fence")
+            if not isinstance(fence, int) or isinstance(fence, bool) or fence < 0:
+                raise ValueError("deployment pointer fence is invalid")
+            promoted = self._control.promote_deployment(
+                environment=common["environment"],
+                graph_version=graph_version,
+                graph_checksum=graph_checksum,
+                package_reference=package_ref,
+                system=common["system"],
+                artifact_digest=common["artifactDigest"],
+                expected_prior=_required_text(
+                    "deployment prior graph", pointer.get("graphVersion")
+                ),
+                expected_fence=fence,
+                next_fence=fence + 1,
+                correlation_id=context.correlation_id,
+                activated_at=datetime.fromisoformat(
+                    str(event["occurredAt"]).replace("Z", "+00:00")
+                ),
+                action=(
+                    "DEPLOYMENT_ROLLED_BACK"
+                    if event["eventType"] == "ROLLBACK"
+                    else "DEPLOYMENT_PROMOTED"
+                ),
+            )
+        return self._result(
+            context,
+            common,
+            event,
+            {**self._carry(document), "pointer": promoted},
+        )
+
+    def _read_back(
+        self,
+        document: Mapping[str, Any],
+        common: dict[str, Any],
+        event: dict[str, Any],
+        context: StageExecutionContext,
+    ) -> StageExecutionResult:
+        pointer = self._control.active_pointer(common["environment"])
+        graph_version = _required_text("deployment graph version", document.get("graphVersion"))
+        graph_checksum = _hex_sha256(
+            "deployment graph checksum", document.get("graphChecksum")
+        )
+        package_ref = validate_artifact_reference(document.get("packageRef"))
+        actual_checksum = _projection_checksum(
+            _projection_rows(self._projection.namespace_checksum(graph_version))
+        )
+        if (
+            pointer.get("graphVersion") != graph_version
+            or pointer.get("graphChecksum") not in {None, graph_checksum}
+            or pointer.get("correlationId") != context.correlation_id
+            or (
+                pointer.get("package") is not None
+                and pointer.get("package") != package_ref
+            )
+            or actual_checksum != graph_checksum
+        ):
+            raise ValueError("deployment read-back verification failed")
+        terminal = "ROLLED_BACK" if event["eventType"] == "ROLLBACK" else "PROMOTED"
+        result = {
+            **self._carry(document),
+            "terminalOutcome": terminal,
+            "reason": None,
+            "pointer": pointer,
+        }
+        persisted = self._control.complete_deployment(event, result)
+        stored = self._control.deployment_state(common["system"], common["environment"])
+        if (
+            stored is None
+            or stored.get("eventId") != event["eventId"]
+            or stored.get("lineagePackageId") != document.get("lineagePackageId")
+            or stored.get("graphVersion") != graph_version
+        ):
+            raise ValueError("deployment state read-back verification failed")
+        return self._result(context, common, event, persisted)
+
+    @staticmethod
+    def _prior(
+        input_document: object, context: StageExecutionContext
+    ) -> tuple[Mapping[str, Any], dict[str, Any], dict[str, Any]]:
+        if (
+            not isinstance(input_document, Mapping)
+            or input_document.get("schemaVersion") != "1.0.0"
+            or input_document.get("artifactType")
+            != f"deployment-{int(context.stage_id[1:]) - 1}-result"
+        ):
+            raise ValueError("deployment stage input is not its exact prior result")
+        common = _common_context(_lineage_context(input_document))
+        event = _deployment_event(input_document.get("event"))
+        return input_document, common, event
+
+    @staticmethod
+    def _carry(document: Mapping[str, Any]) -> dict[str, Any]:
+        excluded = {
+            "schemaVersion",
+            "artifactType",
+            "workflowKind",
+            "workflowVersion",
+            "stageId",
+            "stageName",
+            "commandId",
+            "correlationId",
+            "source",
+            "context",
+            "event",
+        }
+        return {key: value for key, value in document.items() if key not in excluded}
+
+    @staticmethod
+    def _result(
+        context: StageExecutionContext,
+        common: dict[str, Any],
+        event: dict[str, Any],
+        additions: Mapping[str, Any],
+    ) -> StageExecutionResult:
+        return StageExecutionResult(
+            artifact_kind=f"deployment-{context.stage_id.lower()}-result",
+            schema_version="1.0.0",
+            document={
+                "schemaVersion": "1.0.0",
+                "artifactType": f"deployment-{context.stage_id[1:]}-result",
+                "workflowKind": context.workflow_kind,
+                "workflowVersion": context.workflow_version,
+                "stageId": context.stage_id,
+                "stageName": context.stage_name,
+                "commandId": context.command_id,
+                "correlationId": context.correlation_id,
+                "source": dict(context.input_reference),
+                "context": common,
+                "event": event,
+                **dict(additions),
+            },
+        )
+
 def production_stage_use_cases(
     artifacts: ArtifactStorePort | None = None,
     proposal_store: ProposalStorePort | None = None,
@@ -1390,6 +1818,11 @@ def production_stage_use_cases(
             use_cases[("BASELINE", "B10")] = publication
             use_cases[("INCREMENTAL", "I10")] = publication
             use_cases[("NIGHTLY", "N3")] = publication
+            deployment = DeploymentStageUseCase(
+                artifacts, packages, publication_control, projection
+            )
+            for index in range(1, 7):
+                use_cases[("DEPLOYMENT", f"D{index}")] = deployment
     return use_cases
 
 
@@ -1399,6 +1832,7 @@ __all__ = [
     "ConsolidationStageUseCase",
     "ProposalStageUseCase",
     "PublicationStageUseCase",
+    "DeploymentStageUseCase",
     "RuntimeValidationStageUseCase",
     "production_stage_use_cases",
 ]

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hashlib
+import json
 from copy import deepcopy
 
 import pytest
@@ -13,6 +15,7 @@ from lineage_api.application.stage_handlers import (
     ClassificationStageUseCase,
     ConsolidationStageUseCase,
     CoverageStageUseCase,
+    DeploymentStageUseCase,
     PublicationStageUseCase,
     ProposalStageUseCase,
     RuntimeValidationStageUseCase,
@@ -344,6 +347,59 @@ class PackageArtifacts:
 
     def get(self, reference: object) -> object:
         raise AssertionError(f"unexpected package read: {reference}")
+
+
+class DeploymentControl(PublicationPointer):
+    def __init__(self, package: dict[str, object]) -> None:
+        super().__init__()
+        self.package = package
+        self.event_digest: str | None = None
+        self.state: dict[str, object] | None = None
+        self.order_disposition = "AUTHORITATIVE"
+        self.complete_calls = 0
+
+    def claim_deployment_event(
+        self, event: dict[str, object], event_digest: str
+    ) -> dict[str, object]:
+        if self.event_digest not in {None, event_digest}:
+            raise ValueError("deployment event identity conflict")
+        disposition = "CLAIMED" if self.event_digest is None else "DUPLICATE"
+        self.event_digest = event_digest
+        return {"disposition": disposition}
+
+    def establish_deployment_order(
+        self, event: dict[str, object]
+    ) -> dict[str, object]:
+        return {"disposition": self.order_disposition}
+
+    def record_deployed_digest(self, event: dict[str, object]) -> None:
+        self.state = {"eventId": event["eventId"], "status": "RECORDED"}
+
+    def package_for(
+        self, system: str, environment: str, artifact_digest: str
+    ) -> dict[str, object] | None:
+        if (
+            system,
+            environment,
+            artifact_digest,
+        ) == ("payments", "staging", "sha256:artifact-v2"):
+            return deepcopy(self.package)
+        return None
+
+    def promote_deployment(self, **request: object) -> dict[str, object]:
+        return self.activate_pointer(**request)
+
+    def complete_deployment(
+        self, event: dict[str, object], result: dict[str, object]
+    ) -> dict[str, object]:
+        self.complete_calls += 1
+        self.state = {**deepcopy(result), "eventId": event["eventId"]}
+        return deepcopy(self.state)
+
+    def deployment_state(
+        self, system: str, environment: str
+    ) -> dict[str, object] | None:
+        return deepcopy(self.state)
 
 
 def _assertion_reference() -> dict[str, object]:
@@ -1362,6 +1418,215 @@ def test_nightly_publication_stage_verifies_the_exact_projection_checksum() -> N
     assert verified.artifact_kind == "projection-verification"
     assert verified.document["status"] == "VERIFIED"
     assert verified.document["graphVersion"] == published["graphVersion"]
+
+
+_DEPLOYMENT_STAGES = (
+    ("D1", "AUTHENTICATE_AND_DEDUPLICATE_OUTCOME"),
+    ("D2", "ESTABLISH_AUTHORITATIVE_ORDERING"),
+    ("D3", "RECORD_ACTUAL_DEPLOYED_DIGEST"),
+    ("D4", "RESOLVE_EXACT_APPROVED_LINEAGE_PACKAGE"),
+    ("D5", "RESERVE_FENCE_AND_PROMOTE"),
+    ("D6", "READ_BACK_AND_VERIFY_CORRELATION"),
+)
+
+
+def _deployment_context(stage_id: str, stage_name: str) -> StageExecutionContext:
+    return StageExecutionContext(
+        target="deployment",
+        workflow_kind="DEPLOYMENT",
+        workflow_version="1.0.0",
+        stage_id=stage_id,
+        stage_name=stage_name,
+        command_id="cmd-deployment",
+        correlation_id="corr-deployment",
+        input_reference=_context().input_reference,
+    )
+
+
+def _deployment_fixture() -> tuple[
+    dict[str, object],
+    ConsolidationArtifacts,
+    ConsolidationArtifacts,
+    DeploymentControl,
+    PublicationProjection,
+]:
+    event = {
+        "schemaVersion": "1.0.0",
+        "eventId": "deploy-002",
+        "eventType": "DEPLOYMENT",
+        "provider": "github-actions",
+        "providerSequence": 2,
+        "attempt": 1,
+        "system": "payments",
+        "environment": "staging",
+        "outcome": "SUCCEEDED",
+        "artifactDigest": "sha256:artifact-v2",
+        "correlationId": "corr-deployment",
+        "auditRef": "provider-audit://deploy-002",
+        "occurredAt": "2026-08-08T14:00:00Z",
+    }
+    event_digest = hashlib.sha256(
+        json.dumps(event, sort_keys=True, separators=(",", ":")).encode()
+    ).hexdigest()
+    authentication_ref = {
+        "bucket": "evidence",
+        "key": "deployment-auth/deploy-002.json",
+        "versionId": "auth-v1",
+        "sha256": "3" * 64,
+        "sizeBytes": 600,
+    }
+    input_document = {
+        "schemaVersion": "1.0.0",
+        "artifactType": "deployment-event",
+        "context": {
+            "repository": "payments-pipeline",
+            "artifactDigest": "sha256:artifact-v2",
+            "environment": "staging",
+            "system": "payments",
+            "acceptedAt": "2026-08-08T14:00:01Z",
+        },
+        "event": event,
+        "authenticationRef": authentication_ref,
+    }
+    rows = [
+        {
+            "edgeId": "edge-001",
+            "source": FROM_URN,
+            "target": TO_URN,
+            "type": "DERIVES",
+        }
+    ]
+    graph_checksum = hashlib.sha256(
+        json.dumps(rows, sort_keys=True, separators=(",", ":")).encode()
+    ).hexdigest()
+    package_ref = {
+        "bucket": "packages",
+        "key": "packages/staging/package-deploy-v2.json",
+        "versionId": "package-v2",
+        "sha256": "4" * 64,
+        "sizeBytes": 1800,
+    }
+    package = {
+        "schemaVersion": "1.0.0",
+        "artifactType": "lineage-package",
+        "packageId": "package-deploy-v2",
+        "system": "payments",
+        "environment": "staging",
+        "artifactDigest": "sha256:artifact-v2",
+        "graphVersion": "graph-v2",
+        "graphChecksum": graph_checksum,
+        "approvalRef": _approved_proposal_decision()["proposal"]["approvalRef"],
+        "edgeSetRef": _proposal_input()["edgeSetRef"],
+    }
+    evidence = ConsolidationArtifacts(
+        {
+            authentication_ref["key"]: {
+                "schemaVersion": "1.0.0",
+                "artifactType": "deployment-authentication-receipt",
+                "decision": "AUTHENTICATED",
+                "eventDigest": event_digest,
+                "provider": "github-actions",
+                "principal": "repo:payments/actions/deploy",
+                "verifiedAt": "2026-08-08T14:00:00Z",
+            }
+        }
+    )
+    packages = ConsolidationArtifacts({package_ref["key"]: package})
+    registry = {
+        "packageReference": package_ref,
+        "packageId": "package-deploy-v2",
+        "graphVersion": "graph-v2",
+        "graphChecksum": graph_checksum,
+    }
+    control = DeploymentControl(registry)
+    projection = PublicationProjection()
+    projection.namespaces["graph-v2"] = rows
+    return input_document, evidence, packages, control, projection
+
+
+def test_deployment_d1_through_d6_promotes_only_the_authenticated_exact_package() -> None:
+    document, evidence, packages, control, projection = _deployment_fixture()
+    use_case = DeploymentStageUseCase(evidence, packages, control, projection)
+
+    for stage_id, stage_name in _DEPLOYMENT_STAGES:
+        result = use_case.execute(
+            document, _deployment_context(stage_id, stage_name)
+        )
+        assert result.artifact_kind == f"deployment-{stage_id.lower()}-result"
+        document = result.document
+
+    assert document["terminalOutcome"] == "PROMOTED"
+    assert document["deployedArtifactDigest"] == "sha256:artifact-v2"
+    assert document["lineagePackageId"] == "package-deploy-v2"
+    assert document["graphVersion"] == "graph-v2"
+    assert document["pointer"]["fence"] == 8
+    assert control.pointer["graphVersion"] == "graph-v2"
+    assert control.state["eventId"] == "deploy-002"
+
+
+def test_deployment_d1_rejects_an_unbound_authentication_receipt_before_claim() -> None:
+    document, evidence, packages, control, projection = _deployment_fixture()
+    evidence.documents[document["authenticationRef"]["key"]]["eventDigest"] = "0" * 64
+
+    with pytest.raises(ValueError, match="authentication receipt"):
+        DeploymentStageUseCase(evidence, packages, control, projection).execute(
+            document, _deployment_context(*_DEPLOYMENT_STAGES[0])
+        )
+
+    assert control.event_digest is None
+    assert control.activations == 0
+
+
+@pytest.mark.parametrize(
+    ("event_type", "outcome", "reason"),
+    (
+        ("DEPLOYMENT", "FAILED", "DEPLOYMENT_FAILED"),
+        ("MERGE", "SUCCEEDED", "NON_DEPLOYMENT_EVENT"),
+    ),
+)
+def test_non_successful_deployment_paths_never_move_the_pointer(
+    event_type: str, outcome: str, reason: str
+) -> None:
+    document, evidence, packages, control, projection = _deployment_fixture()
+    event = document["event"]
+    event["eventType"] = event_type
+    event["outcome"] = outcome
+    event.pop("artifactDigest")
+    document["context"]["artifactDigest"] = "NONE"
+    event_digest = hashlib.sha256(
+        json.dumps(event, sort_keys=True, separators=(",", ":")).encode()
+    ).hexdigest()
+    auth_key = document["authenticationRef"]["key"]
+    evidence.documents[auth_key]["eventDigest"] = event_digest
+    use_case = DeploymentStageUseCase(evidence, packages, control, projection)
+
+    for stage_id, stage_name in _DEPLOYMENT_STAGES:
+        result = use_case.execute(
+            document, _deployment_context(stage_id, stage_name)
+        )
+        document = result.document
+
+    assert document["terminalOutcome"] == "FAILED_NO_CHANGE"
+    assert document["reason"] == reason
+    assert control.activations == 0
+    assert control.pointer["graphVersion"] == "graph-v1"
+    if event_type == "MERGE":
+        assert control.event_digest is None
+
+
+def test_stale_deployment_order_does_not_overwrite_the_authoritative_state() -> None:
+    document, evidence, packages, control, projection = _deployment_fixture()
+    control.order_disposition = "STALE"
+    use_case = DeploymentStageUseCase(evidence, packages, control, projection)
+    for stage_id, stage_name in _DEPLOYMENT_STAGES[:2]:
+        document = use_case.execute(
+            document, _deployment_context(stage_id, stage_name)
+        ).document
+
+    assert document["terminalOutcome"] == "FAILED_NO_CHANGE"
+    assert document["reason"] == "STALE_DEPLOYMENT_EVENT"
+    assert control.complete_calls == 0
+    assert control.activations == 0
 
 
 def test_context_fails_closed_when_target_does_not_own_the_exact_stage() -> None:

@@ -371,6 +371,8 @@ class DynamoDbControlAdapter:
         graph_version: str,
         graph_checksum: str,
         package_reference: dict[str, Any],
+        system: str,
+        artifact_digest: str,
         expected_prior: str,
         expected_fence: int,
         next_fence: int,
@@ -379,6 +381,8 @@ class DynamoDbControlAdapter:
     ) -> dict[str, Any]:
         payload = {
             "environment": environment,
+            "system": system,
+            "artifactDigest": artifact_digest,
             "graphVersion": graph_version,
             "graphChecksum": graph_checksum,
             "packageRef": package_reference,
@@ -433,6 +437,35 @@ class DynamoDbControlAdapter:
                             "ConditionExpression": "attribute_not_exists(pk)",
                         }
                     },
+                    {
+                        "Put": {
+                            "TableName": self.ledger_table,
+                            "Item": {
+                                "pk": {"S": f"PACKAGE#{system}#{environment}"},
+                                "sk": {"S": f"ARTIFACT#{artifact_digest}"},
+                                "packageReference": {"S": _json(package_reference)},
+                                "packageId": {
+                                    "S": str(package_reference["key"])
+                                    .rsplit("/", 1)[-1]
+                                    .removesuffix(".json")
+                                },
+                                "graphVersion": {"S": graph_version},
+                                "graphChecksum": {"S": graph_checksum},
+                                "registeredAt": {"S": _utc(activated_at)},
+                            },
+                            "ConditionExpression": (
+                                "attribute_not_exists(pk) OR "
+                                "(packageReference = :packageReference AND "
+                                "graphVersion = :graphVersion AND "
+                                "graphChecksum = :graphChecksum)"
+                            ),
+                            "ExpressionAttributeValues": {
+                                ":packageReference": {"S": _json(package_reference)},
+                                ":graphVersion": {"S": graph_version},
+                                ":graphChecksum": {"S": graph_checksum},
+                            },
+                        }
+                    },
                 ],
                 ClientRequestToken=identity[:36],
             )
@@ -456,6 +489,308 @@ class DynamoDbControlAdapter:
             "package": json.loads(_json(package_reference)),
             "fence": next_fence,
             "correlationId": correlation_id,
+        }
+
+    def package_for(
+        self, system: str, environment: str, artifact_digest: str
+    ) -> dict[str, Any] | None:
+        response = aws_call(
+            "dynamodb.package_for",
+            self.client.get_item,
+            TableName=self.ledger_table,
+            Key={
+                "pk": {"S": f"PACKAGE#{system}#{environment}"},
+                "sk": {"S": f"ARTIFACT#{artifact_digest}"},
+            },
+            ConsistentRead=True,
+        )
+        item = response.get("Item")
+        if not item:
+            return None
+        return {
+            "packageReference": json.loads(item["packageReference"]["S"]),
+            "packageId": item["packageId"]["S"],
+            "graphVersion": item["graphVersion"]["S"],
+            "graphChecksum": item["graphChecksum"]["S"],
+        }
+
+    def claim_deployment_event(
+        self, event: dict[str, Any], event_digest: str
+    ) -> dict[str, Any]:
+        event_id = str(event["eventId"])
+        try:
+            aws_call(
+                "dynamodb.claim_deployment_event",
+                self.client.put_item,
+                TableName=self.control_table,
+                Item={
+                    "pk": {"S": f"DEPLOYMENT_EVENT#{event_id}"},
+                    "sk": {"S": "EVENT"},
+                    "eventDigest": {"S": event_digest},
+                    "document": {"S": _json(event)},
+                    "correlationId": {"S": str(event["correlationId"])},
+                },
+                ConditionExpression="attribute_not_exists(pk)",
+            )
+        except AwsConflictError:
+            response = aws_call(
+                "dynamodb.get_deployment_event",
+                self.client.get_item,
+                TableName=self.control_table,
+                Key={
+                    "pk": {"S": f"DEPLOYMENT_EVENT#{event_id}"},
+                    "sk": {"S": "EVENT"},
+                },
+                ConsistentRead=True,
+            )
+            item = response.get("Item")
+            if item and item.get("eventDigest", {}).get("S") == event_digest:
+                return {"disposition": "DUPLICATE"}
+            raise
+        return {"disposition": "CLAIMED"}
+
+    def establish_deployment_order(self, event: dict[str, Any]) -> dict[str, Any]:
+        key = self._deployment_state_key(
+            str(event["system"]), str(event["environment"])
+        )
+        try:
+            aws_call(
+                "dynamodb.establish_deployment_order",
+                self.client.update_item,
+                TableName=self.control_table,
+                Key=key,
+                UpdateExpression=(
+                    "SET provider = :provider, providerSequence = :providerSequence, "
+                    "attempt = :attempt, eventId = :eventId, correlationId = :correlationId, "
+                    "#status = :authoritative"
+                ),
+                ConditionExpression=(
+                    "attribute_not_exists(providerSequence) OR eventId = :eventId OR "
+                    "(provider = :provider AND "
+                    "(providerSequence < :providerSequence OR "
+                    "(providerSequence = :providerSequence AND attempt < :attempt)))"
+                ),
+                ExpressionAttributeNames={"#status": "status"},
+                ExpressionAttributeValues={
+                    ":provider": {"S": str(event["provider"])},
+                    ":providerSequence": {"N": str(event["providerSequence"])},
+                    ":attempt": {"N": str(event["attempt"])},
+                    ":eventId": {"S": str(event["eventId"])},
+                    ":correlationId": {"S": str(event["correlationId"])},
+                    ":authoritative": {"S": "AUTHORITATIVE"},
+                },
+            )
+        except AwsConflictError:
+            current = self.deployment_state(
+                str(event["system"]), str(event["environment"])
+            )
+            if current and current.get("eventId") == event["eventId"]:
+                return {"disposition": "AUTHORITATIVE"}
+            return {"disposition": "STALE"}
+        return {"disposition": "AUTHORITATIVE"}
+
+    def record_deployed_digest(self, event: dict[str, Any]) -> None:
+        artifact = event.get("artifactDigest")
+        aws_call(
+            "dynamodb.record_deployed_digest",
+            self.client.update_item,
+            TableName=self.control_table,
+            Key=self._deployment_state_key(
+                str(event["system"]), str(event["environment"])
+            ),
+            UpdateExpression=(
+                "SET deployedArtifactDigest = :artifactDigest, outcome = :outcome, "
+                "auditRef = :auditRef, occurredAt = :occurredAt, #status = :recorded"
+            ),
+            ConditionExpression=(
+                "eventId = :eventId AND correlationId = :correlationId AND "
+                "(#status = :recorded OR result = :result)"
+            ),
+            ExpressionAttributeNames={"#status": "status"},
+            ExpressionAttributeValues={
+                ":artifactDigest": (
+                    {"S": str(artifact)} if artifact is not None else {"NULL": True}
+                ),
+                ":outcome": {"S": str(event["outcome"])},
+                ":auditRef": {"S": str(event["auditRef"])},
+                ":occurredAt": {"S": str(event["occurredAt"])},
+                ":recorded": {"S": "RECORDED"},
+                ":eventId": {"S": str(event["eventId"])},
+                ":correlationId": {"S": str(event["correlationId"])},
+            },
+        )
+
+    def promote_deployment(
+        self,
+        *,
+        environment: str,
+        graph_version: str,
+        graph_checksum: str,
+        package_reference: dict[str, Any],
+        system: str,
+        artifact_digest: str,
+        expected_prior: str,
+        expected_fence: int,
+        next_fence: int,
+        correlation_id: str,
+        activated_at: datetime,
+        action: str,
+    ) -> dict[str, Any]:
+        if action not in {"DEPLOYMENT_PROMOTED", "DEPLOYMENT_ROLLED_BACK"}:
+            raise ValueError("deployment promotion action is invalid")
+        payload = {
+            "environment": environment,
+            "system": system,
+            "artifactDigest": artifact_digest,
+            "graphVersion": graph_version,
+            "graphChecksum": graph_checksum,
+            "packageRef": package_reference,
+            "fence": next_fence,
+            "action": action,
+        }
+        identity = hashlib.sha256(_json(payload).encode()).hexdigest()
+        try:
+            aws_call(
+                "dynamodb.promote_deployment",
+                self.client.transact_write_items,
+                TransactItems=[
+                    {
+                        "Update": {
+                            "TableName": self.pointer_table,
+                            "Key": {
+                                "pk": {"S": f"ENV#{environment}"},
+                                "sk": {"S": "ACTIVE"},
+                            },
+                            "UpdateExpression": (
+                                "SET graphVersion = :graphVersion, graphChecksum = :graphChecksum, "
+                                "packageReference = :packageReference, fence = :nextFence, "
+                                "correlationId = :correlationId, activatedAt = :activatedAt"
+                            ),
+                            "ConditionExpression": (
+                                "fence = :expectedFence AND graphVersion = :expectedPrior"
+                            ),
+                            "ExpressionAttributeValues": {
+                                ":graphVersion": {"S": graph_version},
+                                ":graphChecksum": {"S": graph_checksum},
+                                ":packageReference": {"S": _json(package_reference)},
+                                ":nextFence": {"N": str(next_fence)},
+                                ":correlationId": {"S": correlation_id},
+                                ":activatedAt": {"S": _utc(activated_at)},
+                                ":expectedFence": {"N": str(expected_fence)},
+                                ":expectedPrior": {"S": expected_prior},
+                            },
+                        }
+                    },
+                    {
+                        "Put": {
+                            "TableName": self.ledger_table,
+                            "Item": {
+                                "pk": {"S": f"OUTBOX#deployment-{identity}"},
+                                "sk": {"S": "EVENT"},
+                                "topic": {"S": action},
+                                "correlationId": {"S": correlation_id},
+                                "payload": {"S": _json(payload)},
+                                "status": {"S": "PENDING"},
+                                "createdAt": {"S": _utc(activated_at)},
+                            },
+                            "ConditionExpression": "attribute_not_exists(pk)",
+                        }
+                    },
+                    {
+                        "ConditionCheck": {
+                            "TableName": self.control_table,
+                            "Key": self._deployment_state_key(system, environment),
+                            "ConditionExpression": (
+                                "correlationId = :correlationId AND #status = :recorded"
+                            ),
+                            "ExpressionAttributeNames": {"#status": "status"},
+                            "ExpressionAttributeValues": {
+                                ":correlationId": {"S": correlation_id},
+                                ":recorded": {"S": "RECORDED"},
+                            },
+                        }
+                    },
+                ],
+                ClientRequestToken=identity[:36],
+            )
+        except AwsConflictError as error:
+            existing = self.active_pointer(environment)
+            if (
+                existing.get("graphVersion") == graph_version
+                and existing.get("graphChecksum") == graph_checksum
+                and existing.get("package") == package_reference
+                and existing.get("fence") == next_fence
+                and existing.get("correlationId") == correlation_id
+            ):
+                return existing
+            raise AwsStaleFenceError(
+                f"deployment promotion for {environment} lost fence {expected_fence}"
+            ) from error
+        return {
+            "environment": environment,
+            "graphVersion": graph_version,
+            "graphChecksum": graph_checksum,
+            "package": json.loads(_json(package_reference)),
+            "fence": next_fence,
+            "correlationId": correlation_id,
+        }
+
+    def complete_deployment(
+        self, event: dict[str, Any], result: dict[str, Any]
+    ) -> dict[str, Any]:
+        persisted = {**result, "eventId": str(event["eventId"])}
+        if len(_json(persisted).encode()) > 350_000:
+            raise ValueError("deployment result exceeds its DynamoDB safety bound")
+        aws_call(
+            "dynamodb.complete_deployment",
+            self.client.update_item,
+            TableName=self.control_table,
+            Key=self._deployment_state_key(
+                str(event["system"]), str(event["environment"])
+            ),
+            UpdateExpression="SET #status = :completed, result = :result",
+            ConditionExpression="eventId = :eventId AND correlationId = :correlationId",
+            ExpressionAttributeNames={"#status": "status"},
+            ExpressionAttributeValues={
+                ":completed": {"S": str(result["terminalOutcome"])},
+                ":recorded": {"S": "RECORDED"},
+                ":result": {"S": _json(persisted)},
+                ":eventId": {"S": str(event["eventId"])},
+                ":correlationId": {"S": str(event["correlationId"])},
+            },
+        )
+        return json.loads(_json(persisted))
+
+    def deployment_state(
+        self, system: str, environment: str
+    ) -> dict[str, Any] | None:
+        response = aws_call(
+            "dynamodb.deployment_state",
+            self.client.get_item,
+            TableName=self.control_table,
+            Key=self._deployment_state_key(system, environment),
+            ConsistentRead=True,
+        )
+        item = response.get("Item")
+        if not item:
+            return None
+        if "result" in item:
+            result = json.loads(item["result"]["S"])
+            if isinstance(result, dict):
+                return result
+            raise ValueError("stored deployment result is invalid")
+        state: dict[str, Any] = {"eventId": item["eventId"]["S"]}
+        if "correlationId" in item:
+            state["correlationId"] = item["correlationId"]["S"]
+        if "status" in item:
+            state["status"] = item["status"]["S"]
+        return state
+
+    @staticmethod
+    def _deployment_state_key(system: str, environment: str) -> dict[str, dict[str, str]]:
+        return {
+            "pk": {"S": f"DEPLOYMENT#{system}#{environment}"},
+            "sk": {"S": "STATE"},
         }
 
     def swap_pointer(

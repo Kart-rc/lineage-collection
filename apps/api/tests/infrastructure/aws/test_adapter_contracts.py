@@ -193,6 +193,8 @@ def test_dynamodb_reads_and_atomically_activates_pointer_with_outbox() -> None:
         graph_version="graph-v2",
         graph_checksum="b" * 64,
         package_reference=package_reference,
+        system="payments",
+        artifact_digest="sha256:artifact-v2",
         expected_prior="graph-v1",
         expected_fence=7,
         next_fence=8,
@@ -208,6 +210,9 @@ def test_dynamodb_reads_and_atomically_activates_pointer_with_outbox() -> None:
     outbox_put = transaction[1]["Put"]
     assert outbox_put["TableName"] == "ledger"
     assert outbox_put["Item"]["topic"] == {"S": "PUBLICATION_ACTIVATED"}
+    package_put = transaction[2]["Put"]
+    assert package_put["Item"]["pk"] == {"S": "PACKAGE#payments#staging"}
+    assert package_put["Item"]["sk"] == {"S": "ARTIFACT#sha256:artifact-v2"}
 
     replay_client = FakeClient(
         transact_write_items=[FakeServiceError("TransactionCanceledException")],
@@ -232,6 +237,8 @@ def test_dynamodb_reads_and_atomically_activates_pointer_with_outbox() -> None:
             graph_version="graph-v2",
             graph_checksum="b" * 64,
             package_reference=package_reference,
+            system="payments",
+            artifact_digest="sha256:artifact-v2",
             expected_prior="graph-v1",
             expected_fence=7,
             next_fence=8,
@@ -240,6 +247,32 @@ def test_dynamodb_reads_and_atomically_activates_pointer_with_outbox() -> None:
         )["graphVersion"]
         == "graph-v2"
     )
+
+    lookup = DynamoDbControlAdapter(
+        FakeClient(
+            get_item=[
+                {
+                    "Item": {
+                        "packageReference": {"S": json.dumps(package_reference)},
+                        "graphVersion": {"S": "graph-v2"},
+                        "graphChecksum": {"S": "b" * 64},
+                        "packageId": {"S": "package-001"},
+                    }
+                }
+            ]
+        ),
+        "control",
+        "ledger",
+        "pointer",
+    )
+    assert lookup.package_for(
+        "payments", "staging", "sha256:artifact-v2"
+    ) == {
+        "packageReference": package_reference,
+        "graphVersion": "graph-v2",
+        "graphChecksum": "b" * 64,
+        "packageId": "package-001",
+    }
 
 
 def test_neptune_copies_applies_tombstones_and_reads_a_staged_namespace() -> None:
@@ -289,6 +322,124 @@ def test_neptune_copies_applies_tombstones_and_reads_a_staged_namespace() -> Non
     assert "ORDER BY edgeId" in queries[3]
     assert parameters[0]["targetNamespace"] == "graph-v2"
     assert parameters[1]["edgeIds"] == ["edge-old"]
+
+
+def test_dynamodb_coordinates_ordered_deployment_promotion_and_readback() -> None:
+    event = {
+        "schemaVersion": "1.0.0",
+        "eventId": "deploy-002",
+        "eventType": "DEPLOYMENT",
+        "provider": "github-actions",
+        "providerSequence": 2,
+        "attempt": 1,
+        "system": "payments",
+        "environment": "staging",
+        "outcome": "SUCCEEDED",
+        "artifactDigest": "sha256:artifact-v2",
+        "correlationId": "corr-deployment",
+        "auditRef": "provider-audit://deploy-002",
+        "occurredAt": "2026-08-08T14:00:00Z",
+    }
+    package_reference = {
+        "bucket": "packages",
+        "key": "packages/staging/package-v2.json",
+        "versionId": "package-v2",
+        "sha256": "a" * 64,
+        "sizeBytes": 1800,
+    }
+    client = FakeClient(
+        put_item=[{}],
+        update_item=[{}, {}, {}],
+        transact_write_items=[{}],
+        get_item=[
+            {
+                "Item": {
+                    "eventId": {"S": "deploy-002"},
+                    "result": {
+                        "S": json.dumps(
+                            {
+                                "eventId": "deploy-002",
+                                "terminalOutcome": "PROMOTED",
+                                "lineagePackageId": "package-v2",
+                                "graphVersion": "graph-v2",
+                            }
+                        )
+                    },
+                }
+            }
+        ],
+    )
+    adapter = DynamoDbControlAdapter(client, "control", "ledger", "pointer")
+
+    assert adapter.claim_deployment_event(event, "b" * 64) == {
+        "disposition": "CLAIMED"
+    }
+    assert adapter.establish_deployment_order(event) == {
+        "disposition": "AUTHORITATIVE"
+    }
+    adapter.record_deployed_digest(event)
+    promoted = adapter.promote_deployment(
+        environment="staging",
+        graph_version="graph-v2",
+        graph_checksum="c" * 64,
+        package_reference=package_reference,
+        system="payments",
+        artifact_digest="sha256:artifact-v2",
+        expected_prior="graph-v1",
+        expected_fence=7,
+        next_fence=8,
+        correlation_id="corr-deployment",
+        activated_at=datetime(2026, 8, 8, 14, tzinfo=UTC),
+        action="DEPLOYMENT_PROMOTED",
+    )
+    assert promoted["graphVersion"] == "graph-v2"
+    result = {
+        "terminalOutcome": "PROMOTED",
+        "lineagePackageId": "package-v2",
+        "graphVersion": "graph-v2",
+    }
+    adapter.complete_deployment(event, result)
+    assert adapter.deployment_state("payments", "staging")["eventId"] == "deploy-002"
+
+    claim = client.calls[0][1]
+    assert claim["ConditionExpression"] == "attribute_not_exists(pk)"
+    order = client.calls[1][1]
+    assert "providerSequence < :providerSequence" in order["ConditionExpression"]
+    transaction = next(
+        kwargs for name, kwargs in client.calls if name == "transact_write_items"
+    )["TransactItems"]
+    assert transaction[0]["Update"]["TableName"] == "pointer"
+    assert transaction[1]["Put"]["Item"]["topic"] == {
+        "S": "DEPLOYMENT_PROMOTED"
+    }
+    assert transaction[2]["ConditionCheck"]["TableName"] == "control"
+
+
+def test_dynamodb_rejects_a_stale_deployment_provider_sequence() -> None:
+    event = {
+        "eventId": "deploy-old",
+        "provider": "github-actions",
+        "providerSequence": 9,
+        "attempt": 1,
+        "system": "payments",
+        "environment": "staging",
+        "correlationId": "corr-old",
+    }
+    client = FakeClient(
+        update_item=[FakeServiceError("ConditionalCheckFailedException")],
+        get_item=[
+            {
+                "Item": {
+                    "eventId": {"S": "deploy-new"},
+                    "correlationId": {"S": "corr-new"},
+                    "status": {"S": "PROMOTED"},
+                }
+            }
+        ],
+    )
+    adapter = DynamoDbControlAdapter(client, "control", "ledger", "pointer")
+
+    assert adapter.establish_deployment_order(event) == {"disposition": "STALE"}
 
 
 def test_s3_uses_versioned_checksum_references_and_immutable_puts() -> None:
