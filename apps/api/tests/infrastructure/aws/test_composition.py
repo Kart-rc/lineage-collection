@@ -1,11 +1,16 @@
 from __future__ import annotations
 
 import json
+import threading
 from typing import Any
 
 import pytest
 
-from lineage_api.application.stage_execution import StageDispatcher, StageTargetMismatchError
+from lineage_api.application.stage_execution import (
+    StageDispatcher,
+    StageExecutionResult,
+    StageTargetMismatchError,
+)
 from lineage_api.application.stage_handlers import production_stage_use_cases
 from lineage_api.infrastructure.aws.composition import (
     AwsStageExecutor,
@@ -51,6 +56,8 @@ def test_composition_injects_sdk_clients_without_local_adapters() -> None:
     assert executor.control.client is clients["dynamodb"]
     assert executor.artifacts.client is clients["s3"]
     assert executor.packages.default_bucket == "packages"
+    assert executor.sources.client is clients["s3"]
+    assert executor.dispatcher.has_use_case("BASELINE", "B5")
 
 
 def test_intake_composition_rejects_a_partial_workflow_alias_set() -> None:
@@ -76,6 +83,10 @@ def test_sca_worker_requires_a_task_token_and_returns_only_a_bounded_reference(m
     class StepFunctions:
         def __init__(self) -> None:
             self.success: dict[str, str] | None = None
+            self.heartbeats: list[dict[str, str]] = []
+
+        def send_task_heartbeat(self, **kwargs: str) -> None:
+            self.heartbeats.append(kwargs)
 
         def send_task_success(self, **kwargs: str) -> None:
             self.success = kwargs
@@ -92,6 +103,213 @@ def test_sca_worker_requires_a_task_token_and_returns_only_a_bounded_reference(m
     assert stepfunctions.success is not None
     assert stepfunctions.success["taskToken"] == "token-1"
     assert len(stepfunctions.success["output"].encode()) < 8_192
+    assert set(json.loads(stepfunctions.success["output"])) == {"outcome", "output"}
+    assert stepfunctions.heartbeats == [{"taskToken": "token-1"}]
+
+
+def test_sca_worker_heartbeats_periodically_during_bounded_work(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from lineage_api.infrastructure.aws import composition
+
+    second_heartbeat = threading.Event()
+
+    class FakeExecutor:
+        def execute(self, _stage: str, _envelope: dict[str, Any]) -> dict[str, Any]:
+            if not second_heartbeat.wait(1):
+                raise TimeoutError("periodic heartbeat was not sent")
+            return {
+                "outcome": "SUCCEEDED",
+                "output": {
+                    "bucket": "evidence",
+                    "key": "b5.json",
+                    "versionId": "v1",
+                    "sha256": "a" * 64,
+                    "sizeBytes": 10,
+                },
+            }
+
+    class StepFunctions:
+        def __init__(self) -> None:
+            self.heartbeats = 0
+
+        def send_task_heartbeat(self, **_kwargs: str) -> None:
+            self.heartbeats += 1
+            if self.heartbeats >= 2:
+                second_heartbeat.set()
+
+        def send_task_success(self, **_kwargs: str) -> None:
+            return None
+
+        def send_task_failure(self, **_kwargs: str) -> None:
+            return None
+
+    client = StepFunctions()
+    monkeypatch.setattr(composition, "build_stage_executor", lambda: FakeExecutor())
+    monkeypatch.setenv("LINEAGE_TASK_TOKEN", "token-periodic")
+    monkeypatch.setenv("LINEAGE_STAGE_ENVELOPE", json.dumps({"stageId": "B5"}))
+
+    composition.run_sca_worker(
+        stepfunctions_client=client, heartbeat_interval_seconds=0.01
+    )
+
+    assert client.heartbeats >= 2
+
+
+def test_sca_worker_redacts_failure_cause_and_raises_a_sanitized_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from lineage_api.infrastructure.aws import composition
+
+    class FakeExecutor:
+        def execute(self, _stage: str, _envelope: dict[str, Any]) -> dict[str, Any]:
+            raise RuntimeError("password=do-not-expose")
+
+    class StepFunctions:
+        def __init__(self) -> None:
+            self.failure: dict[str, str] | None = None
+
+        def send_task_heartbeat(self, **_kwargs: str) -> None:
+            return None
+
+        def send_task_failure(self, **kwargs: str) -> None:
+            self.failure = kwargs
+
+    client = StepFunctions()
+    monkeypatch.setattr(composition, "build_stage_executor", lambda: FakeExecutor())
+    monkeypatch.setenv("LINEAGE_TASK_TOKEN", "token-secret")
+    monkeypatch.setenv(
+        "LINEAGE_STAGE_ENVELOPE",
+        json.dumps({"stageId": "B5", "correlationId": "corr-safe"}),
+    )
+
+    with pytest.raises(RuntimeError, match="SCA worker failed") as failure:
+        composition.run_sca_worker(
+            stepfunctions_client=client, heartbeat_interval_seconds=0.01
+        )
+
+    assert "do-not-expose" not in str(failure.value)
+    assert client.failure is not None
+    assert "do-not-expose" not in json.dumps(client.failure)
+    assert client.failure["cause"] == "SCA stage failed; correlationId=corr-safe"
+
+
+def test_sca_worker_rejects_callback_fields_outside_the_reference_contract(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from lineage_api.infrastructure.aws import composition
+
+    class FakeExecutor:
+        def execute(self, _stage: str, _envelope: dict[str, Any]) -> dict[str, Any]:
+            return {
+                "outcome": "SUCCEEDED",
+                "output": {
+                    "bucket": "evidence",
+                    "key": "b5.json",
+                    "versionId": "v1",
+                    "sha256": "a" * 64,
+                    "sizeBytes": 10,
+                },
+                "secret": "do-not-callback",
+            }
+
+    class StepFunctions:
+        def __init__(self) -> None:
+            self.success = False
+            self.failure: dict[str, str] | None = None
+
+        def send_task_heartbeat(self, **_kwargs: str) -> None:
+            return None
+
+        def send_task_success(self, **_kwargs: str) -> None:
+            self.success = True
+
+        def send_task_failure(self, **kwargs: str) -> None:
+            self.failure = kwargs
+
+    client = StepFunctions()
+    monkeypatch.setattr(composition, "build_stage_executor", lambda: FakeExecutor())
+    monkeypatch.setenv("LINEAGE_TASK_TOKEN", "token-contract")
+    monkeypatch.setenv("LINEAGE_STAGE_ENVELOPE", json.dumps({"stageId": "B5"}))
+
+    with pytest.raises(RuntimeError, match="SCA worker failed"):
+        composition.run_sca_worker(
+            stepfunctions_client=client, heartbeat_interval_seconds=0.01
+        )
+
+    assert client.success is False
+    assert client.failure is not None
+    assert "do-not-callback" not in json.dumps(client.failure)
+
+
+def test_sca_executor_verifies_the_persisted_result_before_checkpointing() -> None:
+    class Control:
+        recorded = False
+
+        def claim_stage(self, *_args: Any) -> dict[str, Any]:
+            return {"status": "CLAIMED", "leaseEpoch": 1}
+
+        def record_stage(self, **_kwargs: Any) -> None:
+            self.recorded = True
+
+    class Artifacts:
+        reads = 0
+
+        def get(self, _reference: object) -> object:
+            self.reads += 1
+            if self.reads == 1:
+                return {"schemaVersion": "1.0.0", "artifactType": "sca-work-unit"}
+            return {"schemaVersion": "1.0.0", "artifactType": "corrupt-result"}
+
+        def put(
+            self, _kind: str, key: str, _body: object, _version: str
+        ) -> dict[str, object]:
+            return {
+                "bucket": "evidence",
+                "key": key,
+                "versionId": "result-v1",
+                "sha256": "a" * 64,
+                "sizeBytes": 100,
+            }
+
+    class UseCase:
+        def execute(self, _document: object, _context: object) -> StageExecutionResult:
+            return StageExecutionResult(
+                "sca-stage-result",
+                "1.0.0",
+                {"schemaVersion": "1.0.0", "artifactType": "sca-stage-result"},
+            )
+
+    control = Control()
+    executor = AwsStageExecutor(
+        AwsRuntimeConfig.from_env(REQUIRED_ENV),
+        control,
+        Artifacts(),
+        FakeClient(),
+        FakeClient(),
+        dispatcher=StageDispatcher({("BASELINE", "B5"): UseCase()}),
+    )
+    envelope = {
+        "commandId": "cmd-sca",
+        "correlationId": "corr-sca",
+        "idempotencyKey": "idem-sca:B5",
+        "workflowKind": "BASELINE",
+        "workflowVersion": "1.0.0",
+        "stageId": "B5",
+        "stageName": "RUN_BOUNDED_STATIC_ANALYSIS",
+        "input": {
+            "bucket": "evidence",
+            "key": "work-unit.json",
+            "versionId": "work-v1",
+            "sha256": "b" * 64,
+            "sizeBytes": 100,
+        },
+    }
+
+    with pytest.raises(RuntimeError, match="read-back verification"):
+        executor.execute("sca", envelope)
+
+    assert control.recorded is False
 
 
 def test_workflow_starter_uses_exact_alias_and_deterministic_execution_identity() -> None:
@@ -143,7 +361,23 @@ def test_baseline_inventory_stage_materializes_an_s3_map_item_array() -> None:
                     "repository": "example/repo",
                     "artifactDigest": "sha256:source-v1",
                     "environment": "staging",
+                    "platform": "snowflake",
                     "system": "example",
+                    "acceptedAt": "2026-08-08T15:00:00Z",
+                    "activeBaseVersion": "graph-v1",
+                    "activeBaseFence": 7,
+                    "catalogSnapshotRef": {
+                        "bucket": "evidence",
+                        "key": "catalog/example.json",
+                        "versionId": "catalog-v1",
+                        "sha256": "c" * 64,
+                        "sizeBytes": 100,
+                    },
+                    "catalogSnapshotId": "catalog-v1",
+                    "resolverVersion": "1.0.0",
+                    "rulesetVersion": "python-v1",
+                    "classificationPolicyVersion": "1.0.0",
+                    "runtimeManifestRefs": [],
                     "repositorySource": {
                         "bucket": "evidence",
                         "key": "source/repo.zip",

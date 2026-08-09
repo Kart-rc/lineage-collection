@@ -4,10 +4,15 @@ import json
 import hashlib
 import os
 import re
+import threading
 from datetime import UTC, datetime
 from typing import Any, Mapping
 
-from lineage_api.application.stage_execution import StageDispatcher, StageExecutionContext
+from lineage_api.application.stage_execution import (
+    StageDispatcher,
+    StageExecutionContext,
+    validate_artifact_reference,
+)
 from lineage_api.application.stage_handlers import production_stage_use_cases
 from lineage_api.infrastructure.aws.config import AwsRuntimeConfig
 from lineage_api.infrastructure.aws.dynamodb_control import DynamoDbControlAdapter
@@ -15,6 +20,7 @@ from lineage_api.infrastructure.aws.errors import AwsConflictError, AwsRetryable
 from lineage_api.infrastructure.aws.kinesis_runtime import KinesisRuntimeAdapter
 from lineage_api.infrastructure.aws.neptune_projection import NeptuneProjectionAdapter
 from lineage_api.infrastructure.aws.s3_artifacts import S3ArtifactStore
+from lineage_api.infrastructure.aws.s3_sources import S3SourceArchiveStore
 from lineage_api.infrastructure.aws.sqs_broker import SqsLaneBroker
 
 
@@ -70,6 +76,7 @@ class AwsStageExecutor:
         packages: S3ArtifactStore | None = None,
         broker: SqsLaneBroker | None = None,
         workflow_starter: StepFunctionsWorkflowStarter | None = None,
+        sources: S3SourceArchiveStore | None = None,
         dispatcher: StageDispatcher | None = None,
     ) -> None:
         self.config = config
@@ -80,6 +87,7 @@ class AwsStageExecutor:
         self.packages = packages or artifacts
         self.broker = broker
         self.workflow_starter = workflow_starter
+        self.sources = sources
         self.dispatcher = dispatcher or StageDispatcher(
             production_stage_use_cases(
                 artifacts,
@@ -87,6 +95,7 @@ class AwsStageExecutor:
                 packages=self.packages,
                 publication_control=control,
                 projection=projection,
+                sources=sources,
             )
         )
 
@@ -154,6 +163,8 @@ class AwsStageExecutor:
                 persisted_body,
                 artifact_version,
             )
+            if target == "sca" and self.artifacts.get(reference) != persisted_body:
+                raise RuntimeError("SCA result failed immutable read-back verification")
             if target == "intake":
                 if self.workflow_starter is None:
                     raise RuntimeError("intake workflow aliases are not configured")
@@ -249,10 +260,15 @@ def build_stage_executor(
         )
         if aliases
         else None,
+        S3SourceArchiveStore(sdk["s3"]),
     )
 
 
-def run_sca_worker(*, stepfunctions_client: Any | None = None) -> None:
+def run_sca_worker(
+    *,
+    stepfunctions_client: Any | None = None,
+    heartbeat_interval_seconds: float | None = None,
+) -> None:
     token = os.environ.get("LINEAGE_TASK_TOKEN", "").strip()
     raw_envelope = os.environ.get("LINEAGE_STAGE_ENVELOPE", "").strip()
     if not token or not raw_envelope:
@@ -270,16 +286,80 @@ def run_sca_worker(*, stepfunctions_client: Any | None = None) -> None:
     client = stepfunctions_client
     if client is None:
         client = _clients(executor.config)["stepfunctions"]
+    if heartbeat_interval_seconds is None:
+        try:
+            heartbeat_interval_seconds = float(
+                os.environ.get("LINEAGE_SCA_HEARTBEAT_SECONDS", "60")
+            )
+        except ValueError as error:
+            raise RuntimeError(
+                "LINEAGE_SCA_HEARTBEAT_SECONDS must be numeric"
+            ) from error
+        if not 1 <= heartbeat_interval_seconds <= 240:
+            raise RuntimeError(
+                "LINEAGE_SCA_HEARTBEAT_SECONDS must be between 1 and 240"
+            )
+    elif heartbeat_interval_seconds <= 0:
+        raise ValueError("SCA heartbeat interval must be positive")
+
+    stopped = threading.Event()
+    heartbeat_failed = threading.Event()
+
+    def heartbeat_loop() -> None:
+        while not stopped.wait(heartbeat_interval_seconds):
+            try:
+                client.send_task_heartbeat(taskToken=token)
+            except Exception:
+                heartbeat_failed.set()
+                stopped.set()
+                return
+
+    heartbeat_thread: threading.Thread | None = None
     try:
+        client.send_task_heartbeat(taskToken=token)
+        heartbeat_thread = threading.Thread(
+            target=heartbeat_loop,
+            name="lineage-sca-heartbeat",
+            daemon=True,
+        )
+        heartbeat_thread.start()
         result = executor.execute("sca", envelope)
+        stopped.set()
+        heartbeat_thread.join(timeout=5)
+        if heartbeat_thread.is_alive() or heartbeat_failed.is_set():
+            raise RuntimeError("SCA callback heartbeat failed")
+        if (
+            not isinstance(result, dict)
+            or set(result) != {"outcome", "output"}
+            or result.get("outcome")
+            not in {"SUCCEEDED", "SKIPPED", "REDRIVE_REQUIRED"}
+        ):
+            raise RuntimeError("SCA callback result contract is invalid")
+        result = {
+            "outcome": result["outcome"],
+            "output": validate_artifact_reference(result["output"]),
+        }
         output = json.dumps(result, sort_keys=True, separators=(",", ":"))
         if len(output.encode()) >= 8_192:
             raise RuntimeError("SCA callback exceeds bounded result contract")
         client.send_task_success(taskToken=token, output=output)
-    except Exception as error:
-        client.send_task_failure(
-            taskToken=token,
-            error=type(error).__name__[:256],
-            cause=str(error)[:32_768],
+    except Exception:
+        stopped.set()
+        if heartbeat_thread is not None:
+            heartbeat_thread.join(timeout=5)
+        raw_correlation = envelope.get("correlationId")
+        correlation_id = (
+            raw_correlation
+            if isinstance(raw_correlation, str)
+            and re.fullmatch(r"[A-Za-z0-9._:-]{1,128}", raw_correlation)
+            else "unavailable"
         )
-        raise
+        try:
+            client.send_task_failure(
+                taskToken=token,
+                error="SCAExecutionFailed",
+                cause=f"SCA stage failed; correlationId={correlation_id}",
+            )
+        except Exception:
+            pass
+        raise RuntimeError("SCA worker failed") from None

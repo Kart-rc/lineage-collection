@@ -80,6 +80,7 @@ export class EnginesStack extends Stack {
         operatingSystemFamily: ecs.OperatingSystemFamily.LINUX,
       },
     });
+    this.scaTask.addVolume({ name: "sca-scratch" });
     const scaLogs = new logs.LogGroup(this, "ScaLogs", { retention: props.config.logRetention });
     const scaFailureMetric = new logs.MetricFilter(this, "ScaFailureMetric", {
       logGroup: scaLogs,
@@ -118,7 +119,7 @@ export class EnginesStack extends Stack {
           ignoreMode: IgnoreMode.GLOB,
           exclude: [...DOCKER_ASSET_EXCLUDES],
         });
-    this.scaTask.addContainer("ScaContainer", {
+    const scaContainer = this.scaTask.addContainer("ScaContainer", {
       containerName: "lineage-sca",
       image: scaImage,
       logging: ecs.LogDrivers.awsLogs({ streamPrefix: "sca", logGroup: scaLogs }),
@@ -129,6 +130,11 @@ export class EnginesStack extends Stack {
       },
       readonlyRootFilesystem: true,
       user: "lineage",
+    });
+    scaContainer.addMountPoints({
+      containerPath: "/opt/lineage-scratch",
+      readOnly: false,
+      sourceVolume: "sca-scratch",
     });
     new CfnOutput(this, "ScaTaskDefinitionArn", { value: this.scaTask.taskDefinitionArn });
     new CfnOutput(this, "ScaClusterArn", { value: this.cluster.clusterArn });

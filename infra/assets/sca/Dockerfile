@@ -12,7 +12,9 @@ RUN cd /opt/lineage/apps/api \
     && uv build --wheel --out-dir /opt/lineage/wheels \
     && python -m pip install --no-cache-dir --no-deps /opt/lineage/wheels/*.whl \
     && python -m pip check \
-    && chown -R lineage:lineage /opt/lineage
+    && mkdir -p /opt/lineage-scratch \
+    && chown -R lineage:lineage /opt/lineage /opt/lineage-scratch
 
+ENV TMPDIR=/opt/lineage-scratch
 USER lineage
 CMD ["python", "-m", "lineage_api.entrypoints.sca_worker"]

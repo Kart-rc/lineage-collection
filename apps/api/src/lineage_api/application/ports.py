@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 from collections.abc import Iterable
+from contextlib import AbstractContextManager
 from datetime import datetime
+from pathlib import Path
 from typing import Any, Protocol, runtime_checkable
 
 from lineage_api.application.models import (
@@ -63,6 +65,11 @@ class ArtifactStorePort(Protocol):
     def put(self, kind: str, key: str, body: object, schema_version: str) -> object: ...
 
     def get(self, reference: object) -> object: ...
+
+
+@runtime_checkable
+class SourceArchivePort(Protocol):
+    def materialize(self, reference: object) -> AbstractContextManager[Path]: ...
 
 
 @runtime_checkable

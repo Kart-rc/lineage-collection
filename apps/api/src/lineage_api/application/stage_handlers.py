@@ -23,8 +23,10 @@ from lineage_api.application.ports import (
     DeploymentControlPort,
     ProposalStorePort,
     PublicationControlPort,
+    SourceArchivePort,
     StageProjectionPort,
 )
+from lineage_api.application.sca_execution import ScaStageUseCase
 from lineage_api.application.consolidation import derive_consolidation, edge_key_for
 from lineage_api.application.runtime_validation import runtime_window_manifest_errors
 from lineage_api.application.workflows.deployment import DeploymentEvent
@@ -34,6 +36,7 @@ from lineage_api.domain.urns import LineageUrn
 _CONTEXT_FIELDS = {
     "artifactDigest": ("artifactDigest", "digest"),
     "environment": ("environment", "env"),
+    "platform": ("platform",),
     "repository": ("repository", "repo", "repoOrPath"),
     "system": ("system",),
 }
@@ -66,6 +69,12 @@ def _bounded_context(document: Mapping[str, Any]) -> dict[str, Any]:
         if "repositorySource" in source:
             context["repositorySource"] = validate_artifact_reference(
                 source["repositorySource"]
+            )
+            break
+    for source in sources:
+        if "catalogSnapshotRef" in source:
+            context["catalogSnapshotRef"] = validate_artifact_reference(
+                source["catalogSnapshotRef"]
             )
             break
     for source in sources:
@@ -209,9 +218,14 @@ def _common_context(context: Mapping[str, Any]) -> dict[str, Any]:
     normalized: dict[str, Any] = {}
     for name in ("artifactDigest", "environment", "repository", "system"):
         normalized[name] = _required_text(name, context.get(name))
+    if "platform" in context:
+        normalized["platform"] = _required_text("platform", context["platform"])
     source = context.get("repositorySource")
     if source is not None:
         normalized["repositorySource"] = validate_artifact_reference(source)
+    catalog = context.get("catalogSnapshotRef")
+    if catalog is not None:
+        normalized["catalogSnapshotRef"] = validate_artifact_reference(catalog)
     for name in (
         "activeBaseVersion",
         "acceptedAt",
@@ -287,6 +301,18 @@ class CoverageStageUseCase:
             raise ValueError("baseline coverage requires an evaluated classification")
         if "repositorySource" not in common:
             raise ValueError("baseline coverage requires an immutable repository source")
+        for name in (
+            "platform",
+            "catalogSnapshotRef",
+            "catalogSnapshotId",
+            "resolverVersion",
+            "rulesetVersion",
+            "activeBaseVersion",
+            "activeBaseFence",
+            "acceptedAt",
+        ):
+            if name not in common:
+                raise ValueError(f"baseline coverage requires pinned {name}")
         inventory = _paths(
             "repository inventory",
             lineage_context.get("repositoryInventory"),
@@ -336,10 +362,28 @@ class CoverageStageUseCase:
                 "repository": common["repository"],
                 "artifactDigest": common["artifactDigest"],
                 "environment": common["environment"],
+                "platform": common["platform"],
                 "system": common["system"],
                 "pack": "python-ast",
                 "paths": paths,
                 "repositorySource": common["repositorySource"],
+                "catalogSnapshotRef": common["catalogSnapshotRef"],
+                "catalogSnapshotId": common["catalogSnapshotId"],
+                "resolverVersion": common["resolverVersion"],
+                "rulesetVersion": common["rulesetVersion"],
+                "activeBaseVersion": common["activeBaseVersion"],
+                "activeBaseFence": common["activeBaseFence"],
+                "acceptedAt": common["acceptedAt"],
+                "runtimeManifestRefs": common.get("runtimeManifestRefs", []),
+                "coverage": {
+                    "expectedScope": paths,
+                    "completedScope": [],
+                    "reusedScope": [],
+                    "skippedScope": [],
+                    "unsupportedScope": [],
+                    "quarantinedScope": [],
+                    "failedScope": [],
+                },
                 "coveragePlan": plan_reference,
                 "correlationId": context.correlation_id,
             }
@@ -482,6 +526,10 @@ class ControlStageUseCase:
                 "rulesetVersion",
             )
         }
+        catalog_reference = common.get("catalogSnapshotRef")
+        if catalog_reference is None:
+            raise ValueError("baseline pins require an immutable catalog snapshot")
+        pins["catalogSnapshotRef"] = catalog_reference
         if "repositorySource" not in common:
             raise ValueError("baseline pins require an immutable repository source")
         return self._result(
@@ -529,16 +577,86 @@ class ControlStageUseCase:
         source = common.get("repositorySource")
         if source is None:
             raise ValueError("I4 requires an immutable repository source")
+        for name in (
+            "platform",
+            "catalogSnapshotRef",
+            "catalogSnapshotId",
+            "resolverVersion",
+            "rulesetVersion",
+            "activeBaseVersion",
+            "activeBaseFence",
+            "acceptedAt",
+        ):
+            if name not in common:
+                raise ValueError(f"I4 requires pinned {name}")
         coverage = input_document.get("coverage")
         if not isinstance(coverage, Mapping):
             raise ValueError("I4 requires coverage accounting")
-        return self._result(
-            context,
-            "immutable-inputs",
-            common,
-            {
-                "coverage": dict(coverage),
-                "immutableInputs": {"repositorySource": source},
+        expected = _paths(
+            "I4 expected scope", coverage.get("expectedScope"), limit=10_000
+        )
+        recomputed = _paths(
+            "I4 recomputed scope", coverage.get("recomputedScope"), limit=10_000
+        )
+        removed = _paths(
+            "I4 removed scope", coverage.get("removedScope", []), limit=10_000
+        )
+        reused = _paths(
+            "I4 reused scope", coverage.get("reusedScope", []), limit=10_000
+        )
+        unsupported = _paths(
+            "I4 unsupported scope",
+            coverage.get("unsupportedScope", []),
+            limit=10_000,
+        )
+        if expected != sorted(set(recomputed + removed + reused + unsupported)):
+            raise ValueError("I4 coverage accounting is incomplete")
+        work_coverage = {
+            "expectedScope": expected,
+            "completedScope": [],
+            "reusedScope": reused,
+            "skippedScope": removed,
+            "unsupportedScope": unsupported,
+            "quarantinedScope": [],
+            "failedScope": [],
+        }
+        return StageExecutionResult(
+            artifact_kind="sca-work-unit",
+            schema_version="1.0.0",
+            document={
+                "schemaVersion": "1.0.0",
+                "artifactType": "sca-work-unit",
+                "workflowKind": context.workflow_kind,
+                "workflowVersion": context.workflow_version,
+                "stageId": context.stage_id,
+                "stageName": context.stage_name,
+                "commandId": context.command_id,
+                "correlationId": context.correlation_id,
+                "source": dict(context.input_reference),
+                "context": common,
+                "workUnitId": f"{context.command_id}-I5-00000",
+                "repository": common["repository"],
+                "artifactDigest": common["artifactDigest"],
+                "environment": common["environment"],
+                "platform": common["platform"],
+                "system": common["system"],
+                "pack": "python-ast",
+                "paths": recomputed,
+                "repositorySource": source,
+                "catalogSnapshotRef": common["catalogSnapshotRef"],
+                "catalogSnapshotId": common["catalogSnapshotId"],
+                "resolverVersion": common["resolverVersion"],
+                "rulesetVersion": common["rulesetVersion"],
+                "activeBaseVersion": common["activeBaseVersion"],
+                "activeBaseFence": common["activeBaseFence"],
+                "acceptedAt": common["acceptedAt"],
+                "runtimeManifestRefs": common.get("runtimeManifestRefs", []),
+                "coverage": work_coverage,
+                "coveragePlan": dict(context.input_reference),
+                "immutableInputs": {
+                    "repositorySource": source,
+                    "catalogSnapshotRef": common["catalogSnapshotRef"],
+                },
             },
         )
 
@@ -2070,6 +2188,7 @@ def production_stage_use_cases(
     packages: ArtifactStorePort | None = None,
     publication_control: PublicationControlPort | None = None,
     projection: StageProjectionPort | None = None,
+    sources: SourceArchivePort | None = None,
 ) -> dict[tuple[str, str], StageUseCase]:
     use_cases: dict[tuple[str, str], StageUseCase] = {
         ("BASELINE", "B3"): ClassificationStageUseCase(policy_version="1.0.0")
@@ -2089,6 +2208,11 @@ def production_stage_use_cases(
         coverage = CoverageStageUseCase(artifacts)
         use_cases[("BASELINE", "B4")] = coverage
         use_cases[("INCREMENTAL", "I3")] = coverage
+        if sources is not None:
+            sca = ScaStageUseCase(artifacts, sources)
+            use_cases[("BASELINE", "B5")] = sca
+            use_cases[("INCREMENTAL", "I5")] = sca
+            use_cases[("NIGHTLY", "N2")] = sca
         runtime_validation = RuntimeValidationStageUseCase(artifacts)
         use_cases[("BASELINE", "B6")] = runtime_validation
         use_cases[("INCREMENTAL", "I6")] = runtime_validation

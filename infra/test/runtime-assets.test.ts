@@ -73,6 +73,7 @@ describe("runtime assets", () => {
     expect(lambdaDockerfile).toContain("uv build");
     expect(scaDockerfile).toContain("uv build");
     expect(scaDockerfile).toMatch(/USER\s+lineage/);
+    expect(scaDockerfile).toContain("ENV TMPDIR=/opt/lineage-scratch");
     expect(scaDockerfile).toContain("lineage_api.entrypoints.sca_worker");
   });
 });

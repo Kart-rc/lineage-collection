@@ -73,8 +73,24 @@ def _coverage_input() -> dict[str, object]:
         "context": {
             "artifactDigest": "sha256:source-v1",
             "environment": "staging",
+            "platform": "snowflake",
             "repository": "payments-pipeline",
             "system": "payments",
+            "acceptedAt": "2026-08-08T15:00:00Z",
+            "activeBaseVersion": "graph-v1",
+            "activeBaseFence": 7,
+            "catalogSnapshotRef": {
+                "bucket": "evidence",
+                "key": "catalog/catalog-v1.json",
+                "versionId": "catalog-v1",
+                "sha256": "c" * 64,
+                "sizeBytes": 4096,
+            },
+            "catalogSnapshotId": "catalog-demo-v1",
+            "resolverVersion": "1.0.0",
+            "rulesetVersion": "python-demo-v1",
+            "classificationPolicyVersion": "1.0.0",
+            "runtimeManifestRefs": [],
             "repositorySource": {
                 "bucket": "evidence",
                 "key": "source/payments-pipeline.zip",
@@ -581,6 +597,11 @@ def test_baseline_coverage_writes_a_bounded_plan_and_immutable_sca_work_units() 
     work_units = [write[2] for write in artifacts.writes[1:]]
     assert [unit["paths"] for unit in work_units] == [["pipeline.py"], ["src/helpers.py"]]
     assert all(unit["pack"] == "python-ast" for unit in work_units)
+    assert all(unit["platform"] == "snowflake" for unit in work_units)
+    assert all(unit["catalogSnapshotRef"]["versionId"] == "catalog-v1" for unit in work_units)
+    assert all(unit["resolverVersion"] == "1.0.0" for unit in work_units)
+    assert all(unit["activeBaseFence"] == 7 for unit in work_units)
+    assert all(unit["coverage"]["expectedScope"] == unit["paths"] for unit in work_units)
     plan_reference = {
         "bucket": "evidence",
         "key": artifacts.writes[0][1],
@@ -1662,6 +1683,7 @@ def _control_intent() -> dict[str, object]:
             "repository": "payments-pipeline",
             "artifactDigest": RUNTIME_ARTIFACT,
             "environment": "staging",
+            "platform": "snowflake",
             "system": "payments",
             "acceptedAt": "2026-08-08T15:00:00Z",
             "repositorySource": {
@@ -1673,6 +1695,13 @@ def _control_intent() -> dict[str, object]:
             },
             "repositoryInventory": ["pipeline.py", "README.md"],
             "catalogSnapshotId": "catalog-2026-08-08",
+            "catalogSnapshotRef": {
+                "bucket": "evidence",
+                "key": "catalog/catalog-2026-08-08.json",
+                "versionId": "catalog-2026-08-08",
+                "sha256": "c" * 64,
+                "sizeBytes": 4096,
+            },
             "resolverVersion": "resolver-2",
             "rulesetVersion": "rules-3",
             "classificationPolicyVersion": "1.0.0",
@@ -1718,6 +1747,7 @@ def test_baseline_control_stages_pin_pointer_snapshots_and_feed_classification()
     assert b1.document["context"]["activeBaseFence"] == 7
     assert b2.artifact_kind == "baseline-pins"
     assert b2.document["pins"] == {
+        "catalogSnapshotRef": _control_intent()["context"]["catalogSnapshotRef"],
         "catalogSnapshotId": "catalog-2026-08-08",
         "classificationPolicyVersion": "1.0.0",
         "resolverVersion": "resolver-2",
@@ -1759,6 +1789,19 @@ def test_incremental_control_stages_close_scope_and_recheck_the_exact_base() -> 
 
     assert i2.document["context"]["changedPaths"] == ["pipeline.py", "shared.py"]
     assert i2.document["context"]["removedPaths"] == ["legacy.py"]
+    assert i4.artifact_kind == "sca-work-unit"
+    assert i4.document["artifactType"] == "sca-work-unit"
+    assert i4.document["paths"] == ["pipeline.py", "shared.py"]
+    assert i4.document["catalogSnapshotRef"]["versionId"] == "catalog-2026-08-08"
+    assert i4.document["coverage"] == {
+        "expectedScope": ["legacy.py", "pipeline.py", "shared.py"],
+        "completedScope": [],
+        "reusedScope": [],
+        "skippedScope": ["legacy.py"],
+        "unsupportedScope": [],
+        "quarantinedScope": [],
+        "failedScope": [],
+    }
     assert i4.document["immutableInputs"]["repositorySource"]["versionId"] == "source-v2"
     assert i8.document["artifactType"] == "consolidation-result"
     assert i8.document["baseRecheck"] == {

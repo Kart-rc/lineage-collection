@@ -443,6 +443,19 @@ describe("lineage platform stacks", () => {
   it("packages SCA as a Fargate task and exposes product/operations resources", () => {
     Template.fromStack(stacks.engines).hasResourceProperties("AWS::ECS::TaskDefinition", {
       RequiresCompatibilities: ["FARGATE"],
+      Volumes: [{ Name: "sca-scratch" }],
+      ContainerDefinitions: Match.arrayWith([
+        Match.objectLike({
+          ReadonlyRootFilesystem: true,
+          MountPoints: [
+            {
+              ContainerPath: "/opt/lineage-scratch",
+              ReadOnly: false,
+              SourceVolume: "sca-scratch",
+            },
+          ],
+        }),
+      ]),
     });
     Template.fromStack(stacks.api).resourceCountIs("AWS::ApiGateway::RestApi", 1);
     Template.fromStack(stacks.operations).hasResourceProperties("AWS::Budgets::Budget", {
