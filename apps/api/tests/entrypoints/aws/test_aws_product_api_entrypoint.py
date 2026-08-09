@@ -7,6 +7,7 @@ import pytest
 
 from lineage_api.application.product_api import ProductApiResult
 from lineage_api.entrypoints.aws import product_api
+from lineage_api.infrastructure.aws.errors import AwsRetryableError
 
 
 def _event(
@@ -94,3 +95,18 @@ def test_product_lambda_redacts_unexpected_failures(
     assert response["statusCode"] == 500
     assert "secret-token" not in response["body"]
     assert json.loads(response["body"])["correlationId"] == "corr-api-1"
+
+
+def test_product_lambda_marks_retryable_aws_failures_as_temporarily_unavailable(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class Service:
+        def handle(self, **_kwargs: Any) -> ProductApiResult:
+            raise AwsRetryableError("dynamodb secret detail")
+
+    monkeypatch.setattr(product_api, "service_factory", lambda: Service())
+    response = product_api.handler(_event(), object())
+
+    assert response["statusCode"] == 503
+    assert "secret detail" not in response["body"]
+    assert json.loads(response["body"])["error"]["code"] == "SERVICE_UNAVAILABLE"

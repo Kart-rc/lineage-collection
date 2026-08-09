@@ -45,6 +45,9 @@ class DynamoDbControlAdapter:
             raise RuntimeError("proposal table is not configured")
         proposal_id = str(proposal["proposalId"])
         version = int(proposal["version"])
+        created_at = str(proposal.get("createdAt", "1970-01-01T00:00:00Z"))
+        state = str(proposal["state"])
+        lock_version = int(proposal.get("lockVersion", 1))
         encoded = _json(proposal)
         if len(encoded.encode()) > 350_000:
             raise ValueError("proposal document exceeds its DynamoDB safety bound")
@@ -57,7 +60,13 @@ class DynamoDbControlAdapter:
                     "pk": {"S": f"PROPOSAL#{proposal_id}"},
                     "sk": {"S": f"VERSION#{version:010d}"},
                     "document": {"S": encoded},
-                    "state": {"S": str(proposal["state"])},
+                    "state": {"S": state},
+                    "lockVersion": {"N": str(lock_version)},
+                    "queryPk": {"S": f"PROPOSAL_STATE#{state}"},
+                    "querySk": {
+                        "S": f"{created_at}#{proposal_id}#{version:010d}"
+                    },
+                    "createdAt": {"S": created_at},
                     "system": {"S": str(proposal["system"])},
                     "expectedBaseVersion": {
                         "S": str(proposal["expectedBaseVersion"])
@@ -370,6 +379,22 @@ class DynamoDbControlAdapter:
                             "sk": {"S": f"VERSION#{int(proposal['version']):010d}"},
                             "document": {"S": encoded_proposal},
                             "state": {"S": str(proposal["state"])},
+                            "lockVersion": {
+                                "N": str(proposal.get("lockVersion", 1))
+                            },
+                            "queryPk": {
+                                "S": f"PROPOSAL_STATE#{proposal['state']}"
+                            },
+                            "querySk": {
+                                "S": (
+                                    f"{proposal.get('createdAt', created_at)}#"
+                                    f"{proposal['proposalId']}#"
+                                    f"{int(proposal['version']):010d}"
+                                )
+                            },
+                            "createdAt": {
+                                "S": str(proposal.get("createdAt", created_at))
+                            },
                             "system": {"S": str(proposal["system"])},
                             "expectedBaseVersion": {
                                 "S": str(proposal["expectedBaseVersion"])
@@ -654,12 +679,9 @@ class DynamoDbControlAdapter:
         lease_epoch: int,
         output: dict[str, Any],
         completed_at: datetime,
+        run_projection: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
-        aws_call(
-            "dynamodb.record_stage",
-            self.client.put_item,
-            TableName=self.ledger_table,
-            Item={
+        stage_item = {
                 "pk": {"S": f"COMMAND#{command_id}"},
                 "sk": {"S": f"STAGE#{stage_id}#{idempotency_key}"},
                 "status": {"S": "COMPLETED"},
@@ -668,19 +690,119 @@ class DynamoDbControlAdapter:
                 "outputSha256": {"S": str(output["sha256"])},
                 "leaseEpoch": {"N": str(lease_epoch)},
                 "completedAt": {"S": _utc(completed_at)},
-            },
-            ConditionExpression=(
+            }
+        condition = (
                 "(#status = :running AND leaseOwner = :owner AND leaseEpoch = :epoch) OR "
                 "(#status = :completed AND outputSha256 = :outputSha256)"
-            ),
-            ExpressionAttributeNames={"#status": "status"},
-            ExpressionAttributeValues={
+            )
+        condition_names = {"#status": "status"}
+        condition_values = {
                 ":running": {"S": "RUNNING"},
                 ":completed": {"S": "COMPLETED"},
                 ":owner": {"S": lease_owner},
                 ":epoch": {"N": str(lease_epoch)},
                 ":outputSha256": {"S": str(output["sha256"])},
-            },
+            }
+        if run_projection is None:
+            aws_call(
+                "dynamodb.record_stage",
+                self.client.put_item,
+                TableName=self.ledger_table,
+                Item=stage_item,
+                ConditionExpression=condition,
+                ExpressionAttributeNames=condition_names,
+                ExpressionAttributeValues=condition_values,
+            )
+            return output
+
+        required = {
+            "workflowKind",
+            "workflowVersion",
+            "stageName",
+            "stageOrdinal",
+            "correlationId",
+            "environment",
+            "system",
+            "createdAt",
+            "status",
+        }
+        if not required <= set(run_projection):
+            raise ValueError("run projection is incomplete")
+        ordinal = run_projection["stageOrdinal"]
+        if not isinstance(ordinal, int) or isinstance(ordinal, bool) or ordinal < 1:
+            raise ValueError("run projection stage ordinal is invalid")
+        for name in required - {"stageOrdinal"}:
+            if not isinstance(run_projection[name], str) or not run_projection[name]:
+                raise ValueError(f"run projection {name} is invalid")
+        terminal = run_projection.get("terminalOutcome")
+        if terminal is not None and (not isinstance(terminal, str) or not terminal):
+            raise ValueError("run projection terminal outcome is invalid")
+        stage_item["stageId"] = {"S": stage_id}
+        stage_item["stageName"] = {"S": str(run_projection["stageName"])}
+        updated_at = _utc(completed_at)
+        update_expression = (
+            "SET queryPk = :queryPk, querySk = :querySk, commandId = :commandId, "
+            "workflowKind = :workflowKind, workflowVersion = :workflowVersion, "
+            "currentStageId = :stageId, currentStageName = :stageName, "
+            "#status = :status, correlationId = :correlationId, "
+            "environment = :environment, system = :system, "
+            "createdAt = if_not_exists(createdAt, :createdAt), updatedAt = :updatedAt, "
+            "stageOrdinal = :stageOrdinal, output = :output"
+        )
+        summary_values: dict[str, Any] = {
+            ":queryPk": {"S": "RUN"},
+            ":querySk": {"S": f"{updated_at}#{command_id}"},
+            ":commandId": {"S": command_id},
+            ":workflowKind": {"S": str(run_projection["workflowKind"])},
+            ":workflowVersion": {"S": str(run_projection["workflowVersion"])},
+            ":stageId": {"S": stage_id},
+            ":stageName": {"S": str(run_projection["stageName"])},
+            ":status": {"S": str(run_projection["status"])},
+            ":correlationId": {"S": str(run_projection["correlationId"])},
+            ":environment": {"S": str(run_projection["environment"])},
+            ":system": {"S": str(run_projection["system"])},
+            ":createdAt": {"S": str(run_projection["createdAt"])},
+            ":updatedAt": {"S": updated_at},
+            ":stageOrdinal": {"N": str(ordinal)},
+            ":output": {"S": _json(output)},
+        }
+        if terminal is not None:
+            update_expression += ", terminalOutcome = :terminalOutcome"
+            summary_values[":terminalOutcome"] = {"S": terminal}
+        identity = hashlib.sha256(
+            f"{command_id}:{stage_id}:{idempotency_key}:{output['sha256']}".encode()
+        ).hexdigest()
+        aws_call(
+            "dynamodb.record_stage_and_run",
+            self.client.transact_write_items,
+            TransactItems=[
+                {
+                    "Put": {
+                        "TableName": self.ledger_table,
+                        "Item": stage_item,
+                        "ConditionExpression": condition,
+                        "ExpressionAttributeNames": condition_names,
+                        "ExpressionAttributeValues": condition_values,
+                    }
+                },
+                {
+                    "Update": {
+                        "TableName": self.ledger_table,
+                        "Key": {
+                            "pk": {"S": f"RUN#{command_id}"},
+                            "sk": {"S": "SUMMARY"},
+                        },
+                        "UpdateExpression": update_expression,
+                        "ConditionExpression": (
+                            "attribute_not_exists(stageOrdinal) OR "
+                            "stageOrdinal <= :stageOrdinal"
+                        ),
+                        "ExpressionAttributeNames": {"#status": "status"},
+                        "ExpressionAttributeValues": summary_values,
+                    }
+                },
+            ],
+            ClientRequestToken=identity[:36],
         )
         return output
 
@@ -706,6 +828,34 @@ class DynamoDbControlAdapter:
                 "createdAt": {"S": _utc(created_at)},
             },
             ConditionExpression="attribute_not_exists(pk)",
+        )
+
+    def mark_outbox_delivered(
+        self, outbox_id: str, correlation_id: str, *, delivered_at: datetime
+    ) -> None:
+        if not outbox_id or not correlation_id:
+            raise ValueError("outbox delivery identity is required")
+        delivered = _utc(delivered_at)
+        aws_call(
+            "dynamodb.mark_outbox_delivered",
+            self.client.update_item,
+            TableName=self.ledger_table,
+            Key={"pk": {"S": f"OUTBOX#{outbox_id}"}, "sk": {"S": "EVENT"}},
+            UpdateExpression=(
+                "SET #status = :delivered, "
+                "deliveredAt = if_not_exists(deliveredAt, :deliveredAt)"
+            ),
+            ConditionExpression=(
+                "correlationId = :correlationId AND "
+                "(#status = :pending OR #status = :delivered)"
+            ),
+            ExpressionAttributeNames={"#status": "status"},
+            ExpressionAttributeValues={
+                ":pending": {"S": "PENDING"},
+                ":delivered": {"S": "DELIVERED"},
+                ":deliveredAt": {"S": delivered},
+                ":correlationId": {"S": correlation_id},
+            },
         )
 
     def active_pointer(self, environment: str) -> dict[str, Any]:

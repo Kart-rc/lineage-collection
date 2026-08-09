@@ -40,6 +40,7 @@ export function fixtureConfig(): PlatformConfig {
       proposal: 10,
       publication: 5,
       deployment: 2,
+      "product-api": 20,
     },
     sourceRevision: "local-synth",
     logRetention: logs.RetentionDays.ONE_WEEK,
@@ -107,6 +108,7 @@ const COMPUTE_TARGETS = [
   "proposal",
   "publication",
   "deployment",
+  "product-api",
 ] as const;
 
 function requiredConcurrency(node: Node): Record<string, number> {

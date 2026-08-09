@@ -1,4 +1,11 @@
-import { Stack, type StackProps } from "aws-cdk-lib";
+import {
+  Duration,
+  Stack,
+  type StackProps,
+  aws_lambda as lambda,
+  aws_lambda_event_sources as lambdaEventSources,
+  aws_sqs as sqs,
+} from "aws-cdk-lib";
 import { Construct } from "constructs";
 
 import type { PlatformConfig } from "./config.js";
@@ -25,5 +32,29 @@ export class PublicationStack extends Stack {
       environment: props.data.runtimeEnvironment(),
       policyStatements: props.data.dataPlaneStatements("publication"),
     });
+    const approvalDlq = new sqs.Queue(this, "ApprovalPublicationDlq", {
+      encryption: sqs.QueueEncryption.SQS_MANAGED,
+      enforceSSL: true,
+      retentionPeriod: Duration.days(14),
+    });
+    this.publication.alias.addEventSource(
+      new lambdaEventSources.DynamoEventSource(props.data.ledgerTable, {
+        startingPosition: lambda.StartingPosition.TRIM_HORIZON,
+        batchSize: 10,
+        bisectBatchOnError: true,
+        reportBatchItemFailures: true,
+        retryAttempts: 10,
+        maxRecordAge: Duration.hours(23),
+        onFailure: new lambdaEventSources.SqsDlq(approvalDlq),
+        filters: [
+          {
+            eventName: ["INSERT"],
+            dynamodb: {
+              NewImage: { topic: { S: ["PROPOSAL_APPROVED"] } },
+            },
+          },
+        ],
+      }),
+    );
   }
 }

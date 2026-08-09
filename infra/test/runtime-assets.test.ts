@@ -17,8 +17,9 @@ describe("runtime assets", () => {
       "proposal",
       "publication",
       "deployment",
+      "product-api",
     ]);
-    expect(new Set(LAMBDA_TARGETS.map((target) => target.handler)).size).toBe(9);
+    expect(new Set(LAMBDA_TARGETS.map((target) => target.handler)).size).toBe(10);
     for (const target of LAMBDA_TARGETS) {
       expect(target.memoryMiB).toBeGreaterThanOrEqual(256);
       expect(target.timeoutSeconds).toBeGreaterThan(0);
@@ -51,7 +52,7 @@ describe("runtime assets", () => {
       images: first.images,
     });
     expect(first).toEqual(second);
-    expect(first.handlers).toHaveLength(9);
+    expect(first.handlers).toHaveLength(10);
     expect(first).toHaveProperty("imageAssetDigest", "sha256:image");
     expect(first).toHaveProperty("images.lambda.platform", "linux/amd64");
     expect(first).toHaveProperty("images.lambda.digest", `sha256:${"a".repeat(64)}`);

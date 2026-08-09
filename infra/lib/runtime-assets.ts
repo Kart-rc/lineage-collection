@@ -88,6 +88,7 @@ export const LAMBDA_TARGETS: readonly LambdaTargetDefinition[] = [
   { name: "proposal", handler: "lineage_api.entrypoints.aws.proposal.handler", memoryMiB: 768, timeoutSeconds: 90, reservedConcurrency: 10 },
   { name: "publication", handler: "lineage_api.entrypoints.aws.publication.handler", memoryMiB: 1536, timeoutSeconds: 300, reservedConcurrency: 5 },
   { name: "deployment", handler: "lineage_api.entrypoints.aws.deployment.handler", memoryMiB: 1024, timeoutSeconds: 300, reservedConcurrency: 2 },
+  { name: "product-api", handler: "lineage_api.entrypoints.aws.product_api.handler", memoryMiB: 1024, timeoutSeconds: 29, reservedConcurrency: 20 },
 ] as const;
 
 export function lambdaTarget(name: string): LambdaTargetDefinition {

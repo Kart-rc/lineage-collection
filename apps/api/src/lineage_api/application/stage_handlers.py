@@ -1331,6 +1331,9 @@ class ProposalStageUseCase:
             "proposalId": proposal_id,
             "version": 1,
             "proposalType": proposal_type,
+            "commandId": context.command_id,
+            "repository": common["repository"],
+            "artifactDigest": common["artifactDigest"],
             "system": common["system"],
             "environment": common["environment"],
             "state": "IN_REVIEW",
@@ -1558,7 +1561,17 @@ class PublicationStageUseCase:
                 }
                 rows.append(row)
                 merge_rows.append(
-                    {**row, "band": band, "corroboration": corroboration}
+                    {
+                        **row,
+                        "band": band,
+                        "corroboration": corroboration,
+                        "document": json.dumps(
+                            dict(edge),
+                            sort_keys=True,
+                            separators=(",", ":"),
+                            ensure_ascii=False,
+                        ),
+                    }
                 )
             stored_ids.append(edge_id)
         if stored_ids != sorted(set(stored_ids)) or stored_ids != write_ids:

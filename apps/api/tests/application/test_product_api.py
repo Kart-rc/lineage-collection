@@ -92,19 +92,20 @@ def test_product_api_has_closed_route_parity_without_demo_mutations() -> None:
         (
             "GET",
             "/api/lineage/urn%3Aldp%3Astaging%3Asnowflake%3Apayments%3Araw.transactions",
-            {"direction": "down", "depth": "3"},
+            {"direction": "down", "depth": "3", "version": "graph-v1"},
             None,
             "lineage",
         ),
-        ("GET", "/api/edges/edge-1", {}, None, "edge_detail"),
+        ("GET", "/api/edges/edge-1", {"version": "graph-v1"}, None, "edge_detail"),
         (
             "POST",
             "/api/impact",
             {},
             {
                 "subject": "urn:ldp:staging:snowflake:payments:raw.transactions",
-                "changeType": "DATASET_REMOVAL",
+                "changeType": "COLUMN_DROP",
                 "depth": 5,
+                "version": "graph-v1",
             },
             "impact",
         ),
@@ -176,6 +177,37 @@ def test_product_api_bounds_queries_and_closes_privileged_mutation_bodies() -> N
             },
         )
     assert port.calls == []
+
+
+@pytest.mark.parametrize(
+    "change_type",
+    [
+        "COLUMN_DROP",
+        "COLUMN_TYPE_CHANGE",
+        "DATASET_REMOVAL",
+        "COLUMN_RENAME",
+        "TRANSFORM_CHANGE",
+        "FINGERPRINT_DRIFT",
+    ],
+)
+def test_product_api_uses_the_existing_impact_change_vocabulary(
+    change_type: str,
+) -> None:
+    port = Port()
+    result = _call(
+        ProductApiService(port),
+        "POST",
+        "/api/impact",
+        body={
+            "subject": "urn:ldp:staging:snowflake:payments:raw.transactions",
+            "changeType": change_type,
+            "depth": 3,
+            "version": "graph-v7",
+        },
+    )
+
+    assert result.status_code == 200
+    assert port.calls[-1][1]["version"] == "graph-v7"
 
 
 @pytest.mark.parametrize(

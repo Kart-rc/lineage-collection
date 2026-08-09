@@ -5,9 +5,11 @@ import binascii
 import json
 import re
 from collections.abc import Mapping
+from functools import lru_cache
 from typing import Any
 
 from lineage_api.application.product_api import ProductApiError, ProductApiResult
+from lineage_api.infrastructure.aws.errors import AwsRetryableError
 
 
 MAX_BODY_BYTES = 256 * 1024
@@ -15,6 +17,7 @@ MAX_RESPONSE_BYTES = 1024 * 1024
 _CORRELATION_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$")
 
 
+@lru_cache(maxsize=1)
 def service_factory() -> object:
     # Kept lazy so application-contract tests never initialize AWS clients.
     from lineage_api.infrastructure.aws.query_projection import build_product_api
@@ -36,6 +39,18 @@ def handler(event: object, _context: object) -> dict[str, Any]:
             error.status_code,
             {
                 "error": {"code": error.code, "message": str(error)},
+                "correlationId": correlation_id,
+            },
+            correlation_id,
+        )
+    except AwsRetryableError:
+        return _response(
+            503,
+            {
+                "error": {
+                    "code": "SERVICE_UNAVAILABLE",
+                    "message": "service is temporarily unavailable",
+                },
                 "correlationId": correlation_id,
             },
             correlation_id,

@@ -209,6 +209,53 @@ def test_intake_sqs_batch_retains_explicit_redrive_outcomes(monkeypatch: pytest.
     assert result == {"batchItemFailures": [{"itemIdentifier": "retry-1"}]}
 
 
+def test_publication_consumes_only_typed_approval_outbox_stream_records(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    common = importlib.import_module("lineage_api.entrypoints.aws.common")
+    module = importlib.import_module("lineage_api.entrypoints.aws.publication")
+    envelope = _event(
+        stage_id="I10", stage_name="PUBLISH_WITH_FENCED_PROTOCOL"
+    )
+    calls: list[dict[str, Any]] = []
+
+    class Executor:
+        def execute(self, stage: str, value: dict[str, Any]) -> dict[str, Any]:
+            assert stage == "publication"
+            calls.append(value)
+            return {"outcome": "SUCCEEDED", "output": value["input"]}
+
+    monkeypatch.setattr(common, "executor_factory", lambda: Executor())
+    result = module.handler(
+        {
+            "Records": [
+                {
+                    "eventID": "stream-1",
+                    "dynamodb": {
+                        "NewImage": {
+                            "topic": {"S": "PROPOSAL_APPROVED"},
+                            "payload": {"S": json.dumps(envelope)},
+                        }
+                    },
+                },
+                {
+                    "eventID": "stream-bad",
+                    "dynamodb": {
+                        "NewImage": {
+                            "topic": {"S": "OTHER"},
+                            "payload": {"S": "{}"},
+                        }
+                    },
+                },
+            ]
+        },
+        object(),
+    )
+
+    assert calls == [envelope]
+    assert result == {"batchItemFailures": [{"itemIdentifier": "stream-bad"}]}
+
+
 def test_stage_handler_emits_bounded_structured_correlation_log(
     monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
 ) -> None:

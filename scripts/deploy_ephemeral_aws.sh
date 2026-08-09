@@ -86,7 +86,7 @@ context=(
   -c archiveRetentionDays=1
   -c monthlyBudgetUsd=25
   -c baselineMapConcurrency=4
-  -c lambdaReservedConcurrency=intake=6,control-stage=2,classification=2,runtime-validation=2,consolidation=2,coverage=2,proposal=2,publication=1,deployment=1
+  -c lambdaReservedConcurrency=intake=6,control-stage=2,classification=2,runtime-validation=2,consolidation=2,coverage=2,proposal=2,publication=1,deployment=1,product-api=4
   -c "enterpriseEndpoint=$LINEAGE_ENTERPRISE_ENDPOINT"
   -c "enterpriseEndpointServiceName=$LINEAGE_ENTERPRISE_ENDPOINT_SERVICE_NAME"
   -c "lambdaImageDigest=$lambda_digest"

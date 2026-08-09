@@ -140,7 +140,7 @@ export class DataStack extends Stack {
       }),
     );
 
-    const controlTable = (name: string) =>
+    const controlTable = (name: string, stream?: dynamodb.StreamViewType) =>
       new dynamodb.Table(this, name, {
         partitionKey: { name: "pk", type: dynamodb.AttributeType.STRING },
         sortKey: { name: "sk", type: dynamodb.AttributeType.STRING },
@@ -150,11 +150,24 @@ export class DataStack extends Stack {
         pointInTimeRecoverySpecification: { pointInTimeRecoveryEnabled: true },
         deletionProtection: !disposable,
         removalPolicy: disposable ? RemovalPolicy.DESTROY : RemovalPolicy.RETAIN,
+        stream,
       });
     this.controlTable = controlTable("ControlTable");
-    this.ledgerTable = controlTable("LedgerTable");
+    this.ledgerTable = controlTable("LedgerTable", dynamodb.StreamViewType.NEW_IMAGE);
     this.proposalTable = controlTable("ProposalTable");
     this.pointerTable = controlTable("PointerTable");
+    this.ledgerTable.addGlobalSecondaryIndex({
+      indexName: "RunsByUpdatedAt",
+      partitionKey: { name: "queryPk", type: dynamodb.AttributeType.STRING },
+      sortKey: { name: "querySk", type: dynamodb.AttributeType.STRING },
+      projectionType: dynamodb.ProjectionType.ALL,
+    });
+    this.proposalTable.addGlobalSecondaryIndex({
+      indexName: "ProposalsByState",
+      partitionKey: { name: "queryPk", type: dynamodb.AttributeType.STRING },
+      sortKey: { name: "querySk", type: dynamodb.AttributeType.STRING },
+      projectionType: dynamodb.ProjectionType.ALL,
+    });
     this.runtimeStream = new kinesis.Stream(this, "RuntimeStream", {
       encryption: kinesis.StreamEncryption.KMS,
       encryptionKey: this.key,
@@ -227,6 +240,12 @@ export class DataStack extends Stack {
       proposal: [this.controlTable, this.ledgerTable, this.proposalTable],
       publication: [this.ledgerTable, this.proposalTable, this.pointerTable],
       deployment: [this.controlTable, this.ledgerTable, this.pointerTable],
+      "product-api": [
+        this.controlTable,
+        this.ledgerTable,
+        this.proposalTable,
+        this.pointerTable,
+      ],
       sca: [this.controlTable, this.ledgerTable],
     };
     const bucketsByTarget: Record<string, s3.Bucket[]> = {
@@ -239,11 +258,44 @@ export class DataStack extends Stack {
       proposal: [this.evidenceBucket, this.packageBucket],
       publication: [this.evidenceBucket, this.packageBucket],
       deployment: [this.packageBucket],
+      "product-api": [this.evidenceBucket],
       sca: [this.evidenceBucket, this.packageBucket],
     };
     const tables = tablesByTarget[target];
     const buckets = bucketsByTarget[target];
     if (!tables || !buckets) throw new Error(`Unknown data-plane target: ${target}`);
+    if (target === "product-api") {
+      const readResources = tables.flatMap((table) => [
+        table.tableArn,
+        `${table.tableArn}/index/*`,
+      ]);
+      return [
+        new iam.PolicyStatement({
+          actions: ["dynamodb:GetItem", "dynamodb:Query"],
+          resources: readResources,
+        }),
+        new iam.PolicyStatement({
+          actions: ["dynamodb:TransactWriteItems"],
+          resources: [
+            this.controlTable.tableArn,
+            this.ledgerTable.tableArn,
+            this.proposalTable.tableArn,
+          ],
+        }),
+        new iam.PolicyStatement({
+          actions: ["s3:GetObject", "s3:GetObjectVersion", "s3:PutObject"],
+          resources: [`${this.evidenceBucket.bucketArn}/*`],
+        }),
+        new iam.PolicyStatement({
+          actions: ["kms:Decrypt", "kms:DescribeKey", "kms:Encrypt", "kms:GenerateDataKey"],
+          resources: [this.key.keyArn],
+        }),
+        new iam.PolicyStatement({
+          actions: ["neptune-db:Connect"],
+          resources: [this.graphResourceArn],
+        }),
+      ];
+    }
     const statements = [
       new iam.PolicyStatement({
         actions: [
@@ -254,7 +306,7 @@ export class DataStack extends Stack {
           "dynamodb:TransactWriteItems",
           "dynamodb:UpdateItem",
         ],
-        resources: tables.map((table) => table.tableArn),
+        resources: tables.flatMap((table) => [table.tableArn, `${table.tableArn}/index/*`]),
       }),
       new iam.PolicyStatement({
         actions: ["s3:GetObject", "s3:GetObjectVersion", "s3:PutObject"],
@@ -277,7 +329,12 @@ export class DataStack extends Stack {
         }),
       );
     }
-    if (target === "coverage" || target === "publication" || target === "deployment") {
+    if (
+      target === "coverage" ||
+      target === "publication" ||
+      target === "deployment" ||
+      target === "product-api"
+    ) {
       statements.push(
         new iam.PolicyStatement({
           actions: ["neptune-db:Connect"],

@@ -82,6 +82,8 @@ new IntakeStack(app, "LineageIntake", {
 });
 new ApiStack(app, "LineageApi", {
   config,
+  network,
+  data,
   stackName: `${config.resourcePrefix}-api`,
   env,
 });

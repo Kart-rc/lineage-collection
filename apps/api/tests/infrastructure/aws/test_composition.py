@@ -19,6 +19,7 @@ from lineage_api.infrastructure.aws.composition import (
     build_stage_executor,
 )
 from lineage_api.infrastructure.aws.config import AwsRuntimeConfig
+from lineage_api.infrastructure.aws.errors import AwsConflictError, AwsRetryableError
 
 
 REQUIRED_ENV = {
@@ -710,6 +711,116 @@ def test_executor_rejects_an_unmapped_workflow_state_before_claim_or_artifact_io
 
     with pytest.raises(RuntimeError, match="no production use case"):
         executor.execute("classification", envelope)
+
+
+def test_completed_publication_retries_only_the_outbox_acknowledgement() -> None:
+    output = {
+        "bucket": "evidence",
+        "key": "commands/cmd-approval/stages/I10/result.json",
+        "versionId": "receipt-v1",
+        "sha256": "a" * 64,
+        "sizeBytes": 100,
+    }
+
+    class Control:
+        acknowledgements = 0
+
+        def claim_stage(self, *_args: Any) -> dict[str, Any]:
+            return {"status": "COMPLETED", "output": output}
+
+        def mark_outbox_delivered(self, *_args: Any, **_kwargs: Any) -> None:
+            self.acknowledgements += 1
+            if self.acknowledgements == 1:
+                raise AwsRetryableError("throttled")
+
+    class Artifacts:
+        def get(self, reference: object) -> object:
+            assert reference == output
+            return {"terminalOutcome": "PUBLISHED"}
+
+    class UseCase:
+        def execute(self, *_args: Any) -> StageExecutionResult:
+            raise AssertionError("a completed publication must not execute again")
+
+    control = Control()
+    executor = AwsStageExecutor(
+        AwsRuntimeConfig.from_env(REQUIRED_ENV),
+        control,
+        Artifacts(),
+        FakeClient(),
+        FakeClient(),
+        dispatcher=StageDispatcher({("INCREMENTAL", "I10"): UseCase()}),
+    )
+    envelope = {
+        "commandId": "cmd-approval",
+        "correlationId": "corr-approval",
+        "idempotencyKey": "idem-approval:I10",
+        "outboxId": "proposal-approval-abc",
+        "workflowKind": "INCREMENTAL",
+        "workflowVersion": "1.0.0",
+        "stageId": "I10",
+        "stageName": "PUBLISH_WITH_FENCED_PROTOCOL",
+        "input": output,
+    }
+
+    first = executor.execute("publication", envelope)
+    second = executor.execute("publication", envelope)
+
+    assert first == {"outcome": "REDRIVE_REQUIRED", "output": output}
+    assert second["outcome"] == "SKIPPED"
+    assert second["terminalOutcome"] == "PUBLISHED"
+    assert control.acknowledgements == 2
+
+
+def test_outbox_identity_conflict_is_not_mistaken_for_completed_stage_replay() -> None:
+    class Control:
+        def claim_stage(self, *_args: Any) -> dict[str, Any]:
+            return {
+                "status": "COMPLETED",
+                "output": {
+                    "bucket": "evidence",
+                    "key": "receipt.json",
+                    "versionId": "v1",
+                    "sha256": "a" * 64,
+                    "sizeBytes": 10,
+                },
+            }
+
+        def mark_outbox_delivered(self, *_args: Any, **_kwargs: Any) -> None:
+            raise AwsConflictError("mismatched correlation")
+
+    class UseCase:
+        def execute(self, *_args: Any) -> StageExecutionResult:
+            raise AssertionError("a completed publication must not execute again")
+
+    executor = AwsStageExecutor(
+        AwsRuntimeConfig.from_env(REQUIRED_ENV),
+        Control(),
+        FakeClient(),
+        FakeClient(),
+        FakeClient(),
+        dispatcher=StageDispatcher({("INCREMENTAL", "I10"): UseCase()}),
+    )
+    envelope = {
+        "commandId": "cmd-approval",
+        "correlationId": "corr-approval",
+        "idempotencyKey": "idem-approval:I10",
+        "outboxId": "proposal-approval-abc",
+        "workflowKind": "INCREMENTAL",
+        "workflowVersion": "1.0.0",
+        "stageId": "I10",
+        "stageName": "PUBLISH_WITH_FENCED_PROTOCOL",
+        "input": {
+            "bucket": "evidence",
+            "key": "decision.json",
+            "versionId": "v1",
+            "sha256": "b" * 64,
+            "sizeBytes": 10,
+        },
+    }
+
+    with pytest.raises(RuntimeError, match="outbox acknowledgement conflict"):
+        executor.execute("publication", envelope)
 
 
 def test_sca_aggregation_executor_checkpoints_an_exact_immutable_result() -> None:

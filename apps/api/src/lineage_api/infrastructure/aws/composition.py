@@ -16,6 +16,7 @@ from lineage_api.application.stage_execution import (
     validate_artifact_reference,
 )
 from lineage_api.application.stage_handlers import production_stage_use_cases
+from lineage_api.application.workflows.definitions import WORKFLOWS
 from lineage_api.infrastructure.aws.config import AwsRuntimeConfig
 from lineage_api.infrastructure.aws.dynamodb_control import DynamoDbControlAdapter
 from lineage_api.infrastructure.aws.errors import AwsConflictError, AwsRetryableError, aws_call
@@ -139,6 +140,7 @@ class AwsStageExecutor:
                 now,
             )
             if lease.get("status") == "COMPLETED":
+                self._acknowledge_outbox(target, envelope, now)
                 return self._response(
                     "SKIPPED",
                     lease["output"],
@@ -187,7 +189,13 @@ class AwsStageExecutor:
                 lease_epoch=int(lease["leaseEpoch"]),
                 output=reference,
                 completed_at=now,
+                run_projection=(
+                    None
+                    if target == "intake"
+                    else self._run_projection(envelope, persisted_body, now)
+                ),
             )
+            self._acknowledge_outbox(target, envelope, now)
             return self._response(
                 "SUCCEEDED",
                 reference,
@@ -207,6 +215,59 @@ class AwsStageExecutor:
                     stage_id,
                 )
             return {"outcome": "REDRIVE_REQUIRED", "output": dict(envelope["input"])}
+
+    @staticmethod
+    def _run_projection(
+        envelope: Mapping[str, Any], document: object, completed_at: datetime
+    ) -> dict[str, Any]:
+        workflow_kind = str(envelope["workflowKind"])
+        stage_id = str(envelope["stageId"])
+        workflow = WORKFLOWS.get(workflow_kind)  # type: ignore[arg-type]
+        if workflow is None or stage_id not in workflow.stage_ids:
+            raise RuntimeError("run projection received an unknown workflow stage")
+        context = document.get("context") if isinstance(document, Mapping) else None
+        values = context if isinstance(context, Mapping) else {}
+        terminal = document.get("terminalOutcome") if isinstance(document, Mapping) else None
+        fallback_created_at = (
+            completed_at.astimezone(UTC).isoformat().replace("+00:00", "Z")
+        )
+        created_at = values.get("acceptedAt", fallback_created_at)
+        environment = values.get("environment", "UNKNOWN")
+        system = values.get("system", "UNKNOWN")
+        projection = {
+            "workflowKind": workflow_kind,
+            "workflowVersion": str(envelope["workflowVersion"]),
+            "stageName": str(envelope["stageName"]),
+            "stageOrdinal": workflow.stage_ids.index(stage_id) + 1,
+            "correlationId": str(envelope["correlationId"]),
+            "environment": str(environment),
+            "system": str(system),
+            "createdAt": str(created_at),
+            "status": str(terminal) if isinstance(terminal, str) else "RUNNING",
+        }
+        if isinstance(terminal, str):
+            projection["terminalOutcome"] = terminal
+        return projection
+
+    def _acknowledge_outbox(
+        self, target: str, envelope: Mapping[str, Any], delivered_at: datetime
+    ) -> None:
+        outbox_id = envelope.get("outboxId")
+        if outbox_id is None:
+            return
+        if target != "publication" or not isinstance(outbox_id, str) or not outbox_id:
+            raise ValueError("outbox acknowledgement target is invalid")
+        try:
+            self.control.mark_outbox_delivered(
+                outbox_id,
+                str(envelope["correlationId"]),
+                delivered_at=delivered_at,
+            )
+        except AwsConflictError as error:
+            # This conflict is about the outbox identity, not the stage lease.
+            # Keep it out of the generic completed-stage replay path so a
+            # missing or mismatched event is retried and ultimately dead-lettered.
+            raise RuntimeError("outbox acknowledgement conflict") from error
 
     def _response(
         self,

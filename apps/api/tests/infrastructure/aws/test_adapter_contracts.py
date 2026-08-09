@@ -124,6 +124,8 @@ def test_dynamodb_conditionally_persists_and_replays_one_proposal_version() -> N
         "state": "IN_REVIEW",
         "system": "payments",
         "expectedBaseVersion": "graph-v1",
+        "createdAt": "2026-08-08T17:00:00Z",
+        "lockVersion": 1,
     }
     client = FakeClient(put_item=[{}])
     adapter = DynamoDbControlAdapter(
@@ -136,6 +138,11 @@ def test_dynamodb_conditionally_persists_and_replays_one_proposal_version() -> N
     assert request["ConditionExpression"] == "attribute_not_exists(pk)"
     assert request["Item"]["pk"] == {"S": "PROPOSAL#proposal-001"}
     assert request["Item"]["sk"] == {"S": "VERSION#0000000001"}
+    assert request["Item"]["queryPk"] == {"S": "PROPOSAL_STATE#IN_REVIEW"}
+    assert request["Item"]["querySk"] == {
+        "S": "2026-08-08T17:00:00Z#proposal-001#0000000001"
+    }
+    assert request["Item"]["lockVersion"] == {"N": "1"}
 
     replay_client = FakeClient(
         put_item=[FakeServiceError("ConditionalCheckFailedException")],
@@ -163,6 +170,75 @@ def test_dynamodb_conditionally_persists_and_replays_one_proposal_version() -> N
     )
     with pytest.raises(AwsConflictError):
         conflict.put_proposal(proposal)
+
+
+def test_stage_completion_atomically_updates_the_indexed_run_projection() -> None:
+    client = FakeClient(transact_write_items=[{}])
+    adapter = DynamoDbControlAdapter(client, "control", "ledger", "pointer")
+    now = datetime(2026, 8, 8, 17, 5, tzinfo=UTC)
+    output = {
+        "bucket": "evidence",
+        "key": "commands/cmd-1/stages/I10.json",
+        "versionId": "v1",
+        "sha256": "a" * 64,
+        "sizeBytes": 100,
+    }
+
+    adapter.record_stage(
+        command_id="cmd-1",
+        stage_id="I10",
+        idempotency_key="idem:I10",
+        lease_owner="worker-1",
+        lease_epoch=3,
+        output=output,
+        completed_at=now,
+        run_projection={
+            "workflowKind": "INCREMENTAL",
+            "workflowVersion": "1.0.0",
+            "stageName": "PUBLISH_WITH_FENCED_PROTOCOL",
+            "stageOrdinal": 10,
+            "correlationId": "corr-1",
+            "environment": "staging",
+            "system": "payments",
+            "createdAt": "2026-08-08T17:00:00Z",
+            "status": "PUBLISHED",
+            "terminalOutcome": "PUBLISHED",
+        },
+    )
+
+    transaction = client.calls[0][1]["TransactItems"]
+    assert len(transaction) == 2
+    stage = transaction[0]["Put"]["Item"]
+    summary = transaction[1]["Update"]
+    assert stage["stageId"] == {"S": "I10"}
+    assert stage["stageName"] == {"S": "PUBLISH_WITH_FENCED_PROTOCOL"}
+    assert summary["Key"] == {"pk": {"S": "RUN#cmd-1"}, "sk": {"S": "SUMMARY"}}
+    assert "stageOrdinal <= :stageOrdinal" in summary["ConditionExpression"]
+    assert summary["ExpressionAttributeValues"][":queryPk"] == {"S": "RUN"}
+    assert summary["ExpressionAttributeValues"][":terminalOutcome"] == {
+        "S": "PUBLISHED"
+    }
+
+
+def test_publication_outbox_acknowledgement_is_conditional_and_idempotent() -> None:
+    client = FakeClient(update_item=[{}])
+    adapter = DynamoDbControlAdapter(client, "control", "ledger", "pointer")
+    now = datetime(2026, 8, 8, 18, 0, tzinfo=UTC)
+
+    adapter.mark_outbox_delivered(
+        "proposal-approval-abc", "corr-1", delivered_at=now
+    )
+
+    request = client.calls[0][1]
+    assert request["Key"] == {
+        "pk": {"S": "OUTBOX#proposal-approval-abc"},
+        "sk": {"S": "EVENT"},
+    }
+    assert "if_not_exists(deliveredAt" in request["UpdateExpression"]
+    assert "#status = :pending OR" in request["ConditionExpression"]
+    assert request["ExpressionAttributeValues"][":correlationId"] == {
+        "S": "corr-1"
+    }
 
 
 def test_dynamodb_pins_current_pr_head_and_writes_check_with_provider_outbox() -> None:
@@ -533,6 +609,69 @@ def test_neptune_runs_a_version_pinned_bounded_impact_traversal() -> None:
     assert "LIMIT 101" in request["openCypherQuery"]
     assert json.loads(request["parameters"])["namespace"] == "graph-v1"
     assert "limit" not in json.loads(request["parameters"])
+
+
+def test_neptune_reads_bounded_lineage_and_full_edge_documents_from_one_namespace() -> None:
+    edge = {
+        "schemaVersion": "1.0.0",
+        "edgeKey": "edge-1",
+        "version": 1,
+        "from": ["urn:ldp:staging:snowflake:payments:raw.transactions"],
+        "to": "urn:ldp:staging:snowflake:payments:analytics.daily_revenue",
+        "edgeType": "DERIVES",
+        "band": "HIGH",
+        "corroboration": "DATASET",
+        "status": "ACTIVE",
+        "provenance": [],
+        "autoPublishable": True,
+        "system": "payments",
+        "updatedAt": "2026-08-08T17:00:00Z",
+    }
+    source, target = edge["from"][0], edge["to"]
+    client = FakeClient(
+        execute_open_cypher_query=[
+            {
+                "results": [
+                    {
+                        "urns": [source, target],
+                        "edgeIds": ["edge-1"],
+                        "documents": [json.dumps(edge)],
+                    }
+                ]
+            },
+            {
+                "results": [
+                    {
+                        "sources": [source],
+                        "target": target,
+                        "document": json.dumps(edge),
+                    }
+                ]
+            },
+        ]
+    )
+    projection = NeptuneProjectionAdapter(client)
+
+    lineage = projection.lineage(
+        "graph-v7", source, direction="down", depth=3, limit=100
+    )
+    detail = projection.edge_detail("graph-v7", "edge-1")
+
+    assert lineage["edges"] == [edge]
+    assert lineage["nodes"] == [
+        {"urn": target, "system": "payments", "kind": "DATASET"},
+        {"urn": source, "system": "payments", "kind": "DATASET"},
+    ]
+    assert lineage["truncated"] is False
+    assert detail == edge
+    assert "LINEAGE*1..3 {namespace: $namespace}" in client.calls[0][1][
+        "openCypherQuery"
+    ]
+    assert "LIMIT 101" in client.calls[0][1]["openCypherQuery"]
+    assert json.loads(client.calls[1][1]["parameters"]) == {
+        "edgeId": "edge-1",
+        "namespace": "graph-v7",
+    }
 
 
 def test_dynamodb_coordinates_ordered_deployment_promotion_and_readback() -> None:

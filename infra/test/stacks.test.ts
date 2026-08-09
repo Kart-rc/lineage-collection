@@ -32,7 +32,7 @@ function platform() {
     publication,
   });
   const intake = new IntakeStack(app, "Intake", { config, network, data, orchestration });
-  const api = new ApiStack(app, "Api", { config });
+  const api = new ApiStack(app, "Api", { config, network, data });
   const operations = new OperationsStack(app, "Operations", { config, network, data });
   return { app, recovery, network, data, intake, orchestration, engines, runtime, publication, api, operations };
 }
@@ -84,7 +84,7 @@ describe("lineage platform stacks", () => {
         monthlyBudgetUsd: "1000",
         baselineMapConcurrency: "10001",
         lambdaReservedConcurrency:
-          "intake=20,control-stage=30,classification=20,runtime-validation=20,consolidation=10,coverage=15,proposal=10,publication=5,deployment=2",
+          "intake=20,control-stage=30,classification=20,runtime-validation=20,consolidation=10,coverage=15,proposal=10,publication=5,deployment=2,product-api=20",
         enterpriseEndpoint: "https://catalog.example.internal",
         enterpriseEndpointServiceName:
           "com.amazonaws.vpce.us-east-1.vpce-svc-0123456789abcdef0",
@@ -111,7 +111,7 @@ describe("lineage platform stacks", () => {
       monthlyBudgetUsd: "25",
       baselineMapConcurrency: "4",
       lambdaReservedConcurrency:
-        "intake=6,control-stage=2,classification=2,runtime-validation=2,consolidation=2,coverage=2,proposal=2,publication=1,deployment=1",
+        "intake=6,control-stage=2,classification=2,runtime-validation=2,consolidation=2,coverage=2,proposal=2,publication=1,deployment=1,product-api=4",
       enterpriseEndpoint: "https://catalog.example.internal",
       enterpriseEndpointServiceName:
         "com.amazonaws.vpce.us-east-1.vpce-svc-0123456789abcdef0",
@@ -157,7 +157,7 @@ describe("lineage platform stacks", () => {
         monthlyBudgetUsd: "1000",
         baselineMapConcurrency: "25",
         lambdaReservedConcurrency:
-          "intake=20,control-stage=30,classification=20,runtime-validation=20,consolidation=10,coverage=15,proposal=10,publication=5,deployment=2",
+          "intake=20,control-stage=30,classification=20,runtime-validation=20,consolidation=10,coverage=15,proposal=10,publication=5,deployment=2,product-api=20",
         enterpriseEndpoint: "https://catalog.example.internal",
         pagingTopicArn: "arn:aws:sns:us-east-1:111111111111:lineage-paging",
         sourceRevision: "test",
@@ -180,7 +180,7 @@ describe("lineage platform stacks", () => {
         monthlyBudgetUsd: "1000",
         baselineMapConcurrency: "25",
         lambdaReservedConcurrency:
-          "intake=20,control-stage=30,classification=20,runtime-validation=20,consolidation=10,coverage=15,proposal=10,publication=5,deployment=2",
+          "intake=20,control-stage=30,classification=20,runtime-validation=20,consolidation=10,coverage=15,proposal=10,publication=5,deployment=2,product-api=20",
         enterpriseEndpoint: "https://catalog.example.internal",
         enterpriseEndpointServiceName:
           "com.amazonaws.vpce.us-east-1.vpce-svc-0123456789abcdef0",
@@ -367,6 +367,7 @@ describe("lineage platform stacks", () => {
       stacks.runtime,
       stacks.publication,
       stacks.operations,
+      stacks.api,
     ].map((stack) => Template.fromStack(stack).toJSON());
     const eniPolicies = templates.flatMap((template) =>
       Object.values(template.Resources as Record<string, any>).filter(
@@ -377,7 +378,7 @@ describe("lineage platform stacks", () => {
           ),
       ),
     );
-    expect(eniPolicies).toHaveLength(9);
+    expect(eniPolicies).toHaveLength(10);
 
     const dynamoResourceScopes = eniPolicies.flatMap((resource: any) =>
       resource.Properties.PolicyDocument.Statement.filter((statement: any) =>
@@ -387,7 +388,7 @@ describe("lineage platform stacks", () => {
     expect(new Set(dynamoResourceScopes).size).toBeGreaterThanOrEqual(5);
   });
 
-  it("creates four Standard workflows and nine distinct versioned Lambda targets", () => {
+  it("creates four Standard workflows and ten distinct versioned Lambda targets", () => {
     const templates = [
       stacks.intake,
       stacks.orchestration,
@@ -395,6 +396,7 @@ describe("lineage platform stacks", () => {
       stacks.runtime,
       stacks.publication,
       stacks.operations,
+      stacks.api,
     ].map((stack) => Template.fromStack(stack));
     const resources = templates.flatMap((template) => Object.values(template.toJSON().Resources));
     const functions = resources.filter((resource: any) => resource.Type === "AWS::Lambda::Function");
@@ -407,20 +409,20 @@ describe("lineage platform stacks", () => {
     const stateMachines = resources.filter(
       (resource: any) => resource.Type === "AWS::StepFunctions::StateMachine",
     );
-    expect(functions).toHaveLength(9);
+    expect(functions).toHaveLength(10);
     expect(alarms.length).toBeGreaterThanOrEqual(15);
-    expect(aliases).toHaveLength(9);
-    expect(deploymentGroups).toHaveLength(9);
+    expect(aliases).toHaveLength(10);
+    expect(deploymentGroups).toHaveLength(10);
     expect(
       deploymentGroups.every(
         (resource: any) =>
           resource.Properties.DeploymentConfigName === "CodeDeployDefault.LambdaCanary10Percent10Minutes",
       ),
     ).toBe(true);
-    expect(roles.length).toBeGreaterThanOrEqual(9);
+    expect(roles.length).toBeGreaterThanOrEqual(10);
     expect(stateMachines).toHaveLength(4);
     expect(stateMachines.every((resource: any) => resource.Properties.StateMachineType === "STANDARD")).toBe(true);
-    expect(new Set(functions.map((resource: any) => JSON.stringify(resource.Properties.ImageConfig))).size).toBe(9);
+    expect(new Set(functions.map((resource: any) => JSON.stringify(resource.Properties.ImageConfig))).size).toBe(10);
     expect(
       functions.every(
         (resource: any) =>
@@ -458,6 +460,33 @@ describe("lineage platform stacks", () => {
       ]),
     });
     Template.fromStack(stacks.api).resourceCountIs("AWS::ApiGateway::RestApi", 1);
+    Template.fromStack(stacks.api).hasResourceProperties("AWS::Lambda::Function", {
+      ImageConfig: { Command: ["lineage_api.entrypoints.aws.product_api.handler"] },
+    });
+    Template.fromStack(stacks.api).hasResourceProperties("AWS::ApiGateway::Method", {
+      HttpMethod: "ANY",
+      AuthorizationType: "AWS_IAM",
+      Integration: Match.objectLike({ Type: "AWS_PROXY" }),
+    });
+    Template.fromStack(stacks.data).hasResourceProperties("AWS::DynamoDB::Table", {
+      StreamSpecification: { StreamViewType: "NEW_IMAGE" },
+      GlobalSecondaryIndexes: Match.arrayWith([
+        Match.objectLike({ IndexName: "RunsByUpdatedAt" }),
+      ]),
+    });
+    Template.fromStack(stacks.data).hasResourceProperties("AWS::DynamoDB::Table", {
+      GlobalSecondaryIndexes: Match.arrayWith([
+        Match.objectLike({ IndexName: "ProposalsByState" }),
+      ]),
+    });
+    Template.fromStack(stacks.publication).hasResourceProperties(
+      "AWS::Lambda::EventSourceMapping",
+      {
+        BatchSize: 10,
+        FunctionResponseTypes: ["ReportBatchItemFailures"],
+        FilterCriteria: Match.anyValue(),
+      },
+    );
     Template.fromStack(stacks.operations).hasResourceProperties("AWS::Budgets::Budget", {
       Budget: Match.anyValue(),
     });

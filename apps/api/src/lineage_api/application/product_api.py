@@ -20,11 +20,12 @@ _PROPOSAL_STATES = frozenset(
 _LINEAGE_DIRECTIONS = frozenset({"up", "down", "both"})
 _CHANGE_TYPES = frozenset(
     {
+        "COLUMN_DROP",
+        "COLUMN_TYPE_CHANGE",
         "DATASET_REMOVAL",
-        "FIELD_REMOVAL",
-        "FIELD_RENAME",
-        "FIELD_TYPE_CHANGE",
-        "SEMANTIC_CHANGE",
+        "COLUMN_RENAME",
+        "TRANSFORM_CHANGE",
+        "FINGERPRINT_DRIFT",
     }
 )
 _KILL_SWITCH_SCOPES = frozenset({"GLOBAL", "ENVIRONMENT", "WORKLOAD"})
@@ -101,8 +102,8 @@ class ProductApiService:
             )
         elif method == "GET" and path == "/api/proposals":
             _keys(query, {"limit", "cursor", "state"}, "query")
-            state = query.get("state")
-            if state is not None and state not in _PROPOSAL_STATES:
+            state = query.get("state", "IN_REVIEW")
+            if state not in _PROPOSAL_STATES:
                 raise _bad("state", "is not supported")
             document = self._port.list_proposals(
                 limit=_integer(query.get("limit", "25"), "limit", 1, MAX_PAGE_SIZE),
@@ -147,14 +148,14 @@ class ProductApiService:
                 limit=_integer(
                     query.get("limit", "250"), "limit", 1, MAX_GRAPH_RESULTS
                 ),
-                version=_optional_integer(query, "version", 1, 2_147_483_647),
+                version=_optional_identifier(query, "version"),
                 **common,
             )
         elif method == "GET" and (value := _route(path, r"/api/edges/([^/]+)")):
             _keys(query, {"version"}, "query")
             document = self._port.edge_detail(
                 edge_key=_resource_identifier("edgeKey", value),
-                version=_optional_integer(query, "version", 1, 2_147_483_647),
+                version=_optional_identifier(query, "version"),
                 **common,
             )
         elif method == "POST" and path == "/api/impact":
@@ -235,7 +236,13 @@ class ProductApiService:
             change_type=change_type,
             depth=_body_integer(body, "depth", 1, MAX_GRAPH_DEPTH),
             limit=_optional_body_integer(body, "limit", 1, MAX_GRAPH_RESULTS) or 250,
-            version=_optional_body_integer(body, "version", 1, 2_147_483_647),
+            version=(
+                None
+                if "version" not in body
+                else _identifier(
+                    "version", _required_text("version", body["version"], 512)
+                )
+            ),
             **common,
         )
 
