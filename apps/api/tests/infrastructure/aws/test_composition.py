@@ -5,6 +5,8 @@ from typing import Any
 
 import pytest
 
+from lineage_api.application.stage_execution import StageDispatcher, StageTargetMismatchError
+from lineage_api.application.stage_handlers import production_stage_use_cases
 from lineage_api.infrastructure.aws.composition import (
     AwsStageExecutor,
     StepFunctionsWorkflowStarter,
@@ -160,7 +162,7 @@ def test_baseline_inventory_stage_materializes_an_s3_map_item_array() -> None:
         "workflowKind": "BASELINE",
         "workflowVersion": "1.0.0",
         "stageId": "B4",
-        "stageName": "DISCOVER_WORK_UNITS",
+        "stageName": "BUILD_COVERAGE_PLAN",
         "input": {
             "bucket": "evidence",
             "key": "input.json",
@@ -173,3 +175,124 @@ def test_baseline_inventory_stage_materializes_an_s3_map_item_array() -> None:
     executor.execute("coverage", envelope)
 
     assert artifacts.body == [envelope["input"]]
+
+
+def test_classification_target_executes_the_domain_use_case_and_persists_its_schema() -> None:
+    class Control:
+        def __init__(self) -> None:
+            self.recorded: dict[str, Any] | None = None
+
+        def claim_stage(self, *_args: Any) -> dict[str, Any]:
+            return {"status": "RUNNING", "leaseEpoch": 7}
+
+        def record_stage(self, **kwargs: Any) -> None:
+            self.recorded = kwargs
+
+    class Artifacts:
+        def __init__(self) -> None:
+            self.put_call: tuple[str, str, object, str] | None = None
+
+        def get(self, _reference: object) -> dict[str, object]:
+            return {
+                "schemaVersion": "1.0.0",
+                "repo": "payments-pipeline",
+                "digest": "sha256:source-v1",
+                "env": "staging",
+                "system": "payments",
+                "evidence": [
+                    {
+                        "level": 1,
+                        "source": "catalog",
+                        "class": "DATA_PIPELINE",
+                        "ref": "catalog://payments-pipeline@42",
+                    }
+                ],
+            }
+
+        def put(self, kind: str, key: str, body: object, version: str) -> dict[str, object]:
+            self.put_call = (kind, key, body, version)
+            return {
+                "bucket": "evidence",
+                "key": key,
+                "versionId": "v2",
+                "sha256": "c" * 64,
+                "sizeBytes": 800,
+            }
+
+    control = Control()
+    artifacts = Artifacts()
+    executor = AwsStageExecutor(
+        AwsRuntimeConfig.from_env(REQUIRED_ENV),
+        control,
+        artifacts,
+        FakeClient(),
+        FakeClient(),
+        dispatcher=StageDispatcher(production_stage_use_cases()),
+    )
+    envelope = {
+        "schemaVersion": "1.0.0",
+        "commandId": "cmd-1",
+        "correlationId": "corr-1",
+        "causationId": "cause-1",
+        "idempotencyKey": "idem-1:B3",
+        "workflowKind": "BASELINE",
+        "workflowVersion": "1.0.0",
+        "stageId": "B3",
+        "stageName": "CLASSIFY_REPOSITORY_AND_PATHS",
+        "input": {
+            "bucket": "evidence",
+            "key": "input.json",
+            "versionId": "v1",
+            "sha256": "b" * 64,
+            "sizeBytes": 10,
+        },
+    }
+
+    result = executor.execute("classification", envelope)
+
+    assert result["outcome"] == "SUCCEEDED"
+    assert artifacts.put_call is not None
+    kind, key, body, version = artifacts.put_call
+    assert kind == "classification-decision"
+    assert key == "commands/cmd-1/stages/B3/idem-1:B3.json"
+    assert version == "1.0.0"
+    assert body["artifactType"] == "classification-decision"
+    assert body["decision"]["repositoryClass"] == "DATA_PIPELINE"
+    assert "target" not in body
+    assert "inputDocument" not in body
+    assert control.recorded is not None
+    assert control.recorded["lease_epoch"] == 7
+
+
+def test_direct_executor_target_mismatch_fails_before_claim_or_artifact_io() -> None:
+    class NoIo:
+        def __getattr__(self, name: str):
+            raise AssertionError(f"unexpected I/O through {name}")
+
+    executor = AwsStageExecutor(
+        AwsRuntimeConfig.from_env(REQUIRED_ENV),
+        NoIo(),
+        NoIo(),
+        NoIo(),
+        NoIo(),
+        dispatcher=StageDispatcher(production_stage_use_cases()),
+    )
+    envelope = {
+        "commandId": "cmd-1",
+        "correlationId": "corr-1",
+        "idempotencyKey": "idem-1:B3",
+        "workflowKind": "BASELINE",
+        "workflowVersion": "1.0.0",
+        "stageId": "B3",
+        "stageName": "CLASSIFY_REPOSITORY_AND_PATHS",
+        "input": {
+            "bucket": "evidence",
+            "key": "input.json",
+            "versionId": "v1",
+            "sha256": "b" * 64,
+            "sizeBytes": 10,
+        },
+    }
+
+    with pytest.raises(StageTargetMismatchError):
+        executor.execute("control-stage", envelope)

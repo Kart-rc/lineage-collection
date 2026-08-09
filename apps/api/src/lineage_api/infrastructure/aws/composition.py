@@ -7,6 +7,8 @@ import re
 from datetime import UTC, datetime
 from typing import Any, Mapping
 
+from lineage_api.application.stage_execution import StageDispatcher, StageExecutionContext
+from lineage_api.application.stage_handlers import production_stage_use_cases
 from lineage_api.infrastructure.aws.config import AwsRuntimeConfig
 from lineage_api.infrastructure.aws.dynamodb_control import DynamoDbControlAdapter
 from lineage_api.infrastructure.aws.errors import AwsConflictError, AwsRetryableError, aws_call
@@ -67,6 +69,7 @@ class AwsStageExecutor:
         projection: NeptuneProjectionAdapter,
         broker: SqsLaneBroker | None = None,
         workflow_starter: StepFunctionsWorkflowStarter | None = None,
+        dispatcher: StageDispatcher | None = None,
     ) -> None:
         self.config = config
         self.control = control
@@ -75,11 +78,26 @@ class AwsStageExecutor:
         self.projection = projection
         self.broker = broker
         self.workflow_starter = workflow_starter
+        self.dispatcher = dispatcher or StageDispatcher(production_stage_use_cases())
 
     def execute(self, target: str, envelope: dict[str, Any]) -> dict[str, Any]:
         stage_id = str(envelope.get("stageId") or target)
         command_id = str(envelope["commandId"])
         idempotency_key = str(envelope["idempotencyKey"])
+        if target != "intake":
+            # This duplicate boundary guard is intentional: entry points reject
+            # misrouting, and the executor remains safe when called directly by
+            # tests, callback workers or future event-source integrations.
+            StageExecutionContext(
+                target=target,
+                workflow_kind=str(envelope.get("workflowKind", "")),
+                workflow_version=str(envelope.get("workflowVersion", "")),
+                stage_id=stage_id,
+                stage_name=str(envelope.get("stageName", "")),
+                command_id=command_id,
+                correlation_id=str(envelope.get("correlationId", "")),
+                input_reference=envelope.get("input", {}),
+            )
         owner = os.environ.get("AWS_LAMBDA_LOG_STREAM_NAME", f"{target}-worker")
         now = datetime.now(UTC)
         try:
@@ -94,27 +112,37 @@ class AwsStageExecutor:
             if lease.get("status") == "COMPLETED":
                 return {"outcome": "SKIPPED", "output": lease["output"]}
             input_body = self.artifacts.get(envelope["input"])
-            output_body = {
-                "schemaVersion": "1.0.0",
-                "commandId": command_id,
-                "correlationId": envelope["correlationId"],
-                "workflowKind": envelope.get("workflowKind"),
-                "workflowVersion": envelope.get("workflowVersion"),
-                "stageId": stage_id,
-                "stageName": envelope.get("stageName", target),
-                "target": target,
-                "input": envelope["input"],
-                "inputDocument": input_body,
-            }
-            # B5 is a distributed Map with an S3 JSON ItemReader. B4 therefore
-            # materializes an array of immutable work references, even for the
-            # minimum one-item implementation used by the executable slice.
-            persisted_body: object = [envelope["input"]] if stage_id == "B4" else output_body
+            if self.dispatcher.has_use_case(
+                str(envelope.get("workflowKind", "")), stage_id
+            ):
+                execution = self.dispatcher.execute(target, envelope, input_body)
+                artifact_kind = execution.artifact_kind
+                artifact_version = execution.schema_version
+                persisted_body: object = execution.document
+            else:
+                output_body = {
+                    "schemaVersion": "1.0.0",
+                    "commandId": command_id,
+                    "correlationId": envelope["correlationId"],
+                    "workflowKind": envelope.get("workflowKind"),
+                    "workflowVersion": envelope.get("workflowVersion"),
+                    "stageId": stage_id,
+                    "stageName": envelope.get("stageName", target),
+                    "target": target,
+                    "input": envelope["input"],
+                    "inputDocument": input_body,
+                }
+                # B5 is a distributed Map with an S3 JSON ItemReader. B4 therefore
+                # materializes an array of immutable work references, even for the
+                # minimum one-item implementation used by the executable slice.
+                persisted_body = [envelope["input"]] if stage_id == "B4" else output_body
+                artifact_kind = "stage-result"
+                artifact_version = "1.0.0"
             reference = self.artifacts.put(
-                "stage-result",
+                artifact_kind,
                 f"commands/{command_id}/stages/{stage_id}/{idempotency_key}.json",
                 persisted_body,
-                "1.0.0",
+                artifact_version,
             )
             if target == "intake":
                 if self.workflow_starter is None:
@@ -206,6 +234,7 @@ def build_stage_executor(
         )
         if aliases
         else None,
+        StageDispatcher(production_stage_use_cases()),
     )
 
 
