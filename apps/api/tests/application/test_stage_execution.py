@@ -14,6 +14,7 @@ from lineage_api.application.stage_execution import (
 from lineage_api.application.stage_handlers import (
     ClassificationStageUseCase,
     ConsolidationStageUseCase,
+    ControlStageUseCase,
     CoverageStageUseCase,
     DeploymentStageUseCase,
     PublicationStageUseCase,
@@ -1627,6 +1628,158 @@ def test_stale_deployment_order_does_not_overwrite_the_authoritative_state() -> 
     assert document["reason"] == "STALE_DEPLOYMENT_EVENT"
     assert control.complete_calls == 0
     assert control.activations == 0
+
+
+_CONTROL_STAGES = {
+    "B1": ("BASELINE", "ACCEPT_AND_DEDUPLICATE_INTENT"),
+    "B2": ("BASELINE", "PIN_REPOSITORY_AND_DETERMINANTS"),
+    "I1": ("INCREMENTAL", "DEDUPLICATE_AND_PIN_ACTIVE_BASE"),
+    "I2": ("INCREMENTAL", "COMPUTE_CHANGED_PATHS_AND_CLOSURE"),
+    "I4": ("INCREMENTAL", "FETCH_REQUIRED_IMMUTABLE_ARTIFACTS"),
+    "I8": ("INCREMENTAL", "RECHECK_BASE_AND_COVERAGE"),
+}
+
+
+def _control_context(stage_id: str) -> StageExecutionContext:
+    workflow_kind, stage_name = _CONTROL_STAGES[stage_id]
+    return StageExecutionContext(
+        target="control-stage",
+        workflow_kind=workflow_kind,
+        workflow_version="1.0.0",
+        stage_id=stage_id,
+        stage_name=stage_name,
+        command_id=f"cmd-{stage_id.lower()}",
+        correlation_id="corr-control",
+        input_reference=_context().input_reference,
+    )
+
+
+def _control_intent() -> dict[str, object]:
+    return {
+        "schemaVersion": "1.0.0",
+        "artifactType": "lineage-intent",
+        "context": {
+            "repository": "payments-pipeline",
+            "artifactDigest": RUNTIME_ARTIFACT,
+            "environment": "staging",
+            "system": "payments",
+            "acceptedAt": "2026-08-08T15:00:00Z",
+            "repositorySource": {
+                "bucket": "evidence",
+                "key": "sources/payments-v2.zip",
+                "versionId": "source-v2",
+                "sha256": "d" * 64,
+                "sizeBytes": 4096,
+            },
+            "repositoryInventory": ["pipeline.py", "README.md"],
+            "catalogSnapshotId": "catalog-2026-08-08",
+            "resolverVersion": "resolver-2",
+            "rulesetVersion": "rules-3",
+            "classificationPolicyVersion": "1.0.0",
+            "changedPaths": ["pipeline.py"],
+            "removedPaths": ["legacy.py"],
+            "dependencyClosure": ["shared.py"],
+            "runtimeManifestRefs": [_runtime_reference(1)],
+        },
+        "classificationEvidence": [
+            {
+                "level": 4,
+                "source": "APPLICATION_RUNTIME",
+                "repositoryClass": "DATA_PIPELINE",
+                "ref": "package-json",
+            }
+        ],
+    }
+
+
+def test_baseline_control_stages_pin_pointer_snapshots_and_feed_classification() -> None:
+    artifacts = ConsolidationArtifacts({})
+    pointer = PublicationPointer()
+    use_case = ControlStageUseCase(artifacts, pointer)
+
+    b1 = use_case.execute(_control_intent(), _control_context("B1"))
+    b2 = use_case.execute(b1.document, _control_context("B2"))
+    classified = ClassificationStageUseCase(policy_version="1.0.0").execute(
+        b2.document,
+        StageExecutionContext(
+            target="classification",
+            workflow_kind="BASELINE",
+            workflow_version="1.0.0",
+            stage_id="B3",
+            stage_name="CLASSIFY_REPOSITORY_AND_PATHS",
+            command_id="cmd-b3",
+            correlation_id="corr-control",
+            input_reference=_context().input_reference,
+        ),
+    )
+
+    assert b1.artifact_kind == "baseline-intent"
+    assert b1.document["context"]["activeBaseVersion"] == "graph-v1"
+    assert b1.document["context"]["activeBaseFence"] == 7
+    assert b2.artifact_kind == "baseline-pins"
+    assert b2.document["pins"] == {
+        "catalogSnapshotId": "catalog-2026-08-08",
+        "classificationPolicyVersion": "1.0.0",
+        "resolverVersion": "resolver-2",
+        "rulesetVersion": "rules-3",
+    }
+    assert classified.document["context"]["activeBaseVersion"] == "graph-v1"
+    assert classified.document["context"]["repositoryInventory"] == [
+        "README.md",
+        "pipeline.py",
+    ]
+    assert classified.document["context"]["runtimeManifestRefs"][0]["versionId"] == (
+        "runtime-v1"
+    )
+
+
+def test_incremental_control_stages_close_scope_and_recheck_the_exact_base() -> None:
+    artifacts = ConsolidationArtifacts({})
+    pointer = PublicationPointer()
+    use_case = ControlStageUseCase(artifacts, pointer)
+
+    i1 = use_case.execute(_control_intent(), _control_context("I1"))
+    i2 = use_case.execute(i1.document, _control_context("I2"))
+    coverage = {
+        "schemaVersion": "1.0.0",
+        "artifactType": "coverage-plan",
+        "context": i2.document["context"],
+        "coverage": {
+            "expectedScope": ["legacy.py", "pipeline.py", "shared.py"],
+            "recomputedScope": ["pipeline.py", "shared.py"],
+            "removedScope": ["legacy.py"],
+            "reusedScope": [],
+            "unsupportedScope": [],
+        },
+    }
+    i4 = use_case.execute(coverage, _control_context("I4"))
+    consolidation = _proposal_input()
+    consolidation["context"] = i4.document["context"]
+    i8 = use_case.execute(consolidation, _control_context("I8"))
+
+    assert i2.document["context"]["changedPaths"] == ["pipeline.py", "shared.py"]
+    assert i2.document["context"]["removedPaths"] == ["legacy.py"]
+    assert i4.document["immutableInputs"]["repositorySource"]["versionId"] == "source-v2"
+    assert i8.document["artifactType"] == "consolidation-result"
+    assert i8.document["baseRecheck"] == {
+        "activeBaseVersion": "graph-v1",
+        "activeBaseFence": 7,
+        "coverageState": "COMPLETE",
+        "status": "VERIFIED",
+    }
+
+
+def test_incremental_base_recheck_fails_before_proposal_when_pointer_moved() -> None:
+    artifacts = ConsolidationArtifacts({})
+    pointer = PublicationPointer()
+    pointer.pointer["graphVersion"] = "graph-newer"
+    document = _proposal_input()
+    document["context"]["activeBaseFence"] = 7
+
+    with pytest.raises(ValueError, match="active base changed"):
+        ControlStageUseCase(artifacts, pointer).execute(
+            document, _control_context("I8")
+        )
 
 
 def test_context_fails_closed_when_target_does_not_own_the_exact_stage() -> None:

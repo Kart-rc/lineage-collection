@@ -74,6 +74,39 @@ def _bounded_context(document: Mapping[str, Any]) -> dict[str, Any]:
                 "repository inventory", source["repositoryInventory"], limit=10_000
             )
             break
+    for name in (
+        "acceptedAt",
+        "activeBaseVersion",
+        "catalogSnapshotId",
+        "classificationPolicyVersion",
+        "resolverVersion",
+        "rulesetVersion",
+    ):
+        for source in sources:
+            if name in source:
+                context[name] = _required_text(name, source[name])
+                break
+    for source in sources:
+        if "activeBaseFence" in source:
+            fence = source["activeBaseFence"]
+            if not isinstance(fence, int) or isinstance(fence, bool) or fence < 0:
+                raise ValueError("active base fence is invalid")
+            context["activeBaseFence"] = fence
+            break
+    for name in ("changedPaths", "removedPaths", "dependencyClosure"):
+        for source in sources:
+            if name in source:
+                context[name] = _paths(name, source[name], limit=10_000)
+                break
+    for source in sources:
+        if "runtimeManifestRefs" in source:
+            raw_references = source["runtimeManifestRefs"]
+            if not isinstance(raw_references, list) or len(raw_references) > 100:
+                raise ValueError("runtime manifest references must be a bounded array")
+            context["runtimeManifestRefs"] = [
+                validate_artifact_reference(reference) for reference in raw_references
+            ]
+            break
     return context
 
 
@@ -179,9 +212,35 @@ def _common_context(context: Mapping[str, Any]) -> dict[str, Any]:
     source = context.get("repositorySource")
     if source is not None:
         normalized["repositorySource"] = validate_artifact_reference(source)
-    for name in ("activeBaseVersion", "acceptedAt"):
+    for name in (
+        "activeBaseVersion",
+        "acceptedAt",
+        "catalogSnapshotId",
+        "classificationPolicyVersion",
+        "resolverVersion",
+        "rulesetVersion",
+    ):
         if name in context:
             normalized[name] = _required_text(name, context[name])
+    if "activeBaseFence" in context:
+        fence = context["activeBaseFence"]
+        if not isinstance(fence, int) or isinstance(fence, bool) or fence < 0:
+            raise ValueError("active base fence is invalid")
+        normalized["activeBaseFence"] = fence
+    for name in ("changedPaths", "removedPaths", "dependencyClosure"):
+        if name in context:
+            normalized[name] = _paths(name, context[name], limit=10_000)
+    if "repositoryInventory" in context:
+        normalized["repositoryInventory"] = _paths(
+            "repository inventory", context["repositoryInventory"], limit=10_000
+        )
+    if "runtimeManifestRefs" in context:
+        raw_references = context["runtimeManifestRefs"]
+        if not isinstance(raw_references, list) or len(raw_references) > 100:
+            raise ValueError("runtime manifest references must be a bounded array")
+        normalized["runtimeManifestRefs"] = [
+            validate_artifact_reference(reference) for reference in raw_references
+        ]
     return normalized
 
 
@@ -341,6 +400,231 @@ class CoverageStageUseCase:
                     "reusedScope": [],
                     "unsupportedScope": unsupported,
                 },
+            },
+        )
+
+
+class ControlStageUseCase:
+    def __init__(
+        self, artifacts: ArtifactStorePort, control: PublicationControlPort
+    ) -> None:
+        self._artifacts = artifacts
+        self._control = control
+
+    def execute(
+        self, input_document: object, context: StageExecutionContext
+    ) -> StageExecutionResult:
+        if context.workflow_kind == "BASELINE" and context.stage_id == "B1":
+            return self._pin_intent(input_document, context, baseline=True)
+        if context.workflow_kind == "BASELINE" and context.stage_id == "B2":
+            return self._baseline_pins(input_document, context)
+        if context.workflow_kind == "INCREMENTAL" and context.stage_id == "I1":
+            return self._pin_intent(input_document, context, baseline=False)
+        if context.workflow_kind == "INCREMENTAL" and context.stage_id == "I2":
+            return self._changed_scope(input_document, context)
+        if context.workflow_kind == "INCREMENTAL" and context.stage_id == "I4":
+            return self._immutable_inputs(input_document, context)
+        if context.workflow_kind == "INCREMENTAL" and context.stage_id == "I8":
+            return self._recheck(input_document, context)
+        raise ValueError("control use case received an unsupported stage")
+
+    def _pin_intent(
+        self,
+        input_document: object,
+        context: StageExecutionContext,
+        *,
+        baseline: bool,
+    ) -> StageExecutionResult:
+        if (
+            not isinstance(input_document, Mapping)
+            or input_document.get("schemaVersion") != "1.0.0"
+            or input_document.get("artifactType") != "lineage-intent"
+        ):
+            raise ValueError("control intake requires a versioned lineage intent")
+        common = _bounded_context(input_document)
+        accepted_at = _accepted_at(common.get("acceptedAt"))
+        pointer = self._control.active_pointer(common["environment"])
+        graph_version = _required_text(
+            "active base version", pointer.get("graphVersion")
+        )
+        fence = pointer.get("fence")
+        if not isinstance(fence, int) or isinstance(fence, bool) or fence < 0:
+            raise ValueError("active base fence is invalid")
+        common.update(
+            acceptedAt=accepted_at,
+            activeBaseVersion=graph_version,
+            activeBaseFence=fence,
+        )
+        evidence = input_document.get("classificationEvidence")
+        if not isinstance(evidence, list) or len(evidence) > 100:
+            raise ValueError("classification evidence must be a bounded array")
+        kind = "baseline-intent" if baseline else "incremental-base"
+        return self._result(
+            context,
+            kind,
+            common,
+            {
+                "classificationEvidence": list(evidence),
+                "pointer": pointer,
+            },
+        )
+
+    def _baseline_pins(
+        self, input_document: object, context: StageExecutionContext
+    ) -> StageExecutionResult:
+        document, common = self._prior(input_document, "baseline-intent")
+        pins = {
+            name: _required_text(name, common.get(name))
+            for name in (
+                "catalogSnapshotId",
+                "classificationPolicyVersion",
+                "resolverVersion",
+                "rulesetVersion",
+            )
+        }
+        if "repositorySource" not in common:
+            raise ValueError("baseline pins require an immutable repository source")
+        return self._result(
+            context,
+            "baseline-pins",
+            common,
+            {
+                "classificationEvidence": document.get("classificationEvidence"),
+                "pins": dict(sorted(pins.items())),
+            },
+        )
+
+    def _changed_scope(
+        self, input_document: object, context: StageExecutionContext
+    ) -> StageExecutionResult:
+        document, common = self._prior(input_document, "incremental-base")
+        changed = set(common.get("changedPaths", []))
+        closure = set(common.get("dependencyClosure", []))
+        removed = set(common.get("removedPaths", []))
+        recomputed = sorted((changed | closure) - removed)
+        if len(recomputed) + len(removed) > 10_000:
+            raise ValueError("incremental closure exceeds the scope limit")
+        common.update(
+            changedPaths=recomputed,
+            removedPaths=sorted(removed),
+            dependencyClosure=sorted(closure),
+        )
+        return self._result(
+            context,
+            "incremental-scope",
+            common,
+            {"classificationEvidence": document.get("classificationEvidence")},
+        )
+
+    def _immutable_inputs(
+        self, input_document: object, context: StageExecutionContext
+    ) -> StageExecutionResult:
+        if (
+            not isinstance(input_document, Mapping)
+            or input_document.get("schemaVersion") != "1.0.0"
+            or input_document.get("artifactType") != "coverage-plan"
+        ):
+            raise ValueError("I4 requires the exact differential coverage plan")
+        common = _common_context(_lineage_context(input_document))
+        source = common.get("repositorySource")
+        if source is None:
+            raise ValueError("I4 requires an immutable repository source")
+        coverage = input_document.get("coverage")
+        if not isinstance(coverage, Mapping):
+            raise ValueError("I4 requires coverage accounting")
+        return self._result(
+            context,
+            "immutable-inputs",
+            common,
+            {
+                "coverage": dict(coverage),
+                "immutableInputs": {"repositorySource": source},
+            },
+        )
+
+    def _recheck(
+        self, input_document: object, context: StageExecutionContext
+    ) -> StageExecutionResult:
+        if (
+            not isinstance(input_document, Mapping)
+            or input_document.get("schemaVersion") != "1.0.0"
+            or input_document.get("artifactType") != "consolidation-result"
+        ):
+            raise ValueError("I8 requires the exact consolidation result")
+        common = _common_context(_lineage_context(input_document))
+        pointer = self._control.active_pointer(common["environment"])
+        expected_version = _required_text(
+            "pinned active base", common.get("activeBaseVersion")
+        )
+        expected_fence = common.get("activeBaseFence")
+        if (
+            pointer.get("graphVersion") != expected_version
+            or pointer.get("fence") != expected_fence
+        ):
+            raise ValueError("active base changed before proposal creation")
+        coverage = input_document.get("coverage")
+        if not isinstance(coverage, Mapping) or coverage.get("state") not in {
+            "COMPLETE",
+            "INCOMPLETE",
+        }:
+            raise ValueError("I8 coverage state is invalid")
+        document = dict(input_document)
+        document.update(
+            workflowKind=context.workflow_kind,
+            workflowVersion=context.workflow_version,
+            stageId=context.stage_id,
+            stageName=context.stage_name,
+            commandId=context.command_id,
+            correlationId=context.correlation_id,
+            source=dict(context.input_reference),
+            context=common,
+            baseRecheck={
+                "activeBaseVersion": expected_version,
+                "activeBaseFence": expected_fence,
+                "coverageState": coverage["state"],
+                "status": "VERIFIED",
+            },
+        )
+        return StageExecutionResult(
+            artifact_kind="incremental-recheck",
+            schema_version="1.0.0",
+            document=document,
+        )
+
+    @staticmethod
+    def _prior(
+        input_document: object, artifact_type: str
+    ) -> tuple[Mapping[str, Any], dict[str, Any]]:
+        if (
+            not isinstance(input_document, Mapping)
+            or input_document.get("schemaVersion") != "1.0.0"
+            or input_document.get("artifactType") != artifact_type
+        ):
+            raise ValueError(f"control stage requires {artifact_type}")
+        return input_document, _common_context(_lineage_context(input_document))
+
+    @staticmethod
+    def _result(
+        context: StageExecutionContext,
+        artifact_type: str,
+        common: dict[str, Any],
+        additions: Mapping[str, Any],
+    ) -> StageExecutionResult:
+        return StageExecutionResult(
+            artifact_kind=artifact_type,
+            schema_version="1.0.0",
+            document={
+                "schemaVersion": "1.0.0",
+                "artifactType": artifact_type,
+                "workflowKind": context.workflow_kind,
+                "workflowVersion": context.workflow_version,
+                "stageId": context.stage_id,
+                "stageName": context.stage_name,
+                "commandId": context.command_id,
+                "correlationId": context.correlation_id,
+                "source": dict(context.input_reference),
+                "context": common,
+                **dict(additions),
             },
         )
 
@@ -1791,6 +2075,17 @@ def production_stage_use_cases(
         ("BASELINE", "B3"): ClassificationStageUseCase(policy_version="1.0.0")
     }
     if artifacts is not None:
+        if publication_control is not None:
+            control = ControlStageUseCase(artifacts, publication_control)
+            for identity in (
+                ("BASELINE", "B1"),
+                ("BASELINE", "B2"),
+                ("INCREMENTAL", "I1"),
+                ("INCREMENTAL", "I2"),
+                ("INCREMENTAL", "I4"),
+                ("INCREMENTAL", "I8"),
+            ):
+                use_cases[identity] = control
         coverage = CoverageStageUseCase(artifacts)
         use_cases[("BASELINE", "B4")] = coverage
         use_cases[("INCREMENTAL", "I3")] = coverage
@@ -1830,6 +2125,7 @@ __all__ = [
     "ClassificationStageUseCase",
     "CoverageStageUseCase",
     "ConsolidationStageUseCase",
+    "ControlStageUseCase",
     "ProposalStageUseCase",
     "PublicationStageUseCase",
     "DeploymentStageUseCase",
