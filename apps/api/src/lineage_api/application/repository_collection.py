@@ -22,6 +22,8 @@ from lineage_api.services.analyzer_registry import (
 
 
 _EXACT_REVISION = re.compile(r"(?:[0-9a-f]{40}|[0-9a-f]{64})")
+_STATUS_REASON = re.compile(r"[a-z0-9](?:[a-z0-9-]{0,127})")
+_MAX_SIGNED_DELIVERY_BYTES = 64 * 1024 * 1024
 
 
 class RepositoryCollectionError(RuntimeError):
@@ -39,6 +41,17 @@ def _bounded_text(value: str, *, field: str, limit: int) -> None:
         or any(ord(character) < 32 for character in value)
     ):
         raise ValueError(f"{field} must be a bounded non-empty determinant")
+
+
+def _detached_status_reasons(value: object) -> list[str]:
+    if not isinstance(value, list) or len(value) > 128:
+        raise ValueError("analysis status reasons must be a bounded list")
+    if any(
+        not isinstance(reason, str) or _STATUS_REASON.fullmatch(reason) is None
+        for reason in value
+    ):
+        raise ValueError("analysis status reason must be a bounded code")
+    return list(value)
 
 
 @dataclass(frozen=True, slots=True)
@@ -105,14 +118,33 @@ class RepositoryCollectionDescriptor:
 
 @dataclass(frozen=True, slots=True)
 class RepositoryPushDelivery:
-    payload: dict[str, Any]
+    canonical_body: bytes
     signature: str
 
+    def __post_init__(self) -> None:
+        if (
+            not isinstance(self.canonical_body, bytes)
+            or not self.canonical_body
+            or len(self.canonical_body) > _MAX_SIGNED_DELIVERY_BYTES
+        ):
+            raise ValueError("signed repository delivery body is outside bounds")
+        try:
+            parsed = json.loads(self.canonical_body)
+        except (UnicodeDecodeError, json.JSONDecodeError):
+            raise ValueError("signed repository delivery body is invalid") from None
+        if (
+            not isinstance(parsed, dict)
+            or json.dumps(parsed, sort_keys=True, separators=(",", ":")).encode()
+            != self.canonical_body
+        ):
+            raise ValueError("signed repository delivery body is not canonical")
+
     @property
-    def canonical_body(self) -> bytes:
-        return json.dumps(
-            self.payload, sort_keys=True, separators=(",", ":")
-        ).encode()
+    def payload(self) -> dict[str, Any]:
+        payload = json.loads(self.canonical_body)
+        if not isinstance(payload, dict):
+            raise ValueError("signed repository delivery body is invalid")
+        return payload
 
 
 RepositoryPushProcessor = Callable[
@@ -160,7 +192,7 @@ class RepositoryCollectionService:
         signature = hmac.new(self._secret, canonical, hashlib.sha256).hexdigest()
         try:
             result = self._process_push(
-                snapshot, RepositoryPushDelivery(payload, f"sha256={signature}")
+                snapshot, RepositoryPushDelivery(canonical, f"sha256={signature}")
             )
             return self._summarize(result, snapshot.scope_digest, snapshot.revision)
         except Exception:
@@ -273,7 +305,9 @@ class RepositoryCollectionService:
             "proposalStatus": proposal.get("state"),
             "runtimeStatus": result.get("runtimeStatus", "NOT_PROVIDED"),
             "analysisStatus": analysis.get("status"),
-            "statusReasons": analysis.get("statusReasons", []),
+            "statusReasons": _detached_status_reasons(
+                analysis.get("statusReasons", [])
+            ),
             "coverageManifest": coverage_summary,
             "counts": {
                 "edges": analysis.get("edgeCount", 0),

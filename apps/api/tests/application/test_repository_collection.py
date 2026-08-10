@@ -2,6 +2,11 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import json
+import math
+import sqlite3
+import stat
+from collections import Counter
 from dataclasses import FrozenInstanceError
 from pathlib import Path
 
@@ -26,6 +31,33 @@ PROJECT_ROOT = Path(__file__).parents[4]
 ORIGIN = "https://example.com/acme/spring-service"
 REVISION = "a" * 40
 SECRET = "repository-collection-secret"
+_MAX_APPLICATION_TABLES = 128
+_MAX_ROWS_PER_TABLE = 100_000
+_MAX_DATABASE_SNAPSHOT_BYTES = 128 * 1024 * 1024
+_MAX_SQLITE_VALUE_BYTES = 8 * 1024 * 1024
+_MAX_OBJECT_ENTRIES = 10_000
+_MAX_OBJECT_FILE_BYTES = 16 * 1024 * 1024
+_MAX_OBJECT_TREE_BYTES = 128 * 1024 * 1024
+_MAX_RELATIVE_PATH_BYTES = 4_096
+_REQUIRED_EFFECT_TABLES = frozenset(
+    {
+        "audit_events",
+        "classification_decisions",
+        "command_attempts",
+        "commands",
+        "coverage_manifests",
+        "edge_ledger",
+        "evidence_objects",
+        "events",
+        "lane_messages",
+        "outbox_events",
+        "proposals",
+        "quarantines",
+        "run_stages",
+        "runs",
+        "stage_results",
+    }
+)
 
 
 def _settings(tmp_path: Path) -> Settings:
@@ -39,7 +71,9 @@ def _settings(tmp_path: Path) -> Settings:
     )
 
 
-def _snapshot(tmp_path: Path) -> RepositorySnapshot:
+def _snapshot(
+    tmp_path: Path, *, reads: Counter[str] | None = None
+) -> RepositorySnapshot:
     sources = {
         "pom.xml": b"""<project><parent><groupId>org.springframework.boot</groupId>
 <artifactId>spring-boot-starter-parent</artifactId><version>4.1.0</version></parent>
@@ -63,6 +97,12 @@ def _snapshot(tmp_path: Path) -> RepositorySnapshot:
             b"create table owners (id integer primary key);"
         ),
     }
+
+    def read_source(path: str) -> bytes:
+        if reads is not None:
+            reads[path] += 1
+        return sources[path]
+
     return RepositorySnapshot(
         descriptor=RepositoryCheckoutDescriptor(
             origin=ORIGIN,
@@ -77,7 +117,7 @@ def _snapshot(tmp_path: Path) -> RepositorySnapshot:
         ),
         paths=tuple(sorted(sources)),
         scope_digest="sha256:" + hashlib.sha256(b"bounded-test-scope").hexdigest(),
-        _reader=sources.__getitem__,
+        _reader=read_source,
     )
 
 
@@ -211,19 +251,137 @@ def test_collect_returns_api_representation_and_signs_deterministic_payload(
     assert delivery.signature == f"sha256={expected_signature}"
 
 
-def test_equivalent_collection_reuses_identities_without_durable_or_evidence_effects(
+def test_signed_delivery_payload_mutation_cannot_invalidate_signed_bytes(
     tmp_path: Path,
 ) -> None:
     snapshot = _snapshot(tmp_path)
-    service = build_services(
-        _settings(tmp_path), repository_snapshot=snapshot
-    ).repository_collection
+    observed: dict[str, object] = {}
+
+    def mutate_callback_payload(_snapshot, delivery):
+        signed_body = delivery.canonical_body
+        callback_payload = delivery.payload
+        callback_payload["digest"] = "f" * 40
+        callback_payload["repositorySource"]["scopeDigest"] = "sha256:" + "f" * 64
+        current_body = delivery.canonical_body
+        observed.update(
+            body_is_cached=current_body is signed_body,
+            body_is_unchanged=current_body == signed_body,
+            digest=delivery.payload["digest"],
+            scope_digest=delivery.payload["repositorySource"]["scopeDigest"],
+            signature_is_valid=hmac.compare_digest(
+                delivery.signature.removeprefix("sha256="),
+                hmac.new(SECRET.encode(), current_body, hashlib.sha256).hexdigest(),
+            ),
+        )
+        return _orchestration_result()
+
+    service = RepositoryCollectionService(
+        webhook_secret=SECRET,
+        process_push=mutate_callback_payload,
+    )
+
+    service.collect(_descriptor(snapshot))
+
+    assert observed == {
+        "body_is_cached": True,
+        "body_is_unchanged": True,
+        "digest": REVISION,
+        "scope_digest": snapshot.scope_digest,
+        "signature_is_valid": True,
+    }
+
+
+def test_status_reasons_are_detached_from_orchestration_and_caller(
+    tmp_path: Path,
+) -> None:
+    snapshot = _snapshot(tmp_path)
+    orchestration_result = _orchestration_result()
+    analysis = orchestration_result["analysis"]
+    assert isinstance(analysis, dict)
+    upstream_reasons = ["unsupported-source-scope"]
+    analysis["statusReasons"] = upstream_reasons
+    service = RepositoryCollectionService(
+        webhook_secret=SECRET,
+        process_push=lambda _snapshot, _delivery: orchestration_result,
+    )
+
+    result = service.collect(_descriptor(snapshot))
+    upstream_reasons.append("failed-source-scope")
+    result["statusReasons"].append("caller-only-reason")
+
+    assert result["statusReasons"] == [
+        "unsupported-source-scope",
+        "caller-only-reason",
+    ]
+    assert upstream_reasons == [
+        "unsupported-source-scope",
+        "failed-source-scope",
+    ]
+
+
+@pytest.mark.parametrize(
+    "invalid_reasons",
+    (
+        "unsupported-source-scope",
+        [1],
+        ["x" * 129],
+        ["source/path/disclosure"],
+    ),
+)
+def test_status_reasons_reject_unbounded_or_non_code_values(
+    tmp_path: Path, invalid_reasons: object
+) -> None:
+    snapshot = _snapshot(tmp_path)
+    orchestration_result = _orchestration_result()
+    analysis = orchestration_result["analysis"]
+    assert isinstance(analysis, dict)
+    analysis["statusReasons"] = invalid_reasons
+    service = RepositoryCollectionService(
+        webhook_secret=SECRET,
+        process_push=lambda _snapshot, _delivery: orchestration_result,
+    )
+
+    with pytest.raises(RepositoryCollectionError) as captured:
+        service.collect(_descriptor(snapshot))
+
+    assert captured.value.code == "PIPELINE_FAILED"
+    assert str(captured.value) == "repository collection failed"
+
+
+def test_equivalent_collection_reuses_identities_without_durable_or_evidence_effects(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    reads: Counter[str] = Counter()
+    snapshot = _snapshot(tmp_path, reads=reads)
+    settings = _settings(tmp_path)
+    services = build_services(settings, repository_snapshot=snapshot)
+    service = services.repository_collection
     descriptor = _descriptor(snapshot)
+    analysis_calls = 0
+    analyze = services.orchestration._analyzer_registry.analyze
+
+    def count_analysis(*args, **kwargs):
+        nonlocal analysis_calls
+        analysis_calls += 1
+        return analyze(*args, **kwargs)
+
+    monkeypatch.setattr(
+        services.orchestration._analyzer_registry, "analyze", count_analysis
+    )
 
     first = service.collect(descriptor)
-    before = _table_counts(_settings(tmp_path).database_path)
+    before = _application_effect_snapshot(settings)
+    reads_before_duplicate = reads.copy()
+    analysis_before_duplicate = analysis_calls
+    assert reads_before_duplicate
+    assert analysis_before_duplicate == 1
+    assert before["objects"]
+    database_before = before["database"]
+    assert isinstance(database_before, dict)
+    assert database_before["evidence_objects"]
     duplicate = service.collect(descriptor)
-    after = _table_counts(_settings(tmp_path).database_path)
+    after = _application_effect_snapshot(settings)
 
     assert first["outcome"] == "ACCEPTED"
     assert first["runStatus"] == "IN_REVIEW"
@@ -240,6 +398,8 @@ def test_equivalent_collection_reuses_identities_without_durable_or_evidence_eff
     assert duplicate["runId"] == first["runId"]
     assert duplicate["proposalId"] == first["proposalId"]
     assert after == before
+    assert reads == reads_before_duplicate
+    assert analysis_calls == analysis_before_duplicate
 
 
 def test_collection_inputs_are_immutable_and_mismatches_fail_without_source_leaks(
@@ -311,22 +471,124 @@ def test_collection_inputs_and_pipeline_errors_remain_bounded(
     assert str(tmp_path) not in str(captured.value)
 
 
-def _table_counts(database_path: Path) -> dict[str, int]:
-    import sqlite3
+def _application_effect_snapshot(settings: Settings) -> dict[str, object]:
+    return {
+        "database": _database_effect_snapshot(settings.database_path),
+        "objects": _object_tree_snapshot(settings.object_directory),
+    }
 
+
+def _database_effect_snapshot(database_path: Path) -> dict[str, tuple[str, ...]]:
     with sqlite3.connect(database_path) as connection:
-        return {
-            table: int(connection.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0])
-            for table in (
-                "events",
-                "commands",
-                "outbox_events",
-                "lane_messages",
-                "runs",
-                "proposals",
-                "edge_ledger",
-                "stage_results",
-                "coverage_manifests",
-                "evidence_objects",
+        connection.row_factory = sqlite3.Row
+        table_names = tuple(
+            str(row[0])
+            for row in connection.execute(
+                """
+                SELECT name
+                FROM sqlite_schema
+                WHERE type = 'table' AND name NOT LIKE 'sqlite_%'
+                ORDER BY name
+                """
+            ).fetchall()
+        )
+        if len(table_names) > _MAX_APPLICATION_TABLES:
+            raise AssertionError("application table snapshot bound exceeded")
+        missing = _REQUIRED_EFFECT_TABLES.difference(table_names)
+        if missing:
+            raise AssertionError(
+                f"required application tables missing: {sorted(missing)}"
             )
-        }
+
+        snapshot: dict[str, tuple[str, ...]] = {}
+        total_bytes = 0
+        for table_name in table_names:
+            rows = connection.execute(
+                f"SELECT * FROM {_quoted_identifier(table_name)}"
+            ).fetchall()
+            if len(rows) > _MAX_ROWS_PER_TABLE:
+                raise AssertionError("application table row bound exceeded")
+            canonical_rows = []
+            for row in rows:
+                document = {
+                    key: _bounded_sqlite_value(row[key]) for key in row.keys()
+                }
+                encoded = json.dumps(
+                    document,
+                    ensure_ascii=False,
+                    separators=(",", ":"),
+                    sort_keys=True,
+                ).encode()
+                total_bytes += len(encoded)
+                if total_bytes > _MAX_DATABASE_SNAPSHOT_BYTES:
+                    raise AssertionError("application database snapshot bound exceeded")
+                canonical_rows.append(encoded.decode())
+            snapshot[table_name] = tuple(sorted(canonical_rows))
+        return snapshot
+
+
+def _quoted_identifier(value: str) -> str:
+    encoded = value.encode()
+    if not value or len(encoded) > 128 or any(byte < 32 for byte in encoded):
+        raise AssertionError("application table identifier is outside bounds")
+    return '"' + value.replace('"', '""') + '"'
+
+
+def _bounded_sqlite_value(value: object) -> object:
+    if value is None or isinstance(value, int):
+        return value
+    if isinstance(value, float):
+        if not math.isfinite(value):
+            raise AssertionError("non-finite SQLite value is not canonical")
+        return value
+    if isinstance(value, str):
+        if len(value.encode()) > _MAX_SQLITE_VALUE_BYTES:
+            raise AssertionError("SQLite text value snapshot bound exceeded")
+        return value
+    if isinstance(value, bytes):
+        if len(value) > _MAX_SQLITE_VALUE_BYTES:
+            raise AssertionError("SQLite blob value snapshot bound exceeded")
+        return {"sqliteBlobHex": value.hex()}
+    raise AssertionError("unsupported SQLite value type")
+
+
+def _object_tree_snapshot(root: Path) -> tuple[tuple[object, ...], ...]:
+    if not root.exists():
+        return ()
+    entries = sorted(
+        root.rglob("*"), key=lambda path: path.relative_to(root).as_posix()
+    )
+    if len(entries) > _MAX_OBJECT_ENTRIES:
+        raise AssertionError("evidence object entry bound exceeded")
+    result: list[tuple[object, ...]] = []
+    total_bytes = 0
+    for entry in entries:
+        relative = entry.relative_to(root).as_posix()
+        if not relative or len(relative.encode()) > _MAX_RELATIVE_PATH_BYTES:
+            raise AssertionError("evidence object path bound exceeded")
+        metadata = entry.lstat()
+        mode = stat.S_IMODE(metadata.st_mode)
+        if stat.S_ISLNK(metadata.st_mode):
+            raise AssertionError("evidence object tree must not contain symlinks")
+        if stat.S_ISDIR(metadata.st_mode):
+            result.append((relative, "directory", mode, metadata.st_mtime_ns))
+            continue
+        if not stat.S_ISREG(metadata.st_mode):
+            raise AssertionError("evidence object tree contains unsupported entry")
+        if metadata.st_size > _MAX_OBJECT_FILE_BYTES:
+            raise AssertionError("evidence object file bound exceeded")
+        content = entry.read_bytes()
+        total_bytes += len(content)
+        if total_bytes > _MAX_OBJECT_TREE_BYTES:
+            raise AssertionError("evidence object tree snapshot bound exceeded")
+        result.append(
+            (
+                relative,
+                "file",
+                mode,
+                len(content),
+                metadata.st_mtime_ns,
+                hashlib.sha256(content).hexdigest(),
+            )
+        )
+    return tuple(result)
