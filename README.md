@@ -110,6 +110,25 @@ stage ledger, while a completed command returns `DUPLICATE` with the same comman
 and no extra ledger effects. A completed `INTEGRATION_REQUIRED` command remains non-successful on
 repeat rather than being relabeled as a successful duplicate.
 
+To run the reproducible compatibility proof rather than the one-shot operator command, use the
+dedicated opt-in acceptance runner:
+
+```bash
+export LINEAGE_REAL_REPOSITORY_CHECKOUT=/tmp/spring-petclinic
+export LINEAGE_ACCEPTANCE_RUN_ID=spring-petclinic-local
+./scripts/run_real_repository_acceptance.sh
+```
+
+The runner verifies the official origin and exact revision, composes two fresh local SQLite/object
+states, runs the actual durable `collect-checkout` flow in each, repeats one delivery to prove
+duplicate no-effect, and requires the complete 131-path disposition and exact 15-edge oracle. It
+does not build or execute Petclinic. On success it prints bounded JSON and retains canonical,
+content-addressed evidence at
+`data/acceptance/spring-petclinic-local/java-spring/sha256-<checksum>.json`. The manifest contains no
+checkout path, source bytes, raw query, credential, or timestamp. Missing checkout, a wrong
+origin/revision, incomplete scope, tampering, or oracle drift exits `2` and cannot report a pass.
+Petclinic constants live only in this acceptance oracle; the production analyzer remains generic.
+
 ## Reset the deterministic demo
 
 ```bash
@@ -195,6 +214,14 @@ make acceptance-smoke
 ```
 
 It writes content-addressed, schema-valid `AcceptanceEvidenceManifest` records under a fresh gitignored `data/acceptance/<run>/` directory. The current local suite exercises named crash/redrive, checksum equivalence, lane headroom/fairness, and evidence integrity. AWS-only 100/s, 10k burst, 10k-repository/12-hour, availability and DR rows are emitted as `AWS_REQUIRED`, not `PASS`.
+
+The default command is hermetic and reports `HERMITIC_LOCAL_PASS` or failure independently. Because
+an external repository is not implicit test input, it also reports
+`LOCAL_REAL_REPOSITORY_REQUIRED`; that status is not counted as a pass. Set
+`LINEAGE_REAL_REPOSITORY_CHECKOUT` to the exact pinned Petclinic checkout before running
+`make acceptance-smoke` to add the separate `LOCAL_REAL_REPOSITORY_PASS` proof. This static proof
+always reports `RUNTIME_NOT_PROVIDED`; it does not stand in for runtime corroboration. Live cloud
+rows remain `AWS_REQUIRED`, and production collection can remain off.
 
 Run only the named crash/redrive scenario with:
 

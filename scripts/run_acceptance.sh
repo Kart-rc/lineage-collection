@@ -27,9 +27,27 @@ artifact_proofs=(
 pytest_status=0
 uv run --project apps/api --extra dev pytest -q "${artifact_proofs[@]}" tests/acceptance || pytest_status=$?
 
+real_repository_status="LOCAL_REAL_REPOSITORY_REQUIRED"
+real_repository_exit=0
+if [[ -n "${LINEAGE_REAL_REPOSITORY_CHECKOUT:-}" ]]; then
+  ./scripts/run_real_repository_acceptance.sh || real_repository_exit=$?
+  if [[ "$real_repository_exit" -eq 0 ]]; then
+    real_repository_status="LOCAL_REAL_REPOSITORY_PASS"
+  else
+    real_repository_status="LOCAL_REAL_REPOSITORY_FAIL"
+  fi
+else
+  echo '{"evidenceClass":"LOCAL_REAL_REPOSITORY_REQUIRED","outcome":"INTEGRATION_REQUIRED","reasonCode":"LINEAGE_REAL_REPOSITORY_CHECKOUT_REQUIRED"}'
+fi
+
 summary_status=0
 uv run --project apps/api python -m lineage_api.testing.evidence summarize "$output_root" || summary_status=$?
 echo "Acceptance evidence: $output_root"
+hermetic_status="HERMITIC_LOCAL_PASS"
+if [[ "$pytest_status" -ne 0 || "$summary_status" -ne 0 ]]; then
+  hermetic_status="HERMITIC_LOCAL_FAIL"
+fi
+echo "Acceptance classes: $hermetic_status; $real_repository_status; RUNTIME_NOT_PROVIDED; AWS_REQUIRED"
 
 if [[ "$pytest_status" -ne 0 ]]; then
   exit "$pytest_status"
@@ -37,4 +55,7 @@ fi
 if [[ "$summary_status" -ne 0 ]]; then
   echo "Acceptance evidence contains FAIL or is missing" >&2
   exit "$summary_status"
+fi
+if [[ "$real_repository_exit" -ne 0 ]]; then
+  exit "$real_repository_exit"
 fi

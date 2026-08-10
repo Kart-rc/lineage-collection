@@ -9,6 +9,8 @@ prototype labels remain useful: **Implemented**, **Fixture adapter**, **Interfac
 - `AWS_REQUIRED` — a live AWS deploy, scale, availability, security-control, canary, or recovery
   result has not run in the required environment.
 - `NOT_CONFIGURED` — an enterprise-owned CTX value or integration is intentionally absent.
+- `LOCAL_REAL_REPOSITORY_PASS` — an exact external checkout passed a pinned compatibility oracle;
+  this is distinct from hermetic fixtures, runtime evidence, and live AWS.
 
 `AWS_REQUIRED` and `NOT_CONFIGURED` never mean `PASS`.
 
@@ -17,7 +19,7 @@ prototype labels remain useful: **Implemented**, **Fixture adapter**, **Interfac
 | L01 URN and resolver | Implemented | `LOCAL_PASS` | Canonical URNs, ordered catalog resolution, aliases, element validation, quarantine, snapshot/version determinants | Enterprise catalog export/schema, platform case/quote corpus and governed alias mutation are `NOT_CONFIGURED` |
 | L02 intake and queues | Implemented | `LOCAL_PASS`, `SYNTH_PASS`, live `AWS_REQUIRED` | HMAC intake, dedupe, durable acceptance/outbox, FIFO groups, lease visibility, DLQ/redrive contracts, EventBridge/SQS routing and lane headroom | GitHub/Jenkins canonical receivers and 100/s plus 10k-burst AWS evidence |
 | L03 orchestration | Implemented | `LOCAL_PASS`, `SYNTH_PASS`, live `AWS_REQUIRED` | Versioned B1–B10, I1–I10, P1–P8, D1–D6 and N1–N6 definitions; generated ASL parity; immutable handler versions; crash redrive | Live Step Functions execution/canary and production quota evidence |
-| L04 SCA engine | Implemented seed pack | `LOCAL_PASS`, packaged target `SYNTH_PASS` | Deterministic Python AST matcher, exact citations/transforms/residue and bounded callback Fargate target | Complete framework/SQL/config rule-pack matrix, hostile-estate load corpus and enterprise repository conventions are `NOT_CONFIGURED` |
+| L04 SCA engine | Implemented seed pack plus closed Java/Spring cell | `LOCAL_PASS`, Spring Petclinic `LOCAL_REAL_REPOSITORY_PASS`, packaged target `SYNTH_PASS` | Deterministic Python AST matcher; repository-neutral Tree-sitter Java + SQLGlot Spring Boot/Data JPA/PostgreSQL pack; exact citations/transforms/residue; bounded callback Fargate target | Other languages/frameworks, Maven/Gradle module graphs, custom repository bases, dynamic query construction, nonstandard schema discovery, hostile-estate load corpus and enterprise conventions remain outside this cell |
 | L05 LLM gateway | Interface only | `LOCAL_PASS` for skip/no-fabrication contracts; `NOT_CONFIGURED` externally | LLM provenance/confidence contract, residue boundary and no-fabrication behavior | Approved Bedrock gateway, models, prompts, budgets, cache and guardrails |
 | L06 runtime observation | Implemented contracts and local plane | `LOCAL_PASS`; live integrations `NOT_CONFIGURED` | Signed expiring non-production sessions, revoke/drain/close manifests, OpenLineage facets, metadata-only SDK mapping, OTel connectivity mapping and artifact binding | Spark/Dask listener installation, OTel collector topology and weekly production hard-deny probe |
 | L07 consolidation and confidence | Implemented | `LOCAL_PASS` | Stable edge/provenance identities, commutative/idempotent merge, band/corroboration separation, transform conflict, late runtime reconciliation | Estate-scale partition/hot-key and full contradiction/decay corpus |
@@ -50,16 +52,41 @@ prototype labels remain useful: **Implemented**, **Fixture adapter**, **Interfac
 | CDK assertions, fixture synth and explicit production synth | `SYNTH_PASS` | Templates are coherent and fail closed; no cloud resource was created |
 | Lambda/SCA OCI package build | `LOCAL_PASS` | Pinned multi-architecture images and metadata were produced locally |
 | Local acceptance smoke | 3 `PASS`, 5 `AWS_REQUIRED` | Replay/fairness/evidence passed; AWS-only NFRs stayed external |
+| Exact Spring Petclinic checkout | `LOCAL_REAL_REPOSITORY_PASS` | Exact revision `88e37c15…` produced 15 static edges, complete 131-path disposition, deterministic evidence and duplicate no-effect |
 | Ephemeral AWS deploy/smoke | `AWS_REQUIRED` | No approved profile/account/opt-in was present |
 | Production canary, scale, security and DR | `AWS_REQUIRED` | Must run in the specified environment and cadence |
 | Enterprise catalog/GitHub/Bedrock/runtime/identity integrations | `NOT_CONFIGURED` | CTX owners must provide approved contracts/values |
 
+## Java/Spring compatibility boundary and retained proof
+
+The v1 Java cell is repository-neutral production logic. It supports a root literal Maven and/or
+Gradle Spring Boot/Data JPA cell, production Java under `src/main/java`, Spring Data repositories
+based on the closed supported interfaces, JPA entity/table annotations, cited repository calls, and
+one exact `src/main/resources/db/<profile>/schema.sql`. It never runs repository code. Petclinic
+names and expected counts exist only in the opt-in integration oracle and documentation.
+
+The retained local-real proof is written to
+`data/acceptance/<run-id>/java-spring/sha256-<checksum>.json` (Git-ignored). At the pinned official
+Petclinic revision it records six entity mappings, three repository→entity→table chains, five caller
+components, 15 exact static edges (10 reads, 5 writes), eight explicitly retained non-edge schema
+residue records, zero unresolved invocations, and 131 tracked paths partitioned into 33 completed
+and 98 skipped paths. It also records that duplicate replay added no database effects and that two
+fresh-state runs produced the same manifest/SCA checksum.
+
+Compatibility gaps remain explicit: arbitrary Gradle/Maven execution or dynamic dependency logic,
+multi-module build graphs, nonstandard source/schema roots, Hibernate/native-query extensions not in
+the closed rule set, dynamic queries, custom repository frameworks, Kotlin, reactive/R2DBC, runtime
+execution truth, and enterprise catalog conventions. Those inputs return residue,
+`INTEGRATION_REQUIRED`, or require another versioned analyzer cell; they are not silently inferred.
+This proof leaves runtime `NOT_PROVIDED`, production collection off, and all live AWS evidence
+`AWS_REQUIRED`.
+
 ## End-to-end local mapping
 
 ```text
-Signed push (L02)
+Signed push or exact bounded Git checkout (L02)
   → durable command + classification (L03/L13)
-  → deterministic Python evidence + catalog URNs (L04/L01)
+  → selected Python or Java/Spring static evidence + pinned catalog/schema URNs (L04/L01)
   → optional exact-artifact runtime join (L06)
   → immutable evidence and complete coverage (L08/L15)
   → confidence merge and proposal (L07/L09)

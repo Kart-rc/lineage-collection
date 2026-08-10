@@ -108,6 +108,7 @@ These rows are the minimum spine. Build PRDs may add rows but may not weaken the
 | B04-AC-001 | Signed intake durably accepts within 500 ms p95 at 100/s; a 10,000-event burst has zero loss and no duplicate effect | AWS load report |
 | B05-AC-001 | Killing after every stage side effect and redriving converges to the same manifests and terminal state | Fault matrix |
 | B06-AC-001 | Every supported parser/rule-pack cell has positive and negative fixtures; replay is byte-identical; hostile inputs terminate within bounds | Parser corpus report |
+| B06-AC-002 | The exact official Spring Petclinic revision produces the complete closed Java/Spring/PostgreSQL oracle through durable collection and duplicate replay | Local real-repository manifest |
 | B07-AC-001 | Every guardrail rejects its adversarial fixture; budget exhaustion and gateway outage never fabricate an edge | Contract/fault report |
 | B08-AC-001 | Expired, revoked, malformed, prohibited-data, artifact-mismatched, and production observations write no evidence | Security report |
 | B09-AC-001 | OpenLineage, OTel, and SDK fixtures retain distinct mechanisms/granularity and emit a reconciled closing manifest within overhead target | Integration report |
@@ -159,8 +160,60 @@ projections, verify active pointers, and measure approved RPO/RTO.
 | `WAIVED` | An approved, owned, expiring waiver and compensating control exist |
 | `AWS_REQUIRED` | Local behavior is verified, but an AWS-only scale, security, availability, AZ, or DR claim has not run |
 | `NOT_CONFIGURED` | An enterprise CTX value or integration is not supplied; the seam and fixture may still pass |
+| `HERMITIC_LOCAL_PASS` | The deterministic fixture/local-adapter suite passed without depending on an external checkout |
+| `LOCAL_REAL_REPOSITORY_PASS` | A separately supplied exact real checkout passed its pinned compatibility oracle; this is not runtime or AWS evidence |
+| `LOCAL_REAL_REPOSITORY_REQUIRED` | The opt-in exact checkout was not supplied, so no real-repository pass is claimed |
+| `RUNTIME_NOT_PROVIDED` | Static lineage ran without a validated runtime observation and no runtime corroboration is claimed |
 
-`AWS_REQUIRED` and `NOT_CONFIGURED` are never rendered or counted as `PASS`.
+`AWS_REQUIRED`, `NOT_CONFIGURED`, `LOCAL_REAL_REPOSITORY_REQUIRED`, and
+`RUNTIME_NOT_PROVIDED` are never rendered or counted as `PASS`.
+
+### 8.1 Local real-repository compatibility proof
+
+`B06-AC-002` is an opt-in proof over the official Spring Petclinic repository at exact revision
+`88e37c15cf6fc8490b01bc3e8e2c800cec1ac272`. The repository is an acceptance oracle only; the
+production analyzer registry and Java/Spring pack contain no Petclinic branch or identifier.
+
+```bash
+git clone https://github.com/spring-projects/spring-petclinic.git /tmp/spring-petclinic
+git -C /tmp/spring-petclinic checkout --detach 88e37c15cf6fc8490b01bc3e8e2c800cec1ac272
+LINEAGE_REAL_REPOSITORY_CHECKOUT=/tmp/spring-petclinic \
+  ./scripts/run_real_repository_acceptance.sh
+```
+
+The dedicated runner validates the checkout with the bounded exact-Git adapter and does not run
+Maven, Gradle, tests, application code, hooks, or repository executables. In each of two fresh local
+state directories it drives the actual `collect-checkout` durable flow; it also repeats the command
+in the same state and requires `DUPLICATE` with unchanged command, run, proposal, coverage and
+database-effect counts. The exact oracle is 15 static edges (10 `READS`, 5 `WRITES`), zero unresolved
+invocations, full 131-path disposition (33 completed, 98 skipped, zero unsupported/failed), and an
+`IN_REVIEW` proposal. Runtime remains `NOT_PROVIDED`, production collection is off, and AWS remains
+`AWS_REQUIRED`.
+
+On success the runner writes one canonical, write-once manifest to
+`data/acceptance/<run-id>/java-spring/sha256-<checksum>.json`. It contains only source determinants,
+digests, durable identities, coverage/count summaries and the expected entity/repository/call-site
+oracle—never checkout paths, source contents, raw queries, timestamps, credentials, or copied
+external source. The two fresh runs must produce byte-identical manifest and SCA evidence checksums.
+Missing/invalid checkout, wrong origin/revision, tamper, content-address conflict, incomplete scope,
+or oracle drift exits nonzero and cannot produce `LOCAL_REAL_REPOSITORY_PASS`.
+
+The default hermetic acceptance command remains independent of the external checkout:
+
+```bash
+make acceptance-smoke
+```
+
+Without `LINEAGE_REAL_REPOSITORY_CHECKOUT`, it reports a separate
+`LOCAL_REAL_REPOSITORY_REQUIRED` row while retaining the hermetic result. With the variable set it
+runs both evidence classes. The executable mapping is:
+
+| Claim | Command | Retained evidence |
+|---|---|---|
+| Hermetic local correctness | `make acceptance-smoke` | Schema-valid manifests under `data/acceptance/<run-id>/B*/` |
+| Real Java/Spring compatibility | `LINEAGE_REAL_REPOSITORY_CHECKOUT=<exact-checkout> ./scripts/run_real_repository_acceptance.sh` | `data/acceptance/<run-id>/java-spring/sha256-<checksum>.json` |
+| Runtime corroboration | Separate approved runtime-session integration | `RUNTIME_NOT_PROVIDED` in this proof |
+| AWS topology/behavior | `make synth` / explicit ephemeral AWS workflow | `AWS_REQUIRED` until the required live environment runs |
 
 ## 9. AcceptanceEvidenceManifest
 
