@@ -21,14 +21,32 @@ _SUPPORTED_COORDINATES = {
     ("org.springframework.boot", "spring-boot-starter-data-jpa"),
     ("org.springframework.data", "spring-data-jpa"),
 }
-_REPOSITORY_BASES = {
-    "CrudRepository",
-    "JpaRepository",
-    "ListCrudRepository",
-    "PagingAndSortingRepository",
-    "Repository",
-}
+_ENTITY_FQN = "jakarta.persistence.Entity"
+_TABLE_FQN = "jakarta.persistence.Table"
+_JPA_REPOSITORY_FQN = "org.springframework.data.jpa.repository.JpaRepository"
+_REPOSITORY_FQN = "org.springframework.data.repository.Repository"
+_QUERY_FQN = "org.springframework.data.jpa.repository.Query"
+_AUTOWIRED_FQN = "org.springframework.beans.factory.annotation.Autowired"
+_APPROVED_FRAMEWORK_SYMBOLS = frozenset(
+    {
+        _ENTITY_FQN,
+        _TABLE_FQN,
+        _JPA_REPOSITORY_FQN,
+        _REPOSITORY_FQN,
+        _QUERY_FQN,
+        _AUTOWIRED_FQN,
+        "org.springframework.stereotype.Controller",
+        "org.springframework.stereotype.Repository",
+        "org.springframework.stereotype.Service",
+        "org.springframework.web.bind.annotation.RestController",
+    }
+)
+_SENSITIVE_FRAMEWORK_NAMES = frozenset(
+    fqn.rsplit(".", 1)[-1] for fqn in _APPROVED_FRAMEWORK_SYMBOLS
+)
+_APPROVED_REPOSITORY_BASES = frozenset({_JPA_REPOSITORY_FQN, _REPOSITORY_FQN})
 _DYNAMIC_BUILD_TOKEN = re.compile(r"(?:\$\{|\$[A-Za-z_]|\+)")
+_SEMANTIC_VERSION = re.compile(r"([0-9]+)\.([0-9]+)\.([0-9]+)")
 _GRADLE_CONFIGURATIONS = {"api", "compileOnly", "implementation", "runtimeOnly"}
 _SQLGLOT_DIALECTS = {
     "h2": "postgres",
@@ -77,6 +95,7 @@ class SourceLocation:
     start_byte: int
     end_byte: int
     ast_kind: str
+    ast_path: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -142,18 +161,61 @@ class _GradleToken:
 
 
 @dataclass(frozen=True, slots=True)
-class _BuildCoordinate:
+class _BuildEvidence:
     path: str
+    kind: str
     group: str
     artifact: str
     version: str
+    inherited: bool = False
 
     @property
     def rendered(self) -> str:
-        coordinate = f"{self.group}:{self.artifact}"
-        if self.version:
-            coordinate = f"{coordinate}:{self.version}"
-        return f"{self.path}:{coordinate}"
+        if self.kind == "boot-plugin" and not self.artifact:
+            coordinate = f"{self.group}:{self.version}"
+        else:
+            coordinate = f"{self.group}:{self.artifact}:{self.version}"
+        inherited = ":inherited" if self.inherited else ""
+        return f"{self.path}:{self.kind}:{coordinate}{inherited}"
+
+
+@dataclass(frozen=True, slots=True)
+class _BuildClosure:
+    path: str
+    boot: tuple[_BuildEvidence, ...]
+    jpa: tuple[_BuildEvidence, ...]
+    relevant: bool
+    invalid: bool
+
+
+@dataclass(frozen=True, slots=True)
+class _SymbolContext:
+    explicit_imports: tuple[tuple[str, tuple[str, ...]], ...]
+    wildcard_imports: tuple[str, ...]
+
+    def imports_for(self, simple_name: str) -> tuple[str, ...]:
+        return next(
+            (values for name, values in self.explicit_imports if name == simple_name),
+            (),
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class _JavaSymbolIndex:
+    local_types: frozenset[str]
+    contexts: tuple[tuple[str, _SymbolContext], ...]
+
+    def context_for(self, path: str) -> _SymbolContext:
+        return next(context for found_path, context in self.contexts if found_path == path)
+
+
+@dataclass(frozen=True, slots=True)
+class _AnnotationRecord:
+    raw_name: str
+    resolved_fqn: str | None
+    literal_values: tuple[tuple[str, str], ...]
+    node: Node
+    dynamic_values: tuple[str, ...]
 
 
 class JavaSpringScaAnalyzer:
@@ -166,7 +228,7 @@ class JavaSpringScaAnalyzer:
         self._residue: list[AnalysisResidue] = []
 
     def analyze(self, sources: Iterable[JavaSpringSource]) -> JavaSpringAnalysis:
-        ordered = self._validate_sources(tuple(sources))
+        ordered = self._validate_sources(self._bounded_sources(sources))
         self._facts = []
         self._residue = []
         framework = self._classify_framework(ordered)
@@ -182,9 +244,9 @@ class JavaSpringScaAnalyzer:
                 if self._parse_sql(source):
                     sql_files_parsed += 1
 
-        repository_types = self._extract_java_facts(parsed_java, framework)
+        repository_types, symbols = self._extract_java_facts(parsed_java, framework)
         if framework.status == "supported":
-            self._extract_repository_usage(parsed_java, repository_types)
+            self._extract_repository_usage(parsed_java, repository_types, symbols)
 
         facts = tuple(sorted(self._facts, key=lambda item: item.identifier))
         residue = tuple(
@@ -210,6 +272,16 @@ class JavaSpringScaAnalyzer:
                 residue_count=len(residue),
             ),
         )
+
+    def _bounded_sources(
+        self, sources: Iterable[JavaSpringSource]
+    ) -> tuple[JavaSpringSource, ...]:
+        consumed: list[JavaSpringSource] = []
+        for source in sources:
+            if len(consumed) >= self._limits.max_files:
+                raise JavaSpringAnalysisError("source file count limit exceeded")
+            consumed.append(source)
+        return tuple(consumed)
 
     def _validate_sources(
         self, sources: tuple[JavaSpringSource, ...]
@@ -242,8 +314,7 @@ class JavaSpringScaAnalyzer:
     def _classify_framework(
         self, sources: tuple[JavaSpringSource, ...]
     ) -> FrameworkClassification:
-        evidence: list[_BuildCoordinate] = []
-        dynamic = False
+        closures: list[_BuildClosure] = []
         build_sources = [
             source
             for source in sources
@@ -259,60 +330,91 @@ class JavaSpringScaAnalyzer:
                     "<invalid-utf8>",
                     _whole_file_location(source, "build_file"),
                 )
-                dynamic = True
+                closures.append(_BuildClosure(source.path, (), (), True, True))
                 continue
             if PurePosixPath(source.path).name == "pom.xml":
-                found, unsafe = self._maven_framework_evidence(source, text)
+                closure = self._maven_framework_evidence(source, text)
             else:
-                found, unsafe = self._gradle_framework_evidence(source, text)
-            evidence.extend(found)
-            dynamic = dynamic or unsafe
+                closure = self._gradle_framework_evidence(source, text)
+            closures.append(closure)
 
-        if dynamic:
-            return FrameworkClassification("unsupported", None, ())
-        versions: dict[tuple[str, str], set[str]] = {}
-        for item in evidence:
-            if item.version:
-                versions.setdefault((item.group, item.artifact), set()).add(item.version)
-        conflicts = {
-            coordinate: tuple(sorted(found_versions))
-            for coordinate, found_versions in versions.items()
-            if len(found_versions) > 1
-        }
-        if conflicts:
-            symbol = ",".join(
-                f"{group}:{artifact}={'/'.join(found_versions)}"
-                for (group, artifact), found_versions in sorted(conflicts.items())
+        relevant = [closure for closure in closures if closure.relevant]
+        if not relevant:
+            location = (
+                _whole_file_location(build_sources[0], "build_file")
+                if build_sources
+                else _scope_location(sources)
             )
             self._add_residue(
+                "unknown-framework",
+                "no supported literal Spring Boot and Spring Data JPA build closure was found",
+                "spring-data-jpa",
+                location,
+            )
+            return FrameworkClassification("unsupported", None, ())
+
+        incomplete = False
+        for closure in relevant:
+            source = next(item for item in build_sources if item.path == closure.path)
+            if not closure.boot:
+                incomplete = True
+                self._add_residue(
+                    "missing-boot-evidence",
+                    "Spring Data JPA requires a literal supported Spring Boot parent or plugin",
+                    closure.path,
+                    _whole_file_location(source, "build_file"),
+                )
+            if not closure.jpa:
+                incomplete = True
+                self._add_residue(
+                    "missing-jpa-dependency",
+                    "Spring Boot support requires an active top-level Spring Data JPA dependency",
+                    closure.path,
+                    _whole_file_location(source, "build_file"),
+                )
+            incomplete = incomplete or closure.invalid
+        if incomplete:
+            return FrameworkClassification("unsupported", None, ())
+
+        boot_versions = {item.version for closure in relevant for item in closure.boot}
+        if len(boot_versions) != 1:
+            self._add_residue(
                 "ambiguous-framework-evidence",
-                "supported framework coordinates declare conflicting literal versions",
-                symbol,
+                "build files declare conflicting literal Spring Boot versions",
+                "/".join(sorted(boot_versions)),
                 _whole_file_location(build_sources[0], "build_file"),
             )
             return FrameworkClassification("unsupported", None, ())
-        if evidence:
-            return FrameworkClassification(
-                "supported",
-                "spring-data-jpa",
-                tuple(sorted({item.rendered for item in evidence})),
+        jpa_versions: dict[tuple[str, str], set[str]] = {}
+        for closure in relevant:
+            for item in closure.jpa:
+                jpa_versions.setdefault((item.group, item.artifact), set()).add(
+                    item.version
+                )
+        if any(len(versions) != 1 for versions in jpa_versions.values()):
+            self._add_residue(
+                "ambiguous-framework-evidence",
+                "build files declare conflicting literal Spring Data JPA versions",
+                ";".join(
+                    f"{group}:{artifact}={'/'.join(sorted(versions))}"
+                    for (group, artifact), versions in sorted(jpa_versions.items())
+                    if len(versions) != 1
+                ),
+                _whole_file_location(build_sources[0], "build_file"),
             )
-        location = (
-            _whole_file_location(build_sources[0], "build_file")
-            if build_sources
-            else _scope_location(sources)
+            return FrameworkClassification("unsupported", None, ())
+        evidence = {
+            item.rendered
+            for closure in relevant
+            for item in (*closure.boot, *closure.jpa)
+        }
+        return FrameworkClassification(
+            "supported", "spring-data-jpa", tuple(sorted(evidence))
         )
-        self._add_residue(
-            "unknown-framework",
-            "no supported literal Spring Data JPA build coordinate was found",
-            "spring-data-jpa",
-            location,
-        )
-        return FrameworkClassification("unsupported", None, ())
 
     def _maven_framework_evidence(
         self, source: JavaSpringSource, text: str
-    ) -> tuple[list[_BuildCoordinate], bool]:
+    ) -> _BuildClosure:
         if "<!DOCTYPE" in text.upper() or "<!ENTITY" in text.upper():
             self._add_residue(
                 "dynamic-framework-evidence",
@@ -320,7 +422,7 @@ class JavaSpringScaAnalyzer:
                 "DOCTYPE/ENTITY",
                 _whole_file_location(source, "build_file"),
             )
-            return [], True
+            return _BuildClosure(source.path, (), (), True, True)
         try:
             root = ET.fromstring(text)
         except ET.ParseError:
@@ -330,24 +432,81 @@ class JavaSpringScaAnalyzer:
                 "pom.xml",
                 _whole_file_location(source, "build_file"),
             )
-            return [], True
+            return _BuildClosure(source.path, (), (), True, True)
 
-        evidence: list[_BuildCoordinate] = []
-        dynamic = False
-        for dependency in root.iter():
-            if _local_xml_name(dependency.tag) != "dependency":
-                continue
-            values = {
-                _local_xml_name(child.tag): (child.text or "").strip()
-                for child in dependency
-            }
+        boot: list[_BuildEvidence] = []
+        jpa: list[_BuildEvidence] = []
+        relevant = False
+        invalid = False
+        parent = _xml_direct_child(root, "parent")
+        if parent is not None:
+            values = _xml_values(parent)
+            if (
+                values.get("groupId") == "org.springframework.boot"
+                and values.get("artifactId") == "spring-boot-starter-parent"
+            ):
+                relevant = True
+                version = values.get("version", "")
+                if self._supported_build_version(source, version):
+                    boot.append(
+                        _BuildEvidence(
+                            source.path,
+                            "boot-parent",
+                            "org.springframework.boot",
+                            "spring-boot-starter-parent",
+                            version,
+                        )
+                    )
+                else:
+                    invalid = True
+
+        build = _xml_direct_child(root, "build")
+        plugins = _xml_direct_child(build, "plugins") if build is not None else None
+        for plugin in _xml_direct_children(plugins, "plugin"):
+            values = _xml_values(plugin)
+            if (
+                values.get("groupId", "org.springframework.boot")
+                == "org.springframework.boot"
+                and values.get("artifactId") == "spring-boot-maven-plugin"
+            ):
+                relevant = True
+                version = values.get("version", "")
+                inherited = False
+                parent_versions = {
+                    item.version for item in boot if item.kind == "boot-parent"
+                }
+                if not version and len(parent_versions) == 1:
+                    version = next(iter(parent_versions))
+                    inherited = True
+                if self._supported_build_version(source, version):
+                    boot.append(
+                        _BuildEvidence(
+                            source.path,
+                            "boot-plugin",
+                            "org.springframework.boot",
+                            "spring-boot-maven-plugin",
+                            version,
+                            inherited,
+                        )
+                    )
+                else:
+                    invalid = True
+
+        dependencies = _xml_direct_child(root, "dependencies")
+        for dependency in _xml_direct_children(dependencies, "dependency"):
+            values = _xml_values(dependency)
             group = values.get("groupId", "")
             artifact = values.get("artifactId", "")
-            version = values.get("version", "")
             if (group, artifact) not in _SUPPORTED_COORDINATES:
                 continue
+            relevant = True
+            if values.get("scope", "compile") not in {"", "compile", "runtime"}:
+                continue
+            if values.get("optional", "false").casefold() == "true":
+                continue
+            version = values.get("version", "")
             if any(_DYNAMIC_BUILD_TOKEN.search(value) for value in (group, artifact, version)):
-                dynamic = True
+                invalid = True
                 self._add_residue(
                     "dynamic-framework-evidence",
                     "Spring framework Maven coordinates must be literal",
@@ -355,14 +514,44 @@ class JavaSpringScaAnalyzer:
                     _whole_file_location(source, "build_file"),
                 )
                 continue
-            evidence.append(_BuildCoordinate(source.path, group, artifact, version))
-        return evidence, dynamic
+            inherited = False
+            if not version:
+                boot_versions = {item.version for item in boot}
+                if len(boot_versions) == 1:
+                    version = next(iter(boot_versions))
+                    inherited = True
+                else:
+                    invalid = True
+                    self._add_residue(
+                        "missing-jpa-version",
+                        "versionless Maven JPA dependency requires one proven "
+                        "Boot parent/plugin version",
+                        f"{group}:{artifact}",
+                        _whole_file_location(source, "build_file"),
+                    )
+                    continue
+            if not _is_supported_version(version):
+                invalid = True
+                self._add_residue(
+                    "unsupported-jpa-version",
+                    "Spring Data JPA dependency version is outside the supported literal range",
+                    version,
+                    _whole_file_location(source, "build_file"),
+                )
+                continue
+            jpa.append(
+                _BuildEvidence(source.path, "data-jpa", group, artifact, version, inherited)
+            )
+        return _BuildClosure(
+            source.path, tuple(boot), tuple(jpa), relevant, invalid
+        )
 
     def _gradle_framework_evidence(
         self, source: JavaSpringSource, text: str
-    ) -> tuple[list[_BuildCoordinate], bool]:
-        evidence: list[_BuildCoordinate] = []
-        dynamic = False
+    ) -> _BuildClosure:
+        boot: list[_BuildEvidence] = []
+        jpa: list[_BuildEvidence] = []
+        invalid = False
         tokens, malformed = _gradle_tokens(text)
         if malformed:
             self._add_residue(
@@ -371,14 +560,41 @@ class JavaSpringScaAnalyzer:
                 PurePosixPath(source.path).name,
                 _whole_file_location(source, "build_file"),
             )
-            return [], True
+            return _BuildClosure(source.path, (), (), True, True)
+        plugins = tuple(
+            item
+            for item in _gradle_boot_plugins(tokens)
+            if item[0].value == "org.springframework.boot"
+        )
+        for plugin_id, version_token in plugins:
+            if version_token is None:
+                invalid = True
+                self._add_residue(
+                    "missing-boot-version",
+                    "Spring Boot Gradle plugin requires a literal semantic version",
+                    plugin_id.value,
+                    _text_location(source, plugin_id.start, plugin_id.end, "string_literal"),
+                )
+                continue
+            if self._supported_build_version(source, version_token.value):
+                boot.append(
+                    _BuildEvidence(
+                        source.path,
+                        "boot-plugin",
+                        "org.springframework.boot",
+                        "",
+                        version_token.value,
+                    )
+                )
+            else:
+                invalid = True
         for token in _gradle_literal_dependencies(tokens):
             coordinate = token.value.strip()
             parts = coordinate.split(":")
             if len(parts) < 2 or tuple(parts[:2]) not in _SUPPORTED_COORDINATES:
                 continue
             if len(parts) > 3 or any(_DYNAMIC_BUILD_TOKEN.search(part) for part in parts):
-                dynamic = True
+                invalid = True
                 self._add_residue(
                     "dynamic-framework-evidence",
                     "Spring framework Gradle coordinates must be literal",
@@ -386,9 +602,60 @@ class JavaSpringScaAnalyzer:
                     _text_location(source, token.start, token.end, "string_literal"),
                 )
                 continue
-            version = parts[2] if len(parts) == 3 else ""
-            evidence.append(_BuildCoordinate(source.path, parts[0], parts[1], version))
-        return evidence, dynamic
+            if len(parts) != 3 or not _is_supported_version(parts[2]):
+                invalid = True
+                self._add_residue(
+                    "unsupported-jpa-version" if len(parts) == 3 else "missing-jpa-version",
+                    "Gradle JPA dependency requires a supported literal semantic version",
+                    coordinate,
+                    _text_location(source, token.start, token.end, "string_literal"),
+                )
+                continue
+            jpa.append(
+                _BuildEvidence(
+                    source.path, "data-jpa", parts[0], parts[1], parts[2]
+                )
+            )
+        relevant = bool(
+            plugins
+            or jpa
+            or any(
+                tuple(token.value.split(":")[:2]) in _SUPPORTED_COORDINATES
+                for token in _gradle_literal_dependencies(tokens)
+            )
+        )
+        return _BuildClosure(
+            source.path, tuple(boot), tuple(jpa), relevant, invalid
+        )
+
+    def _supported_build_version(
+        self, source: JavaSpringSource, version: str
+    ) -> bool:
+        if not version:
+            self._add_residue(
+                "missing-boot-version",
+                "Spring Boot evidence requires a literal semantic version",
+                "<missing>",
+                _whole_file_location(source, "build_file"),
+            )
+            return False
+        if _DYNAMIC_BUILD_TOKEN.search(version):
+            self._add_residue(
+                "dynamic-framework-evidence",
+                "Spring Boot version must be literal",
+                version,
+                _whole_file_location(source, "build_file"),
+            )
+            return False
+        if not _is_supported_version(version):
+            self._add_residue(
+                "unsupported-boot-version",
+                "Spring Boot version must be >=3.0.0 and <5.0.0 without prerelease syntax",
+                version,
+                _whole_file_location(source, "build_file"),
+            )
+            return False
+        return True
 
     def _parse_java(self, source: JavaSpringSource) -> _ParsedJava | None:
         try:
@@ -431,7 +698,8 @@ class JavaSpringScaAnalyzer:
         self,
         parsed_files: list[_ParsedJava],
         framework: FrameworkClassification,
-    ) -> set[str]:
+    ) -> tuple[set[str], _JavaSymbolIndex]:
+        symbols = _build_java_symbol_index(parsed_files)
         repository_types: set[str] = set()
         for parsed in parsed_files:
             root = parsed.tree.root_node
@@ -444,7 +712,7 @@ class JavaSpringScaAnalyzer:
                         _node_location(parsed.source.path, child),
                     )
                 elif child.type == "import_declaration" and child.named_children:
-                    imported = _node_text(child.named_children[0], parsed.source.content)
+                    imported = _java_import_text(child, parsed.source.content)
                     self._add_fact(
                         "java.import",
                         imported,
@@ -456,9 +724,8 @@ class JavaSpringScaAnalyzer:
                 simple_name_node = declaration.child_by_field_name("name")
                 if simple_name_node is None:
                     continue
-                simple_name = _node_text(simple_name_node, parsed.source.content)
-                qualified_name = (
-                    f"{parsed.package}.{simple_name}" if parsed.package else simple_name
+                qualified_name = _qualified_type_name(
+                    declaration, parsed.package, parsed.source.content
                 )
                 extends, implements, generic_nodes = _super_types(
                     declaration, parsed.source.content
@@ -477,7 +744,7 @@ class JavaSpringScaAnalyzer:
                     _node_location(parsed.source.path, declaration),
                 )
                 annotations = self._emit_annotations(
-                    parsed.source, declaration, qualified_name
+                    parsed, declaration, qualified_name, symbols
                 )
                 if framework.status == "supported":
                     self._emit_entity_table(
@@ -491,14 +758,39 @@ class JavaSpringScaAnalyzer:
                         if association is None:
                             continue
                         base_type, arguments = association
-                        if _simple_type(base_type) not in _REPOSITORY_BASES or len(arguments) < 2:
+                        base_fqn = self._resolve_java_symbol(
+                            parsed, base_type, generic, symbols
+                        )
+                        if base_fqn not in _APPROVED_REPOSITORY_BASES:
                             continue
-                        repository_types.add(simple_name)
+                        if len(arguments) != 2:
+                            self._add_residue(
+                                "invalid-repository-generics",
+                                "repository bases require exactly entity and identifier "
+                                "generic arguments",
+                                base_type,
+                                _node_location(parsed.source.path, generic),
+                            )
+                            continue
+                        entity_fqn = self._resolve_java_symbol(
+                            parsed, arguments[0], generic, symbols
+                        )
+                        if entity_fqn not in symbols.local_types:
+                            self._add_residue(
+                                "unresolved-repository-entity",
+                                "repository entity generic must resolve to one local declaration",
+                                arguments[0],
+                                _node_location(parsed.source.path, generic),
+                            )
+                            continue
+                        repository_types.add(qualified_name)
                         self._add_fact(
                             "spring.repository-association",
                             qualified_name,
                             (
-                                ("baseType", _simple_type(base_type)),
+                                ("baseFqn", base_fqn),
+                                ("baseType", base_fqn.rsplit(".", 1)[-1]),
+                                ("entityFqn", entity_fqn),
                                 ("entityType", arguments[0]),
                                 ("idType", arguments[1]),
                             ),
@@ -508,19 +800,24 @@ class JavaSpringScaAnalyzer:
                     parsed,
                     declaration,
                     qualified_name,
+                    symbols,
                     framework_supported=framework.status == "supported",
                 )
-        return repository_types
+        return repository_types, symbols
 
     def _emit_annotations(
-        self, source: JavaSpringSource, target: Node, target_subject: str
-    ) -> dict[str, tuple[tuple[str, str], Node, tuple[str, ...]]]:
-        annotations: dict[str, tuple[tuple[str, str], Node, tuple[str, ...]]] = {}
+        self,
+        parsed: _ParsedJava,
+        target: Node,
+        target_subject: str,
+        symbols: _JavaSymbolIndex,
+    ) -> tuple[_AnnotationRecord, ...]:
+        annotations: list[_AnnotationRecord] = []
         modifiers = next(
             (child for child in target.named_children if child.type == "modifiers"), None
         )
         if modifiers is None:
-            return annotations
+            return ()
         for annotation in (
             child
             for child in modifiers.named_children
@@ -529,46 +826,71 @@ class JavaSpringScaAnalyzer:
             name_node = annotation.child_by_field_name("name")
             if name_node is None:
                 continue
-            name = _node_text(name_node, source.content)
-            literal_values, dynamic_values = _annotation_values(annotation, source.content)
+            name = _node_text(name_node, parsed.source.content)
+            resolved = self._resolve_java_symbol(parsed, name, annotation, symbols)
+            literal_values, dynamic_values = _annotation_values(
+                annotation, parsed.source.content
+            )
             attributes: list[tuple[str, FactValue]] = list(literal_values)
+            if resolved is not None:
+                attributes.append(("resolvedFqn", resolved))
             if dynamic_values:
                 attributes.append(("dynamicValues", dynamic_values))
             self._add_fact(
                 "java.annotation",
                 f"{target_subject}:@{name}",
                 attributes,
-                _node_location(source.path, annotation),
+                _node_location(parsed.source.path, annotation),
             )
-            annotations[name] = (literal_values, annotation, dynamic_values)
-        return annotations
+            annotations.append(
+                _AnnotationRecord(
+                    name, resolved, literal_values, annotation, dynamic_values
+                )
+            )
+        return tuple(annotations)
 
     def _emit_entity_table(
         self,
         source: JavaSpringSource,
         declaration: Node,
         qualified_name: str,
-        annotations: dict[str, tuple[tuple[str, str], Node, tuple[str, ...]]],
+        annotations: tuple[_AnnotationRecord, ...],
     ) -> None:
         entity = next(
-            (value for name, value in annotations.items() if _simple_type(name) == "Entity"),
+            (item for item in annotations if item.resolved_fqn == _ENTITY_FQN),
             None,
         )
         if entity is None:
             return
-        table = next(
-            (value for name, value in annotations.items() if _simple_type(name) == "Table"),
+        syntactic_table = next(
+            (item for item in annotations if _simple_type(item.raw_name) == "Table"),
             None,
         )
         table_name = qualified_name.rsplit(".", 1)[-1]
         explicit = "false"
         location = _node_location(source.path, declaration)
-        if table is not None:
-            values = dict(table[0])
+        if syntactic_table is not None:
+            if syntactic_table.resolved_fqn != _TABLE_FQN:
+                self._add_residue(
+                    "unresolved-table-mapping",
+                    "present @Table annotation did not resolve to jakarta.persistence.Table",
+                    syntactic_table.raw_name,
+                    _node_location(source.path, syntactic_table.node),
+                )
+                return
+            values = dict(syntactic_table.literal_values)
+            if syntactic_table.dynamic_values:
+                self._add_residue(
+                    "dynamic-table-mapping",
+                    "present @Table name is dynamic and cannot default safely",
+                    syntactic_table.dynamic_values[0],
+                    _node_location(source.path, syntactic_table.node),
+                )
+                return
             if values.get("name"):
                 table_name = values["name"]
                 explicit = "true"
-                location = _node_location(source.path, table[1])
+                location = _node_location(source.path, syntactic_table.node)
         self._add_fact(
             "spring.entity-table",
             qualified_name,
@@ -584,6 +906,7 @@ class JavaSpringScaAnalyzer:
         parsed: _ParsedJava,
         declaration: Node,
         owner: str,
+        symbols: _JavaSymbolIndex,
         *,
         framework_supported: bool,
     ) -> None:
@@ -615,6 +938,9 @@ class JavaSpringScaAnalyzer:
                     (("parameters", _parameter_signature(member, parsed.source.content)),),
                     _node_location(parsed.source.path, member),
                 )
+                self._emit_annotations(
+                    parsed, member, f"{owner}#<init>", symbols
+                )
             elif member.type == "method_declaration":
                 name_node = member.child_by_field_name("name")
                 if name_node is None:
@@ -636,36 +962,146 @@ class JavaSpringScaAnalyzer:
                     ),
                     _node_location(parsed.source.path, member),
                 )
-                annotations = self._emit_annotations(parsed.source, member, subject)
+                annotations = self._emit_annotations(
+                    parsed, member, subject, symbols
+                )
                 query = next(
-                    (
-                        value
-                        for name, value in annotations.items()
-                        if _simple_type(name) == "Query"
-                    ),
+                    (item for item in annotations if item.resolved_fqn == _QUERY_FQN),
                     None,
                 )
                 if query is not None and framework_supported:
-                    values = dict(query[0])
+                    values = dict(query.literal_values)
                     query_value = values.get("value")
                     if query_value is not None:
                         self._add_fact(
                             "spring.query",
                             subject,
                             (("literal", "true"), ("query", query_value)),
-                            _node_location(parsed.source.path, query[1]),
+                            _node_location(parsed.source.path, query.node),
                         )
                     else:
-                        symbol = query[2][0] if query[2] else "<missing>"
+                        symbol = (
+                            query.dynamic_values[0]
+                            if query.dynamic_values
+                            else "<missing>"
+                        )
                         self._add_residue(
                             "dynamic-query",
                             "Spring @Query text is not a string literal",
                             symbol,
-                            _node_location(parsed.source.path, query[1]),
+                            _node_location(parsed.source.path, query.node),
                         )
 
+    def _resolve_java_symbol(
+        self,
+        parsed: _ParsedJava,
+        raw_name: str,
+        node: Node,
+        symbols: _JavaSymbolIndex,
+    ) -> str | None:
+        simple_name = _simple_type(raw_name)
+        location = _node_location(parsed.source.path, node)
+        if "." in raw_name:
+            if (
+                raw_name in _APPROVED_FRAMEWORK_SYMBOLS
+                and raw_name in symbols.local_types
+            ):
+                self._add_residue(
+                    "shadowed-framework-symbol",
+                    "repository-local declaration shadows an approved framework FQN",
+                    simple_name,
+                    location,
+                )
+                return None
+            if raw_name in symbols.local_types or raw_name in _APPROVED_FRAMEWORK_SYMBOLS:
+                return raw_name
+            same_package = f"{parsed.package}.{raw_name}" if parsed.package else raw_name
+            if same_package in symbols.local_types:
+                return same_package
+            if simple_name in _SENSITIVE_FRAMEWORK_NAMES:
+                self._add_residue(
+                    "unresolved-framework-symbol",
+                    "framework-sensitive symbol is not an approved exact FQN",
+                    simple_name,
+                    location,
+                )
+            return None
+
+        same_package = (
+            f"{parsed.package}.{simple_name}" if parsed.package else simple_name
+        )
+        if same_package in symbols.local_types:
+            if simple_name in _SENSITIVE_FRAMEWORK_NAMES:
+                self._add_residue(
+                    "shadowed-framework-symbol",
+                    "local declaration shadows a framework-sensitive symbol",
+                    simple_name,
+                    location,
+                )
+            return same_package
+        context = symbols.context_for(parsed.source.path)
+        imports = context.imports_for(simple_name)
+        if len(imports) > 1:
+            if simple_name in _SENSITIVE_FRAMEWORK_NAMES:
+                self._add_residue(
+                    "ambiguous-framework-symbol",
+                    "multiple explicit imports bind a framework-sensitive simple name",
+                    simple_name,
+                    location,
+                )
+            return None
+        if len(imports) == 1:
+            resolved = imports[0]
+            if (
+                resolved in _APPROVED_FRAMEWORK_SYMBOLS
+                and resolved in symbols.local_types
+            ):
+                self._add_residue(
+                    "shadowed-framework-symbol",
+                    "repository-local declaration shadows an approved framework FQN",
+                    simple_name,
+                    location,
+                )
+                return None
+            if (
+                simple_name in _SENSITIVE_FRAMEWORK_NAMES
+                and resolved not in _APPROVED_FRAMEWORK_SYMBOLS
+            ):
+                self._add_residue(
+                    "unresolved-framework-symbol",
+                    "framework-sensitive import is not in the approved FQN set",
+                    simple_name,
+                    location,
+                )
+                return None
+            return resolved
+        if context.wildcard_imports and simple_name in _SENSITIVE_FRAMEWORK_NAMES:
+            self._add_residue(
+                "wildcard-framework-symbol",
+                "wildcard imports cannot prove a framework-sensitive symbol",
+                simple_name,
+                location,
+            )
+            return None
+        if simple_name in {
+            "Boolean",
+            "Byte",
+            "Character",
+            "Double",
+            "Float",
+            "Integer",
+            "Long",
+            "Short",
+            "String",
+        }:
+            return f"java.lang.{simple_name}"
+        return None
+
     def _extract_repository_usage(
-        self, parsed_files: list[_ParsedJava], repository_types: set[str]
+        self,
+        parsed_files: list[_ParsedJava],
+        repository_types: set[str],
+        symbols: _JavaSymbolIndex,
     ) -> None:
         if not repository_types:
             return
@@ -675,8 +1111,9 @@ class JavaSpringScaAnalyzer:
                 body = declaration.child_by_field_name("body")
                 if name_node is None or body is None:
                     continue
-                owner_name = _node_text(name_node, parsed.source.content)
-                owner = f"{parsed.package}.{owner_name}" if parsed.package else owner_name
+                owner = _qualified_type_name(
+                    declaration, parsed.package, parsed.source.content
+                )
                 fields: dict[str, str] = {}
                 for member in body.named_children:
                     if member.type != "field_declaration":
@@ -684,7 +1121,14 @@ class JavaSpringScaAnalyzer:
                     field_type = member.child_by_field_name("type")
                     if field_type is None:
                         continue
-                    type_name = _simple_type(_node_text(field_type, parsed.source.content))
+                    type_name = self._resolve_java_symbol(
+                        parsed,
+                        _node_text(field_type, parsed.source.content),
+                        field_type,
+                        symbols,
+                    )
+                    if type_name not in repository_types:
+                        continue
                     for declarator in (
                         child
                         for child in member.named_children
@@ -694,9 +1138,45 @@ class JavaSpringScaAnalyzer:
                         if field_name is not None:
                             fields[_node_text(field_name, parsed.source.content)] = type_name
 
-                for member in body.named_children:
+                bound_fields: set[str] = set()
+                constructors = tuple(
+                    member
+                    for member in body.named_children
+                    if member.type == "constructor_declaration"
+                )
+                autowired_constructors = tuple(
+                    constructor
+                    for constructor in constructors
+                    if self._has_resolved_annotation(
+                        parsed, constructor, symbols, _AUTOWIRED_FQN
+                    )
+                )
+                if len(constructors) == 1:
+                    eligible_constructors = constructors
+                    injection_mode = "single-constructor"
+                elif len(autowired_constructors) == 1:
+                    eligible_constructors = autowired_constructors
+                    injection_mode = "autowired-constructor"
+                else:
+                    eligible_constructors = ()
+                    injection_mode = "unproven"
+                if len(constructors) > 1 and not eligible_constructors and fields:
+                    self._add_residue(
+                        "ambiguous-repository-injection",
+                        "multiple constructors do not prove which repository "
+                        "injection path Spring selects",
+                        owner,
+                        _node_location(parsed.source.path, declaration),
+                    )
+                for member in eligible_constructors:
                     if member.type == "constructor_declaration":
-                        parameters = _parameters(member, parsed.source.content)
+                        raw_parameters = _parameters(member, parsed.source.content)
+                        parameters = {
+                            name: self._resolve_java_symbol(
+                                parsed, raw_type, member, symbols
+                            )
+                            for name, raw_type in raw_parameters.items()
+                        }
                         for assignment in (
                             node
                             for node in _walk(member)
@@ -708,22 +1188,29 @@ class JavaSpringScaAnalyzer:
                             if binding is None or binding[2] not in repository_types:
                                 continue
                             field_name, parameter_name, repository_type = binding
+                            bound_fields.add(field_name)
                             self._add_fact(
                                 "spring.repository-binding",
                                 f"{owner}#{field_name}",
                                 (
                                     ("field", field_name),
+                                    ("injectionMode", injection_mode),
                                     ("parameter", parameter_name),
                                     ("repositoryType", repository_type),
                                 ),
                                 _node_location(parsed.source.path, assignment),
                             )
-                    elif member.type == "method_declaration":
+                for member in body.named_children:
+                    if member.type == "method_declaration":
                         method_name_node = member.child_by_field_name("name")
                         if method_name_node is None:
                             continue
                         enclosing_method = _node_text(
                             method_name_node, parsed.source.content
+                        )
+                        shadowed_names = set(_parameters(member, parsed.source.content))
+                        shadowed_names.update(
+                            _local_variable_names(member, parsed.source.content)
                         )
                         for invocation in (
                             node
@@ -732,12 +1219,32 @@ class JavaSpringScaAnalyzer:
                         ):
                             receiver_node = invocation.child_by_field_name("object")
                             called_node = invocation.child_by_field_name("name")
-                            receiver = _receiver_name(receiver_node, parsed.source.content)
+                            receiver_info = _receiver_name(
+                                receiver_node, parsed.source.content
+                            )
                             if (
-                                receiver is None
+                                receiver_info is None
                                 or called_node is None
-                                or fields.get(receiver) not in repository_types
                             ):
+                                continue
+                            receiver, explicit_field = receiver_info
+                            if fields.get(receiver) not in repository_types:
+                                continue
+                            if not explicit_field and receiver in shadowed_names:
+                                self._add_residue(
+                                    "shadowed-repository-receiver",
+                                    "method-local symbol shadows the bound repository field",
+                                    receiver,
+                                    _node_location(parsed.source.path, invocation),
+                                )
+                                continue
+                            if receiver not in bound_fields:
+                                self._add_residue(
+                                    "unbound-repository-receiver",
+                                    "repository receiver lacks a proven injection binding",
+                                    receiver,
+                                    _node_location(parsed.source.path, invocation),
+                                )
                                 continue
                             called = _node_text(called_node, parsed.source.content)
                             self._add_fact(
@@ -750,6 +1257,32 @@ class JavaSpringScaAnalyzer:
                                 ),
                                 _node_location(parsed.source.path, invocation),
                             )
+
+    def _has_resolved_annotation(
+        self,
+        parsed: _ParsedJava,
+        target: Node,
+        symbols: _JavaSymbolIndex,
+        expected_fqn: str,
+    ) -> bool:
+        modifiers = next(
+            (child for child in target.named_children if child.type == "modifiers"),
+            None,
+        )
+        if modifiers is None:
+            return False
+        for annotation in modifiers.named_children:
+            if annotation.type not in {"annotation", "marker_annotation"}:
+                continue
+            name = annotation.child_by_field_name("name")
+            if name is None:
+                continue
+            resolved = self._resolve_java_symbol(
+                parsed, _node_text(name, parsed.source.content), annotation, symbols
+            )
+            if resolved == expected_fqn:
+                return True
+        return False
 
     def _parse_sql(self, source: JavaSpringSource) -> bool:
         if source.sql_dialect is None:
@@ -795,6 +1328,31 @@ class JavaSpringScaAnalyzer:
                     ),
                 )
                 continue
+            identifier_status = _sql_table_identifier_status(statement_tokens)
+            if identifier_status != "concrete":
+                complete = False
+                self._add_residue(
+                    "dynamic-sql-identifier"
+                    if identifier_status == "dynamic"
+                    else "malformed-sql",
+                    "CREATE TABLE target must be a concrete identifier",
+                    source.path,
+                    _sql_token_location(
+                        source.path, text, statement_tokens[0], "sql_statement"
+                    ),
+                )
+                continue
+            if source.sql_dialect == "h2" and _unsupported_h2_tokens(statement_tokens):
+                complete = False
+                self._add_residue(
+                    "unsupported-h2-construct",
+                    "H2 compatibility mode accepts only the PostgreSQL-compatible DDL subset",
+                    source.path,
+                    _sql_token_location(
+                        source.path, text, statement_tokens[0], "sql_statement"
+                    ),
+                )
+                continue
             start = statement_tokens[0].start
             end = statement_tokens[-1].end + 1
             statement_text = text[start:end]
@@ -831,7 +1389,17 @@ class JavaSpringScaAnalyzer:
             self._add_fact(
                 "sql.table",
                 table.name,
-                (("catalog", table.catalog), ("schema", table.db)),
+                (
+                    ("catalog", table.catalog),
+                    ("dialect", sqlglot_dialect),
+                    (
+                        "dialectMode",
+                        "h2-postgres-compatibility"
+                        if source.sql_dialect == "h2"
+                        else "native",
+                    ),
+                    ("schema", table.db),
+                ),
                 _sql_token_location(source.path, text, locations[0], "table"),
             )
         return complete
@@ -908,6 +1476,66 @@ def _type_declarations(root: Node) -> Iterable[Node]:
             yield node
 
 
+def _qualified_type_name(declaration: Node, package: str, content: bytes) -> str:
+    names: list[str] = []
+    current: Node | None = declaration
+    declaration_types = {
+        "annotation_type_declaration",
+        "class_declaration",
+        "enum_declaration",
+        "interface_declaration",
+        "record_declaration",
+    }
+    while current is not None:
+        if current.type in declaration_types:
+            name = current.child_by_field_name("name")
+            if name is not None:
+                names.append(_node_text(name, content))
+        current = current.parent
+    qualified = ".".join(reversed(names))
+    return f"{package}.{qualified}" if package else qualified
+
+
+def _java_import_text(node: Node, content: bytes) -> str:
+    raw = _node_text(node, content).strip()
+    if not raw.startswith("import ") or not raw.endswith(";"):
+        return raw
+    imported = raw[len("import ") : -1].strip()
+    return imported[len("static ") :].strip() if imported.startswith("static ") else imported
+
+
+def _build_java_symbol_index(parsed_files: list[_ParsedJava]) -> _JavaSymbolIndex:
+    local_types = frozenset(
+        _qualified_type_name(declaration, parsed.package, parsed.source.content)
+        for parsed in parsed_files
+        for declaration in _type_declarations(parsed.tree.root_node)
+    )
+    contexts: list[tuple[str, _SymbolContext]] = []
+    for parsed in parsed_files:
+        imports: dict[str, list[str]] = {}
+        wildcards: list[str] = []
+        for child in parsed.tree.root_node.named_children:
+            if child.type != "import_declaration":
+                continue
+            raw = _node_text(child, parsed.source.content).strip()
+            if raw.startswith("import static "):
+                continue
+            imported = _java_import_text(child, parsed.source.content)
+            if imported.endswith(".*"):
+                wildcards.append(imported[:-2])
+                continue
+            imports.setdefault(imported.rsplit(".", 1)[-1], []).append(imported)
+        context = _SymbolContext(
+            tuple(
+                (name, tuple(sorted(set(values))))
+                for name, values in sorted(imports.items())
+            ),
+            tuple(sorted(set(wildcards))),
+        )
+        contexts.append((parsed.source.path, context))
+    return _JavaSymbolIndex(local_types, tuple(sorted(contexts)))
+
+
 def _node_text(node: Node | None, content: bytes) -> str:
     if node is None:
         return ""
@@ -915,17 +1543,46 @@ def _node_text(node: Node | None, content: bytes) -> str:
 
 
 def _node_location(path: str, node: Node) -> SourceLocation:
-    return SourceLocation(path, node.start_point.row + 1, node.start_byte, node.end_byte, node.type)
+    return SourceLocation(
+        path,
+        node.start_point.row + 1,
+        node.start_byte,
+        node.end_byte,
+        node.type,
+        _node_ast_path(node),
+    )
+
+
+def _node_ast_path(node: Node) -> str:
+    parts: list[str] = []
+    current = node
+    while current.parent is not None:
+        parent = current.parent
+        index = next(
+            index
+            for index, child in enumerate(parent.named_children)
+            if child == current
+        )
+        parts.append(f"{current.type}.named[{index}]")
+        current = parent
+    parts.append(current.type)
+    return "/".join(reversed(parts))
 
 
 def _whole_file_location(source: JavaSpringSource, ast_kind: str) -> SourceLocation:
-    return SourceLocation(source.path, 1, 0, len(source.content), ast_kind)
+    return SourceLocation(
+        source.path, 1, 0, len(source.content), ast_kind, ast_kind
+    )
 
 
 def _scope_location(sources: tuple[JavaSpringSource, ...]) -> SourceLocation:
     if sources:
-        return SourceLocation(sources[0].path, 1, 0, 0, "repository_scope")
-    return SourceLocation("<repository>", 1, 0, 0, "repository_scope")
+        return SourceLocation(
+            sources[0].path, 1, 0, 0, "repository_scope", "repository_scope"
+        )
+    return SourceLocation(
+        "<repository>", 1, 0, 0, "repository_scope", "repository_scope"
+    )
 
 
 def _text_location(
@@ -935,11 +1592,53 @@ def _text_location(
     start_byte = len(text[:start_character].encode())
     end_byte = len(text[:end_character].encode())
     line = text.count("\n", 0, start_character) + 1
-    return SourceLocation(source.path, line, start_byte, end_byte, ast_kind)
+    return SourceLocation(
+        source.path,
+        line,
+        start_byte,
+        end_byte,
+        ast_kind,
+        f"{ast_kind}[{start_byte}:{end_byte}]",
+    )
 
 
 def _local_xml_name(tag: str) -> str:
     return tag.rsplit("}", 1)[-1]
+
+
+def _xml_direct_child(
+    parent: ET.Element | None, name: str
+) -> ET.Element | None:
+    if parent is None:
+        return None
+    return next(
+        (child for child in parent if _local_xml_name(child.tag) == name), None
+    )
+
+
+def _xml_direct_children(
+    parent: ET.Element | None, name: str
+) -> tuple[ET.Element, ...]:
+    if parent is None:
+        return ()
+    return tuple(
+        child for child in parent if _local_xml_name(child.tag) == name
+    )
+
+
+def _xml_values(element: ET.Element) -> dict[str, str]:
+    return {
+        _local_xml_name(child.tag): (child.text or "").strip()
+        for child in element
+    }
+
+
+def _is_supported_version(version: str) -> bool:
+    match = _SEMANTIC_VERSION.fullmatch(version)
+    if match is None:
+        return False
+    value = tuple(int(part) for part in match.groups())
+    return (3, 0, 0) <= value < (5, 0, 0)
 
 
 def _gradle_tokens(text: str) -> tuple[tuple[_GradleToken, ...], bool]:
@@ -1032,6 +1731,71 @@ def _gradle_literal_dependencies(
                 index = candidate + 1
                 continue
         index += 1
+    return tuple(result)
+
+
+def _gradle_boot_plugins(
+    tokens: tuple[_GradleToken, ...],
+) -> tuple[tuple[_GradleToken, _GradleToken | None], ...]:
+    result: list[tuple[_GradleToken, _GradleToken | None]] = []
+    block_stack: list[str | None] = []
+    index = 0
+    while index < len(tokens):
+        token = tokens[index]
+        if token.kind == "symbol" and token.value == "{":
+            label = (
+                tokens[index - 1].value
+                if index > 0 and tokens[index - 1].kind == "identifier"
+                else None
+            )
+            block_stack.append(label)
+            index += 1
+            continue
+        if token.kind == "symbol" and token.value == "}":
+            if block_stack:
+                block_stack.pop()
+            index += 1
+            continue
+        if "plugins" not in block_stack or token.kind != "identifier" or token.value != "id":
+            index += 1
+            continue
+        candidate = index + 1
+        if (
+            candidate < len(tokens)
+            and tokens[candidate].kind == "symbol"
+            and tokens[candidate].value == "("
+        ):
+            candidate += 1
+        if candidate >= len(tokens) or tokens[candidate].kind != "string":
+            index += 1
+            continue
+        plugin_id = tokens[candidate]
+        candidate += 1
+        if (
+            candidate < len(tokens)
+            and tokens[candidate].kind == "symbol"
+            and tokens[candidate].value == ")"
+        ):
+            candidate += 1
+        version: _GradleToken | None = None
+        next_index = candidate
+        if (
+            candidate < len(tokens)
+            and tokens[candidate].kind == "identifier"
+            and tokens[candidate].value == "version"
+        ):
+            candidate += 1
+            if (
+                candidate < len(tokens)
+                and tokens[candidate].kind == "symbol"
+                and tokens[candidate].value == "("
+            ):
+                candidate += 1
+            if candidate < len(tokens) and tokens[candidate].kind == "string":
+                version = tokens[candidate]
+                next_index = candidate + 1
+        result.append((plugin_id, version))
+        index = max(index + 1, next_index)
     return tuple(result)
 
 
@@ -1142,14 +1906,28 @@ def _parameters(declaration: Node, content: bytes) -> dict[str, str]:
         name = parameter.child_by_field_name("name")
         type_node = parameter.child_by_field_name("type")
         if name is not None and type_node is not None:
-            result[_node_text(name, content)] = _simple_type(_node_text(type_node, content))
+            result[_node_text(name, content)] = _node_text(type_node, content)
     return result
+
+
+def _local_variable_names(declaration: Node, content: bytes) -> tuple[str, ...]:
+    names: set[str] = set()
+    for local in (
+        node for node in _walk(declaration) if node.type == "local_variable_declaration"
+    ):
+        for declarator in (
+            child for child in local.named_children if child.type == "variable_declarator"
+        ):
+            name = declarator.child_by_field_name("name")
+            if name is not None:
+                names.add(_node_text(name, content))
+    return tuple(sorted(names))
 
 
 def _constructor_binding(
     assignment: Node,
     content: bytes,
-    parameters: dict[str, str],
+    parameters: dict[str, str | None],
     fields: dict[str, str],
 ) -> tuple[str, str, str] | None:
     left = assignment.child_by_field_name("left")
@@ -1171,14 +1949,16 @@ def _constructor_binding(
     return field_name, parameter_name, fields[field_name]
 
 
-def _receiver_name(node: Node | None, content: bytes) -> str | None:
+def _receiver_name(node: Node | None, content: bytes) -> tuple[str, bool] | None:
     if node is None:
         return None
     if node.type == "identifier":
-        return _node_text(node, content)
+        return _node_text(node, content), False
     if node.type == "field_access":
+        object_node = node.child_by_field_name("object")
         field = node.child_by_field_name("field")
-        return _node_text(field, content) if field is not None else None
+        if object_node is not None and object_node.type == "this" and field is not None:
+            return _node_text(field, content), True
     return None
 
 
@@ -1214,6 +1994,53 @@ def _is_create_table_tokens(tokens: tuple[Token, ...]) -> bool:
         and tokens[0].token_type == TokenType.CREATE
         and tokens[1].token_type == TokenType.TABLE
     )
+
+
+def _sql_table_identifier_status(tokens: tuple[Token, ...]) -> str:
+    try:
+        boundary = next(
+            index
+            for index in range(2, len(tokens))
+            if tokens[index].token_type == TokenType.L_PAREN
+        )
+    except StopIteration:
+        boundary = len(tokens)
+    identity = list(tokens[2:boundary])
+    if [token.text.casefold() for token in identity[:3]] == ["if", "not", "exists"]:
+        identity = identity[3:]
+    dynamic_types = {
+        TokenType.COLON,
+        TokenType.L_BRACE,
+        TokenType.PARAMETER,
+        TokenType.PLACEHOLDER,
+        TokenType.R_BRACE,
+    }
+    if any(token.token_type == TokenType.DQMARK for token in identity):
+        return "malformed"
+    if any(token.token_type in dynamic_types for token in identity):
+        return "dynamic"
+    if not identity:
+        return "malformed"
+    identifier_types = {TokenType.IDENTIFIER, TokenType.VAR}
+    expect_identifier = True
+    for token in identity:
+        if expect_identifier and token.token_type not in identifier_types:
+            return "malformed"
+        if not expect_identifier and token.token_type != TokenType.DOT:
+            return "malformed"
+        expect_identifier = not expect_identifier
+    return "concrete" if not expect_identifier else "malformed"
+
+
+def _unsupported_h2_tokens(tokens: tuple[Token, ...]) -> bool:
+    unsupported = {
+        "alias",
+        "auto_increment",
+        "generated",
+        "identity",
+        "sequence",
+    }
+    return any(token.text.casefold() in unsupported for token in tokens)
 
 
 def _silent_sqlglot_parse_one(
@@ -1272,4 +2099,11 @@ def _sql_token_location(
 ) -> SourceLocation:
     start_byte = len(text[: token.start].encode())
     end_byte = len(text[: token.end + 1].encode())
-    return SourceLocation(path, token.line, start_byte, end_byte, ast_kind)
+    return SourceLocation(
+        path,
+        token.line,
+        start_byte,
+        end_byte,
+        ast_kind,
+        f"sql.token[{token.start}:{token.end + 1}]/{ast_kind}",
+    )
