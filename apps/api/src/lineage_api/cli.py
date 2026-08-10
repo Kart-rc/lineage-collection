@@ -1,28 +1,28 @@
 from __future__ import annotations
 
 import argparse
-import hashlib
-import hmac
 import json
 from collections.abc import Sequence
 from pathlib import Path
 
+from lineage_api.application.repository_collection import (
+    AnalyzerIdentity,
+    RepositoryCollectionDescriptor,
+    RepositoryIdentity,
+)
 from lineage_api.application.repository_sources import (
     RepositoryCheckoutDescriptor,
     RepositorySourceError,
     RepositorySourceLimits,
 )
 from lineage_api.config import Settings
-from lineage_api.dependencies import build_services
+from lineage_api.dependencies import build_repository_collection_service, build_services
 from lineage_api.infrastructure.local_git_source import LocalGitRepositorySource
 from lineage_api.services.analyzer_registry import (
     AnalyzerRegistry,
     AnalyzerSelection,
     AnalyzerSelectionError,
-    canonical_source_metadata,
-    deterministic_checkout_event_id,
 )
-from lineage_api.services.intake import PushDelivery
 
 
 def run(argv: Sequence[str] | None = None) -> int:
@@ -89,7 +89,7 @@ def _collect_checkout(args: argparse.Namespace) -> int:
         if requested_checkout.is_symlink():
             raise ValueError("checkout root must not be a symlink")
         canonical_checkout = requested_checkout.resolve(strict=True)
-        descriptor = RepositoryCheckoutDescriptor(
+        checkout_descriptor = RepositoryCheckoutDescriptor(
             origin=args.origin,
             repository=args.repository,
             revision=args.revision,
@@ -106,34 +106,34 @@ def _collect_checkout(args: argparse.Namespace) -> int:
                 max_file_bytes=4 * 1024 * 1024,
                 max_total_bytes=128 * 1024 * 1024,
             )
-        ).snapshot(descriptor)
-        metadata = canonical_source_metadata(snapshot, schema_profile=args.profile)
+        ).snapshot(checkout_descriptor)
         settings = Settings.from_environment()
-        services = build_services(settings, repository_snapshot=snapshot)
-        payload = {
-            "eventId": deterministic_checkout_event_id(
-                metadata,
-                snapshot.repository,
-                snapshot.environment,
-                snapshot.system,
+        collection_descriptor = RepositoryCollectionDescriptor(
+            repository=RepositoryIdentity(
+                origin=snapshot.origin,
+                repository=snapshot.repository,
+                revision=snapshot.revision,
+                environment=snapshot.environment,
+                platform=snapshot.platform,
+                system=snapshot.system,
             ),
-            "eventType": "repo.push",
-            "repo": snapshot.repository,
-            "digest": snapshot.revision,
-            "env": snapshot.environment,
-            "system": snapshot.system,
-            "changedFiles": list(snapshot.paths),
-            "repositorySource": metadata,
-            "receivedAt": "1970-01-01T00:00:00Z",
-        }
-        canonical = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
-        signature = hmac.new(
-            settings.webhook_secret.encode(), canonical, hashlib.sha256
-        ).hexdigest()
-        result = services.orchestration.process_push(
-            PushDelivery(payload, f"sha256={signature}")
+            analyzer=AnalyzerIdentity(
+                analyzer_pack=snapshot.analyzer_pack,
+                ruleset=snapshot.ruleset,
+                source_kind="git-checkout",
+                framework="spring-data-jpa",
+                schema_profile=args.profile,
+            ),
+            snapshot=snapshot,
         )
-        summary = _checkout_summary(result, snapshot.scope_digest, snapshot.revision)
+        result = build_repository_collection_service(settings).collect(
+            collection_descriptor
+        )
+        summary = {
+            key: value
+            for key, value in result.items()
+            if key not in {"collectionId", "statusUrl"}
+        }
         print(json.dumps(summary, sort_keys=True, separators=(",", ":")))
         return 0 if result["outcome"] in {"ACCEPTED", "DUPLICATE", "REUSED"} else 2
     except AnalyzerSelectionError as error:
@@ -148,70 +148,6 @@ def _collect_checkout(args: argparse.Namespace) -> int:
     except Exception:
         _print_checkout_error("PIPELINE_FAILED")
         return 2
-
-
-def _checkout_summary(
-    result: dict[str, object], scope_digest: str, revision: str
-) -> dict[str, object]:
-    run = result.get("run") if isinstance(result.get("run"), dict) else {}
-    proposal = (
-        result.get("proposal") if isinstance(result.get("proposal"), dict) else {}
-    )
-    command = result.get("command") if isinstance(result.get("command"), dict) else {}
-    analysis = result.get("analysis") if isinstance(result.get("analysis"), dict) else {}
-    coverage = (
-        result.get("coverageManifest")
-        if isinstance(result.get("coverageManifest"), dict)
-        else None
-    )
-    coverage_summary = (
-        {
-            "manifestId": coverage.get("manifestId"),
-            "state": coverage.get("state"),
-            "determinantDigest": coverage.get("determinantDigest"),
-            "sourceScopeDispositionDigest": coverage.get(
-                "sourceScopeDispositionDigest"
-            ),
-            "counts": {
-                "expected": len(coverage.get("expectedScope", [])),
-                "completed": len(coverage.get("completedScope", [])),
-                "skipped": len(coverage.get("skippedScope", [])),
-                "unsupported": len(coverage.get("unsupportedScope", [])),
-                "failed": len(coverage.get("failedScope", [])),
-            },
-        }
-        if coverage is not None
-        else None
-    )
-    return {
-        "outcome": result.get("outcome"),
-        "reasonCode": result.get("reason"),
-        "commandId": command.get("commandId"),
-        "commandStatus": command.get("status"),
-        "determinantDigest": command.get("determinantDigest"),
-        "revision": revision,
-        "scopeDigest": scope_digest,
-        "runId": run.get("runId"),
-        "runStatus": run.get("state"),
-        "stages": [
-            stage.get("stage")
-            for stage in run.get("stages", [])
-            if isinstance(stage, dict)
-        ],
-        "proposalId": proposal.get("proposalId"),
-        "proposalStatus": proposal.get("state"),
-        "runtimeStatus": result.get("runtimeStatus", "NOT_PROVIDED"),
-        "analysisStatus": analysis.get("status"),
-        "statusReasons": analysis.get("statusReasons", []),
-        "coverageManifest": coverage_summary,
-        "counts": {
-            "edges": analysis.get("edgeCount", 0),
-            "reads": analysis.get("readCount", 0),
-            "writes": analysis.get("writeCount", 0),
-            "residue": analysis.get("residueCount", 0),
-            "unresolved": analysis.get("unresolvedCount", 0),
-        },
-    }
 
 
 def _print_checkout_error(code: str) -> None:

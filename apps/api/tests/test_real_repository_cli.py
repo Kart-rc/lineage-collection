@@ -122,6 +122,8 @@ def test_exact_checkout_uses_durable_pipeline_and_duplicate_has_no_effect(
     assert run(_arguments(checkout, revision)) == 0
     first_text = capsys.readouterr().out
     first = json.loads(first_text)
+    assert "collectionId" not in first
+    assert "statusUrl" not in first
     assert first["outcome"] == "ACCEPTED"
     assert first["runStatus"] == "IN_REVIEW"
     assert first["proposalStatus"] == "IN_REVIEW"

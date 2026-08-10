@@ -9,8 +9,12 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
 
-from lineage_api.application.repository_sources import RepositorySnapshot
 from lineage_api.application.outbox import OutboxDispatcher
+from lineage_api.application.repository_collection import (
+    RepositoryCollectionService,
+    RepositoryPushDelivery,
+)
+from lineage_api.application.repository_sources import RepositorySnapshot
 from lineage_api.application.workflows.pr_gate import (
     EnvironmentPin,
     PRGateWorkflow,
@@ -65,6 +69,7 @@ class AppServices:
     query: QueryService
     runtime: RuntimeLineageService
     orchestration: OrchestrationService
+    repository_collection: RepositoryCollectionService
     pr_gate: PRGateWorkflow
     deployment: DeploymentWorkflow
     observability: MetricsSnapshotPort
@@ -238,6 +243,21 @@ def build_services(
         query,
         clock=clock.now,
     )
+
+    def process_repository_push(
+        snapshot: RepositorySnapshot, delivery: RepositoryPushDelivery
+    ) -> dict[str, Any]:
+        if repository_snapshot is not None:
+            if snapshot is not repository_snapshot:
+                raise ValueError("repository snapshot does not match configured source")
+            return orchestration.process_push(delivery)
+        pinned = build_services(settings, repository_snapshot=snapshot)
+        return pinned.orchestration.process_push(delivery)
+
+    repository_collection = RepositoryCollectionService(
+        webhook_secret=settings.webhook_secret,
+        process_push=process_repository_push,
+    )
     services = AppServices(
         settings=settings,
         database=database,
@@ -247,9 +267,25 @@ def build_services(
         query=query,
         runtime=runtime,
         orchestration=orchestration,
+        repository_collection=repository_collection,
         pr_gate=pr_gate,
         deployment=deployment,
         observability=observability,
     )
     services.ensure_seeded()
     return services
+
+
+def build_repository_collection_service(
+    settings: Settings,
+) -> RepositoryCollectionService:
+    def process_repository_push(
+        snapshot: RepositorySnapshot, delivery: RepositoryPushDelivery
+    ) -> dict[str, Any]:
+        services = build_services(settings, repository_snapshot=snapshot)
+        return services.orchestration.process_push(delivery)
+
+    return RepositoryCollectionService(
+        webhook_secret=settings.webhook_secret,
+        process_push=process_repository_push,
+    )
