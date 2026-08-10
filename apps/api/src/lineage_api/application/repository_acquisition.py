@@ -17,6 +17,7 @@ from lineage_api.application.repository_sources import RepositorySnapshot
 
 
 _EXACT_COMMIT = re.compile(r"[0-9a-f]{40}")
+_NUMERIC_HOST_LABEL = re.compile(r"(?:[0-9]+|0x[0-9a-f]+)")
 _MAX_LOCAL_PATH_BYTES = 4_096
 _LOCAL_HOSTNAME_SUFFIXES = (
     "localhost",
@@ -40,9 +41,13 @@ def _validate_public_git_origin(origin: str) -> None:
         address = ipaddress.ip_address(hostname)
     except ValueError:
         labels = hostname.split(".")
-        if len(labels) < 2 or any(
-            hostname == suffix or hostname.endswith(f".{suffix}")
-            for suffix in _LOCAL_HOSTNAME_SUFFIXES
+        if (
+            len(labels) < 2
+            or all(_NUMERIC_HOST_LABEL.fullmatch(label) for label in labels)
+            or any(
+                hostname == suffix or hostname.endswith(f".{suffix}")
+                for suffix in _LOCAL_HOSTNAME_SUFFIXES
+            )
         ):
             raise ValueError(_PUBLIC_GIT_ORIGIN_ERROR) from None
     else:

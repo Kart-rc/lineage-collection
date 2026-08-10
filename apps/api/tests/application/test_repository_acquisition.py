@@ -129,6 +129,32 @@ def test_git_requests_reject_non_public_or_ambiguous_origins_without_echoing(
     }
 
 
+@pytest.mark.parametrize(
+    "hostname",
+    (
+        "127.1",
+        "127.0.1",
+        "127.000.000.001",
+        "0177.0.0.1",
+        "0x7f.0.0.1",
+        "2130706433",
+        "0x7f000001",
+    ),
+)
+def test_git_requests_reject_legacy_or_ambiguous_numeric_hostnames(
+    hostname: str,
+) -> None:
+    origin = f"https://{hostname}/acme/spring-service"
+
+    with pytest.raises(ValueError) as captured:
+        GitRepositoryRequest(**{**_request_fields(), "origin": origin})
+
+    assert str(captured.value) == (
+        "GIT repository origin must be a public HTTPS endpoint"
+    )
+    assert hostname not in str(captured.value)
+
+
 def test_git_requests_accept_canonical_public_https_origins() -> None:
     origin = "https://github.com/acme/spring-service"
 
