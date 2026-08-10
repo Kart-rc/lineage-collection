@@ -70,8 +70,16 @@ The retained local-real proof is written to
 Petclinic revision it records six entity mappings, three repository→entity→table chains, five caller
 components, 15 exact static edges (10 reads, 5 writes), eight explicitly retained non-edge schema
 residue records, zero unresolved invocations, and 131 tracked paths partitioned into 33 completed
-and 98 skipped paths. It also records that duplicate replay added no database effects and that two
-fresh-state runs produced the same manifest/SCA checksum.
+and 98 skipped paths. Its bounded relational effect proof dynamically covers all 33 current user
+tables, stable column metadata and every typed value; exact physical bytes before/after replay catch
+same-count updates as well as row/table changes. Only documented time/lease fields and explicitly
+listed time-derived references are normalized in the retained logical digest. Two fresh-state runs
+produce the same manifest/SCA/logical checksums. The hardened manifest checksum is
+`sha256:4961012f7ac0a102608aed048be69a4a6a97d22c03428c1b0cdf763f4d4e0ef8`.
+
+The dedicated proof uses the preprovisioned lock only through
+`uv run --offline --frozen --no-sync`; it cannot fetch or mutate dependencies. A missing environment
+is `INTEGRATION_REQUIRED`, not an invitation to sync.
 
 Compatibility gaps remain explicit: arbitrary Gradle/Maven execution or dynamic dependency logic,
 multi-module build graphs, nonstandard source/schema roots, Hibernate/native-query extensions not in

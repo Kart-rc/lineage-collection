@@ -185,7 +185,18 @@ The dedicated runner validates the checkout with the bounded exact-Git adapter a
 Maven, Gradle, tests, application code, hooks, or repository executables. In each of two fresh local
 state directories it drives the actual `collect-checkout` durable flow; it also repeats the command
 in the same state and requires `DUPLICATE` with unchanged command, run, proposal, coverage and
-database-effect counts. The exact oracle is 15 static edges (10 `READS`, 5 `WRITES`), zero unresolved
+database state. The proof dynamically enumerates every non-SQLite user table (currently 33),
+canonicalizes its stable schema metadata and every typed row value under explicit table/row/byte
+bounds, and compares the complete physical snapshots in memory. It therefore catches in-place
+updates as well as inserts, deletes, and table/schema changes; row-count equality alone is not the
+oracle. The retained logical digest normalizes only documented timestamp/lease fields (including
+JSON fields) and their explicitly listed time-derived evidence references so two fresh runs remain
+comparable without retaining row contents.
+
+The runner invokes the already provisioned locked environment only with
+`uv run --offline --frozen --no-sync`; dependency resolution, download, sync and mutation are
+forbidden. An absent runner/environment/dependency produces bounded `INTEGRATION_REQUIRED` instead
+of attempting installation. The exact oracle is 15 static edges (10 `READS`, 5 `WRITES`), zero unresolved
 invocations, full 131-path disposition (33 completed, 98 skipped, zero unsupported/failed), and an
 `IN_REVIEW` proposal. Runtime remains `NOT_PROVIDED`, production collection is off, and AWS remains
 `AWS_REQUIRED`.
@@ -197,6 +208,11 @@ oracle—never checkout paths, source contents, raw queries, timestamps, credent
 external source. The two fresh runs must produce byte-identical manifest and SCA evidence checksums.
 Missing/invalid checkout, wrong origin/revision, tamper, content-address conflict, incomplete scope,
 or oracle drift exits nonzero and cannot produce `LOCAL_REAL_REPOSITORY_PASS`.
+
+The hardened pinned proof checksum is
+`sha256:4961012f7ac0a102608aed048be69a4a6a97d22c03428c1b0cdf763f4d4e0ef8`;
+its retained database logical digest is
+`sha256:200b648cb6fcc86fd1fd93b29e5d1c4eb746cb4f2882335dfd250206f2c7a9ed`.
 
 The default hermetic acceptance command remains independent of the external checkout:
 

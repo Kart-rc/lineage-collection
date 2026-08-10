@@ -9,6 +9,7 @@ import subprocess
 import sys
 import tempfile
 from collections import Counter
+from dataclasses import dataclass
 from pathlib import Path
 from pathlib import PurePosixPath
 
@@ -69,18 +70,14 @@ _EDGE_ORACLE = sorted(
         ("READS", "VetRepository", "Vet", "vets", "VetController#showResourcesVetList", "findAll"),
     ]
 )
-_COUNTED_TABLES = (
-    "events",
-    "commands",
-    "runs",
-    "proposals",
-    "edge_ledger",
-    "run_stages",
-    "stage_results",
-    "coverage_manifests",
-    "evidence_objects",
-    "lane_messages",
-    "outbox_events",
+_DATABASE_EFFECT_ALGORITHM = "sqlite-canonical-relational-snapshot-v1"
+_DATABASE_EFFECT_SCHEMA_VERSION = "1.0.0"
+_TIME_DERIVED_DIGEST_FIELDS = frozenset(
+    {
+        "evidence_objects.checksum[kind=manifest|proposal]",
+        "stage_results.output_checksum",
+        "stage_results.output_ref.checksum",
+    }
 )
 
 
@@ -234,12 +231,219 @@ def _run_collect_checkout(
     return result
 
 
-def _database_counts(database: Path) -> dict[str, int]:
-    with sqlite3.connect(database) as connection:
-        return {
-            table: int(connection.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0])
-            for table in _COUNTED_TABLES
-        }
+@dataclass(frozen=True, slots=True)
+class DatabaseEffectSnapshot:
+    physical_bytes: bytes
+    logical_digest: str
+    table_names: tuple[str, ...]
+    row_counts: dict[str, int]
+
+
+def _quoted_identifier(identifier: str) -> str:
+    if not identifier or "\x00" in identifier:
+        raise ValueError("database identifier is invalid")
+    return f'"{identifier.replace(chr(34), chr(34) * 2)}"'
+
+
+def _is_volatile_time_name(name: str) -> bool:
+    return name.endswith("_at") or (name.endswith("At") and len(name) > 2)
+
+
+def _normalize_json_volatility(
+    value: object, *, table: str, column: str
+) -> object:
+    if isinstance(value, dict):
+        normalized: dict[str, object] = {}
+        for key, item in value.items():
+            key_text = str(key)
+            if item is not None and (
+                _is_volatile_time_name(key_text)
+                or key_text in {"leaseOwner", "leaseEpoch", "lease_owner", "lease_epoch"}
+            ):
+                normalized[key_text] = {"normalizedVolatile": "time-or-lease"}
+            elif (
+                table == "stage_results"
+                and column == "output_ref"
+                and key_text == "checksum"
+            ):
+                normalized[key_text] = {"normalizedVolatile": "time-derived-digest"}
+            else:
+                normalized[key_text] = _normalize_json_volatility(
+                    item, table=table, column=column
+                )
+        return normalized
+    if isinstance(value, list):
+        return [
+            _normalize_json_volatility(item, table=table, column=column)
+            for item in value
+        ]
+    return value
+
+
+def _encoded_sql_value(
+    value: object,
+    *,
+    table: str,
+    column: str,
+    row: dict[str, object],
+    logical: bool,
+) -> dict[str, object]:
+    if logical and value is not None and (
+        _is_volatile_time_name(column) or column.startswith("lease_")
+    ):
+        return {"type": "normalized", "value": "time-or-lease"}
+    if logical and table == "evidence_objects" and column == "checksum" and str(
+        row.get("kind")
+    ) in {"manifest", "proposal"}:
+        return {"type": "normalized", "value": "time-derived-digest"}
+    if logical and table == "stage_results" and column == "output_checksum":
+        return {"type": "normalized", "value": "time-derived-digest"}
+    if value is None:
+        return {"type": "null"}
+    if isinstance(value, int):
+        return {"type": "integer", "value": str(value)}
+    if isinstance(value, float):
+        return {"type": "real", "value": value.hex()}
+    if isinstance(value, bytes):
+        return {"type": "blob", "length": len(value), "sha256": _sha256(value)}
+    if not isinstance(value, str):
+        raise ValueError("database value type is unsupported")
+    if logical and (column.endswith("_json") or column in {"output_ref", "input_ref"}):
+        try:
+            parsed = json.loads(value)
+        except json.JSONDecodeError:
+            pass
+        else:
+            return {
+                "type": "json",
+                "value": _normalize_json_volatility(parsed, table=table, column=column),
+            }
+    return {"type": "text", "value": value}
+
+
+def _database_effect_snapshot(
+    database: Path,
+    *,
+    max_tables: int = 128,
+    max_rows: int = 500_000,
+    max_bytes: int = 64 * 1024 * 1024,
+) -> DatabaseEffectSnapshot:
+    if min(max_tables, max_rows, max_bytes) < 1:
+        raise ValueError("database snapshot bounds must be positive")
+    uri = f"{database.resolve(strict=True).as_uri()}?mode=ro"
+    with sqlite3.connect(uri, uri=True) as connection:
+        table_names = tuple(
+            str(row[0])
+            for row in connection.execute(
+                "SELECT name FROM sqlite_master "
+                "WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name"
+            ).fetchall()
+        )
+        if len(table_names) > max_tables:
+            raise ValueError("database table bound exceeded")
+        physical_tables: list[dict[str, object]] = []
+        logical_tables: list[dict[str, object]] = []
+        row_counts: dict[str, int] = {}
+        total_rows = 0
+        encoded_bytes = 0
+        for table in table_names:
+            quoted = _quoted_identifier(table)
+            column_rows = connection.execute(f"PRAGMA table_info({quoted})").fetchall()
+            columns = [str(row[1]) for row in column_rows]
+            metadata = [
+                {
+                    "cid": int(row[0]),
+                    "name": str(row[1]),
+                    "declaredType": str(row[2]),
+                    "notNull": bool(row[3]),
+                    "default": row[4],
+                    "primaryKeyOrder": int(row[5]),
+                }
+                for row in column_rows
+            ]
+            physical_rows: list[list[dict[str, object]]] = []
+            logical_rows: list[list[dict[str, object]]] = []
+            for values in connection.execute(f"SELECT * FROM {quoted}"):
+                total_rows += 1
+                if total_rows > max_rows:
+                    raise ValueError("database row bound exceeded")
+                row = dict(zip(columns, values, strict=True))
+                physical_row = [
+                    _encoded_sql_value(
+                        value,
+                        table=table,
+                        column=column,
+                        row=row,
+                        logical=False,
+                    )
+                    for column, value in zip(columns, values, strict=True)
+                ]
+                logical_row = [
+                    _encoded_sql_value(
+                        value,
+                        table=table,
+                        column=column,
+                        row=row,
+                        logical=True,
+                    )
+                    for column, value in zip(columns, values, strict=True)
+                ]
+                encoded_bytes += len(_canonical_bytes({"row": physical_row}))
+                encoded_bytes += len(_canonical_bytes({"row": logical_row}))
+                if encoded_bytes > max_bytes:
+                    raise ValueError("database byte bound exceeded")
+                physical_rows.append(physical_row)
+                logical_rows.append(logical_row)
+            physical_rows.sort(key=lambda item: _canonical_bytes({"row": item}))
+            logical_rows.sort(key=lambda item: _canonical_bytes({"row": item}))
+            row_counts[table] = len(physical_rows)
+            physical_tables.append(
+                {"name": table, "columns": metadata, "rows": physical_rows}
+            )
+            logical_tables.append(
+                {"name": table, "columns": metadata, "rows": logical_rows}
+            )
+        physical_bytes = _canonical_bytes(
+            {
+                "algorithm": _DATABASE_EFFECT_ALGORITHM,
+                "schemaVersion": _DATABASE_EFFECT_SCHEMA_VERSION,
+                "tables": physical_tables,
+            }
+        )
+        logical_bytes = _canonical_bytes(
+            {
+                "algorithm": _DATABASE_EFFECT_ALGORITHM,
+                "schemaVersion": _DATABASE_EFFECT_SCHEMA_VERSION,
+                "normalization": {
+                    "timeColumns": "non-null snake_case names ending _at",
+                    "leaseColumns": "non-null names starting lease_",
+                    "jsonTimeKeys": "non-null camelCase At or snake_case _at",
+                    "jsonLeaseKeys": ["leaseOwner", "leaseEpoch", "lease_owner", "lease_epoch"],
+                    "timeDerivedDigestFields": sorted(_TIME_DERIVED_DIGEST_FIELDS),
+                },
+                "tables": logical_tables,
+            }
+        )
+        if len(physical_bytes) + len(logical_bytes) > max_bytes:
+            raise ValueError("database byte bound exceeded")
+        return DatabaseEffectSnapshot(
+            physical_bytes=physical_bytes,
+            logical_digest=f"sha256:{_sha256(logical_bytes)}",
+            table_names=table_names,
+            row_counts=row_counts,
+        )
+
+
+def _assert_no_database_effect(
+    before: DatabaseEffectSnapshot, after: DatabaseEffectSnapshot
+) -> None:
+    if (
+        before.physical_bytes != after.physical_bytes
+        or before.table_names != after.table_names
+        or before.row_counts != after.row_counts
+        or before.logical_digest != after.logical_digest
+    ):
+        raise ValueError("duplicate changed durable database state")
 
 
 def _one_json(connection: sqlite3.Connection, statement: str) -> dict[str, object]:
@@ -374,8 +578,8 @@ def _build_manifest(
     state_root: Path,
     first: dict[str, object],
     duplicate: dict[str, object],
-    before_duplicate: dict[str, int],
-    after_duplicate: dict[str, int],
+    before_duplicate: DatabaseEffectSnapshot,
+    after_duplicate: DatabaseEffectSnapshot,
 ) -> dict[str, object]:
     _assert_equal(first.get("outcome"), "ACCEPTED", "first delivery was not accepted")
     _assert_equal(first.get("commandStatus"), "COMPLETED", "command was not completed")
@@ -409,7 +613,7 @@ def _build_manifest(
         coverage_summary.get("manifestId"),
         "duplicate changed coverage identity",
     )
-    _assert_equal(after_duplicate, before_duplicate, "duplicate changed durable effects")
+    _assert_no_database_effect(before_duplicate, after_duplicate)
 
     database = state_root / "lineage.db"
     with sqlite3.connect(database) as connection:
@@ -526,12 +730,33 @@ def _build_manifest(
         "runtimeStatus": "NOT_PROVIDED",
         "awsStatus": "AWS_REQUIRED",
         "productionCollection": "OFF",
+        "databaseEffectProof": {
+            "algorithm": _DATABASE_EFFECT_ALGORITHM,
+            "schemaVersion": _DATABASE_EFFECT_SCHEMA_VERSION,
+            "normalization": {
+                "timeColumns": "non-null snake_case names ending _at",
+                "leaseColumns": "non-null names starting lease_",
+                "jsonTimeKeys": "non-null camelCase At or snake_case _at",
+                "jsonLeaseKeys": [
+                    "leaseOwner",
+                    "leaseEpoch",
+                    "lease_owner",
+                    "lease_epoch",
+                ],
+                "timeDerivedDigestFields": sorted(_TIME_DERIVED_DIGEST_FIELDS),
+            },
+            "tableCount": len(before_duplicate.table_names),
+            "tableNames": list(before_duplicate.table_names),
+            "logicalDigestBefore": before_duplicate.logical_digest,
+            "logicalDigestAfter": after_duplicate.logical_digest,
+            "physicalStateEqual": True,
+            "rowCountsBefore": before_duplicate.row_counts,
+            "rowCountsAfter": after_duplicate.row_counts,
+        },
         "duplicate": {
             "outcome": "DUPLICATE",
             "sameIdentities": True,
             "noDurableEffects": True,
-            "effectCountsBefore": before_duplicate,
-            "effectCountsAfter": after_duplicate,
         },
     }
 
@@ -541,9 +766,9 @@ def _execute_acceptance(checkout: Path, output_root: Path) -> dict[str, object]:
     if (state_root / "lineage.db").exists():
         raise AcceptanceOracleError("acceptance state must be fresh")
     first = _run_collect_checkout(checkout, state_root)
-    before_duplicate = _database_counts(state_root / "lineage.db")
+    before_duplicate = _database_effect_snapshot(state_root / "lineage.db")
     duplicate = _run_collect_checkout(checkout, state_root)
-    after_duplicate = _database_counts(state_root / "lineage.db")
+    after_duplicate = _database_effect_snapshot(state_root / "lineage.db")
     manifest = _build_manifest(
         checkout,
         state_root,
@@ -732,6 +957,182 @@ def test_collect_checkout_rejects_wrong_origin_and_revision(tmp_path: Path) -> N
         )
 
 
+def _fake_uv(tmp_path: Path, body: str) -> Path:
+    executable = tmp_path / "bin" / "uv"
+    executable.parent.mkdir()
+    executable.write_text(f"#!/bin/sh\n{body}\n", encoding="utf-8")
+    executable.chmod(0o755)
+    return executable
+
+
+def test_dedicated_runner_uses_offline_frozen_preprovisioned_environment(
+    tmp_path: Path,
+) -> None:
+    checkout = tmp_path / "checkout"
+    checkout.mkdir()
+    arguments = tmp_path / "uv-arguments"
+    _fake_uv(
+        tmp_path,
+        "printf '%s\\n' \"$@\" > \"$UV_ARGS_FILE\"\n"
+        "printf '%s\\n' '{\"evidenceClass\":\"LOCAL_REAL_REPOSITORY_PASS\",\"outcome\":\"PASS\"}'",
+    )
+    environment = os.environ.copy()
+    environment.update(
+        {
+            "LINEAGE_REAL_REPOSITORY_CHECKOUT": str(checkout),
+            "PATH": f"{tmp_path / 'bin'}:{os.defpath}",
+            "UV_ARGS_FILE": str(arguments),
+        }
+    )
+
+    completed = subprocess.run(
+        [str(SCRIPT)], cwd=ROOT, env=environment, capture_output=True, text=True, check=False
+    )
+
+    assert completed.returncode == 0
+    assert arguments.read_text(encoding="utf-8").splitlines() == [
+        "run",
+        "--offline",
+        "--frozen",
+        "--no-sync",
+        "--project",
+        "apps/api",
+        "--extra",
+        "dev",
+        "python",
+        "tests/integration/test_spring_petclinic_repository.py",
+    ]
+
+
+def test_dedicated_runner_reports_missing_preprovisioned_environment_without_leak(
+    tmp_path: Path,
+) -> None:
+    checkout = tmp_path / "secret-checkout"
+    checkout.mkdir()
+    _fake_uv(tmp_path, "echo \"dependency failure $LINEAGE_REAL_REPOSITORY_CHECKOUT\" >&2\nexit 1")
+    environment = os.environ.copy()
+    environment.update(
+        {
+            "LINEAGE_REAL_REPOSITORY_CHECKOUT": str(checkout),
+            "PATH": f"{tmp_path / 'bin'}:{os.defpath}",
+        }
+    )
+
+    completed = subprocess.run(
+        [str(SCRIPT)], cwd=ROOT, env=environment, capture_output=True, text=True, check=False
+    )
+
+    assert completed.returncode == 2
+    assert str(checkout) not in completed.stdout
+    assert str(checkout) not in completed.stderr
+    assert len(completed.stdout.encode()) < 1_024
+    assert json.loads(completed.stdout) == {
+        "evidenceClass": "LOCAL_REAL_REPOSITORY_REQUIRED",
+        "outcome": "INTEGRATION_REQUIRED",
+        "reasonCode": "RUNNER_ENVIRONMENT_UNAVAILABLE",
+    }
+
+
+def _effect_database(path: Path) -> None:
+    with sqlite3.connect(path) as connection:
+        connection.executescript(
+            '''
+            CREATE TABLE classification_decisions (
+                decision_id TEXT PRIMARY KEY,
+                status TEXT NOT NULL,
+                decided_at TEXT NOT NULL,
+                payload_json TEXT NOT NULL
+            );
+            CREATE TABLE audit_events (
+                audit_id TEXT PRIMARY KEY,
+                action TEXT NOT NULL,
+                created_at TEXT NOT NULL
+            );
+            CREATE TABLE "odd""table" (
+                id INTEGER PRIMARY KEY,
+                content BLOB NOT NULL
+            );
+            INSERT INTO classification_decisions VALUES
+                ('decision-1', 'COMPLETE', '2026-01-01T00:00:00Z',
+                 '{"createdAt":"2026-01-01T00:00:00Z","value":"stable"}');
+            INSERT INTO audit_events VALUES
+                ('audit-1', 'CREATE', '2026-01-01T00:00:00Z');
+            INSERT INTO "odd""table" VALUES (1, X'000102');
+            '''
+        )
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    [
+        "UPDATE classification_decisions SET status = 'CHANGED' WHERE decision_id = 'decision-1'",
+        "INSERT INTO audit_events VALUES ('audit-2', 'CREATE', '2026-01-01T00:00:00Z')",
+        "DELETE FROM audit_events WHERE audit_id = 'audit-1'",
+        "CREATE TABLE newly_added (id INTEGER PRIMARY KEY)",
+        'DROP TABLE "odd""table"',
+    ],
+)
+def test_database_effect_proof_detects_every_table_and_mutation(
+    tmp_path: Path, mutation: str
+) -> None:
+    database = tmp_path / "effects.db"
+    _effect_database(database)
+    before = _database_effect_snapshot(database)
+    with sqlite3.connect(database) as connection:
+        connection.execute(mutation)
+    after = _database_effect_snapshot(database)
+
+    assert "classification_decisions" in before.table_names
+    assert 'odd"table' in before.table_names
+    with pytest.raises(ValueError, match="duplicate changed durable database state"):
+        _assert_no_database_effect(before, after)
+
+
+def test_database_effect_logical_digest_normalizes_only_documented_volatility(
+    tmp_path: Path,
+) -> None:
+    first_database = tmp_path / "first.db"
+    second_database = tmp_path / "second.db"
+    _effect_database(first_database)
+    _effect_database(second_database)
+    with sqlite3.connect(second_database) as connection:
+        connection.execute(
+            "UPDATE classification_decisions SET decided_at = ?, payload_json = ?",
+            (
+                "2027-02-02T00:00:00Z",
+                '{"createdAt":"2027-02-02T00:00:00Z","value":"stable"}',
+            ),
+        )
+        connection.execute(
+            "UPDATE audit_events SET created_at = '2027-02-02T00:00:00Z'"
+        )
+    first = _database_effect_snapshot(first_database)
+    second = _database_effect_snapshot(second_database)
+
+    assert first.physical_bytes != second.physical_bytes
+    assert first.logical_digest == second.logical_digest
+
+    with sqlite3.connect(second_database) as connection:
+        connection.execute(
+            "UPDATE classification_decisions SET payload_json = ?",
+            ('{"createdAt":"2027-02-02T00:00:00Z","value":"changed"}',),
+        )
+    changed = _database_effect_snapshot(second_database)
+    assert changed.logical_digest != first.logical_digest
+
+
+def test_database_effect_snapshot_enforces_table_row_and_byte_bounds(tmp_path: Path) -> None:
+    database = tmp_path / "bounded.db"
+    _effect_database(database)
+
+    with pytest.raises(ValueError, match="table bound"):
+        _database_effect_snapshot(database, max_tables=2)
+    with pytest.raises(ValueError, match="row bound"):
+        _database_effect_snapshot(database, max_rows=2)
+    with pytest.raises(ValueError, match="byte bound"):
+        _database_effect_snapshot(database, max_bytes=64)
+
+
 def test_dedicated_runner_without_checkout_is_integration_required() -> None:
     environment = os.environ.copy()
     environment.pop("LINEAGE_REAL_REPOSITORY_CHECKOUT", None)
@@ -806,6 +1207,14 @@ def test_real_spring_petclinic_repository_acceptance(tmp_path: Path) -> None:
         "unsupported": 0,
         "failed": 0,
     }
+    database_proof = manifest["databaseEffectProof"]
+    assert database_proof["algorithm"] == "sqlite-canonical-relational-snapshot-v1"
+    assert database_proof["schemaVersion"] == "1.0.0"
+    assert database_proof["tableCount"] == 33
+    assert len(database_proof["tableNames"]) == 33
+    assert database_proof["logicalDigestBefore"] == database_proof["logicalDigestAfter"]
+    assert database_proof["physicalStateEqual"] is True
+    assert database_proof["rowCountsBefore"] == database_proof["rowCountsAfter"]
     assert manifest["runtimeStatus"] == "NOT_PROVIDED"
     assert manifest["finalOutcome"] == "PASS"
 
