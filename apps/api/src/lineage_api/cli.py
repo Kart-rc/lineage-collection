@@ -159,6 +159,30 @@ def _checkout_summary(
     )
     command = result.get("command") if isinstance(result.get("command"), dict) else {}
     analysis = result.get("analysis") if isinstance(result.get("analysis"), dict) else {}
+    coverage = (
+        result.get("coverageManifest")
+        if isinstance(result.get("coverageManifest"), dict)
+        else None
+    )
+    coverage_summary = (
+        {
+            "manifestId": coverage.get("manifestId"),
+            "state": coverage.get("state"),
+            "determinantDigest": coverage.get("determinantDigest"),
+            "sourceScopeDispositionDigest": coverage.get(
+                "sourceScopeDispositionDigest"
+            ),
+            "counts": {
+                "expected": len(coverage.get("expectedScope", [])),
+                "completed": len(coverage.get("completedScope", [])),
+                "skipped": len(coverage.get("skippedScope", [])),
+                "unsupported": len(coverage.get("unsupportedScope", [])),
+                "failed": len(coverage.get("failedScope", [])),
+            },
+        }
+        if coverage is not None
+        else None
+    )
     return {
         "outcome": result.get("outcome"),
         "reasonCode": result.get("reason"),
@@ -179,6 +203,7 @@ def _checkout_summary(
         "runtimeStatus": result.get("runtimeStatus", "NOT_PROVIDED"),
         "analysisStatus": analysis.get("status"),
         "statusReasons": analysis.get("statusReasons", []),
+        "coverageManifest": coverage_summary,
         "counts": {
             "edges": analysis.get("edgeCount", 0),
             "reads": analysis.get("readCount", 0),

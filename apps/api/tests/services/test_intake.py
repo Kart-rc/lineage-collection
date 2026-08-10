@@ -227,6 +227,7 @@ def test_repository_source_descriptor_is_closed_and_secret_safe(intake) -> None:
         "origin": "https://example.com/acme/payments-pipeline",
         "revision": "1" * 40,
         "scopeDigest": "sha256:" + "2" * 64,
+        "scopeDispositionDigest": "sha256:" + "4" * 64,
         "analyzerPack": "java-spring-data-jpa-v1",
         "ruleset": "spring-data-rules-v1",
         "framework": "spring-data-jpa",

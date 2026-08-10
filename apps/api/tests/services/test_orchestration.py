@@ -25,14 +25,14 @@ def _settings(tmp_path: Path) -> Settings:
     )
 
 
-def _delivery(event_id: str = "delivery-001"):
+def _delivery(event_id: str = "delivery-001", *, digest: str = "demo-digest-v2"):
     from lineage_api.services.intake import PushDelivery
 
     payload = {
         "eventId": event_id,
         "eventType": "repo.push",
         "repo": "payments-pipeline",
-        "digest": "demo-digest-v2",
+        "digest": digest,
         "env": "staging",
         "system": "payments",
         "changedFiles": ["pipeline.py"],
@@ -113,9 +113,89 @@ def test_duplicate_delivery_reuses_the_only_run(tmp_path) -> None:
     duplicate = services.orchestration.process_push(_delivery())
 
     assert duplicate["outcome"] == "DUPLICATE"
+    assert duplicate["command"]["status"] == "COMPLETED"
     assert duplicate["command"]["commandId"] == first["command"]["commandId"]
     assert duplicate["run"]["runId"] == first["run"]["runId"]
+    assert duplicate["proposal"]["proposalId"] == first["proposal"]["proposalId"]
     assert len(services.orchestration.list_runs()) == 1
+
+
+def test_accepted_delivery_drains_until_its_exact_command_is_terminal(tmp_path) -> None:
+    from lineage_api.dependencies import build_services
+
+    services = build_services(_settings(tmp_path))
+    services.reset()
+    older = services.orchestration._intake.accept(
+        _delivery("delivery-older", digest="demo-digest-v1")
+    )
+    assert older.command is not None
+
+    target = services.orchestration.process_push(_delivery("delivery-target"))
+
+    target_command_id = (
+        "command-" + hashlib.sha256(b"delivery-target").hexdigest()[:20]
+    )
+    assert target["command"]["commandId"] == target_command_id
+    assert target["command"]["status"] == "COMPLETED"
+    assert target["proposal"] is not None
+    assert services.orchestration._command_store.get(older.command.command_id).status == (
+        "COMPLETED"
+    )
+
+
+def test_queued_duplicate_is_processed_before_returning_duplicate_summary(tmp_path) -> None:
+    from lineage_api.dependencies import build_services
+
+    services = build_services(_settings(tmp_path))
+    services.reset()
+    queued = services.orchestration._intake.accept(_delivery("delivery-queued"))
+    assert queued.command is not None
+    assert queued.command.status == "QUEUED"
+
+    duplicate = services.orchestration.process_push(_delivery("delivery-queued"))
+
+    assert duplicate["outcome"] == "DUPLICATE"
+    assert duplicate["command"]["commandId"] == queued.command.command_id
+    assert duplicate["command"]["status"] == "COMPLETED"
+    assert duplicate["proposal"] is not None
+
+
+def test_active_target_lease_fails_bounded_without_duplicate_effects(tmp_path) -> None:
+    from lineage_api.dependencies import build_services
+
+    services = build_services(_settings(tmp_path))
+    services.reset()
+    accepted = services.orchestration._intake.accept(_delivery("delivery-concurrent"))
+    assert accepted.command is not None
+    services.orchestration._outbox_dispatcher.dispatch(limit=100)
+    message = services.orchestration._broker.claim(
+        "events", "concurrent-worker", visibility_timeout_seconds=60
+    )
+    assert message is not None
+    lease = services.orchestration._command_store.claim(
+        accepted.command.command_id, "concurrent-worker", lease_seconds=60
+    )
+
+    with pytest.raises(RuntimeError, match="did not reach a terminal state"):
+        services.orchestration.process_push(_delivery("delivery-concurrent"))
+
+    with services.database.connection() as connection:
+        assert connection.execute("SELECT COUNT(*) FROM proposals").fetchone()[0] == 0
+        assert connection.execute("SELECT COUNT(*) FROM runs").fetchone()[0] == 0
+    services.orchestration._command_store.fail(
+        lease, "CONCURRENT_TEST_RELEASE", retryable=True
+    )
+    services.orchestration._broker.retry(
+        message,
+        available_at=services.orchestration._durable_clock.now(),
+        error_code="CONCURRENT_TEST_RELEASE",
+    )
+
+    recovered = services.orchestration.process_push(_delivery("delivery-concurrent"))
+    assert recovered["outcome"] == "DUPLICATE"
+    assert recovered["command"]["status"] == "COMPLETED"
+    with services.database.connection() as connection:
+        assert connection.execute("SELECT COUNT(*) FROM proposals").fetchone()[0] == 1
 
 
 def test_unknown_classification_blocks_analysis(tmp_path) -> None:
@@ -185,6 +265,7 @@ def test_checkout_event_identity_includes_environment_and_system() -> None:
         "origin": "https://example.com/acme/service",
         "revision": "1" * 40,
         "scopeDigest": "sha256:" + "2" * 64,
+        "scopeDispositionDigest": "sha256:" + "4" * 64,
         "analyzerPack": "java-spring-data-jpa-v1",
         "ruleset": "spring-data-rules-v1",
         "framework": "spring-data-jpa",
@@ -214,6 +295,7 @@ def test_repository_source_metadata_is_signed_and_changes_command_determinant(tm
         "origin": "https://example.com/acme/payments-pipeline",
         "revision": "1" * 40,
         "scopeDigest": "sha256:" + "2" * 64,
+        "scopeDispositionDigest": "sha256:" + "4" * 64,
         "analyzerPack": "java-spring-data-jpa-v1",
         "ruleset": "spring-data-rules-v1",
         "framework": "spring-data-jpa",
@@ -245,6 +327,7 @@ def test_conflicting_source_determinant_reuse_is_typed_and_rejected(tmp_path) ->
         "origin": "https://example.com/acme/payments-pipeline",
         "revision": "1" * 40,
         "scopeDigest": "sha256:" + "2" * 64,
+        "scopeDispositionDigest": "sha256:" + "4" * 64,
         "analyzerPack": "java-spring-data-jpa-v1",
         "ruleset": "spring-data-rules-v1",
         "framework": "spring-data-jpa",

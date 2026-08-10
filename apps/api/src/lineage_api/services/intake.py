@@ -303,6 +303,7 @@ _REPOSITORY_SOURCE_KEYS = frozenset(
         "origin",
         "revision",
         "scopeDigest",
+        "scopeDispositionDigest",
         "analyzerPack",
         "ruleset",
         "framework",
@@ -330,6 +331,7 @@ def _repository_source(value: object, repository: str) -> dict[str, str] | None:
         or source["framework"] != "spring-data-jpa"
         or _SOURCE_REVISION.fullmatch(source["revision"]) is None
         or _SOURCE_SCOPE.fullmatch(source["scopeDigest"]) is None
+        or _SOURCE_SCOPE.fullmatch(source["scopeDispositionDigest"]) is None
         or source["schemaProfile"] not in {"h2", "mysql", "postgres"}
         or source["platform"] != source["schemaProfile"]
         or any(

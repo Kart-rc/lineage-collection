@@ -426,6 +426,48 @@ def test_event_envelope_requires_correlation_contract() -> None:
     }
 
 
+def test_event_envelope_closes_exact_repository_source_disposition() -> None:
+    registry = _contract_registry_type()(CONTRACTS_DIR)
+    source = {
+        "sourceKind": "git-checkout",
+        "origin": "https://example.com/acme/spring-service",
+        "revision": "1" * 40,
+        "scopeDigest": "sha256:" + "2" * 64,
+        "scopeDispositionDigest": "sha256:" + "3" * 64,
+        "analyzerPack": "java-spring-data-jpa-v1",
+        "ruleset": "spring-data-rules-v1",
+        "framework": "spring-data-jpa",
+        "schemaProfile": "postgres",
+        "platform": "postgres",
+    }
+    envelope = {
+        "schemaVersion": "1.0.0",
+        "eventId": "checkout-001",
+        "eventType": "repo.push",
+        "correlationId": "corr-checkout-001",
+        "repo": "spring-service",
+        "digest": "1" * 40,
+        "env": "staging",
+        "system": "orders",
+        "lane": "events",
+        "changedFiles": ["pom.xml"],
+        "repositorySource": source,
+        "receivedAt": "2026-08-10T12:00:00Z",
+    }
+
+    assert registry.validate("event-envelope", envelope) == []
+    invalid = {
+        **envelope,
+        "repositorySource": {
+            **source,
+            "scopeDispositionDigest": "sha256:not-a-digest",
+        },
+    }
+    assert {error.path for error in registry.validate("event-envelope", invalid)} == {
+        "repositorySource.scopeDispositionDigest"
+    }
+
+
 def test_acceptance_evidence_manifest_is_strict_and_versioned() -> None:
     contract_registry = _contract_registry_type()
     registry = contract_registry(CONTRACTS_DIR)
@@ -520,6 +562,7 @@ def _coverage_manifest_fixture(state: str = "COMPLETE") -> dict[str, object]:
         "scope": "repo:payments-pipeline",
         "artifactDigest": "sha256:source-v2",
         "determinantDigest": "sha256:determinants-v1",
+        "sourceScopeDispositionDigest": "sha256:" + "a" * 64,
         "state": state,
         "expectedScope": ["pipeline.py", "models/revenue.sql"],
         "completedScope": ["pipeline.py"],

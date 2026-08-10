@@ -29,6 +29,34 @@
     "system": {"type": "string", "minLength": 1},
     "lane": {"enum": ["interactive", "events", "bulk"]},
     "changedFiles": {"type": "array", "items": {"type": "string"}, "uniqueItems": true},
+    "repositorySource": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "sourceKind",
+        "origin",
+        "revision",
+        "scopeDigest",
+        "scopeDispositionDigest",
+        "analyzerPack",
+        "ruleset",
+        "framework",
+        "schemaProfile",
+        "platform"
+      ],
+      "properties": {
+        "sourceKind": {"const": "git-checkout"},
+        "origin": {"type": "string", "format": "uri"},
+        "revision": {"type": "string", "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$"},
+        "scopeDigest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+        "scopeDispositionDigest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+        "analyzerPack": {"type": "string", "minLength": 1},
+        "ruleset": {"type": "string", "minLength": 1},
+        "framework": {"type": "string", "minLength": 1},
+        "schemaProfile": {"type": "string", "minLength": 1},
+        "platform": {"type": "string", "minLength": 1}
+      }
+    },
     "runtimeObservation": {
       "type": "object",
       "additionalProperties": false,

@@ -30,6 +30,10 @@
     "scope": {"type": "string", "minLength": 1},
     "artifactDigest": {"type": "string", "minLength": 1},
     "determinantDigest": {"type": "string", "minLength": 1},
+    "sourceScopeDispositionDigest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
     "state": {"enum": ["PLANNED", "COMPLETE", "INCOMPLETE"]},
     "expectedScope": {"$ref": "#/$defs/scopeItems"},
     "completedScope": {"$ref": "#/$defs/scopeItems"},

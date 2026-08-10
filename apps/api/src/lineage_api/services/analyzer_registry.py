@@ -108,6 +108,44 @@ class AnalyzerSelection:
 
 
 @dataclass(frozen=True, slots=True)
+class AnalyzerSourceScope:
+    expected_scope: tuple[str, ...]
+    selected_scope: tuple[str, ...]
+    skipped_scope: tuple[str, ...]
+    unsupported_scope: tuple[str, ...]
+    failed_scope: tuple[str, ...] = ()
+    schema_version: str = "1.0.0"
+
+    @property
+    def disposition_digest(self) -> str:
+        body = json.dumps(
+            {
+                "schemaVersion": self.schema_version,
+                "expectedScope": list(self.expected_scope),
+                "selectedScope": list(self.selected_scope),
+                "skippedScope": list(self.skipped_scope),
+                "unsupportedScope": list(self.unsupported_scope),
+                "failedScope": list(self.failed_scope),
+            },
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode()
+        return f"sha256:{hashlib.sha256(body).hexdigest()}"
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "schemaVersion": self.schema_version,
+            "scopeDispositionDigest": self.disposition_digest,
+            "expectedScope": list(self.expected_scope),
+            "selectedScope": list(self.selected_scope),
+            "recomputedScope": list(self.selected_scope),
+            "skippedScope": list(self.skipped_scope),
+            "unsupportedScope": list(self.unsupported_scope),
+            "failedScope": list(self.failed_scope),
+        }
+
+
+@dataclass(frozen=True, slots=True)
 class AnalyzerRunResult:
     document: dict[str, Any]
     status: str
@@ -238,8 +276,80 @@ class AnalyzerRegistry:
             raise AnalyzerSelectionError(
                 "ANALYZER_NOT_CONFIGURED", "selected analyzer is not configured"
             )
-        return definition.analyze(
-            snapshot, selection.schema_profile, run_id, correlation_id
+        source_scope = self.source_scope(snapshot, selection)
+        result = definition.analyze(
+            _ScopedAnalyzerSnapshot(snapshot, source_scope.selected_scope),
+            selection.schema_profile,
+            run_id,
+            correlation_id,
+        )
+        blocking_reasons = set(result.status_reasons)
+        if source_scope.unsupported_scope:
+            blocking_reasons.add("unsupported-source-scope")
+        if source_scope.failed_scope:
+            blocking_reasons.add("failed-source-scope")
+        if not blocking_reasons:
+            return result
+        document = {
+            **result.document,
+            "status": "INTEGRATION_REQUIRED",
+            "statusReasons": sorted(blocking_reasons),
+            "sourceScopeDispositionDigest": source_scope.disposition_digest,
+        }
+        return AnalyzerRunResult(
+            document=document,
+            status="INTEGRATION_REQUIRED",
+            status_reasons=tuple(sorted(blocking_reasons)),
+            edge_count=result.edge_count,
+            read_count=result.read_count,
+            write_count=result.write_count,
+            residue_count=result.residue_count,
+            unresolved_count=result.unresolved_count,
+        )
+
+    def source_scope(
+        self,
+        snapshot: AnalyzerSnapshot,
+        selection: AnalyzerSelection,
+    ) -> AnalyzerSourceScope:
+        self.resolve(selection)
+        expected = tuple(sorted(snapshot.paths))
+        if selection.analyzer_pack == "python-fixture-v1":
+            selected = tuple(
+                path for path in expected if PurePosixPath(path).suffix == ".py"
+            )
+            skipped = tuple(
+                path
+                for path in expected
+                if PurePosixPath(path).suffix == ".md"
+                or PurePosixPath(path).name
+                in {"expected-lineage.json", "repository-evidence.json"}
+            )
+            unsupported = tuple(
+                path
+                for path in expected
+                if path not in set(selected) and path not in set(skipped)
+            )
+        else:
+            selected_paths: list[str] = []
+            skipped_paths: list[str] = []
+            unsupported_paths: list[str] = []
+            for path in expected:
+                disposition = _java_source_disposition(path, selection.schema_profile)
+                if disposition == "selected":
+                    selected_paths.append(path)
+                elif disposition == "skipped":
+                    skipped_paths.append(path)
+                else:
+                    unsupported_paths.append(path)
+            selected = tuple(selected_paths)
+            skipped = tuple(skipped_paths)
+            unsupported = tuple(unsupported_paths)
+        return AnalyzerSourceScope(
+            expected_scope=expected,
+            selected_scope=selected,
+            skipped_scope=skipped,
+            unsupported_scope=unsupported,
         )
 
     def classification_evidence(
@@ -283,37 +393,37 @@ class AnalyzerRegistry:
     ) -> dict[str, Any]:
         if max_fanout < 1:
             raise ValueError("max fanout must be positive")
-        self.resolve(selection)
-        expected = list(snapshot.paths)
-        if len(expected) > max_fanout:
+        source_scope = self.source_scope(snapshot, selection)
+        if len(source_scope.expected_scope) > max_fanout:
             raise ValueError("baseline repository scope exceeds the fanout limit")
-        if selection.analyzer_pack == "python-fixture-v1":
-            recomputed = [path for path in expected if PurePosixPath(path).suffix == ".py"]
-            skipped = [
-                path
-                for path in expected
-                if PurePosixPath(path).suffix == ".md"
-                or PurePosixPath(path).name
-                in {"expected-lineage.json", "repository-evidence.json"}
-            ]
-        else:
-            recomputed = [
-                path
-                for path in expected
-                if PurePosixPath(path).suffix in {".java", ".sql"}
-                or PurePosixPath(path).name in {"pom.xml", "build.gradle", "build.gradle.kts"}
-            ]
-            skipped = []
-        unsupported = sorted(set(expected) - set(recomputed) - set(skipped))
+        plan = source_scope.as_dict()
         return {
-            "expectedScope": expected,
-            "recomputedScope": recomputed,
-            "skippedScope": skipped,
-            "unsupportedScope": unsupported,
-            "fanout": [{"pack": selection.analyzer_pack, "paths": recomputed}]
-            if recomputed
+            **plan,
+            "fanout": [
+                {
+                    "pack": selection.analyzer_pack,
+                    "paths": plan["recomputedScope"],
+                }
+            ]
+            if plan["recomputedScope"]
             else [],
         }
+
+
+class _ScopedAnalyzerSnapshot:
+    def __init__(self, snapshot: AnalyzerSnapshot, paths: tuple[str, ...]) -> None:
+        self._snapshot = snapshot
+        self.paths = paths
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._snapshot, name)
+
+    def read_bytes(self, relative_path: str) -> bytes:
+        if relative_path not in self.paths:
+            raise AnalyzerSelectionError(
+                "SOURCE_SCOPE_MISMATCH", "path is outside the selected analyzer scope"
+            )
+        return self._snapshot.read_bytes(relative_path)
 
 
 @dataclass(frozen=True, slots=True)
@@ -393,6 +503,12 @@ class PinnedSnapshotProvider:
             "origin": self._snapshot.origin,
             "revision": self._snapshot.revision,
             "scopeDigest": self._snapshot.scope_digest,
+            "scopeDispositionDigest": AnalyzerRegistry.default()
+            .source_scope(
+                self._snapshot,
+                AnalyzerSelection.from_envelope(envelope),
+            )
+            .disposition_digest,
             "analyzerPack": self._snapshot.analyzer_pack,
             "ruleset": self._snapshot.ruleset,
             "framework": "spring-data-jpa",
@@ -611,11 +727,20 @@ class _JavaSpringAnalyzerAdapter:
 def canonical_source_metadata(
     snapshot: RepositorySnapshot, *, schema_profile: str
 ) -> dict[str, str]:
+    selection = AnalyzerSelection(
+        analyzer_pack=snapshot.analyzer_pack,
+        ruleset=snapshot.ruleset,
+        source_kind="git-checkout",
+        framework="spring-data-jpa",
+        schema_profile=schema_profile,
+    )
+    source_scope = AnalyzerRegistry.default().source_scope(snapshot, selection)
     return {
         "sourceKind": "git-checkout",
         "origin": snapshot.origin,
         "revision": snapshot.revision,
         "scopeDigest": snapshot.scope_digest,
+        "scopeDispositionDigest": source_scope.disposition_digest,
         "analyzerPack": snapshot.analyzer_pack,
         "ruleset": snapshot.ruleset,
         "framework": "spring-data-jpa",
@@ -633,6 +758,58 @@ def _is_profile_schema_path(path: str, schema_profile: str) -> bool:
         "db",
         schema_profile,
         "schema.sql",
+    )
+
+
+def _java_source_disposition(path: str, schema_profile: str) -> str:
+    pure = PurePosixPath(path)
+    name = pure.name
+    suffix = pure.suffix.lower()
+    if name in {"pom.xml", "build.gradle", "build.gradle.kts"}:
+        return "selected" if len(pure.parts) == 1 else "skipped"
+    if suffix == ".java":
+        if _is_main_java_path(path):
+            return "selected"
+        return "skipped" if _is_test_path(path) else "unsupported"
+    if suffix == ".sql":
+        if _is_profile_schema_path(path, schema_profile):
+            return "selected"
+        return "skipped" if _is_policy_skipped_sql(path) else "unsupported"
+    return "skipped"
+
+
+def _is_test_path(path: str) -> bool:
+    parts = tuple(part.lower() for part in PurePosixPath(path).parts)
+    return "test" in parts or "tests" in parts or "fixtures" in parts
+
+
+def _is_policy_skipped_sql(path: str) -> bool:
+    pure = PurePosixPath(path)
+    parts = tuple(part.lower() for part in pure.parts)
+    if pure.name.lower() in {"data.sql", "user.sql"}:
+        return True
+    if any(
+        part in {
+            "fixture",
+            "fixtures",
+            "script",
+            "scripts",
+            "seed",
+            "seeds",
+            "setup",
+            "test",
+            "tests",
+            "user",
+            "users",
+        }
+        for part in parts
+    ):
+        return True
+    return (
+        len(parts) >= 3
+        and parts[-3] == "db"
+        and parts[-2] in {"h2", "mysql", "postgres"}
+        and parts[-1] == "schema.sql"
     )
 
 

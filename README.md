@@ -43,9 +43,10 @@ Use `--once` instead of `--drain` to process at most one available command.
 `collect-checkout` analyzes canonical committed Git blobs without running Maven, Gradle, tests,
 application code, hooks, or repository executables. It verifies the credential-free origin, exact
 revision, index/tree identity, bounded tracked scope and immutable scope digest before creating a
-signed delivery. That delivery then follows the normal SQLite outbox, queue, lease, I1–I10 stage
-ledger, evidence, consolidation and review path. Successful collection stops at `IN_REVIEW`; it
-does not approve or publish.
+signed delivery. The signed source determinant also pins a digest of the analyzer's complete path
+disposition, so retry cannot silently select a different subset. That delivery then follows the
+normal SQLite outbox, queue, lease, I1–I10 stage ledger, evidence, consolidation and review path.
+Successful collection stops at `IN_REVIEW`; it does not approve or publish.
 
 ```bash
 export LINEAGE_DATA_DIR=/tmp/lineage-real-state
@@ -72,6 +73,13 @@ module, fixture, test, seed-data, user and setup paths are outside this static p
 The H2 profile is deliberately approximation-only and returns
 `INTEGRATION_REQUIRED`; use a trusted PostgreSQL or MySQL schema profile to authorize tables.
 
+Coverage keeps the full tracked snapshot in `expectedScope`. Only root build cells, production
+Java and the exact trusted profile schema appear in `completedScope`. README/test Java/data/setup/
+user/alternate schema and nested-build paths are recorded in `skippedScope`; relevant Java or SQL
+that cannot be safely classified is recorded in `unsupportedScope` and blocks completion. Every
+tracked path must occur in exactly one disposition, and `COMPLETE` is impossible with unsupported
+or failed paths.
+
 The bounded JSON result contains only identifiers, digests, status, stage names and counts. Static
 `exact=true` means the source citation is exact, not that the operation ran. Until a validated
 runtime session is joined, `runtimeStatus` remains `NOT_PROVIDED`.
@@ -97,7 +105,10 @@ uv run --project apps/api python -m lineage_api.cli collect-checkout \
 
 At that pinned revision the accepted oracle is 15 static edges (10 reads and 5 writes), zero
 unresolved invocations, proposal `IN_REVIEW`, and runtime `NOT_PROVIDED`. Repeating the identical
-command returns `DUPLICATE` with the same command, run and proposal and no extra ledger effects.
+command targets that exact durable command: queued or redrivable work resumes through the same
+stage ledger, while a completed command returns `DUPLICATE` with the same command, run and proposal
+and no extra ledger effects. A completed `INTEGRATION_REQUIRED` command remains non-successful on
+repeat rather than being relabeled as a successful duplicate.
 
 ## Reset the deterministic demo
 

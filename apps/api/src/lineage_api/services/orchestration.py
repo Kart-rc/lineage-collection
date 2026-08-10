@@ -35,6 +35,14 @@ def _utc_now() -> str:
     return datetime.now(UTC).isoformat().replace("+00:00", "Z")
 
 
+class TargetCommandProcessingError(RuntimeError):
+    """A bounded failure to drive one durable command to a terminal state."""
+
+    def __init__(self, code: str, message: str) -> None:
+        super().__init__(message[:160])
+        self.code = code
+
+
 class OrchestrationService:
     def __init__(
         self,
@@ -95,20 +103,77 @@ class OrchestrationService:
         command = intake.command
         if command is None:
             raise RuntimeError("durable intake returned no command")
-        if intake.outcome == "DUPLICATE":
-            completed = self._command_store.get(command.command_id) or command
-            result = self._result_for_completed_command(completed)
+        result = self.process_command(
+            command.command_id,
+            classification_evidence=classification_evidence,
+        )
+        if intake.outcome == "DUPLICATE" and result["outcome"] in {
+            "ACCEPTED",
+            "NO_LINEAGE",
+            "REUSED",
+        }:
             result.update(outcome="DUPLICATE", reason="DUPLICATE")
-            return result
+        return result
 
-        processed = self.worker_once(classification_evidence=classification_evidence)
-        if processed is None:
-            raise RuntimeError(f"accepted command {command.command_id} was not drained")
-        return processed
+    def process_command(
+        self,
+        command_id: str,
+        *,
+        classification_evidence: list[ClassificationEvidence] | None = None,
+        max_messages: int = 100,
+    ) -> dict[str, Any]:
+        if not command_id or len(command_id) > 128:
+            raise ValueError("target command id must be bounded")
+        if max_messages < 1 or max_messages > 10_000:
+            raise ValueError("target processing bound must be between 1 and 10000")
+        for _ in range(max_messages):
+            current = self._command_store.get(command_id)
+            if current is None:
+                raise TargetCommandProcessingError(
+                    "TARGET_COMMAND_NOT_FOUND", "target command does not exist"
+                )
+            if current.status == "COMPLETED":
+                return self._result_for_completed_command(current)
+            if current.status == "FAILED_TERMINAL":
+                raise TargetCommandProcessingError(
+                    "TARGET_COMMAND_FAILED", "target command reached terminal failure"
+                )
+            try:
+                processed = self.worker_once(
+                    classification_evidence=classification_evidence,
+                    classification_command_id=command_id,
+                )
+            except Exception:
+                after_failure = self._command_store.get(command_id)
+                if after_failure is not None and (
+                    after_failure.status != current.status
+                    or after_failure.attempt != current.attempt
+                ):
+                    raise
+                continue
+            if processed is None:
+                terminal = self._command_store.get(command_id)
+                if terminal is not None and terminal.status == "COMPLETED":
+                    return self._result_for_completed_command(terminal)
+                raise TargetCommandProcessingError(
+                    "TARGET_COMMAND_STALLED",
+                    "target command did not reach a terminal state",
+                )
+            processed_command = processed.get("command")
+            if (
+                isinstance(processed_command, dict)
+                and processed_command.get("commandId") == command_id
+            ):
+                return processed
+        raise TargetCommandProcessingError(
+            "TARGET_COMMAND_BOUND_EXCEEDED",
+            "target command did not reach a terminal state within the processing bound",
+        )
 
     def worker_once(
         self,
         classification_evidence: list[ClassificationEvidence] | None = None,
+        classification_command_id: str | None = None,
     ) -> dict[str, Any] | None:
         self._outbox_dispatcher.dispatch(limit=100)
         for lane in ("interactive", "events", "bulk"):
@@ -118,7 +183,13 @@ class OrchestrationService:
                 visibility_timeout_seconds=60,
             )
             if message is not None:
-                return self._handle_message(message, classification_evidence)
+                evidence = (
+                    classification_evidence
+                    if classification_command_id is None
+                    or message.payload_ref == f"command://{classification_command_id}"
+                    else None
+                )
+                return self._handle_message(message, evidence)
         return None
 
     def worker_drain(self, max_messages: int = 100) -> list[dict[str, Any]]:
@@ -167,12 +238,14 @@ class OrchestrationService:
                 envelope,
                 classification_evidence,
             )
-            output_ref = (
-                f"proposal://{result['proposal']['proposalId']}"
-                if result["proposal"] is not None
-                else f"run://{result['run']['runId']}"
+            output_ref = self._canonical(
+                {
+                    "schemaVersion": "1.0.0",
+                    "outcome": result["outcome"],
+                    "reason": result.get("reason"),
+                }
             )
-            body = self._canonical(result).encode()
+            body = output_ref.encode()
             completed = self._command_store.complete(
                 lease,
                 StageResult(
@@ -417,12 +490,15 @@ class OrchestrationService:
             }
 
         i5 = workflow.checkpoint(
-            "I5", lambda: self._incremental_sca(envelope, i1["runId"])
+            "I5", lambda: self._incremental_sca(envelope, i1["runId"], i3)
         )
         i6 = workflow.checkpoint(
             "I6", lambda: self._incremental_runtime(envelope, i1["runId"], i5)
         )
         if i5["analysis"]["status"] != "COMPLETE":
+            i8 = workflow.checkpoint(
+                "I8", lambda: self._incremental_recheck(command, i1, i3, i6)
+            )
             self._fail(i1["runId"], "ANALYZING", "INTEGRATION_REQUIRED")
             return {
                 "outcome": "INTEGRATION_REQUIRED",
@@ -430,6 +506,7 @@ class OrchestrationService:
                 "eventId": envelope["eventId"],
                 "run": self.get_run(i1["runId"]),
                 "proposal": None,
+                "coverageManifest": i8["coverageManifest"],
                 "analysis": i5["analysis"],
                 "runtimeStatus": i6["runtime"]["status"],
                 "resume": {"reusedStages": workflow.reused_stage_ids},
@@ -504,9 +581,8 @@ class OrchestrationService:
                 max_fanout=1_000,
             ),
         )
-        scoped_envelope = {**envelope, "changedFiles": b4["recomputedScope"]}
         b5 = workflow.checkpoint(
-            "B5", lambda: self._incremental_sca(scoped_envelope, b1["runId"])
+            "B5", lambda: self._incremental_sca(envelope, b1["runId"], b4)
         )
         b6 = workflow.checkpoint(
             "B6", lambda: self._incremental_runtime(envelope, b1["runId"], b5)
@@ -581,11 +657,12 @@ class OrchestrationService:
         runtime: dict[str, Any],
     ) -> dict[str, Any]:
         consolidation = self._incremental_consolidate(start["runId"], sca, runtime)
-        state = "COMPLETE" if not plan["unsupportedScope"] else "INCOMPLETE"
+        state = self._coverage_state(plan)
         identity = {
             "artifactDigest": command.artifact_digest,
             "determinantDigest": command.determinant_digest,
             "expectedScope": plan["expectedScope"],
+            "scopeDispositionDigest": plan["scopeDispositionDigest"],
             "runtimeEvidence": BaselineWorkflow.runtime_coverage(runtime),
             "scope": command.scope,
         }
@@ -599,6 +676,7 @@ class OrchestrationService:
             "scope": command.scope,
             "artifactDigest": command.artifact_digest,
             "determinantDigest": command.determinant_digest,
+            "sourceScopeDispositionDigest": plan["scopeDispositionDigest"],
             "state": state,
             "expectedScope": plan["expectedScope"],
             "completedScope": plan["recomputedScope"],
@@ -606,7 +684,7 @@ class OrchestrationService:
             "skippedScope": plan["skippedScope"],
             "unsupportedScope": plan["unsupportedScope"],
             "quarantinedScope": [],
-            "failedScope": [],
+            "failedScope": plan["failedScope"],
             "runtimeEvidence": BaselineWorkflow.runtime_coverage(runtime),
         }
         payload = self._canonical(manifest)
@@ -723,13 +801,22 @@ class OrchestrationService:
             "artifactDigest": envelope["digest"],
         }
 
-    @staticmethod
-    def _incremental_changed_scope(envelope: dict[str, Any]) -> dict[str, Any]:
+    def _incremental_changed_scope(self, envelope: dict[str, Any]) -> dict[str, Any]:
         changed = sorted(set(envelope["changedFiles"]))
+        source_scope = self._analyzer_registry.source_scope(
+            self._snapshot_provider.resolve(envelope),
+            AnalyzerSelection.from_envelope(envelope),
+        ).as_dict()
+        if changed != source_scope["expectedScope"]:
+            raise TargetCommandProcessingError(
+                "SOURCE_SCOPE_MISMATCH",
+                "changed paths do not match the immutable source scope",
+            )
         return {
             "changedPaths": changed,
             "affectedScope": changed,
             "removedPaths": [],
+            "sourceScope": source_scope,
         }
 
     @staticmethod
@@ -737,15 +824,20 @@ class OrchestrationService:
         command: Command,
         changed: dict[str, Any],
     ) -> dict[str, Any]:
+        source_scope = changed["sourceScope"]
         return {
             "workflowKind": command.workflow_kind,
             "artifactDigest": command.artifact_digest,
             "determinantDigest": command.determinant_digest,
-            "expectedScope": changed["affectedScope"],
-            "recomputedScope": changed["affectedScope"],
+            "scopeDispositionDigest": source_scope["scopeDispositionDigest"],
+            "expectedScope": source_scope["expectedScope"],
+            "selectedScope": source_scope["selectedScope"],
+            "recomputedScope": source_scope["recomputedScope"],
             "reusedScope": [],
             "removedScope": changed["removedPaths"],
-            "unsupportedScope": [],
+            "skippedScope": source_scope["skippedScope"],
+            "unsupportedScope": source_scope["unsupportedScope"],
+            "failedScope": source_scope["failedScope"],
         }
 
     def _incremental_classify(
@@ -777,7 +869,26 @@ class OrchestrationService:
         self,
         envelope: dict[str, Any],
         run_id: str,
+        plan: dict[str, Any],
     ) -> dict[str, Any]:
+        durable_scope = self._analyzer_registry.source_scope(
+            self._snapshot_provider.resolve(envelope),
+            AnalyzerSelection.from_envelope(envelope),
+        ).as_dict()
+        for key in (
+            "scopeDispositionDigest",
+            "expectedScope",
+            "selectedScope",
+            "recomputedScope",
+            "skippedScope",
+            "unsupportedScope",
+            "failedScope",
+        ):
+            if plan[key] != durable_scope[key]:
+                raise TargetCommandProcessingError(
+                    "SOURCE_SCOPE_DISPOSITION_MISMATCH",
+                    "durable source scope changed between workflow stages",
+                )
         analysis = self._analyze(envelope, run_id)
         sca = analysis.document
         sca_ref = self._store.put(
@@ -804,6 +915,7 @@ class OrchestrationService:
                 "writeCount": analysis.write_count,
                 "residueCount": analysis.residue_count,
                 "unresolvedCount": analysis.unresolved_count,
+                "scopeDispositionDigest": durable_scope["scopeDispositionDigest"],
             },
         }
 
@@ -1001,6 +1113,7 @@ class OrchestrationService:
             "artifactDigest": command.artifact_digest,
             "determinantDigest": command.determinant_digest,
             "expectedScope": plan["expectedScope"],
+            "scopeDispositionDigest": plan["scopeDispositionDigest"],
             "runtimeEvidence": IncrementalWorkflow.runtime_coverage(runtime),
             "scope": command.scope,
         }
@@ -1012,14 +1125,15 @@ class OrchestrationService:
             "scope": command.scope,
             "artifactDigest": command.artifact_digest,
             "determinantDigest": command.determinant_digest,
-            "state": "COMPLETE",
+            "sourceScopeDispositionDigest": plan["scopeDispositionDigest"],
+            "state": self._coverage_state(plan),
             "expectedScope": plan["expectedScope"],
             "completedScope": plan["recomputedScope"],
             "reusedScope": plan["reusedScope"],
-            "skippedScope": [],
+            "skippedScope": plan["skippedScope"],
             "unsupportedScope": plan["unsupportedScope"],
             "quarantinedScope": [],
-            "failedScope": [],
+            "failedScope": plan["failedScope"],
             "runtimeEvidence": IncrementalWorkflow.runtime_coverage(runtime),
         }
         payload = self._canonical(manifest)
@@ -1036,7 +1150,7 @@ class OrchestrationService:
                 INSERT OR IGNORE INTO coverage_manifests(
                     manifest_id, workflow_kind, scope, artifact_digest,
                     determinant_digest, state, payload_json, created_at, updated_at
-                ) VALUES (?, ?, ?, ?, ?, 'COMPLETE', ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     manifest_id,
@@ -1044,12 +1158,33 @@ class OrchestrationService:
                     command.scope,
                     command.artifact_digest,
                     command.determinant_digest,
+                    manifest["state"],
                     payload,
                     now,
                     now,
                 ),
             )
         return {"coverageManifest": manifest}
+
+    @staticmethod
+    def _coverage_state(plan: dict[str, Any]) -> str:
+        expected = list(plan["expectedScope"])
+        dispositions = [
+            list(plan["recomputedScope"]),
+            list(plan.get("reusedScope", [])),
+            list(plan["skippedScope"]),
+            list(plan["unsupportedScope"]),
+            list(plan["failedScope"]),
+        ]
+        flattened = [path for values in dispositions for path in values]
+        accounted = sorted(flattened) == sorted(expected) and len(flattened) == len(
+            set(flattened)
+        )
+        return (
+            "COMPLETE"
+            if accounted and not plan["unsupportedScope"] and not plan["failedScope"]
+            else "INCOMPLETE"
+        )
 
     def _incremental_propose(
         self,
@@ -1120,9 +1255,18 @@ class OrchestrationService:
 
     def _result_for_completed_command(self, command: Command) -> dict[str, Any]:
         event_id = command.input_ref.removeprefix("event://")
+        terminal = self._terminal_outcome(command)
         result = {
-            "outcome": "REUSED",
-            "reason": "COMMAND_ALREADY_COMPLETED",
+            "outcome": (
+                str(terminal["outcome"])
+                if terminal is not None
+                else "REUSED"
+            ),
+            "reason": (
+                terminal.get("reason")
+                if terminal is not None
+                else "COMMAND_ALREADY_COMPLETED"
+            ),
             "eventId": event_id,
             "run": self._run_for_event(event_id),
             "proposal": self._proposal_for_event(event_id),
@@ -1144,6 +1288,11 @@ class OrchestrationService:
                 result["runtimeStatus"] = evidence["evidenceManifest"]["runtime"]["status"]
             if analysis is not None:
                 result["analysis"] = analysis["analysis"]
+                if terminal is None and analysis["analysis"]["status"] != "COMPLETE":
+                    result.update(
+                        outcome="INTEGRATION_REQUIRED",
+                        reason="INTEGRATION_REQUIRED",
+                    )
             if command.workflow_kind == "INCREMENTAL" and evidence is None:
                 runtime = self._incremental_checkpoint(command, "I6")
                 if runtime is not None:
@@ -1152,6 +1301,24 @@ class OrchestrationService:
                 "reusedStages": [f"{prefix}{index}" for index in range(1, 11)]
             }
         return result
+
+    @staticmethod
+    def _terminal_outcome(command: Command) -> dict[str, Any] | None:
+        if command.output_ref is None:
+            return None
+        try:
+            body = json.loads(command.output_ref)
+        except (TypeError, json.JSONDecodeError):
+            return None
+        if (
+            not isinstance(body, dict)
+            or body.get("schemaVersion") != "1.0.0"
+            or not isinstance(body.get("outcome"), str)
+            or body.get("reason") is not None
+            and not isinstance(body.get("reason"), str)
+        ):
+            return None
+        return body
 
     def _incremental_checkpoint(
         self,

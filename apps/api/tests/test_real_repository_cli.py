@@ -147,6 +147,53 @@ def test_exact_checkout_uses_durable_pipeline_and_duplicate_has_no_effect(
     assert "secret-marker" not in first_text
     assert "return owners" not in first_text
     with sqlite3.connect(data / "lineage.db") as connection:
+        event = json.loads(
+            connection.execute(
+                "SELECT payload_json FROM events"
+            ).fetchone()[0]
+        )
+        source_scope_digest = event["repositorySource"]["scopeDispositionDigest"]
+        assert source_scope_digest.startswith("sha256:")
+        assert len(source_scope_digest) == 71
+        coverage = json.loads(
+            connection.execute(
+                "SELECT payload_json FROM coverage_manifests"
+            ).fetchone()[0]
+        )
+        assert coverage["sourceScopeDispositionDigest"] == source_scope_digest
+        expected = {
+            "build.gradle",
+            "pom.xml",
+            "src/main/java/example/Owner.java",
+            "src/main/java/example/OwnerRepository.java",
+            "src/main/java/example/OwnerService.java",
+            "src/main/resources/db/h2/schema.sql",
+            "src/main/resources/db/postgres/data.sql",
+            "src/main/resources/db/postgres/schema.sql",
+            "src/test/java/example/OwnerServiceTest.java",
+        }
+        completed = {
+            "build.gradle",
+            "pom.xml",
+            "src/main/java/example/Owner.java",
+            "src/main/java/example/OwnerRepository.java",
+            "src/main/java/example/OwnerService.java",
+            "src/main/resources/db/postgres/schema.sql",
+        }
+        skipped = expected - completed
+        assert set(coverage["expectedScope"]) == expected
+        assert set(coverage["completedScope"]) == completed
+        assert set(coverage["skippedScope"]) == skipped
+        assert coverage["unsupportedScope"] == []
+        assert coverage["failedScope"] == []
+        dispositions = (
+            coverage["completedScope"],
+            coverage["skippedScope"],
+            coverage["unsupportedScope"],
+            coverage["failedScope"],
+        )
+        assert sum(len(values) for values in dispositions) == len(expected)
+        assert set().union(*(set(values) for values in dispositions)) == expected
         before_duplicate = {
             table: connection.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
             for table in (
@@ -190,6 +237,14 @@ def test_h2_profile_truthfully_returns_integration_required(
     assert result["counts"]["edges"] == 0
     assert result["counts"]["residue"] > 0
 
+    assert run(_arguments(checkout, revision, profile="h2")) == 2
+    duplicate = json.loads(capsys.readouterr().out)
+    assert duplicate["outcome"] == "INTEGRATION_REQUIRED"
+    assert duplicate["reasonCode"] == "INTEGRATION_REQUIRED"
+    assert duplicate["commandStatus"] == "COMPLETED"
+    assert duplicate["proposalId"] is None
+    assert duplicate["analysisStatus"] == "INTEGRATION_REQUIRED"
+
 
 def test_invalid_pack_fails_before_durable_intake_with_bounded_json(
     tmp_path: Path,
@@ -212,6 +267,135 @@ def test_invalid_pack_fails_before_durable_intake_with_bounded_json(
     assert len(text.encode()) < 512
     assert str(checkout) not in text
     assert not (data / "lineage.db").exists()
+
+
+def test_source_scope_disposition_is_deterministic_and_tamper_evident(
+    tmp_path: Path,
+) -> None:
+    from lineage_api.application.repository_sources import (
+        RepositoryCheckoutDescriptor,
+        RepositorySourceLimits,
+    )
+    from lineage_api.infrastructure.local_git_source import LocalGitRepositorySource
+    from lineage_api.services.analyzer_registry import (
+        AnalyzerSelectionError,
+        PinnedSnapshotProvider,
+        canonical_source_metadata,
+    )
+
+    checkout, revision = _checkout(tmp_path)
+    snapshot = LocalGitRepositorySource(
+        RepositorySourceLimits(100, 1024 * 1024, 8 * 1024 * 1024)
+    ).snapshot(
+        RepositoryCheckoutDescriptor(
+            origin=ORIGIN,
+            repository="spring-service",
+            revision=revision,
+            checkout_root=checkout,
+            environment="staging",
+            platform="postgres",
+            system="orders",
+            analyzer_pack="java-spring-data-jpa-v1",
+            ruleset="spring-data-rules-v1",
+        )
+    )
+
+    metadata = canonical_source_metadata(snapshot, schema_profile="postgres")
+    assert metadata == canonical_source_metadata(snapshot, schema_profile="postgres")
+    assert metadata["scopeDispositionDigest"].startswith("sha256:")
+    envelope = {
+        "repo": snapshot.repository,
+        "digest": snapshot.revision,
+        "env": snapshot.environment,
+        "system": snapshot.system,
+        "changedFiles": list(snapshot.paths),
+        "repositorySource": metadata,
+    }
+    assert PinnedSnapshotProvider(snapshot).resolve(envelope) is snapshot
+
+    envelope["repositorySource"] = {
+        **metadata,
+        "scopeDispositionDigest": "sha256:" + "0" * 64,
+    }
+    with pytest.raises(AnalyzerSelectionError) as captured:
+        PinnedSnapshotProvider(snapshot).resolve(envelope)
+    assert captured.value.code == "SOURCE_DETERMINANT_MISMATCH"
+
+
+def test_relevant_java_outside_production_scope_requires_integration(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    checkout, revision = _checkout(
+        tmp_path,
+        overrides={"legacy/LegacyRepository.java": "interface LegacyRepository {}"},
+    )
+    data = tmp_path / "unsupported-java"
+    monkeypatch.setenv("LINEAGE_DATA_DIR", str(data))
+
+    assert run(_arguments(checkout, revision)) == 2
+    result = json.loads(capsys.readouterr().out)
+    assert result["outcome"] == "INTEGRATION_REQUIRED"
+    assert result["proposalId"] is None
+    assert "unsupported-source-scope" in result["statusReasons"]
+    assert result["coverageManifest"]["state"] == "INCOMPLETE"
+    assert set(result["coverageManifest"]) == {
+        "manifestId",
+        "state",
+        "determinantDigest",
+        "sourceScopeDispositionDigest",
+        "counts",
+    }
+    with sqlite3.connect(data / "lineage.db") as connection:
+        row = connection.execute(
+            "SELECT payload_json FROM coverage_manifests"
+        ).fetchone()
+        assert row is not None
+        first_coverage = json.loads(row[0])
+        assert first_coverage["state"] == "INCOMPLETE"
+        assert first_coverage["unsupportedScope"] == [
+            "legacy/LegacyRepository.java"
+        ]
+        assert first_coverage["failedScope"] == []
+        dispositions = (
+            first_coverage["completedScope"],
+            first_coverage["skippedScope"],
+            first_coverage["unsupportedScope"],
+            first_coverage["failedScope"],
+        )
+        assert sum(len(values) for values in dispositions) == len(
+            first_coverage["expectedScope"]
+        )
+        assert set().union(*(set(values) for values in dispositions)) == set(
+            first_coverage["expectedScope"]
+        )
+        assert result["coverageManifest"] == {
+            "manifestId": first_coverage["manifestId"],
+            "state": "INCOMPLETE",
+            "determinantDigest": first_coverage["determinantDigest"],
+            "sourceScopeDispositionDigest": first_coverage[
+                "sourceScopeDispositionDigest"
+            ],
+            "counts": {
+                "expected": len(first_coverage["expectedScope"]),
+                "completed": len(first_coverage["completedScope"]),
+                "skipped": len(first_coverage["skippedScope"]),
+                "unsupported": 1,
+                "failed": 0,
+            },
+        }
+
+    assert run(_arguments(checkout, revision)) == 2
+    duplicate = json.loads(capsys.readouterr().out)
+    assert duplicate["outcome"] == "INTEGRATION_REQUIRED"
+    assert duplicate["coverageManifest"] == result["coverageManifest"]
+    with sqlite3.connect(data / "lineage.db") as connection:
+        rows = connection.execute(
+            "SELECT payload_json FROM coverage_manifests"
+        ).fetchall()
+    assert len(rows) == 1
+    assert json.loads(rows[0][0]) == first_coverage
 
 
 def test_conflicting_root_build_cells_require_integration(
@@ -411,15 +595,18 @@ def test_failure_after_sca_checkpoint_resumes_without_reanalysis(
     services.orchestration.set_fault_injector(fail_after_i5)
     with pytest.raises(RuntimeError, match="injected after I5"):
         services.orchestration.process_push(delivery)
-    services.orchestration.set_fault_injector(None)
 
-    recovered = services.orchestration.worker_once()
+    restarted = build_services(
+        Settings.from_environment(), repository_snapshot=snapshot
+    )
+    recovered = restarted.orchestration.process_push(delivery)
 
-    assert recovered is not None
-    assert recovered["outcome"] == "ACCEPTED"
+    assert recovered["outcome"] == "DUPLICATE"
+    assert recovered["command"]["status"] == "COMPLETED"
+    assert recovered["proposal"] is not None
     assert recovered["run"]["state"] == "IN_REVIEW"
     assert recovered["runtimeStatus"] == "NOT_PROVIDED"
     assert recovered["resume"]["reusedStages"] == ["I1", "I2", "I3", "I4", "I5"]
-    with services.database.connection() as connection:
+    with restarted.database.connection() as connection:
         assert connection.execute("SELECT COUNT(*) FROM proposals").fetchone()[0] == 1
         assert connection.execute("SELECT COUNT(*) FROM edge_ledger").fetchone()[0] == 2
