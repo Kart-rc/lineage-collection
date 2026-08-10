@@ -230,6 +230,7 @@ def test_snapshot_reads_each_verified_blob_oid_once_with_a_byte_bound(
     root, revision = _repository(tmp_path)
     expected_oid = _git(root, "rev-parse", "HEAD:README.md")
     cat_file_calls: list[tuple[str, int]] = []
+    tree_revisions: list[str] = []
     original_git = LocalGitRepositorySource._git
 
     def recording_git(
@@ -240,6 +241,8 @@ def test_snapshot_reads_each_verified_blob_oid_once_with_a_byte_bound(
     ) -> bytes:
         if arguments[:2] == ("cat-file", "blob"):
             cat_file_calls.append((arguments[2], stdout_limit))
+        elif arguments[:1] == ("ls-tree",):
+            tree_revisions.append(arguments[-1])
         return original_git(source, checkout, *arguments, stdout_limit=stdout_limit)
 
     monkeypatch.setattr(LocalGitRepositorySource, "_git", recording_git)
@@ -248,6 +251,7 @@ def test_snapshot_reads_each_verified_blob_oid_once_with_a_byte_bound(
 
     assert snapshot.read_bytes("README.md") == b"demo\n"
     assert cat_file_calls == [(expected_oid, 1025)]
+    assert tree_revisions == [revision, revision]
 
 
 def test_snapshot_rejects_blob_bytes_that_do_not_match_the_verified_oid(
@@ -274,6 +278,65 @@ def test_snapshot_rejects_blob_bytes_that_do_not_match_the_verified_oid(
         _source().snapshot(_descriptor(root, revision))
 
     assert secret.decode("ascii") not in str(captured.value)
+
+
+def test_snapshot_rejects_head_and_index_aba_during_blob_acquisition(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root, revision_a = _repository(tmp_path, files={"README.md": b"revision-a\n"})
+    (root / "README.md").write_bytes(b"revision-b\n")
+    _git(root, "add", "README.md")
+    _git(root, "commit", "--quiet", "-m", "revision B")
+    revision_b = _git(root, "rev-parse", "HEAD")
+    _git(root, "reset", "--hard", "--quiet", revision_a)
+    original_git = LocalGitRepositorySource._git
+    switched_to_b = False
+    state_checks = 0
+
+    def aba_git(
+        source: LocalGitRepositorySource,
+        checkout: Path,
+        *arguments: str,
+        stdout_limit: int,
+    ) -> bytes:
+        nonlocal state_checks, switched_to_b
+        if arguments[:2] == ("rev-parse", "--is-inside-work-tree"):
+            state_checks += 1
+            if state_checks == 2:
+                _git(checkout, "reset", "--hard", "--quiet", revision_a)
+        elif arguments[:1] == ("ls-files",) and not switched_to_b:
+            _git(checkout, "reset", "--hard", "--quiet", revision_b)
+            switched_to_b = True
+        return original_git(source, checkout, *arguments, stdout_limit=stdout_limit)
+
+    monkeypatch.setattr(LocalGitRepositorySource, "_git", aba_git)
+
+    try:
+        with pytest.raises(RepositorySourceError):
+            _source().snapshot(_descriptor(root, revision_a))
+    finally:
+        _git(root, "reset", "--hard", "--quiet", revision_a)
+
+    assert switched_to_b
+
+
+@pytest.mark.parametrize("drift", ["content", "path", "mode"])
+def test_snapshot_rejects_staged_index_drift_from_requested_revision_tree(
+    tmp_path: Path,
+    drift: str,
+) -> None:
+    root, revision = _repository(tmp_path)
+    if drift == "content":
+        (root / "README.md").write_bytes(b"staged-change\n")
+        _git(root, "add", "README.md")
+    elif drift == "path":
+        _git(root, "mv", "README.md", "RENAMED.md")
+    else:
+        _git(root, "update-index", "--chmod=+x", "README.md")
+
+    with pytest.raises(RepositorySourceError):
+        _source().snapshot(_descriptor(root, revision))
 
 
 def test_git_commands_ignore_caller_global_and_system_configuration(

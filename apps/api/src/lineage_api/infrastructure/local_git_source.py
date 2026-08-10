@@ -182,7 +182,12 @@ class LocalGitRepositorySource:
         self._validate_git_state(root, descriptor)
         paths = self._tracked_paths(root)
         entries = self._tracked_entries(root)
-        self._validate_committed_index(root, paths, entries)
+        committed_entries = self._validate_committed_index(
+            root,
+            paths,
+            entries,
+            descriptor.revision,
+        )
         records: list[_FileRecord] = []
         total_bytes = 0
         scope = hashlib.sha256(b"repository-scope-v1\0")
@@ -207,8 +212,16 @@ class LocalGitRepositorySource:
             scope.update(len(content).to_bytes(8, "big"))
             scope.update(content)
 
+        final_entries = self._tracked_entries(root)
+        final_committed_entries = self._validate_committed_index(
+            root,
+            paths,
+            final_entries,
+            descriptor.revision,
+        )
+        if final_entries != entries or final_committed_entries != committed_entries:
+            raise RepositorySourceError("tracked scope changed during snapshot creation")
         self._validate_git_state(root, descriptor)
-        self._validate_committed_index(root, paths, self._tracked_entries(root))
         reader = _BoundSnapshotReader(root, tuple(records))
         return RepositorySnapshot(
             descriptor=descriptor,
@@ -367,7 +380,8 @@ class LocalGitRepositorySource:
         root: Path,
         paths: tuple[str, ...],
         entries: dict[str, tuple[str, str]],
-    ) -> None:
+        revision: str,
+    ) -> dict[str, tuple[str, str]]:
         if set(paths) != set(entries):
             raise RepositorySourceError("Git index does not match the tracked file scope")
         output = self._git(
@@ -376,7 +390,7 @@ class LocalGitRepositorySource:
             "-r",
             "-z",
             "--full-tree",
-            "HEAD",
+            revision,
             stdout_limit=_nul_output_limit(
                 self._limits.max_files,
                 _MAX_TRACKED_PATH_BYTES + _MAX_INDEX_RECORD_OVERHEAD,
@@ -403,7 +417,8 @@ class LocalGitRepositorySource:
                 raise RepositorySourceError("Git tree contains duplicate tracked entries")
             committed[path] = (mode, object_id)
         if committed != entries:
-            raise RepositorySourceError("tracked content is not clean")
+            raise RepositorySourceError("Git index does not match the requested revision tree")
+        return committed
 
     def _git_scalar(
         self,

@@ -59,9 +59,11 @@ The local descriptor contains:
 - requested analyzer pack and ruleset version.
 
 The local source adapter verifies the checkout is a Git work tree, `HEAD` equals the requested
-digest, the configured origin matches after credential removal, tracked source is clean, and every
-selected path remains below the checkout root. It reads only tracked regular files, does not follow
-symlinks or submodules, and enforces bounds on file count, individual bytes and total bytes.
+digest, the configured origin matches after credential removal, and the index path/mode/OID mapping
+equals the exact requested revision tree before and after blob acquisition. It analyzes only bounded
+committed blob bytes addressed by that mapping; dirty or EOL-transformed regular worktree bytes are
+not analyzed. Selected worktree paths must remain regular with the committed executable mode and
+below the checkout root; symlinks, submodules and non-regular replacements fail closed.
 
 Repository code is hostile input. The collector does not run Maven, Gradle, shell scripts,
 annotation processors, tests or application code and does not expose credentials or unrestricted
@@ -139,7 +141,8 @@ repository cannot fall through to the Python analyzer, and an unknown pack fails
 
 ## 7. Failure and recovery behavior
 
-- Revision, origin, cleanliness or path-integrity mismatch fails before reading source evidence.
+- Revision, origin, index/tree, path type/mode, symlink or non-regular drift fails closed. Dirty
+  regular worktree bytes are outside source evidence because exact committed blobs are authoritative.
 - Unsupported framework cells return `INTEGRATION_REQUIRED` with coverage and residue; zero files
   analyzed cannot be reported as success.
 - Parser failures are per-file residue when the rest of the bounded scope is safe to analyze. A
