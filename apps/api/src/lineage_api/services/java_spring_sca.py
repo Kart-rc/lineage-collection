@@ -70,6 +70,26 @@ _JPA_INHERITED_OPERATIONS = frozenset(
         "saveAndFlush",
     }
 )
+_JPA_INHERITED_ARITIES = {
+    "count": frozenset({0}),
+    "delete": frozenset({1}),
+    "deleteAll": frozenset({0, 1}),
+    "deleteAllById": frozenset({1}),
+    "deleteAllByIdInBatch": frozenset({1}),
+    "deleteAllInBatch": frozenset({0, 1}),
+    "deleteById": frozenset({1}),
+    "existsById": frozenset({1}),
+    "findAll": frozenset({0, 1}),
+    "findAllById": frozenset({1}),
+    "findById": frozenset({1}),
+    "getById": frozenset({1}),
+    "getOne": frozenset({1}),
+    "getReferenceById": frozenset({1}),
+    "save": frozenset({1}),
+    "saveAll": frozenset({1}),
+    "saveAllAndFlush": frozenset({1}),
+    "saveAndFlush": frozenset({1}),
+}
 _DYNAMIC_BUILD_TOKEN = re.compile(r"(?:\$\{|\$[A-Za-z_]|\+)")
 _SEMANTIC_VERSION = re.compile(r"([0-9]+)\.([0-9]+)\.([0-9]+)")
 _EVIDENCE_JAVA_IDENTIFIER = re.compile(r"[A-Za-z_$][A-Za-z0-9_$]{0,127}")
@@ -86,16 +106,19 @@ _MAX_AST_KIND_CHARS = 64
 _MAX_AST_PATH_CHARS = 512
 _RESIDUE_CODES = frozenset(
     {
+        "ambiguous-entity-name",
         "ambiguous-framework-evidence",
         "ambiguous-framework-symbol",
         "ambiguous-repository-injection",
         "dynamic-framework-evidence",
+        "dynamic-entity-name",
         "dynamic-query",
         "dynamic-sql-identifier",
         "dynamic-table-mapping",
         "incompatible-framework-cell",
         "invalid-build-encoding",
         "invalid-java-encoding",
+        "invalid-entity-name",
         "invalid-repository-declaration",
         "invalid-repository-generics",
         "invalid-sql-encoding",
@@ -107,6 +130,7 @@ _RESIDUE_CODES = frozenset(
         "missing-jpa-dependency",
         "missing-jpa-version",
         "missing-sql-dialect",
+        "ignored-schema-statement",
         "shadowed-framework-symbol",
         "shadowed-repository-receiver",
         "unbound-repository-receiver",
@@ -293,6 +317,12 @@ class JavaSpringFactReference:
                 for name, value in self.attributes
             ],
         }
+
+    def attribute(self, name: str) -> FactValue:
+        for key, value in self.attributes:
+            if key == name:
+                return value
+        raise KeyError(name)
 
 
 @dataclass(frozen=True, slots=True)
@@ -486,38 +516,42 @@ class _Operation:
     query: SyntaxFact | None = None
 
 
+@dataclass(frozen=True, slots=True)
+class _IdentifierPart:
+    value: str
+    quoted: bool
+
+    @property
+    def rendered(self) -> str:
+        return f'"{self.value}"' if self.quoted else self.value
+
+
+@dataclass(frozen=True, slots=True)
+class _QualifiedTableIdentity:
+    name: _IdentifierPart
+    schema: _IdentifierPart | None = None
+    catalog: _IdentifierPart | None = None
+
+    @property
+    def rendered(self) -> str:
+        return ".".join(
+            part.rendered
+            for part in (self.catalog, self.schema, self.name)
+            if part is not None
+        )
+
+    def matches(self, candidate: "_QualifiedTableIdentity") -> bool:
+        return (
+            self.name == candidate.name
+            and self.schema == candidate.schema
+            and self.catalog == candidate.catalog
+        )
+
+
 class JavaSpringEvidenceCompiler:
     """Compiles only complete Spring Data call-site proof chains into static edges."""
 
-    _BLOCKING_ANALYSIS_RESIDUE = frozenset(
-        {
-            "ambiguous-framework-evidence",
-            "ambiguous-repository-injection",
-            "dynamic-framework-evidence",
-            "incompatible-framework-cell",
-            "invalid-build-encoding",
-            "invalid-java-encoding",
-            "invalid-repository-declaration",
-            "invalid-repository-generics",
-            "invalid-sql-encoding",
-            "malformed-build-file",
-            "malformed-java",
-            "malformed-sql",
-            "missing-boot-evidence",
-            "missing-boot-version",
-            "missing-jpa-dependency",
-            "missing-jpa-version",
-            "missing-sql-dialect",
-            "shadowed-framework-symbol",
-            "shadowed-repository-receiver",
-            "unknown-framework",
-            "unbound-repository-receiver",
-            "unresolved-repository-entity",
-            "unsupported-boot-version",
-            "unsupported-direct-spring-data-jpa",
-            "unsupported-jpa-version",
-        }
-    )
+    _NONBLOCKING_ANALYSIS_RESIDUE = frozenset({"ignored-schema-statement"})
 
     def compile(
         self,
@@ -544,7 +578,7 @@ class JavaSpringEvidenceCompiler:
         status_reasons = {
             item.code
             for item in analysis.residue
-            if item.code in self._BLOCKING_ANALYSIS_RESIDUE
+            if item.code not in self._NONBLOCKING_ANALYSIS_RESIDUE
         }
         if analysis.framework.status != "supported":
             status_reasons.add("unsupported-framework")
@@ -600,8 +634,29 @@ class JavaSpringEvidenceCompiler:
                 )
                 status_reasons.add(code)
                 continue
-            table_name = str(entity.attribute("table"))
-            matching_tables = tables.get(table_name.casefold(), ())
+            table_identity = _mapping_table_identity(entity, context.schema_profile)
+            if table_identity is None:
+                unresolved += 1
+                code = "unsupported-edge-identity"
+                residue.append(
+                    JavaSpringCompilationResidue(
+                        code,
+                        invocation.location,
+                        (invocation.identifier, repository.identifier, entity.identifier),
+                    )
+                )
+                status_reasons.add(code)
+                continue
+            table_name = table_identity.rendered
+            matching_tables = tuple(
+                table
+                for table in tables
+                if (
+                    (candidate := _sql_fact_table_identity(table, context.schema_profile))
+                    is not None
+                    and table_identity.matches(candidate)
+                )
+            )
             if len(matching_tables) != 1:
                 unresolved += 1
                 code = (
@@ -620,6 +675,7 @@ class JavaSpringEvidenceCompiler:
                 continue
             table = matching_tables[0]
             called = str(invocation.attribute("method"))
+            invocation_arity = str(invocation.attribute("arity"))
             owner_and_method = invocation.subject.rsplit(":", 1)[0]
             owner, separator, enclosing_method = owner_and_method.partition("#")
             if not (
@@ -629,7 +685,8 @@ class JavaSpringEvidenceCompiler:
                 and separator
                 and _EVIDENCE_JAVA_IDENTIFIER.fullmatch(enclosing_method)
                 and _EVIDENCE_JAVA_IDENTIFIER.fullmatch(called)
-                and _EVIDENCE_TABLE_IDENTIFIER.fullmatch(table_name)
+                and invocation_arity.isdigit()
+                and int(invocation_arity) <= 255
             ):
                 unresolved += 1
                 code = "unsupported-edge-identity"
@@ -652,6 +709,8 @@ class JavaSpringEvidenceCompiler:
                 entity,
                 table,
                 called,
+                int(invocation_arity),
+                table_identity,
                 queries,
                 query_annotations,
                 methods,
@@ -807,23 +866,127 @@ def _query_annotations(
 
 def _native_profile_tables(
     facts: tuple[SyntaxFact, ...], schema_profile: str
-) -> dict[str, tuple[SyntaxFact, ...]]:
+) -> tuple[SyntaxFact, ...]:
     if schema_profile == "h2":
-        return {}
+        return ()
     expected_dialect = _SQLGLOT_DIALECTS[schema_profile]
-    grouped: dict[str, list[SyntaxFact]] = {}
-    for fact in facts:
+    return tuple(
+        fact
+        for fact in facts
         if (
-            _optional_attribute(fact, "dialectMode") != "native"
-            or _optional_attribute(fact, "dialect") != expected_dialect
-            or schema_profile not in PurePosixPath(fact.location.path).parts
-        ):
-            continue
-        grouped.setdefault(fact.subject.casefold(), []).append(fact)
-    return {
-        subject: tuple(sorted(values, key=lambda item: item.identifier))
-        for subject, values in sorted(grouped.items())
-    }
+            _optional_attribute(fact, "dialectMode") == "native"
+            and _optional_attribute(fact, "dialect") == expected_dialect
+            and schema_profile in PurePosixPath(fact.location.path).parts
+        )
+    )
+
+
+def _mapping_table_identity(
+    fact: SyntaxFact, schema_profile: str
+) -> _QualifiedTableIdentity | None:
+    dialect = Dialect.get_or_raise(_SQLGLOT_DIALECTS[schema_profile])
+    name = _mapping_identifier_part(str(fact.attribute("table")), dialect)
+    if name is None:
+        return None
+    schema = _optional_mapping_identifier_part(fact, "schema", dialect)
+    catalog = _optional_mapping_identifier_part(fact, "catalog", dialect)
+    if schema is False or catalog is False:
+        return None
+    return _QualifiedTableIdentity(
+        name,
+        schema if isinstance(schema, _IdentifierPart) else None,
+        catalog if isinstance(catalog, _IdentifierPart) else None,
+    )
+
+
+def _optional_mapping_identifier_part(
+    fact: SyntaxFact, name: str, dialect: Dialect
+) -> _IdentifierPart | bool | None:
+    raw = _optional_attribute(fact, name)
+    explicit = _optional_attribute(fact, f"{name}Explicit")
+    if explicit != "true":
+        return None
+    if not isinstance(raw, str):
+        return False
+    return _mapping_identifier_part(raw, dialect) or False
+
+
+def _mapping_identifier_part(raw: str, dialect: Dialect) -> _IdentifierPart | None:
+    if not raw or len(raw) > 130:
+        return None
+    quoted = False
+    value = raw
+    quote_pairs = {'"': '"', "`": "`", "[": "]"}
+    if raw[0] in quote_pairs:
+        if len(raw) < 3 or raw[-1] != quote_pairs[raw[0]]:
+            return None
+        quoted = True
+        value = raw[1:-1]
+    if _EVIDENCE_TABLE_IDENTIFIER.fullmatch(value) is None:
+        return None
+    return _normalized_identifier_part(value, quoted, dialect)
+
+
+def _sql_fact_table_identity(
+    fact: SyntaxFact, schema_profile: str
+) -> _QualifiedTableIdentity | None:
+    dialect = Dialect.get_or_raise(_SQLGLOT_DIALECTS[schema_profile])
+    name = _sql_fact_identifier_part(fact.subject, fact, "nameQuoted", dialect)
+    schema = _sql_fact_identifier_part(
+        str(_optional_attribute(fact, "schema") or ""), fact, "schemaQuoted", dialect
+    )
+    catalog = _sql_fact_identifier_part(
+        str(_optional_attribute(fact, "catalog") or ""), fact, "catalogQuoted", dialect
+    )
+    if name is None:
+        return None
+    return _QualifiedTableIdentity(name, schema, catalog)
+
+
+def _sql_fact_identifier_part(
+    raw: str, fact: SyntaxFact, quoted_attribute: str, dialect: Dialect
+) -> _IdentifierPart | None:
+    if not raw:
+        return None
+    if _EVIDENCE_TABLE_IDENTIFIER.fullmatch(raw) is None:
+        return None
+    return _normalized_identifier_part(
+        raw, _optional_attribute(fact, quoted_attribute) == "true", dialect
+    )
+
+
+def _normalized_identifier_part(
+    value: str, quoted: bool, dialect: Dialect
+) -> _IdentifierPart:
+    identifier = dialect.normalize_identifier(
+        exp.Identifier(this=value, quoted=quoted)
+    )
+    return _IdentifierPart(identifier.name, quoted)
+
+
+def _sql_expression_table_identity(
+    table: exp.Table, dialect: Dialect
+) -> _QualifiedTableIdentity | None:
+    name = _sql_expression_identifier_part(table.this, dialect)
+    schema = _sql_expression_identifier_part(table.args.get("db"), dialect)
+    catalog = _sql_expression_identifier_part(table.args.get("catalog"), dialect)
+    if name is None:
+        return None
+    return _QualifiedTableIdentity(name, schema, catalog)
+
+
+def _sql_expression_identifier_part(
+    expression: exp.Expression | str | None, dialect: Dialect
+) -> _IdentifierPart | None:
+    if expression is None:
+        return None
+    if not isinstance(expression, exp.Identifier):
+        return None
+    if _EVIDENCE_TABLE_IDENTIFIER.fullmatch(expression.name) is None:
+        return None
+    return _normalized_identifier_part(
+        expression.name, bool(expression.args.get("quoted")), dialect
+    )
 
 
 def _resolve_operation(
@@ -831,13 +994,37 @@ def _resolve_operation(
     entity: SyntaxFact,
     table: SyntaxFact,
     called: str,
+    invocation_arity: int,
+    table_identity: _QualifiedTableIdentity,
     queries: dict[str, tuple[SyntaxFact, ...]],
     query_annotations: dict[str, tuple[SyntaxFact, ...]],
     methods: dict[str, tuple[SyntaxFact, ...]],
     schema_profile: str,
 ) -> tuple[_Operation | None, str | None]:
-    method_subject = f"{repository.subject}#{called}"
-    annotations = query_annotations.get(method_subject, ())
+    matching_methods = tuple(
+        method
+        for method_facts in methods.values()
+        for method in method_facts
+        if method.subject.startswith(f"{repository.subject}#{called}(")
+        and _optional_attribute(method, "name") == called
+        and _optional_attribute(method, "arity") == str(invocation_arity)
+    )
+    if len(matching_methods) > 1:
+        return None, "ambiguous-operation-overload"
+    method = matching_methods[0] if matching_methods else None
+    if method is not None and _optional_attribute(method, "declarationMode") != "abstract-interface":
+        return None, "unsupported-operation"
+    inherited = (
+        repository.attribute("baseFqn") == _JPA_REPOSITORY_FQN
+        and called in _JPA_INHERITED_OPERATIONS
+        and invocation_arity in _JPA_INHERITED_ARITIES.get(called, ())
+    )
+    if method is not None and inherited and not _exact_inherited_redeclaration(
+        repository, called, method
+    ):
+        return None, "ambiguous-operation-overload"
+    method_subject = method.subject if method is not None else None
+    annotations = query_annotations.get(method_subject, ()) if method_subject else ()
     if annotations:
         if len(annotations) != 1:
             return None, "ambiguous-query"
@@ -851,12 +1038,14 @@ def _resolve_operation(
         operation, target, language = _parse_explicit_query(query, schema_profile)
         if operation is None or target is None or language is None:
             return None, "unsupported-query"
-        expected = (
-            table.subject
+        target_matches = (
+            isinstance(target, _QualifiedTableIdentity)
+            and table_identity.matches(target)
             if language == "SQL"
-            else str(repository.attribute("entityFqn")).rsplit(".", 1)[-1]
+            else isinstance(target, str)
+            and target == entity.attribute("entityName")
         )
-        if target.casefold() != expected.casefold():
+        if not target_matches:
             return None, "query-table-conflict" if language == "SQL" else "query-entity-conflict"
         edge_type = "READS" if operation == "SELECT" else "WRITES"
         return (
@@ -869,11 +1058,7 @@ def _resolve_operation(
             None,
         )
 
-    inherited = (
-        repository.attribute("baseFqn") == _JPA_REPOSITORY_FQN
-        and called in _JPA_INHERITED_OPERATIONS
-    )
-    if method_subject not in methods and not inherited:
+    if method is None and not inherited:
         return None, "unsupported-operation"
     lower = called.casefold()
     if lower.startswith(("find", "get", "read", "count", "exists")):
@@ -892,9 +1077,44 @@ def _resolve_operation(
     return None, "unsupported-operation"
 
 
+def _exact_inherited_redeclaration(
+    repository: SyntaxFact, called: str, method: SyntaxFact
+) -> bool:
+    parameter_types = _optional_attribute(method, "parameterTypes")
+    if not isinstance(parameter_types, tuple):
+        return False
+    if not parameter_types:
+        return True
+    expected_attribute = (
+        "idType"
+        if called
+        in {
+            "deleteById",
+            "existsById",
+            "findById",
+            "getById",
+            "getOne",
+            "getReferenceById",
+        }
+        else "entityType"
+        if called in {"delete", "save", "saveAndFlush"}
+        else None
+    )
+    expected = (
+        _optional_attribute(repository, expected_attribute)
+        if expected_attribute is not None
+        else None
+    )
+    return isinstance(expected, str) and parameter_types == (expected,)
+
+
 def _parse_explicit_query(
     query: SyntaxFact, schema_profile: str
-) -> tuple[str | None, str | None, str | None]:
+) -> tuple[
+    str | None,
+    str | _QualifiedTableIdentity | None,
+    str | None,
+]:
     statement = str(query.attribute("query"))
     native = _optional_attribute(query, "nativeQuery") == "true"
     dialect_name = _SQLGLOT_DIALECTS[schema_profile]
@@ -919,9 +1139,16 @@ def _parse_explicit_query(
     if parsed is None:
         return None, None, None
     operation, table = parsed
-    if not table.name or table.catalog or table.db:
+    if not table.name:
         return None, None, None
-    return operation, table.name, "SQL" if native else "JPQL"
+    if not native:
+        if table.catalog or table.db:
+            return None, None, None
+        return operation, table.name, "JPQL"
+    identity = _sql_expression_table_identity(table, dialect)
+    if identity is None:
+        return None, None, None
+    return operation, identity, "SQL"
 
 
 def _normalize_jpa_positional_parameters(
@@ -1116,11 +1343,28 @@ def _evidence_fact_attributes(
     fact: SyntaxFact,
 ) -> tuple[tuple[str, FactValue], ...]:
     allowed = {
-        "java.invocation": {"method", "receiver", "repositoryType"},
+        "java.invocation": {"arity", "method", "receiver", "repositoryType"},
         "spring.repository-association": {"baseFqn", "entityFqn"},
-        "spring.entity-table": {"explicit", "table"},
-        "spring.query": {"literal", "nativeQuery"},
-        "sql.table": {"catalog", "dialect", "dialectMode", "schema"},
+        "spring.entity-table": {
+            "catalog",
+            "catalogExplicit",
+            "entityName",
+            "explicit",
+            "nameExplicit",
+            "schema",
+            "schemaExplicit",
+            "table",
+        },
+        "spring.query": {"arity", "literal", "method", "nativeQuery", "parameterTypes"},
+        "sql.table": {
+            "catalog",
+            "catalogQuoted",
+            "dialect",
+            "dialectMode",
+            "nameQuoted",
+            "schema",
+            "schemaQuoted",
+        },
     }.get(fact.kind, set())
     return tuple(
         (name, value) for name, value in fact.attributes if name in allowed
@@ -1909,18 +2153,43 @@ class JavaSpringScaAnalyzer:
         qualified_name: str,
         annotations: tuple[_AnnotationRecord, ...],
     ) -> None:
-        entity = next(
-            (item for item in annotations if item.resolved_fqn == _ENTITY_FQN),
-            None,
+        entities = tuple(
+            item for item in annotations if item.resolved_fqn == _ENTITY_FQN
         )
-        if entity is None:
+        if not entities:
+            return
+        if len(entities) != 1:
+            self._add_residue(
+                "ambiguous-entity-name",
+                "entity declaration has multiple exact jakarta.persistence.Entity annotations",
+                qualified_name,
+                self._node_location(source.path, declaration),
+            )
+            return
+        entity = entities[0]
+        if entity.dynamic_values:
+            self._add_residue(
+                "dynamic-entity-name",
+                "entity name must be an absent or bounded string literal",
+                entity.dynamic_values[0],
+                self._node_location(source.path, entity.node),
+            )
+            return
+        entity_values = dict(entity.literal_values)
+        entity_name = entity_values.get("name", qualified_name.rsplit(".", 1)[-1])
+        if _EVIDENCE_JAVA_IDENTIFIER.fullmatch(entity_name) is None:
+            self._add_residue(
+                "invalid-entity-name",
+                "entity name is outside the bounded JPQL identifier set",
+                entity_name,
+                self._node_location(source.path, entity.node),
+            )
             return
         syntactic_table = next(
             (item for item in annotations if _simple_type(item.raw_name) == "Table"),
             None,
         )
-        table_name = qualified_name.rsplit(".", 1)[-1]
-        explicit = "false"
+        table_values: dict[str, str] = {}
         location = self._node_location(source.path, declaration)
         if syntactic_table is not None:
             if syntactic_table.resolved_fqn != _TABLE_FQN:
@@ -1931,7 +2200,7 @@ class JavaSpringScaAnalyzer:
                     self._node_location(source.path, syntactic_table.node),
                 )
                 return
-            values = dict(syntactic_table.literal_values)
+            table_values = dict(syntactic_table.literal_values)
             if syntactic_table.dynamic_values:
                 self._add_residue(
                     "dynamic-table-mapping",
@@ -1940,15 +2209,27 @@ class JavaSpringScaAnalyzer:
                     self._node_location(source.path, syntactic_table.node),
                 )
                 return
-            if values.get("name"):
-                table_name = values["name"]
-                explicit = "true"
-                location = self._node_location(source.path, syntactic_table.node)
+            location = self._node_location(source.path, syntactic_table.node)
+        table_name = table_values.get("name", qualified_name.rsplit(".", 1)[-1])
+        if not table_name:
+            self._add_residue(
+                "dynamic-table-mapping",
+                "explicit table name must be a non-empty bounded literal",
+                table_name,
+                location,
+            )
+            return
         self._add_fact(
             "spring.entity-table",
             qualified_name,
             (
-                ("explicit", explicit),
+                ("catalog", table_values.get("catalog", "")),
+                ("catalogExplicit", "true" if "catalog" in table_values else "false"),
+                ("entityName", entity_name),
+                ("explicit", "true" if "name" in table_values else "false"),
+                ("nameExplicit", "true" if "name" in table_values else "false"),
+                ("schema", table_values.get("schema", "")),
+                ("schemaExplicit", "true" if "schema" in table_values else "false"),
                 ("table", table_name),
             ),
             location,
@@ -2000,7 +2281,13 @@ class JavaSpringScaAnalyzer:
                     continue
                 method_name = _node_text(name_node, parsed.source.content)
                 return_type = member.child_by_field_name("type")
-                subject = f"{owner}#{method_name}"
+                parameter_types = _canonical_parameter_types(
+                    member, parsed.source.content
+                )
+                subject = f"{owner}#{method_name}({','.join(parameter_types)})"
+                declaration_mode = _method_declaration_mode(
+                    declaration, member, parsed.source.content
+                )
                 self._add_fact(
                     "java.method",
                     subject,
@@ -2011,6 +2298,10 @@ class JavaSpringScaAnalyzer:
                             if return_type is not None
                             else "void",
                         ),
+                        ("arity", str(len(parameter_types))),
+                        ("declarationMode", declaration_mode),
+                        ("name", method_name),
+                        ("parameterTypes", parameter_types),
                         ("parameters", _parameter_signature(member, parsed.source.content)),
                     ),
                     self._node_location(parsed.source.path, member),
@@ -2027,7 +2318,10 @@ class JavaSpringScaAnalyzer:
                     query_value = values.get("value")
                     if query_value is not None:
                         query_attributes: list[tuple[str, FactValue]] = [
+                            ("arity", str(len(parameter_types))),
                             ("literal", "true"),
+                            ("method", method_name),
+                            ("parameterTypes", parameter_types),
                             ("query", query_value),
                         ]
                         if "nativeQuery" in values:
@@ -2311,10 +2605,13 @@ class JavaSpringScaAnalyzer:
                                 )
                                 continue
                             called = _node_text(called_node, parsed.source.content)
+                            arguments = invocation.child_by_field_name("arguments")
+                            arity = len(arguments.named_children) if arguments else 0
                             self._add_fact(
                                 "java.invocation",
                                 f"{owner}#{enclosing_method}:{receiver}.{called}",
                                 (
+                                    ("arity", str(arity)),
                                     ("method", called),
                                     ("receiver", receiver),
                                     ("repositoryType", fields[receiver]),
@@ -2383,9 +2680,23 @@ class JavaSpringScaAnalyzer:
         complete = True
         for statement_tokens in _sql_statement_tokens(tokens):
             if not _is_create_table_tokens(statement_tokens):
+                is_index = _is_create_index_tokens(statement_tokens)
+                valid_index = is_index and _valid_create_index_statement(
+                    dialect, text, statement_tokens
+                )
+                if is_index and not valid_index:
+                    complete = False
                 self._add_residue(
-                    "unsupported-sql",
-                    "only explicit CREATE TABLE DDL yields schema facts",
+                    "ignored-schema-statement"
+                    if valid_index
+                    else "malformed-sql"
+                    if is_index
+                    else "unsupported-sql",
+                    "schema indexes are inventory-only and do not affect table identity"
+                    if valid_index
+                    else "CREATE INDEX must be structurally valid to be ignored"
+                    if is_index
+                    else "only explicit CREATE TABLE DDL yields schema facts",
                     statement_tokens[0].text,
                     _sql_token_location(
                         source.path, text, statement_tokens[0], "sql_statement"
@@ -2455,6 +2766,10 @@ class JavaSpringScaAnalyzer:
                 table.name,
                 (
                     ("catalog", table.catalog),
+                    (
+                        "catalogQuoted",
+                        _sql_expression_quoted(table.args.get("catalog")),
+                    ),
                     ("dialect", sqlglot_dialect),
                     (
                         "dialectMode",
@@ -2462,7 +2777,9 @@ class JavaSpringScaAnalyzer:
                         if source.sql_dialect == "h2"
                         else "native",
                     ),
+                    ("nameQuoted", _sql_expression_quoted(table.this)),
                     ("schema", table.db),
+                    ("schemaQuoted", _sql_expression_quoted(table.args.get("db"))),
                 ),
                 _sql_token_location(source.path, text, locations[0], "table"),
             )
@@ -2999,6 +3316,38 @@ def _parameter_signature(declaration: Node, content: bytes) -> tuple[str, ...]:
     )
 
 
+def _canonical_parameter_types(declaration: Node, content: bytes) -> tuple[str, ...]:
+    return tuple(
+        "".join(type_name.split())
+        for type_name in _parameters(declaration, content).values()
+    )
+
+
+def _method_declaration_mode(
+    owner: Node, declaration: Node, content: bytes
+) -> str:
+    modifiers = next(
+        (
+            child
+            for child in declaration.named_children
+            if child.type == "modifiers"
+        ),
+        None,
+    )
+    modifier_text = _node_text(modifiers, content) if modifiers is not None else ""
+    body = declaration.child_by_field_name("body")
+    if (
+        owner.type == "interface_declaration"
+        and body is None
+        and not re.search(r"\b(?:default|private|static)\b", modifier_text)
+    ):
+        return "abstract-interface"
+    for mode in ("default", "static", "private"):
+        if re.search(rf"\b{mode}\b", modifier_text):
+            return mode
+    return "concrete"
+
+
 def _parameters(declaration: Node, content: bytes) -> dict[str, str]:
     parameters = declaration.child_by_field_name("parameters")
     if parameters is None:
@@ -3270,6 +3619,15 @@ def _created_table(statement: exp.Expression | None) -> exp.Table | None:
     return target if isinstance(target, exp.Table) else None
 
 
+def _sql_expression_quoted(expression: object) -> str:
+    return (
+        "true"
+        if isinstance(expression, exp.Identifier)
+        and bool(expression.args.get("quoted"))
+        else "false"
+    )
+
+
 def _sql_statement_tokens(tokens: list[Token]) -> tuple[tuple[Token, ...], ...]:
     statements: list[tuple[Token, ...]] = []
     start = 0
@@ -3289,6 +3647,40 @@ def _is_create_table_tokens(tokens: tuple[Token, ...]) -> bool:
         len(tokens) >= 2
         and tokens[0].token_type == TokenType.CREATE
         and tokens[1].token_type == TokenType.TABLE
+    )
+
+
+def _is_create_index_tokens(tokens: tuple[Token, ...]) -> bool:
+    words = tuple(token.text.casefold() for token in tokens[:3])
+    return bool(words) and words[0] == "create" and "index" in words[1:]
+
+
+def _valid_create_index_statement(
+    dialect: Dialect, text: str, tokens: tuple[Token, ...]
+) -> bool:
+    statement_text = text[tokens[0].start : tokens[-1].end + 1]
+    try:
+        statement = _silent_sqlglot_parse_one(dialect, statement_text)
+    except (ParseError, ValueError, TokenError):
+        return False
+    if (
+        not isinstance(statement, exp.Create)
+        or str(statement.args.get("kind", "")).upper() != "INDEX"
+        or not isinstance(statement.this, exp.Index)
+    ):
+        return False
+    index = statement.this
+    name = index.this
+    table = index.args.get("table")
+    parameters = index.args.get("params")
+    columns = parameters.args.get("columns") if isinstance(parameters, exp.IndexParameters) else None
+    return (
+        isinstance(name, exp.Identifier)
+        and _EVIDENCE_TABLE_IDENTIFIER.fullmatch(name.name) is not None
+        and isinstance(table, exp.Table)
+        and _sql_expression_table_identity(table, dialect) is not None
+        and isinstance(columns, list)
+        and bool(columns)
     )
 
 

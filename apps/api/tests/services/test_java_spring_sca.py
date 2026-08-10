@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import logging
-from dataclasses import FrozenInstanceError
+from dataclasses import FrozenInstanceError, replace
 from pathlib import Path
 
 import pytest
@@ -64,6 +64,26 @@ def _compile_java_spring(
         scope_complete=scope_complete,
     )
     return spring_sca.JavaSpringEvidenceCompiler().compile(analysis, context)
+
+
+def _lineage_sources(
+    *,
+    entity: str,
+    repository: str,
+    service: str,
+    schema: str = "create table owners (id integer primary key);",
+) -> tuple[JavaSpringSource, ...]:
+    return (
+        _source("pom.xml", _maven_build()),
+        _source("src/example/Owner.java", entity),
+        _source("src/example/OwnerRepository.java", repository),
+        _source("src/example/OwnerService.java", service),
+        _source(
+            "src/main/resources/db/postgres/schema.sql",
+            schema,
+            dialect="postgres",
+        ),
+    )
 
 
 def _maven_build(
@@ -1269,7 +1289,7 @@ class OwnerService {
             _source("src/example/OwnerService.java", service),
             _source(
                 "src/main/resources/db/postgres/schema.sql",
-                "create table public.owners (id integer primary key);",
+                "create table owners (id integer primary key);",
                 dialect="postgres",
             ),
         )
@@ -1753,3 +1773,387 @@ def test_malformed_sql_marks_evidence_integration_required_even_with_a_proven_ed
     assert len(evidence.edges) == 1
     assert evidence.status == "INTEGRATION_REQUIRED"
     assert "malformed-sql" in evidence.status_reasons
+
+
+def test_query_on_different_overload_never_overrides_inherited_operation() -> None:
+    evidence = _compile_java_spring(
+        _lineage_sources(
+            entity='''package example;
+import jakarta.persistence.Entity;
+import jakarta.persistence.Table;
+@Entity @Table(name="owners") class Owner {}
+''',
+            repository='''package example;
+import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+interface OwnerRepository extends JpaRepository<Owner, Integer> {
+  @Query("DELETE FROM Owner o WHERE o.id = ?1")
+  Object findById(Integer id, boolean hardDelete);
+}
+''',
+            service='''package example;
+class OwnerService {
+  private final OwnerRepository owners;
+  OwnerService(OwnerRepository owners) { this.owners = owners; }
+  Owner load(Integer id) { return owners.findById(id).orElseThrow(); }
+}
+''',
+        )
+    )
+
+    assert evidence.status == "COMPLETE"
+    assert len(evidence.edges) == 1
+    assert evidence.edges[0].edge_type == "READS"
+    assert evidence.edges[0].transform == "OwnerRepository.findById -> owners"
+    assert evidence.edges[0].evidence.query is None
+    assert evidence.edges[0].evidence.invocation.attribute("arity") == "1"
+
+
+def test_same_name_and_arity_repository_overloads_are_ambiguous() -> None:
+    evidence = _compile_java_spring(
+        _lineage_sources(
+            entity='''package example;
+import jakarta.persistence.Entity;
+import jakarta.persistence.Table;
+@Entity @Table(name="owners") class Owner {}
+''',
+            repository='''package example;
+import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+interface OwnerRepository extends JpaRepository<Owner, Integer> {
+  @Query("SELECT o FROM Owner o") Object findCustom(Integer id);
+  Object findCustom(String name);
+}
+''',
+            service='''package example;
+class OwnerService {
+  private final OwnerRepository owners;
+  OwnerService(OwnerRepository owners) { this.owners = owners; }
+  Object load(Integer id) { return owners.findCustom(id); }
+}
+''',
+        )
+    )
+
+    assert evidence.edges == ()
+    assert evidence.status == "INTEGRATION_REQUIRED"
+    assert "ambiguous-operation-overload" in {
+        item.code for item in evidence.residue
+    }
+
+
+def test_same_arity_custom_overload_cannot_steal_inherited_operation() -> None:
+    evidence = _compile_java_spring(
+        _lineage_sources(
+            entity='''package example;
+import jakarta.persistence.Entity;
+import jakarta.persistence.Table;
+@Entity @Table(name="owners") class Owner {}
+''',
+            repository='''package example;
+import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+interface OwnerRepository extends JpaRepository<Owner, Integer> {
+  @Query("DELETE FROM Owner o WHERE o.name = ?1")
+  Object findById(String name);
+}
+''',
+            service='''package example;
+class OwnerService {
+  private final OwnerRepository owners;
+  OwnerService(OwnerRepository owners) { this.owners = owners; }
+  Owner load(Integer id) { return owners.findById(id).orElseThrow(); }
+}
+''',
+        )
+    )
+
+    assert evidence.edges == ()
+    assert evidence.status == "INTEGRATION_REQUIRED"
+    assert "ambiguous-operation-overload" in {
+        item.code for item in evidence.residue
+    }
+
+
+@pytest.mark.parametrize(
+    ("modifier", "body"),
+    [
+        ("default", "{ return null; }"),
+        ("static", "{ return null; }"),
+        ("private", "{ return null; }"),
+    ],
+)
+def test_nonabstract_repository_method_never_becomes_derived_lineage(
+    modifier: str, body: str
+) -> None:
+    evidence = _compile_java_spring(
+        _lineage_sources(
+            entity='''package example;
+import jakarta.persistence.Entity;
+import jakarta.persistence.Table;
+@Entity @Table(name="owners") class Owner {}
+''',
+            repository=f'''package example;
+import org.springframework.data.jpa.repository.JpaRepository;
+interface OwnerRepository extends JpaRepository<Owner, Integer> {{
+  {modifier} Owner findCached() {body}
+}}
+''',
+            service='''package example;
+class OwnerService {
+  private final OwnerRepository owners;
+  OwnerService(OwnerRepository owners) { this.owners = owners; }
+  Owner load() { return owners.findCached(); }
+}
+''',
+        )
+    )
+
+    assert evidence.edges == ()
+    assert evidence.status == "INTEGRATION_REQUIRED"
+    assert "unsupported-operation" in {item.code for item in evidence.residue}
+
+
+@pytest.mark.parametrize(
+    ("table_annotation", "schema", "expected_dataset"),
+    [
+        (
+            '@Table(name="owners", schema="audit")',
+            "create table audit.owners (id integer primary key);",
+            "audit.owners",
+        ),
+        (
+            '@Table(name="\\\"Owners\\\"")',
+            'create table "Owners" (id integer primary key);',
+            '"Owners"',
+        ),
+        (
+            '@Table(name="owners", schema="audit", catalog="warehouse")',
+            "create table warehouse.audit.owners (id integer primary key);",
+            "warehouse.audit.owners",
+        ),
+    ],
+)
+def test_complete_qualified_table_identity_drives_dataset_urn(
+    table_annotation: str, schema: str, expected_dataset: str
+) -> None:
+    evidence = _compile_java_spring(
+        _lineage_sources(
+            entity=f'''package example;
+import jakarta.persistence.Entity;
+import jakarta.persistence.Table;
+@Entity {table_annotation} class Owner {{}}
+''',
+            repository='''package example;
+import org.springframework.data.jpa.repository.JpaRepository;
+interface OwnerRepository extends JpaRepository<Owner, Integer> {}
+''',
+            service='''package example;
+class OwnerService {
+  private final OwnerRepository owners;
+  OwnerService(OwnerRepository owners) { this.owners = owners; }
+  Owner load(Integer id) { return owners.findById(id).orElseThrow(); }
+}
+''',
+            schema=schema,
+        )
+    )
+
+    assert evidence.status == "COMPLETE"
+    assert len(evidence.edges) == 1
+    assert evidence.edges[0].dataset_urn.endswith(f":{expected_dataset}")
+    assert f"-> {expected_dataset}" in evidence.edges[0].transform
+
+
+def test_qualified_or_quoted_table_mismatch_never_emits_edge() -> None:
+    for table_annotation, schema in (
+        (
+            '@Table(name="owners")',
+            "create table public.owners (id integer primary key);",
+        ),
+        (
+            '@Table(name="owners", schema="audit")',
+            "create table public.owners (id integer primary key);",
+        ),
+        (
+            '@Table(name="\\\"Owners\\\"")',
+            "create table owners (id integer primary key);",
+        ),
+    ):
+        evidence = _compile_java_spring(
+            _lineage_sources(
+                entity=f'''package example;
+import jakarta.persistence.Entity;
+import jakarta.persistence.Table;
+@Entity {table_annotation} class Owner {{}}
+''',
+                repository='''package example;
+import org.springframework.data.jpa.repository.JpaRepository;
+interface OwnerRepository extends JpaRepository<Owner, Integer> {}
+''',
+                service='''package example;
+class OwnerService {
+  private final OwnerRepository owners;
+  OwnerService(OwnerRepository owners) { this.owners = owners; }
+  Owner load(Integer id) { return owners.findById(id).orElseThrow(); }
+}
+''',
+                schema=schema,
+            )
+        )
+
+        assert evidence.edges == ()
+        assert evidence.status == "INTEGRATION_REQUIRED"
+        assert "missing-schema-table" in evidence.status_reasons
+
+
+def test_analysis_residue_is_blocking_except_explicit_ignored_schema_inventory() -> None:
+    sources = _lineage_sources(
+        entity='''package example;
+import jakarta.persistence.Entity;
+import jakarta.persistence.Table;
+@Entity @Table(name="owners") class Owner {}
+''',
+        repository='''package example;
+import org.springframework.data.jpa.repository.JpaRepository;
+interface OwnerRepository extends JpaRepository<Owner, Integer> {}
+''',
+        service='''package example;
+class OwnerService {
+  private final OwnerRepository owners;
+  OwnerService(OwnerRepository owners) { this.owners = owners; }
+  Owner load(Integer id) { return owners.findById(id).orElseThrow(); }
+}
+''',
+        schema=(
+            "create table owners (id integer primary key); "
+            "create index idx_owners_id on owners(id);"
+        ),
+    )
+    complete = _compile_java_spring(sources)
+    assert complete.status == "COMPLETE"
+    assert "ignored-schema-statement" in {item.code for item in complete.residue}
+
+    blocked = _compile_java_spring(
+        sources
+        + (
+            _source(
+                "src/example/Fake.java",
+                "package example; import fake.Entity; @Entity class Fake {}",
+            ),
+        )
+    )
+    assert len(blocked.edges) == 1
+    assert blocked.status == "INTEGRATION_REQUIRED"
+    assert "unresolved-framework-symbol" in blocked.status_reasons
+
+    malformed_index = _compile_java_spring(
+        tuple(
+            replace(source, content=b"create table owners (id integer); create index;")
+            if source.path.endswith("schema.sql")
+            else source
+            for source in sources
+        )
+    )
+    assert len(malformed_index.edges) == 1
+    assert malformed_index.status == "INTEGRATION_REQUIRED"
+    assert "malformed-sql" in malformed_index.status_reasons
+
+
+@pytest.mark.parametrize(
+    ("query_target", "expected_edges"),
+    [("Person", 1), ("Owner", 0)],
+)
+def test_jpql_target_uses_literal_entity_name(
+    query_target: str, expected_edges: int
+) -> None:
+    evidence = _compile_java_spring(
+        _lineage_sources(
+            entity='''package example;
+import jakarta.persistence.Entity;
+import jakarta.persistence.Table;
+@Entity(name="Person") @Table(name="owners") class Owner {}
+''',
+            repository=f'''package example;
+import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+interface OwnerRepository extends JpaRepository<Owner, Integer> {{
+  @Query("SELECT p FROM {query_target} p") Object findPerson();
+}}
+''',
+            service='''package example;
+class OwnerService {
+  private final OwnerRepository owners;
+  OwnerService(OwnerRepository owners) { this.owners = owners; }
+  Object load() { return owners.findPerson(); }
+}
+''',
+        )
+    )
+
+    assert len(evidence.edges) == expected_edges
+    mapping = next(
+        fact
+        for fact in JavaSpringScaAnalyzer().analyze(
+            _lineage_sources(
+                entity='''package example;
+import jakarta.persistence.Entity;
+import jakarta.persistence.Table;
+@Entity(name="Person") @Table(name="owners") class Owner {}
+''',
+                repository="package example; interface Empty {}",
+                service="package example; class EmptyService {}",
+            )
+        ).facts
+        if fact.kind == "spring.entity-table"
+    )
+    assert mapping.attribute("entityName") == "Person"
+    if expected_edges:
+        assert evidence.status == "COMPLETE"
+    else:
+        assert evidence.status == "INTEGRATION_REQUIRED"
+        assert "query-entity-conflict" in {item.code for item in evidence.residue}
+
+
+def test_dynamic_entity_name_never_emits_mapping_or_lineage() -> None:
+    sources = _lineage_sources(
+        entity='''package example;
+import jakarta.persistence.Entity;
+import jakarta.persistence.Table;
+@Entity(name=ENTITY_NAME) @Table(name="owners")
+class Owner { static final String ENTITY_NAME = "Person"; }
+''',
+        repository='''package example;
+import org.springframework.data.jpa.repository.JpaRepository;
+interface OwnerRepository extends JpaRepository<Owner, Integer> {}
+''',
+        service='''package example;
+class OwnerService {
+  private final OwnerRepository owners;
+  OwnerService(OwnerRepository owners) { this.owners = owners; }
+  Owner load(Integer id) { return owners.findById(id).orElseThrow(); }
+}
+''',
+    )
+    analysis = JavaSpringScaAnalyzer().analyze(sources)
+    evidence = spring_sca.JavaSpringEvidenceCompiler().compile(
+        analysis,
+        spring_sca.JavaSpringEvidenceContext(
+            origin="https://github.com/example/spring-service",
+            repository="spring-service",
+            revision="1" * 40,
+            scope_digest="sha256:" + "2" * 64,
+            environment="staging",
+            platform="postgres",
+            system="petclinic",
+            analyzer_pack="java-spring-data-jpa-v1",
+            ruleset_version="spring-data-rules-v1",
+            resolver_version="schema-resolver-v1",
+            schema_profile="postgres",
+        ),
+    )
+
+    assert not any(fact.kind == "spring.entity-table" for fact in analysis.facts)
+    assert "dynamic-entity-name" in {item.code for item in analysis.residue}
+    assert evidence.edges == ()
+    assert evidence.status == "INTEGRATION_REQUIRED"
