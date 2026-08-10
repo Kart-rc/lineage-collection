@@ -38,6 +38,66 @@ uv run --project apps/api python -m lineage_api.cli worker --drain --max-message
 
 Use `--once` instead of `--drain` to process at most one available command.
 
+## Collect an exact Java/Spring checkout
+
+`collect-checkout` analyzes canonical committed Git blobs without running Maven, Gradle, tests,
+application code, hooks, or repository executables. It verifies the credential-free origin, exact
+revision, index/tree identity, bounded tracked scope and immutable scope digest before creating a
+signed delivery. That delivery then follows the normal SQLite outbox, queue, lease, I1–I10 stage
+ledger, evidence, consolidation and review path. Successful collection stops at `IN_REVIEW`; it
+does not approve or publish.
+
+```bash
+export LINEAGE_DATA_DIR=/tmp/lineage-real-state
+export LINEAGE_WEBHOOK_SECRET=change-me-local-only
+
+uv run --project apps/api python -m lineage_api.cli collect-checkout \
+  --checkout /absolute/path/to/spring-service \
+  --origin https://github.com/acme/spring-service \
+  --revision <exact-40-or-64-character-lowercase-commit> \
+  --repository spring-service \
+  --environment staging \
+  --platform postgres \
+  --system orders \
+  --analyzer-pack java-spring-data-jpa-v1 \
+  --ruleset spring-data-rules-v1 \
+  --profile postgres
+```
+
+The v1 pack is repository-neutral. It reconciles literal root Maven and Gradle Spring Boot/Data JPA
+cells, analyzes production Java under `src/main/java`, and selects exactly one
+`db/<profile>/schema.sql`. Conflicting or dynamic build cells and missing or multiple profile
+schemas return `INTEGRATION_REQUIRED`. Seed data, user/setup scripts and test Java are outside this
+static production scope. The H2 profile is deliberately approximation-only and returns
+`INTEGRATION_REQUIRED`; use a trusted PostgreSQL or MySQL schema profile to authorize tables.
+
+The bounded JSON result contains only identifiers, digests, status, stage names and counts. Static
+`exact=true` means the source citation is exact, not that the operation ran. Until a validated
+runtime session is joined, `runtimeStatus` remains `NOT_PROVIDED`.
+
+Spring Petclinic is an acceptance example, not a special case in production code:
+
+```bash
+git clone https://github.com/spring-projects/spring-petclinic.git /tmp/spring-petclinic
+git -C /tmp/spring-petclinic checkout --detach 88e37c15cf6fc8490b01bc3e8e2c800cec1ac272
+
+uv run --project apps/api python -m lineage_api.cli collect-checkout \
+  --checkout /tmp/spring-petclinic \
+  --origin https://github.com/spring-projects/spring-petclinic \
+  --revision 88e37c15cf6fc8490b01bc3e8e2c800cec1ac272 \
+  --repository spring-petclinic \
+  --environment staging \
+  --platform postgres \
+  --system petclinic \
+  --analyzer-pack java-spring-data-jpa-v1 \
+  --ruleset spring-data-rules-v1 \
+  --profile postgres
+```
+
+At that pinned revision the accepted oracle is 15 static edges (10 reads and 5 writes), zero
+unresolved invocations, proposal `IN_REVIEW`, and runtime `NOT_PROVIDED`. Repeating the identical
+command returns `DUPLICATE` with the same command, run and proposal and no extra ledger effects.
+
 ## Reset the deterministic demo
 
 ```bash

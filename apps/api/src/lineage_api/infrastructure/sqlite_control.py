@@ -553,6 +553,10 @@ class SQLiteIntakeUnitOfWork:
                 "SELECT payload_json FROM events WHERE event_id = ?", (event_id,)
             ).fetchone()
             created = existing is None
+            if existing is not None and existing["payload_json"] != envelope_json:
+                raise IdempotencyConflictError(
+                    "event identity refers to a different immutable envelope"
+                )
             stored_envelope = envelope_json if created else existing["payload_json"]
             if created:
                 connection.execute(

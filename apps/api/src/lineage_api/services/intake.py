@@ -3,12 +3,14 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
+import re
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Any, Literal
 
 from lineage_api.application.models import Command, OutboxEvent, WorkflowKind, parse_utc
 from lineage_api.application.ports import ClockPort, IntakeUnitOfWorkPort
+from lineage_api.application.repository_sources import validate_repository_identity
 from lineage_api.db import Database
 
 
@@ -109,6 +111,14 @@ class IntakeService:
         runtime_observation = payload.get("runtimeObservation")
         if isinstance(runtime_observation, dict):
             envelope["runtimeObservation"] = runtime_observation
+        repository_source = payload.get("repositorySource")
+        if repository_source is not None:
+            normalized_source = _repository_source(repository_source, repo)
+            if normalized_source is None:
+                return self._quarantine(
+                    payload, event_id, correlation_id, "INVALID_REPOSITORY_SOURCE"
+                )
+            envelope["repositorySource"] = normalized_source
         envelope_json = json.dumps(envelope, sort_keys=True, separators=(",", ":"))
         try:
             parse_utc(received_at)
@@ -186,6 +196,7 @@ class IntakeService:
                 if "runtimeObservation" in envelope
                 else None
             ),
+            "repositorySource": envelope.get("repositorySource"),
         }
         determinant = f"sha256:{self._payload_digest(self._canonical(determinant_body))}"
         workflow_kind = WORKFLOW_POLICY[envelope["eventType"]]
@@ -284,3 +295,47 @@ class IntakeService:
     @staticmethod
     def _canonical(value: object) -> bytes:
         return json.dumps(value, sort_keys=True, separators=(",", ":")).encode()
+
+
+_REPOSITORY_SOURCE_KEYS = frozenset(
+    {
+        "sourceKind",
+        "origin",
+        "revision",
+        "scopeDigest",
+        "analyzerPack",
+        "ruleset",
+        "framework",
+        "schemaProfile",
+        "platform",
+    }
+)
+_SOURCE_TEXT = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}")
+_SOURCE_REVISION = re.compile(r"(?:[0-9a-f]{40}|[0-9a-f]{64})")
+_SOURCE_SCOPE = re.compile(r"sha256:[0-9a-f]{64}")
+
+
+def _repository_source(value: object, repository: str) -> dict[str, str] | None:
+    if not isinstance(value, dict) or set(value) != _REPOSITORY_SOURCE_KEYS:
+        return None
+    if not all(isinstance(value[key], str) for key in _REPOSITORY_SOURCE_KEYS):
+        return None
+    source = {key: str(value[key]) for key in sorted(_REPOSITORY_SOURCE_KEYS)}
+    try:
+        validate_repository_identity(source["origin"], repository)
+    except ValueError:
+        return None
+    if (
+        source["sourceKind"] != "git-checkout"
+        or source["framework"] != "spring-data-jpa"
+        or _SOURCE_REVISION.fullmatch(source["revision"]) is None
+        or _SOURCE_SCOPE.fullmatch(source["scopeDigest"]) is None
+        or source["schemaProfile"] not in {"h2", "mysql", "postgres"}
+        or source["platform"] != source["schemaProfile"]
+        or any(
+            _SOURCE_TEXT.fullmatch(source[field]) is None
+            for field in ("analyzerPack", "ruleset")
+        )
+    ):
+        return None
+    return source

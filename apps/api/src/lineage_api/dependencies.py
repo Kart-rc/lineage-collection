@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
 
+from lineage_api.application.repository_sources import RepositorySnapshot
 from lineage_api.application.outbox import OutboxDispatcher
 from lineage_api.application.workflows.pr_gate import (
     EnvironmentPin,
@@ -32,6 +33,11 @@ from lineage_api.infrastructure.sqlite_control import (
 from lineage_api.observability import LocalMetricsSnapshot, MetricsSnapshotPort
 from lineage_api.seed import SeedSummary, reset_demo
 from lineage_api.services.classification import ClassificationService
+from lineage_api.services.analyzer_registry import (
+    AnalyzerRegistry,
+    FixtureSnapshotProvider,
+    PinnedSnapshotProvider,
+)
 from lineage_api.services.consolidation import ConsolidationService
 from lineage_api.services.evidence_store import EvidenceStore
 from lineage_api.services.intake import IntakeService
@@ -125,7 +131,11 @@ class AppServices:
         return {"payload": payload, "signature": f"sha256={signature}"}
 
 
-def build_services(settings: Settings) -> AppServices:
+def build_services(
+    settings: Settings,
+    *,
+    repository_snapshot: RepositorySnapshot | None = None,
+) -> AppServices:
     database = Database(settings.database_path)
     database.initialize()
     clock = SystemClock()
@@ -139,6 +149,13 @@ def build_services(settings: Settings) -> AppServices:
         clock,
     )
     resolver = Resolver.from_path(settings.fixture_directory / "catalog" / "catalog-snapshot-v1.json")
+    python_analyzer = ScaAnalyzer(resolver, ruleset_version="python-demo-v1")
+    analyzer_registry = AnalyzerRegistry.default(python_analyzer)
+    snapshot_provider = (
+        PinnedSnapshotProvider(repository_snapshot)
+        if repository_snapshot is not None
+        else FixtureSnapshotProvider(settings.fixture_directory)
+    )
     store = EvidenceStore(database, settings.object_directory)
     review = ReviewService(database, store, env="staging")
     publisher = PublisherService(database, store)
@@ -155,10 +172,10 @@ def build_services(settings: Settings) -> AppServices:
     query = QueryService(database, env="staging")
     orchestration = OrchestrationService(
         database=database,
-        fixture_root=settings.fixture_directory,
         intake=intake,
         classification=ClassificationService(database, policy_version="1.0.0"),
-        analyzer=ScaAnalyzer(resolver, ruleset_version="python-demo-v1"),
+        analyzer_registry=analyzer_registry,
+        snapshot_provider=snapshot_provider,
         store=store,
         consolidation=ConsolidationService(database),
         review=review,

@@ -1860,6 +1860,22 @@ class JavaSpringScaAnalyzer:
                     _text_location(source, token.start, token.end, "string_literal"),
                 )
                 continue
+            inherited = False
+            if len(parts) == 2:
+                boot_versions = {item.version for item in boot}
+                if len(boot_versions) == 1:
+                    parts.append(next(iter(boot_versions)))
+                    inherited = True
+                else:
+                    invalid = True
+                    self._add_residue(
+                        "missing-jpa-version",
+                        "versionless Gradle JPA dependency requires one proven "
+                        "Boot plugin version",
+                        coordinate,
+                        _text_location(source, token.start, token.end, "string_literal"),
+                    )
+                    continue
             if len(parts) != 3 or not _is_supported_version(parts[2]):
                 invalid = True
                 self._add_residue(
@@ -1871,7 +1887,12 @@ class JavaSpringScaAnalyzer:
                 continue
             jpa.append(
                 _BuildEvidence(
-                    source.path, "data-jpa", parts[0], parts[1], parts[2]
+                    source.path,
+                    "data-jpa",
+                    parts[0],
+                    parts[1],
+                    parts[2],
+                    inherited,
                 )
             )
         relevant = bool(

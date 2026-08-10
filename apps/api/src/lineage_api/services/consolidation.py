@@ -345,7 +345,17 @@ class ConsolidationService:
     ) -> ConsolidatedEdge:
         decision = derive_consolidation([item.as_dict() for item in provenance])
         first = provenance[0]
-        system = LineageUrn.parse(first.to_urn).system
+        dataset_endpoint = next(
+            (
+                value
+                for value in (first.to_urn, *first.from_urns)
+                if value.startswith("urn:ldp:")
+            ),
+            None,
+        )
+        if dataset_endpoint is None:
+            raise ValueError("lineage edge requires at least one governed dataset endpoint")
+        system = LineageUrn.parse(dataset_endpoint).system
         return ConsolidatedEdge(
             schema_version="1.0.0",
             edge_key=edge_key,

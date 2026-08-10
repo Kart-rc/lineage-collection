@@ -5,6 +5,8 @@ import hmac
 import json
 from pathlib import Path
 
+import pytest
+
 from lineage_api.config import Settings
 
 
@@ -130,3 +132,141 @@ def test_unknown_classification_blocks_analysis(tmp_path) -> None:
     assert result["run"]["state"] == "FAILED"
     assert result["run"]["failedStage"] == "CLASSIFYING"
     assert result["proposal"] is None
+
+
+def test_closed_analyzer_registry_rejects_mismatched_determinants() -> None:
+    from lineage_api.services.analyzer_registry import (
+        AnalyzerRegistry,
+        AnalyzerSelection,
+        AnalyzerSelectionError,
+    )
+
+    registry = AnalyzerRegistry.default()
+    accepted = AnalyzerSelection(
+        analyzer_pack="java-spring-data-jpa-v1",
+        ruleset="spring-data-rules-v1",
+        source_kind="git-checkout",
+        framework="spring-data-jpa",
+        schema_profile="postgres",
+    )
+
+    assert registry.resolve(accepted).analyzer_pack == "java-spring-data-jpa-v1"
+    cases = (
+        ({"analyzer_pack": "unknown-v1"}, "UNKNOWN_ANALYZER_PACK"),
+        ({"ruleset": "spring-data-rules-v2"}, "RULESET_MISMATCH"),
+        ({"source_kind": "fixture"}, "SOURCE_KIND_MISMATCH"),
+        ({"framework": "python-dataset-api"}, "FRAMEWORK_MISMATCH"),
+        ({"schema_profile": "oracle"}, "PROFILE_MISMATCH"),
+    )
+    for overrides, code in cases:
+        selection = AnalyzerSelection(
+            **{
+                **{
+                    "analyzer_pack": accepted.analyzer_pack,
+                    "ruleset": accepted.ruleset,
+                    "source_kind": accepted.source_kind,
+                    "framework": accepted.framework,
+                    "schema_profile": accepted.schema_profile,
+                },
+                **overrides,
+            }
+        )
+        with pytest.raises(AnalyzerSelectionError) as captured:
+            registry.resolve(selection)
+        assert captured.value.code == code
+        assert len(str(captured.value)) <= 160
+
+
+def test_checkout_event_identity_includes_environment_and_system() -> None:
+    from lineage_api.services.analyzer_registry import deterministic_checkout_event_id
+
+    metadata = {
+        "sourceKind": "git-checkout",
+        "origin": "https://example.com/acme/service",
+        "revision": "1" * 40,
+        "scopeDigest": "sha256:" + "2" * 64,
+        "analyzerPack": "java-spring-data-jpa-v1",
+        "ruleset": "spring-data-rules-v1",
+        "framework": "spring-data-jpa",
+        "schemaProfile": "postgres",
+        "platform": "postgres",
+    }
+
+    staging = deterministic_checkout_event_id(
+        metadata, "service", "staging", "orders"
+    )
+
+    assert staging != deterministic_checkout_event_id(
+        metadata, "service", "production", "orders"
+    )
+    assert staging != deterministic_checkout_event_id(
+        metadata, "service", "staging", "billing"
+    )
+
+
+def test_repository_source_metadata_is_signed_and_changes_command_determinant(tmp_path) -> None:
+    from lineage_api.dependencies import build_services
+
+    services = build_services(_settings(tmp_path))
+    services.reset()
+    source = {
+        "sourceKind": "git-checkout",
+        "origin": "https://example.com/acme/payments-pipeline",
+        "revision": "1" * 40,
+        "scopeDigest": "sha256:" + "2" * 64,
+        "analyzerPack": "java-spring-data-jpa-v1",
+        "ruleset": "spring-data-rules-v1",
+        "framework": "spring-data-jpa",
+        "schemaProfile": "postgres",
+        "platform": "postgres",
+    }
+    first = _delivery("delivery-source-a")
+    first.payload["repositorySource"] = source
+    first = _resign(first)
+    changed = _delivery("delivery-source-b")
+    changed.payload["repositorySource"] = {**source, "scopeDigest": "sha256:" + "3" * 64}
+    changed = _resign(changed)
+
+    accepted = services.orchestration._intake.accept(first)
+    other = services.orchestration._intake.accept(changed)
+
+    assert accepted.envelope["repositorySource"] == source
+    assert accepted.command.determinant_digest != other.command.determinant_digest
+
+
+def test_conflicting_source_determinant_reuse_is_typed_and_rejected(tmp_path) -> None:
+    from lineage_api.dependencies import build_services
+    from lineage_api.infrastructure.sqlite_control import IdempotencyConflictError
+
+    services = build_services(_settings(tmp_path))
+    services.reset()
+    source = {
+        "sourceKind": "git-checkout",
+        "origin": "https://example.com/acme/payments-pipeline",
+        "revision": "1" * 40,
+        "scopeDigest": "sha256:" + "2" * 64,
+        "analyzerPack": "java-spring-data-jpa-v1",
+        "ruleset": "spring-data-rules-v1",
+        "framework": "spring-data-jpa",
+        "schemaProfile": "postgres",
+        "platform": "postgres",
+    }
+    first = _delivery("delivery-source-conflict")
+    first.payload["repositorySource"] = source
+    conflicting = _delivery("delivery-source-conflict")
+    conflicting.payload["repositorySource"] = {
+        **source,
+        "scopeDigest": "sha256:" + "3" * 64,
+    }
+
+    services.orchestration._intake.accept(_resign(first))
+    with pytest.raises(IdempotencyConflictError, match="event identity"):
+        services.orchestration._intake.accept(_resign(conflicting))
+
+
+def _resign(delivery):
+    from lineage_api.services.intake import PushDelivery
+
+    body = json.dumps(delivery.payload, sort_keys=True, separators=(",", ":")).encode()
+    signature = hmac.new(SECRET.encode(), body, hashlib.sha256).hexdigest()
+    return PushDelivery(delivery.payload, f"sha256={signature}")

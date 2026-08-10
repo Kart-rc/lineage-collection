@@ -3,7 +3,6 @@ from __future__ import annotations
 import hashlib
 import json
 from datetime import UTC, datetime
-from pathlib import Path
 from typing import Any, Callable
 
 from lineage_api.application.models import Command, LaneMessage, Lease, StageIdentity, StageResult
@@ -19,14 +18,17 @@ from lineage_api.services.classification import (
     ClassificationEvidence,
     ClassificationService,
 )
+from lineage_api.services.analyzer_registry import (
+    AnalyzerRegistry,
+    AnalyzerSelection,
+    AnalyzerSnapshotProvider,
+)
 from lineage_api.services.consolidation import ConsolidationService, MechanismAssertion
 from lineage_api.services.evidence_store import EvidenceStore
 from lineage_api.services.intake import IntakeService, PushDelivery
 from lineage_api.services.publisher import PublisherService
-from lineage_api.services.resolver import ResolveContext
 from lineage_api.services.review import ReviewService
 from lineage_api.services.runtime import RuntimeLineageService
-from lineage_api.services.sca import ScaAnalyzer
 
 
 def _utc_now() -> str:
@@ -37,10 +39,10 @@ class OrchestrationService:
     def __init__(
         self,
         database: Database,
-        fixture_root: Path,
         intake: IntakeService,
         classification: ClassificationService,
-        analyzer: ScaAnalyzer,
+        analyzer_registry: AnalyzerRegistry,
+        snapshot_provider: AnalyzerSnapshotProvider,
         store: EvidenceStore,
         consolidation: ConsolidationService,
         review: ReviewService,
@@ -54,10 +56,10 @@ class OrchestrationService:
         clock: Callable[[], str] = _utc_now,
     ) -> None:
         self._database = database
-        self._fixture_root = fixture_root
         self._intake = intake
         self._classification = classification
-        self._analyzer = analyzer
+        self._analyzer_registry = analyzer_registry
+        self._snapshot_provider = snapshot_provider
         self._store = store
         self._consolidation = consolidation
         self._review = review
@@ -94,16 +96,10 @@ class OrchestrationService:
         if command is None:
             raise RuntimeError("durable intake returned no command")
         if intake.outcome == "DUPLICATE":
-            return {
-                "outcome": "DUPLICATE",
-                "reason": "DUPLICATE",
-                "eventId": intake.event_id,
-                "run": self._run_for_event(intake.event_id),
-                "proposal": self._proposal_for_event(intake.event_id),
-                "command": self._command_dict(
-                    self._command_store.get(command.command_id) or command
-                ),
-            }
+            completed = self._command_store.get(command.command_id) or command
+            result = self._result_for_completed_command(completed)
+            result.update(outcome="DUPLICATE", reason="DUPLICATE")
+            return result
 
         processed = self.worker_once(classification_evidence=classification_evidence)
         if processed is None:
@@ -261,7 +257,10 @@ class OrchestrationService:
         self._stage(run_id, "QUEUED", {"lane": envelope["lane"]})
 
         evidence = (
-            self._fixture_classification(envelope["repo"])
+            self._analyzer_registry.classification_evidence(
+                self._snapshot_provider.resolve(envelope),
+                AnalyzerSelection.from_envelope(envelope),
+            )
             if classification_evidence is None
             else classification_evidence
         )
@@ -287,39 +286,23 @@ class OrchestrationService:
                 "proposal": None,
             }
 
-        repository_root = self._fixture_root / "repositories" / envelope["repo"]
-        sca = self._analyzer.analyze(
-            repository_root=repository_root,
-            repo=envelope["repo"],
-            digest=envelope["digest"],
-            scope_paths=tuple(envelope["changedFiles"]),
-            resolver_context=ResolveContext(
-                env=envelope["env"],
-                platform="snowflake",
-                system=envelope["system"],
-                repo=envelope["repo"],
-                digest=envelope["digest"],
-                config={},
-                snapshot_id=self._analyzer._resolver.snapshot_id,
-            ),
-            run_id=run_id,
-            correlation_id=correlation_id,
-        )
+        analysis = self._analyze(envelope, run_id)
+        sca = analysis.document
         self._stage(
             run_id,
             "ANALYZING",
-            {"filesAnalyzed": sca.stats["filesAnalyzed"], "edgesEmitted": len(sca.edges)},
+            {"filesAnalyzed": sca["stats"]["filesAnalyzed"], "edgesEmitted": len(sca["edges"])},
         )
         self._stage(
             run_id,
             "RESOLVING",
-            {"datasetsSeen": list(sca.datasets_seen), "residueCount": len(sca.residue)},
+            {"datasetsSeen": list(sca["datasetsSeen"]), "residueCount": len(sca["residue"])},
         )
 
         sca_ref = self._store.put(
-            "sca", f"{envelope['system']}/{run_id}", sca.as_dict(), sca.schema_version
+            "sca", f"{envelope['system']}/{run_id}", sca, str(sca["schemaVersion"])
         )
-        runtime_body = self._runtime_fixture(sca)
+        runtime_body = self._runtime_fixture_document(sca)
         runtime_ref = self._store.put(
             "runtime",
             f"{envelope['system']}/{run_id}",
@@ -336,18 +319,31 @@ class OrchestrationService:
         )
 
         merged = []
-        for sca_edge in sca.edges:
-            static_assertion = MechanismAssertion.from_sca(sca_edge, sca_ref)
+        for sca_edge in sca["edges"]:
+            static_assertion = MechanismAssertion(
+                provenance_id=sca_edge["provenanceId"],
+                from_urns=tuple(sca_edge["from"]),
+                to_urn=sca_edge["to"],
+                edge_type=sca_edge["edgeType"],
+                transform=sca_edge.get("transform"),
+                mechanism="SCA",
+                exact=bool(sca_edge["exact"]),
+                evidence_ref=sca_ref.as_dict(),
+                repo=sca_edge["repo"],
+                run_id=run_id,
+                correlation_id=correlation_id,
+                citation=sca_edge.get("evidence"),
+            )
             runtime_assertion = MechanismAssertion(
-                provenance_id=f"runtime-{sca_edge.provenance_id}",
-                from_urns=(sca_edge.from_urn,),
-                to_urn=sca_edge.to_urn,
-                edge_type=sca_edge.edge_type,
+                provenance_id=f"runtime-{sca_edge['provenanceId']}",
+                from_urns=tuple(sca_edge["from"]),
+                to_urn=sca_edge["to"],
+                edge_type=sca_edge["edgeType"],
                 transform=None,
                 mechanism="RUNTIME",
                 exact=True,
                 evidence_ref=runtime_ref.as_dict(),
-                repo=sca_edge.repo,
+                repo=sca_edge["repo"],
                 run_id=run_id,
                 correlation_id=correlation_id,
                 runtime_scope="ELEMENT",
@@ -426,6 +422,18 @@ class OrchestrationService:
         i6 = workflow.checkpoint(
             "I6", lambda: self._incremental_runtime(envelope, i1["runId"], i5)
         )
+        if i5["analysis"]["status"] != "COMPLETE":
+            self._fail(i1["runId"], "ANALYZING", "INTEGRATION_REQUIRED")
+            return {
+                "outcome": "INTEGRATION_REQUIRED",
+                "reason": "INTEGRATION_REQUIRED",
+                "eventId": envelope["eventId"],
+                "run": self.get_run(i1["runId"]),
+                "proposal": None,
+                "analysis": i5["analysis"],
+                "runtimeStatus": i6["runtime"]["status"],
+                "resume": {"reusedStages": workflow.reused_stage_ids},
+            }
         i7 = workflow.checkpoint(
             "I7", lambda: self._incremental_consolidate(i1["runId"], i5, i6)
         )
@@ -447,6 +455,8 @@ class OrchestrationService:
             "proposal": i9["proposal"],
             "coverageManifest": i8["coverageManifest"],
             "evidenceManifest": i10["evidenceManifest"],
+            "analysis": i5["analysis"],
+            "runtimeStatus": i6["runtime"]["status"],
             "resume": {"reusedStages": workflow.reused_stage_ids},
         }
 
@@ -488,8 +498,9 @@ class OrchestrationService:
 
         b4 = workflow.checkpoint(
             "B4",
-            lambda: BaselineWorkflow.plan_repository(
-                self._fixture_root / "repositories" / envelope["repo"],
+            lambda: self._analyzer_registry.baseline_plan(
+                self._snapshot_provider.resolve(envelope),
+                AnalyzerSelection.from_envelope(envelope),
                 max_fanout=1_000,
             ),
         )
@@ -540,12 +551,13 @@ class OrchestrationService:
         }
 
     def _baseline_pins(self, envelope: dict[str, Any]) -> dict[str, Any]:
+        selection = AnalyzerSelection.from_envelope(envelope)
+        snapshot = self._snapshot_provider.resolve(envelope)
+        analyzer_pins = self._analyzer_registry.pins(snapshot, selection)
         return {
             "artifactDigest": envelope["digest"],
             "environment": envelope["env"],
-            "catalogSnapshotId": self._analyzer._resolver.snapshot_id,
-            "resolverVersion": self._analyzer._resolver.resolver_version,
-            "rulesetVersion": self._analyzer._ruleset_version,
+            **analyzer_pins,
             "classificationPolicyVersion": "1.0.0",
         }
 
@@ -743,7 +755,10 @@ class OrchestrationService:
         classification_evidence: list[ClassificationEvidence] | None,
     ) -> dict[str, Any]:
         evidence = (
-            self._fixture_classification(envelope["repo"])
+            self._analyzer_registry.classification_evidence(
+                self._snapshot_provider.resolve(envelope),
+                AnalyzerSelection.from_envelope(envelope),
+            )
             if classification_evidence is None
             else classification_evidence
         )
@@ -763,37 +778,42 @@ class OrchestrationService:
         envelope: dict[str, Any],
         run_id: str,
     ) -> dict[str, Any]:
-        sca = self._analyzer.analyze(
-            repository_root=self._fixture_root / "repositories" / envelope["repo"],
-            repo=envelope["repo"],
-            digest=envelope["digest"],
-            scope_paths=tuple(envelope["changedFiles"]),
-            resolver_context=ResolveContext(
-                env=envelope["env"],
-                platform="snowflake",
-                system=envelope["system"],
-                repo=envelope["repo"],
-                digest=envelope["digest"],
-                config={},
-                snapshot_id=self._analyzer._resolver.snapshot_id,
-            ),
-            run_id=run_id,
-            correlation_id=envelope["correlationId"],
-        )
+        analysis = self._analyze(envelope, run_id)
+        sca = analysis.document
         sca_ref = self._store.put(
-            "sca", f"{envelope['system']}/{run_id}", sca.as_dict(), sca.schema_version
+            "sca", f"{envelope['system']}/{run_id}", sca, str(sca["schemaVersion"])
         )
         self._stage(
             run_id,
             "ANALYZING",
-            {"filesAnalyzed": sca.stats["filesAnalyzed"], "edgesEmitted": len(sca.edges)},
+            {"filesAnalyzed": sca["stats"]["filesAnalyzed"], "edgesEmitted": len(sca["edges"])},
         )
         self._stage(
             run_id,
             "RESOLVING",
-            {"datasetsSeen": list(sca.datasets_seen), "residueCount": len(sca.residue)},
+            {"datasetsSeen": list(sca["datasetsSeen"]), "residueCount": len(sca["residue"])},
         )
-        return {"sca": sca.as_dict(), "scaRef": sca_ref.as_dict()}
+        return {
+            "sca": sca,
+            "scaRef": sca_ref.as_dict(),
+            "analysis": {
+                "status": analysis.status,
+                "statusReasons": list(analysis.status_reasons),
+                "edgeCount": analysis.edge_count,
+                "readCount": analysis.read_count,
+                "writeCount": analysis.write_count,
+                "residueCount": analysis.residue_count,
+                "unresolvedCount": analysis.unresolved_count,
+            },
+        }
+
+    def _analyze(self, envelope: dict[str, Any], run_id: str):
+        return self._analyzer_registry.analyze(
+            self._snapshot_provider.resolve(envelope),
+            AnalyzerSelection.from_envelope(envelope),
+            run_id,
+            str(envelope["correlationId"]),
+        )
 
     def _incremental_runtime(
         self,
@@ -1114,10 +1134,20 @@ class OrchestrationService:
             prefix = "B" if command.workflow_kind == "BASELINE" else "I"
             coverage = self._incremental_checkpoint(command, coverage_stage)
             evidence = self._incremental_checkpoint(command, evidence_stage)
+            analysis = self._incremental_checkpoint(
+                command, "B5" if command.workflow_kind == "BASELINE" else "I5"
+            )
             if coverage is not None:
                 result["coverageManifest"] = coverage["coverageManifest"]
             if evidence is not None:
                 result["evidenceManifest"] = evidence["evidenceManifest"]
+                result["runtimeStatus"] = evidence["evidenceManifest"]["runtime"]["status"]
+            if analysis is not None:
+                result["analysis"] = analysis["analysis"]
+            if command.workflow_kind == "INCREMENTAL" and evidence is None:
+                runtime = self._incremental_checkpoint(command, "I6")
+                if runtime is not None:
+                    result["runtimeStatus"] = runtime["runtime"]["status"]
             result["resume"] = {
                 "reusedStages": [f"{prefix}{index}" for index in range(1, 11)]
             }
@@ -1609,37 +1639,22 @@ class OrchestrationService:
             ).fetchone()
         return json.loads(row["payload_json"]) if row is not None else None
 
-    def _fixture_classification(self, repo: str) -> list[ClassificationEvidence]:
-        path = self._fixture_root / "repositories" / repo / "repository-evidence.json"
-        if not path.exists():
-            return []
-        body = json.loads(path.read_text(encoding="utf-8"))
-        return [
-            ClassificationEvidence(
-                level=int(item["level"]),
-                source=item["source"],
-                repository_class=item["class"],
-                ref=item["ref"],
-            )
-            for item in body["evidence"]
-        ]
-
     @staticmethod
-    def _runtime_fixture(sca) -> dict[str, Any]:
+    def _runtime_fixture_document(sca: dict[str, Any]) -> dict[str, Any]:
         return {
             "schemaVersion": "1.0.0",
-            "sessionId": f"runtime-{sca.run_id}",
+            "sessionId": f"runtime-{sca['runId']}",
             "complete": True,
             "scope": "ELEMENT",
-            "correlationId": sca.correlation_id,
+            "correlationId": sca["correlationId"],
             "assertions": [
                 {
-                    "provenanceId": f"runtime-{edge.provenance_id}",
-                    "from": [edge.from_urn],
-                    "to": edge.to_urn,
-                    "edgeType": edge.edge_type,
+                    "provenanceId": f"runtime-{edge['provenanceId']}",
+                    "from": edge["from"],
+                    "to": edge["to"],
+                    "edgeType": edge["edgeType"],
                 }
-                for edge in sca.edges
+                for edge in sca["edges"]
             ],
         }
 

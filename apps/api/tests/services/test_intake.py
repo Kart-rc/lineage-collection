@@ -219,3 +219,27 @@ def test_malformed_delivery_is_quarantined(
     with database.connection() as connection:
         assert connection.execute("SELECT COUNT(*) FROM commands").fetchone()[0] == 0
         assert connection.execute("SELECT COUNT(*) FROM outbox_events").fetchone()[0] == 0
+
+
+def test_repository_source_descriptor_is_closed_and_secret_safe(intake) -> None:
+    source = {
+        "sourceKind": "git-checkout",
+        "origin": "https://example.com/acme/payments-pipeline",
+        "revision": "1" * 40,
+        "scopeDigest": "sha256:" + "2" * 64,
+        "analyzerPack": "java-spring-data-jpa-v1",
+        "ruleset": "spring-data-rules-v1",
+        "framework": "spring-data-jpa",
+        "schemaProfile": "postgres",
+        "platform": "postgres",
+        "accessToken": "must-not-be-persisted",
+    }
+    payload = _payload(repositorySource=source)
+
+    result = intake.accept(_delivery(payload))
+
+    assert result.outcome == "QUARANTINED"
+    assert result.reason == "INVALID_REPOSITORY_SOURCE"
+    quarantine = intake.quarantines()[0]
+    assert "accessToken" not in quarantine["raw_json"]
+    assert "must-not-be-persisted" not in quarantine["raw_json"]
