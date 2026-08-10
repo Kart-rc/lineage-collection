@@ -625,13 +625,14 @@ def _read_regular_file(
     descriptors: list[int] = []
     flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) | os.O_NOFOLLOW
     directory_flags = flags | os.O_DIRECTORY
+    file_flags = flags | os.O_NONBLOCK
     try:
         current = os.open(root, directory_flags)
         descriptors.append(current)
         for directory in parts[:-1]:
             current = os.open(directory, directory_flags, dir_fd=current)
             descriptors.append(current)
-        file_descriptor = os.open(parts[-1], flags, dir_fd=current)
+        file_descriptor = os.open(parts[-1], file_flags, dir_fd=current)
         descriptors.append(file_descriptor)
         before = os.fstat(file_descriptor)
         if not stat.S_ISREG(before.st_mode):

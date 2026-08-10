@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import inspect
+import multiprocessing
 import os
 import subprocess
 import sys
@@ -11,6 +12,7 @@ import pytest
 
 from lineage_api.application.repository_sources import (
     RepositoryCheckoutDescriptor,
+    RepositorySnapshot,
     RepositorySourceError,
     RepositorySourceLimits,
 )
@@ -81,6 +83,16 @@ def _source(**overrides: int) -> LocalGitRepositorySource:
     }
     values.update(overrides)
     return LocalGitRepositorySource(RepositorySourceLimits(**values))
+
+
+def _read_snapshot_file_in_child(snapshot: RepositorySnapshot, relative_path: str) -> None:
+    try:
+        snapshot.read_bytes(relative_path)
+    except RepositorySourceError as error:
+        if "regular file" in str(error):
+            return
+        raise SystemExit(2) from error
+    raise SystemExit(3)
 
 
 def test_snapshot_pins_descriptor_and_sorted_tracked_scope_without_running_code(
@@ -426,6 +438,7 @@ def test_descriptor_rejects_credentials_and_noncanonical_or_inexact_values(
         ("origin", "https://user:secret@example.com/acme/demo"),
         ("origin", "http://example.com/acme/demo"),
         ("origin", "https://EXAMPLE.com/acme/demo.git"),
+        ("origin", "https://example.com:0/acme/demo"),
         ("revision", "A" * 40),
         ("revision", "a" * 39),
         ("checkout_root", Path("relative/checkout")),
@@ -490,6 +503,26 @@ def test_snapshot_read_revalidates_content_after_snapshot(tmp_path: Path) -> Non
 
     with pytest.raises(RepositorySourceError, match="changed after snapshot"):
         snapshot.read_bytes("README.md")
+
+
+def test_snapshot_read_rejects_fifo_replacement_without_blocking(tmp_path: Path) -> None:
+    root, revision = _repository(tmp_path)
+    snapshot = _source().snapshot(_descriptor(root, revision))
+    (root / "README.md").unlink()
+    os.mkfifo(root / "README.md")
+    process = multiprocessing.get_context("fork").Process(
+        target=_read_snapshot_file_in_child,
+        args=(snapshot, "README.md"),
+    )
+
+    process.start()
+    process.join(timeout=1.0)
+    if process.is_alive():
+        process.terminate()
+        process.join(timeout=1.0)
+        pytest.fail("reading a tracked path replaced by a FIFO blocked")
+
+    assert process.exitcode == 0
 
 
 def test_snapshot_read_does_not_follow_a_replaced_parent_directory(tmp_path: Path) -> None:

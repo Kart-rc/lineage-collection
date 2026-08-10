@@ -87,6 +87,7 @@ def test_repository_checkout_contract_is_closed_and_exact() -> None:
     [
         ({"origin": "https://github.com:443/spring-projects/spring-petclinic"}, "origin"),
         ({"origin": "https://github.com:99999/spring-projects/spring-petclinic"}, "origin"),
+        ({"origin": "https://github.com:0/spring-projects/spring-petclinic"}, "origin"),
         ({"origin": "https://github.com//spring-projects/spring-petclinic"}, "origin"),
         ({"origin": "https://github.com/./spring-projects/spring-petclinic"}, "origin"),
         ({"repository": "different-repository"}, "repository"),

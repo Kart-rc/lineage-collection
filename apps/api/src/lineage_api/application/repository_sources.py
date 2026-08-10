@@ -44,6 +44,7 @@ def canonicalize_https_origin(origin: str) -> str:
     if (
         parsed.scheme.lower() != "https"
         or not parsed.hostname
+        or port == 0
         or parsed.query
         or parsed.fragment
         or "\\" in origin
