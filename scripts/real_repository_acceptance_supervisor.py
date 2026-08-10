@@ -34,6 +34,15 @@ _PASS_COUNTS = {
     "unresolved": 0,
     "writes": 5,
 }
+_FAILURE_KEYS = frozenset({"evidenceClass", "outcome", "reasonCode"})
+_REQUIRED_FAILURE_REASONS = frozenset(
+    {
+        "LINEAGE_REAL_REPOSITORY_CHECKOUT_REQUIRED",
+        "SOURCE_VALIDATION_FAILED",
+        "INVALID_ACCEPTANCE_OUTPUT",
+    }
+)
+_FAILURE_REASONS = frozenset({"PIPELINE_OR_ORACLE_FAILED"})
 
 
 class SupervisorError(RuntimeError):
@@ -73,11 +82,13 @@ def _child_environment(source: Mapping[str, str]) -> dict[str, str]:
 
 
 def _terminate_process_group(process: subprocess.Popen[bytes]) -> None:
-    if process.poll() is not None:
-        return
     try:
         os.killpg(process.pid, signal.SIGTERM)
     except ProcessLookupError:
+        try:
+            process.wait(timeout=0)
+        except subprocess.TimeoutExpired:
+            pass
         return
     try:
         process.wait(timeout=1.0)
@@ -226,26 +237,29 @@ def _validate_pass_document(content: bytes) -> dict[str, object]:
     return document
 
 
-def _child_failure_reason(content: bytes) -> str:
+def _validate_child_failure_document(content: bytes) -> dict[str, object]:
     try:
         document = _one_json_object(content)
-    except SupervisorError:
-        return "RUNNER_ENVIRONMENT_UNAVAILABLE"
-    if (
-        set(document) == {"evidenceClass", "outcome", "reasonCode"}
-        and document.get("evidenceClass")
-        in {"LOCAL_REAL_REPOSITORY_REQUIRED", "LOCAL_REAL_REPOSITORY_FAIL"}
-        and document.get("outcome") in {"INTEGRATION_REQUIRED", "FAIL"}
-        and document.get("reasonCode")
-        in {
-            "LINEAGE_REAL_REPOSITORY_CHECKOUT_REQUIRED",
-            "SOURCE_VALIDATION_FAILED",
-            "PIPELINE_OR_ORACLE_FAILED",
-            "INVALID_ACCEPTANCE_OUTPUT",
-        }
-    ):
-        return str(document["reasonCode"])
-    return "RUNNER_ENVIRONMENT_UNAVAILABLE"
+    except SupervisorError as error:
+        raise SupervisorError("INVALID_CHILD_FAILURE") from error
+    evidence_class = document.get("evidenceClass")
+    outcome = document.get("outcome")
+    reason = document.get("reasonCode")
+    required_failure = (
+        evidence_class == "LOCAL_REAL_REPOSITORY_REQUIRED"
+        and outcome == "INTEGRATION_REQUIRED"
+        and isinstance(reason, str)
+        and reason in _REQUIRED_FAILURE_REASONS
+    )
+    actual_failure = (
+        evidence_class == "LOCAL_REAL_REPOSITORY_FAIL"
+        and outcome == "FAIL"
+        and isinstance(reason, str)
+        and reason in _FAILURE_REASONS
+    )
+    if set(document) != _FAILURE_KEYS or not (required_failure or actual_failure):
+        raise SupervisorError("INVALID_CHILD_FAILURE")
+    return document
 
 
 def _validate_interpreter(root: Path) -> None:
@@ -274,17 +288,23 @@ def _validate_interpreter(root: Path) -> None:
         raise SupervisorError("RUNNER_ENVIRONMENT_UNAVAILABLE")
 
 
-def _emit_failure(code: str) -> None:
+def _emit_document(document: Mapping[str, object]) -> None:
     print(
         json.dumps(
-            {
-                "evidenceClass": "LOCAL_REAL_REPOSITORY_REQUIRED",
-                "outcome": "INTEGRATION_REQUIRED",
-                "reasonCode": code,
-            },
+            document,
             sort_keys=True,
             separators=(",", ":"),
         )
+    )
+
+
+def _emit_failure(code: str) -> None:
+    _emit_document(
+        {
+            "evidenceClass": "LOCAL_REAL_REPOSITORY_REQUIRED",
+            "outcome": "INTEGRATION_REQUIRED",
+            "reasonCode": code,
+        }
     )
 
 
@@ -309,7 +329,11 @@ def main(argv: Sequence[str] | None = None) -> int:
             cwd=root,
         )
         if return_code != 0:
-            _emit_failure(_child_failure_reason(stdout))
+            try:
+                child_failure = _validate_child_failure_document(stdout)
+            except SupervisorError as error:
+                raise SupervisorError("RUNNER_ENVIRONMENT_UNAVAILABLE") from error
+            _emit_document(child_failure)
             return 2
         document = _validate_pass_document(stdout)
         print(json.dumps(document, sort_keys=True, separators=(",", ":")))

@@ -1478,6 +1478,97 @@ def test_supervisor_enforces_global_timeout_and_kills_process_group(
     assert not marker.exists()
 
 
+def test_supervisor_kills_grandchild_after_group_leader_exits(tmp_path: Path) -> None:
+    supervisor = _load_supervisor()
+    marker = tmp_path / "orphaned-grandchild-survived"
+    program = (
+        "import os,pathlib,time\n"
+        "if os.fork() != 0:\n"
+        " os._exit(0)\n"
+        "time.sleep(0.5)\n"
+        f"pathlib.Path({str(marker)!r}).write_text('survived')\n"
+    )
+
+    with pytest.raises(supervisor.SupervisorError, match="TIMEOUT"):
+        supervisor._run_bounded_child(
+            [sys.executable, "-I", "-c", program],
+            {"LANG": "C", "LC_ALL": "C", "PATH": "/usr/bin:/bin"},
+            timeout_seconds=0.1,
+            stdout_limit=1_024,
+            stderr_limit=1_024,
+        )
+    time.sleep(0.6)
+    assert not marker.exists()
+
+
+@pytest.mark.parametrize(
+    "child_document",
+    [
+        {
+            "evidenceClass": "LOCAL_REAL_REPOSITORY_REQUIRED",
+            "outcome": "INTEGRATION_REQUIRED",
+            "reasonCode": "SOURCE_VALIDATION_FAILED",
+        },
+        {
+            "evidenceClass": "LOCAL_REAL_REPOSITORY_FAIL",
+            "outcome": "FAIL",
+            "reasonCode": "PIPELINE_OR_ORACLE_FAILED",
+        },
+    ],
+)
+def test_supervisor_main_preserves_validated_child_failure_classification(
+    child_document: dict[str, object],
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    supervisor = _load_supervisor()
+    content = _canonical_bytes(child_document)
+    monkeypatch.setattr(supervisor, "_validate_interpreter", lambda _root: None)
+    monkeypatch.setattr(supervisor, "_child_environment", lambda _source: {})
+    monkeypatch.setattr(
+        supervisor,
+        "_run_bounded_child",
+        lambda *_args, **_kwargs: (2, content, b""),
+    )
+
+    assert supervisor.main([str(ROOT)]) == 2
+    assert json.loads(capsys.readouterr().out) == child_document
+
+
+@pytest.mark.parametrize(
+    "child_document",
+    [
+        {
+            "evidenceClass": "LOCAL_REAL_REPOSITORY_REQUIRED",
+            "outcome": "FAIL",
+            "reasonCode": "PIPELINE_OR_ORACLE_FAILED",
+        },
+        {
+            "evidenceClass": "LOCAL_REAL_REPOSITORY_FAIL",
+            "outcome": "INTEGRATION_REQUIRED",
+            "reasonCode": "SOURCE_VALIDATION_FAILED",
+        },
+        {
+            "evidenceClass": "LOCAL_REAL_REPOSITORY_FAIL",
+            "outcome": "FAIL",
+            "reasonCode": "SOURCE_VALIDATION_FAILED",
+            "unexpected": True,
+        },
+        {
+            "evidenceClass": "LOCAL_REAL_REPOSITORY_FAIL",
+            "outcome": "FAIL",
+            "reasonCode": ["PIPELINE_OR_ORACLE_FAILED"],
+        },
+    ],
+)
+def test_supervisor_rejects_invalid_child_failure_schema(
+    child_document: dict[str, object],
+) -> None:
+    supervisor = _load_supervisor()
+    with pytest.raises(supervisor.SupervisorError, match="INVALID_CHILD_FAILURE"):
+        supervisor._validate_child_failure_document(_canonical_bytes(child_document))
+
+
 def test_supervisor_rejects_partial_or_multiple_pass_json() -> None:
     supervisor = _load_supervisor()
     with pytest.raises(supervisor.SupervisorError, match="INVALID_PASS"):
