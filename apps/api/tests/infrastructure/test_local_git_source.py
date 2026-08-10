@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import inspect
 import os
 import subprocess
+import sys
 from dataclasses import FrozenInstanceError
 from pathlib import Path
 
@@ -12,6 +14,7 @@ from lineage_api.application.repository_sources import (
     RepositorySourceError,
     RepositorySourceLimits,
 )
+from lineage_api.infrastructure import local_git_source
 from lineage_api.infrastructure.local_git_source import LocalGitRepositorySource
 
 
@@ -221,42 +224,146 @@ def test_snapshot_never_resolves_git_from_a_checkout_controlled_path(
     assert not marker.exists()
 
 
-def test_git_executable_injection_requires_an_absolute_usable_path() -> None:
-    with pytest.raises(ValueError, match="absolute executable"):
-        LocalGitRepositorySource(
-            RepositorySourceLimits(
-                max_files=1,
-                max_file_bytes=1,
-                max_total_bytes=1,
-            ),
-            git_executable=Path("git"),
-        )
+def test_source_does_not_expose_custom_git_executable_injection() -> None:
+    assert "git_executable" not in inspect.signature(LocalGitRepositorySource).parameters
 
 
-def test_snapshot_rejects_an_injected_git_executable_inside_the_checkout(
+def test_case_alias_cannot_execute_an_injected_checkout_git(
     tmp_path: Path,
 ) -> None:
     root, revision = _repository(tmp_path)
-    marker = tmp_path / "injected-git-ran"
+    marker = tmp_path / "case-aliased-git-ran"
     fake_git = root / "git"
     fake_git.write_text(
         f"#!/bin/sh\ntouch '{marker}'\nexit 99\n",
         encoding="utf-8",
     )
     fake_git.chmod(0o755)
-    source = LocalGitRepositorySource(
-        RepositorySourceLimits(
-            max_files=100,
-            max_file_bytes=1024,
-            max_total_bytes=4096,
-        ),
-        git_executable=fake_git,
-    )
+    root_text = str(root)
+    if not root_text.startswith("/private/"):
+        pytest.skip("case-insensitive /PRIVATE alias is specific to the APFS test host")
+    aliased_git = Path("/PRIVATE/") / fake_git.relative_to("/private")
+    if not aliased_git.exists():
+        pytest.skip("the filesystem does not expose the reproduced case alias")
 
-    with pytest.raises(RepositorySourceError, match="outside the checkout"):
-        source.snapshot(_descriptor(root, revision))
+    try:
+        source = LocalGitRepositorySource(
+            RepositorySourceLimits(
+                max_files=100,
+                max_file_bytes=1024,
+                max_total_bytes=4096,
+            ),
+            git_executable=aliased_git,
+        )
+    except (TypeError, ValueError):
+        pass
+    else:
+        with pytest.raises(RepositorySourceError):
+            source.snapshot(_descriptor(root, revision))
 
     assert not marker.exists()
+
+
+@pytest.mark.parametrize(
+    ("stream", "message"),
+    [("stdout", "stdout byte limit"), ("stderr", "stderr byte limit")],
+)
+def test_process_runner_terminates_oversized_git_output(
+    stream: str,
+    message: str,
+) -> None:
+    runner_type = getattr(local_git_source, "_BoundedProcessRunner", None)
+    assert runner_type is not None, "bounded binary process runner is required"
+    descriptor = 1 if stream == "stdout" else 2
+    runner = runner_type()
+
+    with pytest.raises(RepositorySourceError, match=message):
+        runner.run(
+            [sys.executable, "-c", f"import os; os.write({descriptor}, b'x' * 4096)"],
+            env={"PATH": os.defpath},
+            stdout_limit=128,
+            stderr_limit=128,
+            timeout_seconds=2,
+        )
+
+
+def test_process_runner_terminates_a_timed_out_git_process() -> None:
+    runner_type = getattr(local_git_source, "_BoundedProcessRunner", None)
+    assert runner_type is not None, "bounded binary process runner is required"
+
+    with pytest.raises(RepositorySourceError, match="timed out"):
+        runner_type().run(
+            [sys.executable, "-c", "import time; time.sleep(5)"],
+            env={"PATH": os.defpath},
+            stdout_limit=128,
+            stderr_limit=128,
+            timeout_seconds=0.05,
+        )
+
+
+def test_snapshot_rejects_a_tracked_path_above_the_parser_bound(tmp_path: Path) -> None:
+    relative_path = "/".join(("a" * 200, "b" * 200, "c" * 200, "value.txt"))
+    root, revision = _repository(tmp_path, files={relative_path: b"value"})
+
+    with pytest.raises(RepositorySourceError, match="tracked path byte limit"):
+        _source().snapshot(_descriptor(root, revision))
+
+
+def test_git_child_environment_is_a_minimal_allowlist(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    for name in (
+        "AWS_SECRET_ACCESS_KEY",
+        "DYLD_INSERT_LIBRARIES",
+        "LD_PRELOAD",
+        "SSH_AUTH_SOCK",
+        "UNRELATED_CALLER_VALUE",
+    ):
+        monkeypatch.setenv(name, "must-not-cross-boundary")
+
+    environment = local_git_source._git_environment()
+
+    assert set(environment) == {
+        "GIT_ATTR_NOSYSTEM",
+        "GIT_CONFIG_GLOBAL",
+        "GIT_CONFIG_NOSYSTEM",
+        "GIT_CONFIG_SYSTEM",
+        "GIT_NO_REPLACE_OBJECTS",
+        "GIT_OPTIONAL_LOCKS",
+        "GIT_PAGER",
+        "GIT_TERMINAL_PROMPT",
+        "HOME",
+        "LANG",
+        "LC_ALL",
+        "PATH",
+        "XDG_CONFIG_HOME",
+    }
+    assert environment["PATH"] == os.defpath
+    assert environment["HOME"] == "/var/empty"
+    assert environment["XDG_CONFIG_HOME"] == "/var/empty"
+
+
+def test_snapshot_requires_owner_execute_bit_for_git_executable_mode(tmp_path: Path) -> None:
+    root, _ = _repository(tmp_path, files={"tool": b"trusted"})
+    (root / "tool").chmod(0o755)
+    _git(root, "add", "tool")
+    _git(root, "commit", "--quiet", "-m", "mark tool executable")
+    revision = _git(root, "rev-parse", "HEAD")
+    (root / "tool").chmod(0o641)
+
+    with pytest.raises(RepositorySourceError, match="tracked content is not clean"):
+        _source().snapshot(_descriptor(root, revision))
+
+
+@pytest.mark.parametrize("missing_flag", ["O_NOFOLLOW", "O_DIRECTORY"])
+def test_source_fails_closed_without_required_posix_open_flags(
+    monkeypatch: pytest.MonkeyPatch,
+    missing_flag: str,
+) -> None:
+    monkeypatch.delattr(os, missing_flag)
+
+    with pytest.raises(RuntimeError, match="POSIX Darwin/Linux"):
+        _source()
 
 
 def test_snapshot_rejects_credential_bearing_remote_without_leaking_credentials(
@@ -276,6 +383,27 @@ def test_snapshot_rejects_credential_bearing_remote_without_leaking_credentials(
 
     assert "super-secret" not in str(captured.value)
     assert "lineage-user" not in str(captured.value)
+
+
+def test_snapshot_rejects_multiple_raw_origin_urls(tmp_path: Path) -> None:
+    root, revision = _repository(tmp_path)
+    _git(root, "config", "--add", "remote.origin.url", "https://mirror.example/acme/demo")
+
+    with pytest.raises(RepositorySourceError, match="exactly one raw origin URL"):
+        _source().snapshot(_descriptor(root, revision))
+
+
+def test_snapshot_rejects_local_instead_of_origin_rewrite(tmp_path: Path) -> None:
+    root, revision = _repository(tmp_path)
+    _git(
+        root,
+        "config",
+        "url.https://mirror.example/.insteadOf",
+        "https://example.com/",
+    )
+
+    with pytest.raises(RepositorySourceError, match="effective origin"):
+        _source().snapshot(_descriptor(root, revision))
 
 
 def test_descriptor_rejects_credentials_and_noncanonical_or_inexact_values(

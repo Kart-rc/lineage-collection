@@ -82,6 +82,38 @@ def test_repository_checkout_contract_is_closed_and_exact() -> None:
     }
 
 
+@pytest.mark.parametrize(
+    ("changes", "expected_path"),
+    [
+        ({"origin": "https://github.com:443/spring-projects/spring-petclinic"}, "origin"),
+        ({"origin": "https://github.com:99999/spring-projects/spring-petclinic"}, "origin"),
+        ({"origin": "https://github.com//spring-projects/spring-petclinic"}, "origin"),
+        ({"origin": "https://github.com/./spring-projects/spring-petclinic"}, "origin"),
+        ({"repository": "different-repository"}, "repository"),
+    ],
+)
+def test_repository_checkout_contract_matches_runtime_identity_validation(
+    changes: dict[str, str], expected_path: str
+) -> None:
+    registry = _contract_registry_type()(CONTRACTS_DIR)
+    checkout = {
+        "schemaVersion": "1.0.0",
+        "origin": "https://github.com/spring-projects/spring-petclinic",
+        "repository": "spring-petclinic",
+        "revision": "88e37c15cf6fc8490b01bc3e8e2c800cec1ac272",
+        "checkoutRoot": "/tmp/spring-petclinic",
+        "environment": "test",
+        "platform": "local",
+        "system": "petclinic",
+        "analyzerPack": "java-spring-data-jpa-v1",
+        "ruleset": "java-spring-v1",
+    }
+
+    assert expected_path in {
+        error.path for error in registry.validate("repository-checkout", {**checkout, **changes})
+    }
+
+
 def test_runtime_contracts_are_metadata_only_strict_and_completeness_explicit() -> None:
     registry = _contract_registry_type()(CONTRACTS_DIR)
     observation = {

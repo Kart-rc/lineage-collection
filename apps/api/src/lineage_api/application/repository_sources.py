@@ -18,6 +18,12 @@ class RepositorySourceError(RuntimeError):
     """A checkout failed a source-integrity or resource-bound check."""
 
 
+class RepositoryIdentityError(ValueError):
+    def __init__(self, field: str, message: str) -> None:
+        super().__init__(message)
+        self.field = field
+
+
 def canonicalize_https_origin(origin: str) -> str:
     """Return the credential-free canonical identity for an HTTPS Git origin."""
 
@@ -60,6 +66,24 @@ def canonicalize_https_origin(origin: str) -> str:
     return urlunsplit(("https", netloc, path, "", ""))
 
 
+def validate_repository_identity(origin: str, repository: str) -> str:
+    try:
+        canonical_origin = canonicalize_https_origin(origin)
+    except ValueError as error:
+        raise RepositoryIdentityError("origin", str(error)) from None
+    if origin != canonical_origin:
+        raise RepositoryIdentityError(
+            "origin", "origin must be a canonical HTTPS repository URL"
+        )
+    if _REPOSITORY_NAME.fullmatch(repository) is None:
+        raise RepositoryIdentityError("repository", "repository must be a safe repository name")
+    if canonical_origin.rsplit("/", 1)[-1] != repository:
+        raise RepositoryIdentityError(
+            "repository", "repository must match the canonical origin"
+        )
+    return canonical_origin
+
+
 def validate_relative_tracked_path(relative_path: str) -> str:
     if not isinstance(relative_path, str) or not relative_path or "\\" in relative_path:
         raise RepositorySourceError("source path must be a relative tracked path")
@@ -86,16 +110,7 @@ class RepositoryCheckoutDescriptor:
     schema_version: str = "1.0.0"
 
     def __post_init__(self) -> None:
-        try:
-            canonical_origin = canonicalize_https_origin(self.origin)
-        except ValueError as error:
-            raise ValueError(str(error)) from None
-        if self.origin != canonical_origin:
-            raise ValueError("origin must be a canonical HTTPS repository URL")
-        if _REPOSITORY_NAME.fullmatch(self.repository) is None:
-            raise ValueError("repository must be a safe repository name")
-        if canonical_origin.rsplit("/", 1)[-1] != self.repository:
-            raise ValueError("repository must match the canonical origin")
+        validate_repository_identity(self.origin, self.repository)
         if _EXACT_REVISION.fullmatch(self.revision) is None:
             raise ValueError("revision must be an exact lowercase 40- or 64-hex digest")
         if self.schema_version != "1.0.0":

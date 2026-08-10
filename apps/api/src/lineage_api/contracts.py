@@ -10,6 +10,11 @@ from typing import Any
 
 from jsonschema import Draft202012Validator, FormatChecker
 
+from lineage_api.application.repository_sources import (
+    RepositoryIdentityError,
+    validate_repository_identity,
+)
+
 
 _RFC3339 = re.compile(
     r"^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}"
@@ -69,7 +74,21 @@ class ContractRegistry:
             errors.extend(self._validate_coverage_manifest(payload))
         if name == "runtime-window-manifest" and isinstance(payload, dict):
             errors.extend(self._validate_runtime_window_manifest(payload))
+        if name == "repository-checkout" and isinstance(payload, dict):
+            errors.extend(self._validate_repository_checkout(payload))
         return errors
+
+    @staticmethod
+    def _validate_repository_checkout(payload: dict[str, Any]) -> list[ContractError]:
+        origin = payload.get("origin")
+        repository = payload.get("repository")
+        if not isinstance(origin, str) or not isinstance(repository, str):
+            return []
+        try:
+            validate_repository_identity(origin, repository)
+        except RepositoryIdentityError as error:
+            return [ContractError(path=error.field, message=str(error))]
+        return []
 
     @staticmethod
     def _validate_coverage_manifest(payload: dict[str, Any]) -> list[ContractError]:
