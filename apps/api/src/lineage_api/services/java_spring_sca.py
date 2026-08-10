@@ -2135,9 +2135,9 @@ def _lexical_binder_ranges(
             "type_pattern",
         }:
             name = node.child_by_field_name("name") or _pattern_name_node(node)
-            scope = _pattern_binding_scope(node, body)
-            if scope is not None:
-                add(name, name.end_byte if name is not None else 0, scope.end_byte)
+            binding_range = _pattern_binding_range(node, body)
+            if binding_range is not None:
+                add(name, *binding_range)
 
     indexed: dict[str, tuple[tuple[int, ...], tuple[int, ...]]] = {}
     for name, found_ranges in ranges.items():
@@ -2210,17 +2210,56 @@ def _pattern_name_node(pattern: Node) -> Node | None:
     )
 
 
-def _pattern_binding_scope(pattern: Node, boundary: Node) -> Node | None:
+def _pattern_binding_range(
+    pattern: Node,
+    boundary: Node,
+) -> tuple[int, int] | None:
+    name = pattern.child_by_field_name("name") or _pattern_name_node(pattern)
+    pattern_start = name.end_byte if name is not None else pattern.end_byte
     current = pattern.parent
     while current is not None and current.id != boundary.id:
         if current.type == "switch_rule":
-            return current
+            return pattern_start, current.end_byte
         if current.type == "if_statement":
-            return current.child_by_field_name("consequence") or current
+            consequence = current.child_by_field_name("consequence")
+            if not _pattern_is_negated(pattern, current):
+                scope = consequence or current
+                return scope.start_byte, scope.end_byte
+            alternative = current.child_by_field_name("alternative")
+            if alternative is not None:
+                return alternative.start_byte, alternative.end_byte
+            if consequence is not None and _is_terminating_statement(consequence):
+                block = _ancestor_of_type(current, {"block", "constructor_body"}, boundary)
+                scope_end = block.end_byte if block is not None else boundary.end_byte
+                return current.end_byte, scope_end
+            block = _ancestor_of_type(current, {"block", "constructor_body"}, boundary)
+            scope_end = block.end_byte if block is not None else boundary.end_byte
+            return pattern_start, scope_end
         if current.type in {"for_statement", "while_statement"}:
-            return current.child_by_field_name("body") or current
+            scope = current.child_by_field_name("body") or current
+            return scope.start_byte, scope.end_byte
         current = current.parent
     return None
+
+
+def _pattern_is_negated(pattern: Node, statement: Node) -> bool:
+    negated = False
+    current = pattern.parent
+    while current is not None and current.id != statement.id:
+        if current.type == "unary_expression":
+            operator = current.child_by_field_name("operator")
+            if operator is not None and operator.type == "!":
+                negated = not negated
+        current = current.parent
+    return negated
+
+
+def _is_terminating_statement(statement: Node) -> bool:
+    if statement.type in {"return_statement", "throw_statement"}:
+        return True
+    if statement.type != "block" or not statement.named_children:
+        return False
+    return _is_terminating_statement(statement.named_children[-1])
 
 
 def _is_lexically_shadowed(

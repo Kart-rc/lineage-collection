@@ -775,6 +775,79 @@ class OwnerService {
     ) == 2
 
 
+def test_negated_instanceof_guard_binds_receiver_after_terminating_branch() -> None:
+    repository = '''package example;
+import org.springframework.data.jpa.repository.JpaRepository;
+class Owner {}
+interface OwnerRepository extends JpaRepository<Owner, Integer> {}
+'''
+    service = '''package example;
+class OwnerService {
+  private final OwnerRepository owners;
+  OwnerService(OwnerRepository owners) { this.owners = owners; }
+  void guarded(Object candidate) {
+    if (!(candidate instanceof OwnerRepository owners)) return;
+    owners.save(null);
+  }
+}
+'''
+    result = JavaSpringScaAnalyzer().analyze(
+        (
+            _source("pom.xml", _maven_build()),
+            _source("src/example/OwnerRepository.java", repository),
+            _source("src/example/OwnerService.java", service),
+        )
+    )
+
+    assert _facts(result, "java.invocation") == ()
+    assert len(
+        [
+            entry
+            for entry in result.residue
+            if entry.code == "shadowed-repository-receiver"
+        ]
+    ) == 1
+
+
+def test_negated_instanceof_else_binds_only_unqualified_else_receiver() -> None:
+    repository = '''package example;
+import org.springframework.data.jpa.repository.JpaRepository;
+class Owner {}
+interface OwnerRepository extends JpaRepository<Owner, Integer> {}
+'''
+    service = '''package example;
+class OwnerService {
+  private final OwnerRepository owners;
+  OwnerService(OwnerRepository owners) { this.owners = owners; }
+  void guarded(Object candidate) {
+    if (!(candidate instanceof OwnerRepository owners)) {
+      this.owners.save(null);
+    } else {
+      owners.save(null);
+    }
+  }
+}
+'''
+    result = JavaSpringScaAnalyzer().analyze(
+        (
+            _source("pom.xml", _maven_build()),
+            _source("src/example/OwnerRepository.java", repository),
+            _source("src/example/OwnerService.java", service),
+        )
+    )
+
+    invocations = _facts(result, "java.invocation")
+    assert len(invocations) == 1
+    assert invocations[0].attribute("receiver") == "owners"
+    assert len(
+        [
+            entry
+            for entry in result.residue
+            if entry.code == "shadowed-repository-receiver"
+        ]
+    ) == 1
+
+
 def test_multiple_constructors_do_not_prove_repository_injection() -> None:
     repository = '''package example;
 import org.springframework.data.jpa.repository.JpaRepository;
