@@ -43,6 +43,9 @@ _REQUIRED_FAILURE_REASONS = frozenset(
     }
 )
 _FAILURE_REASONS = frozenset({"PIPELINE_OR_ORACLE_FAILED"})
+_TERMINATION_GRACE_SECONDS = 0.25
+_TERMINATION_POLL_SECONDS = 0.01
+_DIRECT_CHILD_REAP_SECONDS = 0.25
 
 
 class SupervisorError(RuntimeError):
@@ -81,26 +84,44 @@ def _child_environment(source: Mapping[str, str]) -> dict[str, str]:
     return child
 
 
+def _process_group_exists(process_group_id: int) -> bool:
+    try:
+        os.killpg(process_group_id, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        # macOS reports EPERM when the group contains only non-signalable
+        # exited members; a live descendant created here retains our uid.
+        return False
+    return True
+
+
 def _terminate_process_group(process: subprocess.Popen[bytes]) -> None:
+    process_group_id = process.pid
     try:
-        os.killpg(process.pid, signal.SIGTERM)
+        os.killpg(process_group_id, signal.SIGTERM)
     except ProcessLookupError:
+        group_exists = False
+    else:
+        group_exists = True
+
+    deadline = time.monotonic() + _TERMINATION_GRACE_SECONDS
+    while group_exists:
+        process.poll()
+        group_exists = _process_group_exists(process_group_id)
+        remaining = deadline - time.monotonic()
+        if not group_exists or remaining <= 0:
+            break
+        time.sleep(min(_TERMINATION_POLL_SECONDS, remaining))
+
+    if group_exists:
         try:
-            process.wait(timeout=0)
-        except subprocess.TimeoutExpired:
+            os.killpg(process_group_id, signal.SIGKILL)
+        except ProcessLookupError:
             pass
-        return
+
     try:
-        process.wait(timeout=1.0)
-        return
-    except subprocess.TimeoutExpired:
-        pass
-    try:
-        os.killpg(process.pid, signal.SIGKILL)
-    except ProcessLookupError:
-        return
-    try:
-        process.wait(timeout=1.0)
+        process.wait(timeout=_DIRECT_CHILD_REAP_SECONDS)
     except subprocess.TimeoutExpired:
         pass
 

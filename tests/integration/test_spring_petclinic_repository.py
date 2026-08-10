@@ -1501,6 +1501,39 @@ def test_supervisor_kills_grandchild_after_group_leader_exits(tmp_path: Path) ->
     assert not marker.exists()
 
 
+def test_supervisor_sigkills_term_ignoring_grandchild_after_leader_exits(
+    tmp_path: Path,
+) -> None:
+    supervisor = _load_supervisor()
+    marker = tmp_path / "term-ignoring-grandchild-survived"
+    program = (
+        "import os,pathlib,signal,time\n"
+        "read_fd,write_fd=os.pipe()\n"
+        "if os.fork() != 0:\n"
+        " os.close(write_fd)\n"
+        " os.read(read_fd,1)\n"
+        " os.close(read_fd)\n"
+        " os._exit(0)\n"
+        "os.close(read_fd)\n"
+        "signal.signal(signal.SIGTERM,signal.SIG_IGN)\n"
+        "os.write(write_fd,b'1')\n"
+        "os.close(write_fd)\n"
+        "time.sleep(0.5)\n"
+        f"pathlib.Path({str(marker)!r}).write_text('survived')\n"
+    )
+
+    with pytest.raises(supervisor.SupervisorError, match="TIMEOUT"):
+        supervisor._run_bounded_child(
+            [sys.executable, "-I", "-c", program],
+            {"LANG": "C", "LC_ALL": "C", "PATH": "/usr/bin:/bin"},
+            timeout_seconds=0.1,
+            stdout_limit=1_024,
+            stderr_limit=1_024,
+        )
+    time.sleep(0.6)
+    assert not marker.exists()
+
+
 @pytest.mark.parametrize(
     "child_document",
     [
