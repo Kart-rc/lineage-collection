@@ -385,6 +385,33 @@ class JavaSpringScaAnalyzer:
                 _whole_file_location(build_sources[0], "build_file"),
             )
             return FrameworkClassification("unsupported", None, ())
+        boot_version = next(iter(boot_versions))
+        boot_major = int(boot_version.split(".", 1)[0])
+        for closure in relevant:
+            for item in closure.jpa:
+                if (
+                    item.group == "org.springframework.data"
+                    and item.artifact == "spring-data-jpa"
+                ):
+                    self._add_residue(
+                        "unsupported-direct-spring-data-jpa",
+                        "direct spring-data-jpa requires an explicit compatibility map",
+                        item.rendered,
+                        _whole_file_location(build_sources[0], "build_file"),
+                    )
+                    return FrameworkClassification("unsupported", None, ())
+                if (
+                    not item.inherited
+                    and item.artifact == "spring-boot-starter-data-jpa"
+                    and int(item.version.split(".", 1)[0]) != boot_major
+                ):
+                    self._add_residue(
+                        "incompatible-framework-cell",
+                        "explicit Boot starter Data JPA major must match Spring Boot major",
+                        f"boot={boot_version};jpa={item.version}",
+                        _whole_file_location(build_sources[0], "build_file"),
+                    )
+                    return FrameworkClassification("unsupported", None, ())
         jpa_versions: dict[tuple[str, str], set[str]] = {}
         for closure in relevant:
             for item in closure.jpa:
@@ -762,6 +789,14 @@ class JavaSpringScaAnalyzer:
                             parsed, base_type, generic, symbols
                         )
                         if base_fqn not in _APPROVED_REPOSITORY_BASES:
+                            continue
+                        if declaration.type != "interface_declaration":
+                            self._add_residue(
+                                "invalid-repository-declaration",
+                                "Spring Data repository association requires an interface declaration",
+                                qualified_name,
+                                _node_location(parsed.source.path, declaration),
+                            )
                             continue
                         if len(arguments) != 2:
                             self._add_residue(

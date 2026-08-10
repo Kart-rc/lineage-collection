@@ -309,6 +309,36 @@ def test_petclinic_boot_4_1_and_versionless_managed_jpa_are_supported() -> None:
     )
 
 
+def test_boot_4_rejects_explicit_boot_starter_data_jpa_3() -> None:
+    result = JavaSpringScaAnalyzer().analyze(
+        (
+            _source(
+                "pom.xml",
+                _maven_build("4.1.0", dependency_version="3.1.0"),
+            ),
+        )
+    )
+
+    assert result.framework.status == "unsupported"
+    assert "incompatible-framework-cell" in {
+        entry.code for entry in result.residue
+    }
+
+
+def test_direct_spring_data_jpa_is_not_guessed_without_compatibility_map() -> None:
+    build = _maven_build("3.5.5", dependency_version="3.5.0").replace(
+        "org.springframework.boot</groupId>\n        <artifactId>spring-boot-starter-data-jpa",
+        "org.springframework.data</groupId>\n        <artifactId>spring-data-jpa",
+    )
+
+    result = JavaSpringScaAnalyzer().analyze((_source("pom.xml", build),))
+
+    assert result.framework.status == "unsupported"
+    assert "unsupported-direct-spring-data-jpa" in {
+        entry.code for entry in result.residue
+    }
+
+
 def test_versionless_boot_plugin_may_inherit_proven_boot_parent() -> None:
     build = _maven_build("4.1.0").replace(
         "</project>",
@@ -490,6 +520,25 @@ interface MissingEntity extends JpaRepository<Missing, Integer> {}
     assert {entry.code for entry in result.residue} >= {
         "invalid-repository-generics",
         "unresolved-repository-entity",
+    }
+
+
+def test_repository_association_requires_interface_declaration() -> None:
+    java = '''package example;
+import org.springframework.data.jpa.repository.JpaRepository;
+class Owner {}
+class BadRepository extends JpaRepository<Owner, Integer> {}
+'''
+    result = JavaSpringScaAnalyzer().analyze(
+        (
+            _source("pom.xml", _maven_build()),
+            _source("src/example/BadRepository.java", java),
+        )
+    )
+
+    assert _facts(result, "spring.repository-association") == ()
+    assert "invalid-repository-declaration" in {
+        entry.code for entry in result.residue
     }
 
 
