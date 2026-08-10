@@ -3658,6 +3658,8 @@ def _is_create_index_tokens(tokens: tuple[Token, ...]) -> bool:
 def _valid_create_index_statement(
     dialect: Dialect, text: str, tokens: tuple[Token, ...]
 ) -> bool:
+    if not _closed_create_index_tokens(tokens):
+        return False
     statement_text = text[tokens[0].start : tokens[-1].end + 1]
     try:
         statement = _silent_sqlglot_parse_one(dialect, statement_text)
@@ -3682,6 +3684,84 @@ def _valid_create_index_statement(
         and isinstance(columns, list)
         and bool(columns)
     )
+
+
+def _closed_create_index_tokens(tokens: tuple[Token, ...]) -> bool:
+    """Accept only the complete closed supported PostgreSQL index subset."""
+    position = 0
+
+    def consume_type(token_type: TokenType) -> bool:
+        nonlocal position
+        if position >= len(tokens) or tokens[position].token_type != token_type:
+            return False
+        position += 1
+        return True
+
+    def consume_word(word: str) -> bool:
+        nonlocal position
+        if position >= len(tokens) or tokens[position].text.casefold() != word:
+            return False
+        position += 1
+        return True
+
+    def consume_identifier() -> bool:
+        nonlocal position
+        if position >= len(tokens):
+            return False
+        token = tokens[position]
+        if token.token_type not in {
+            TokenType.IDENTIFIER,
+            TokenType.NAME,
+            TokenType.VAR,
+        } or _EVIDENCE_TABLE_IDENTIFIER.fullmatch(token.text) is None:
+            return False
+        position += 1
+        return True
+
+    if not consume_type(TokenType.CREATE):
+        return False
+    if position < len(tokens) and tokens[position].token_type == TokenType.UNIQUE:
+        position += 1
+    if not consume_type(TokenType.INDEX):
+        return False
+    if position < len(tokens) and tokens[position].text.casefold() == "if":
+        if not (
+            consume_word("if")
+            and consume_type(TokenType.NOT)
+            and consume_type(TokenType.EXISTS)
+        ):
+            return False
+    if not consume_identifier() or not consume_type(TokenType.ON):
+        return False
+    if not consume_identifier():
+        return False
+    qualifiers = 1
+    while position < len(tokens) and tokens[position].token_type == TokenType.DOT:
+        position += 1
+        qualifiers += 1
+        if qualifiers > 3 or not consume_identifier():
+            return False
+    if not consume_type(TokenType.L_PAREN):
+        return False
+
+    def consume_index_item() -> bool:
+        nonlocal position
+        if (
+            position + 1 < len(tokens)
+            and tokens[position].text.casefold() == "lower"
+            and tokens[position + 1].token_type == TokenType.L_PAREN
+        ):
+            position += 2
+            return consume_identifier() and consume_type(TokenType.R_PAREN)
+        return consume_identifier()
+
+    if not consume_index_item():
+        return False
+    while position < len(tokens) and tokens[position].token_type == TokenType.COMMA:
+        position += 1
+        if not consume_index_item():
+            return False
+    return consume_type(TokenType.R_PAREN) and position == len(tokens)
 
 
 def _sql_table_identifier_status(tokens: tuple[Token, ...]) -> str:

@@ -2061,6 +2061,88 @@ class OwnerService {
 
 
 @pytest.mark.parametrize(
+    "index_statement",
+    [
+        "CREATE INDEX IF NOT EXISTS idx_vets_last_name ON vets (last_name)",
+        "CREATE INDEX IF NOT EXISTS idx_specialties_name ON specialties (name)",
+        "CREATE INDEX IF NOT EXISTS idx_types_name ON types (name)",
+        "CREATE INDEX IF NOT EXISTS idx_owners_last_name ON owners (last_name)",
+        "CREATE INDEX IF NOT EXISTS idx_pets_name ON pets (name)",
+        "CREATE INDEX IF NOT EXISTS idx_pets_owner_id ON pets (owner_id)",
+        (
+            "CREATE UNIQUE INDEX IF NOT EXISTS unique_owner_pet_name "
+            "ON pets (owner_id, LOWER(name))"
+        ),
+        "CREATE INDEX IF NOT EXISTS idx_visits_pet_id ON visits (pet_id)",
+    ],
+)
+def test_exact_petclinic_index_shapes_are_nonblocking_inventory(
+    index_statement: str,
+) -> None:
+    evidence = _compile_java_spring(
+        _lineage_sources(
+            entity='''package example;
+import jakarta.persistence.Entity;
+import jakarta.persistence.Table;
+@Entity @Table(name="owners") class Owner {}
+''',
+            repository='''package example;
+import org.springframework.data.jpa.repository.JpaRepository;
+interface OwnerRepository extends JpaRepository<Owner, Integer> {}
+''',
+            service='''package example;
+class OwnerService {
+  private final OwnerRepository owners;
+  OwnerService(OwnerRepository owners) { this.owners = owners; }
+  Owner load(Integer id) { return owners.findById(id).orElseThrow(); }
+}
+''',
+            schema=(
+                "create table owners (id integer primary key); "
+                f"{index_statement};"
+            ),
+        )
+    )
+
+    assert evidence.status == "COMPLETE"
+    assert len(evidence.edges) == 1
+    assert {item.code for item in evidence.residue} == {
+        "ignored-schema-statement"
+    }
+
+
+def test_create_index_with_dropped_malformed_tail_is_blocking() -> None:
+    sources = _lineage_sources(
+        entity='''package example;
+import jakarta.persistence.Entity;
+import jakarta.persistence.Table;
+@Entity @Table(name="owners") class Owner {}
+''',
+        repository='''package example;
+import org.springframework.data.jpa.repository.JpaRepository;
+interface OwnerRepository extends JpaRepository<Owner, Integer> {}
+''',
+        service='''package example;
+class OwnerService {
+  private final OwnerRepository owners;
+  OwnerService(OwnerRepository owners) { this.owners = owners; }
+  Owner load(Integer id) { return owners.findById(id).orElseThrow(); }
+}
+''',
+        schema=(
+            "create table owners (id integer primary key); "
+            "create index idx on owners(id) include ();"
+        ),
+    )
+
+    evidence = _compile_java_spring(sources)
+
+    assert len(evidence.edges) == 1
+    assert evidence.status == "INTEGRATION_REQUIRED"
+    assert "malformed-sql" in evidence.status_reasons
+
+
+@pytest.mark.parametrize(
     ("query_target", "expected_edges"),
     [("Person", 1), ("Owner", 0)],
 )
