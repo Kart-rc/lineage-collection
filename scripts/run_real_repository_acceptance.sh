@@ -1,7 +1,11 @@
-#!/usr/bin/env bash
+#!/bin/bash -p
 set -uo pipefail
 
-repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+script_directory="${BASH_SOURCE[0]%/*}"
+if [[ "$script_directory" == "${BASH_SOURCE[0]}" ]]; then
+  script_directory="."
+fi
+repo_root="$(CDPATH= cd -- "$script_directory/.." && pwd -P)"
 cd "$repo_root"
 
 if [[ -z "${LINEAGE_REAL_REPOSITORY_CHECKOUT:-}" ]]; then
@@ -9,31 +13,25 @@ if [[ -z "${LINEAGE_REAL_REPOSITORY_CHECKOUT:-}" ]]; then
   exit 2
 fi
 
-if ! command -v uv >/dev/null 2>&1; then
+trusted_python="$repo_root/apps/api/.venv/bin/python"
+supervisor="$repo_root/scripts/real_repository_acceptance_supervisor.py"
+if [[ ! -x "$trusted_python" || ! -f "$supervisor" ]]; then
   echo '{"evidenceClass":"LOCAL_REAL_REPOSITORY_REQUIRED","outcome":"INTEGRATION_REQUIRED","reasonCode":"RUNNER_ENVIRONMENT_UNAVAILABLE"}'
   exit 2
 fi
 
-runner_output="$(
-  uv run --offline --frozen --no-sync --project apps/api --extra dev \
-    python tests/integration/test_spring_petclinic_repository.py 2>/dev/null
-)"
-runner_status=$?
-
-if [[ ${#runner_output} -gt 2048 || "$runner_output" == *"$LINEAGE_REAL_REPOSITORY_CHECKOUT"* ]]; then
-  echo '{"evidenceClass":"LOCAL_REAL_REPOSITORY_REQUIRED","outcome":"INTEGRATION_REQUIRED","reasonCode":"RUNNER_OUTPUT_INVALID"}'
-  exit 2
+clean_environment=(
+  /usr/bin/env -i
+  LANG=C
+  LC_ALL=C
+  PATH=/usr/bin:/bin
+  "LINEAGE_REAL_REPOSITORY_CHECKOUT=$LINEAGE_REAL_REPOSITORY_CHECKOUT"
+)
+if [[ -n "${LINEAGE_ACCEPTANCE_OUTPUT:-}" ]]; then
+  clean_environment+=("LINEAGE_ACCEPTANCE_OUTPUT=$LINEAGE_ACCEPTANCE_OUTPUT")
 fi
-if [[ "$runner_status" -ne 0 && ! "$runner_output" =~ ^\{.*\}$ ]]; then
-  echo '{"evidenceClass":"LOCAL_REAL_REPOSITORY_REQUIRED","outcome":"INTEGRATION_REQUIRED","reasonCode":"RUNNER_ENVIRONMENT_UNAVAILABLE"}'
-  exit 2
-fi
-if [[ -z "$runner_output" || ! "$runner_output" =~ ^\{.*\}$ ]]; then
-  echo '{"evidenceClass":"LOCAL_REAL_REPOSITORY_REQUIRED","outcome":"INTEGRATION_REQUIRED","reasonCode":"RUNNER_OUTPUT_INVALID"}'
-  exit 2
+if [[ -n "${LINEAGE_ACCEPTANCE_RUN_ID:-}" ]]; then
+  clean_environment+=("LINEAGE_ACCEPTANCE_RUN_ID=$LINEAGE_ACCEPTANCE_RUN_ID")
 fi
 
-printf '%s\n' "$runner_output"
-if [[ "$runner_status" -ne 0 ]]; then
-  exit 2
-fi
+exec "${clean_environment[@]}" "$trusted_python" -I "$supervisor" "$repo_root"

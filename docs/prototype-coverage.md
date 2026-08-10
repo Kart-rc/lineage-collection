@@ -70,16 +70,19 @@ The retained local-real proof is written to
 Petclinic revision it records six entity mappings, three repository→entity→table chains, five caller
 components, 15 exact static edges (10 reads, 5 writes), eight explicitly retained non-edge schema
 residue records, zero unresolved invocations, and 131 tracked paths partitioned into 33 completed
-and 98 skipped paths. Its bounded relational effect proof dynamically covers all 33 current user
-tables, stable column metadata and every typed value; exact physical bytes before/after replay catch
-same-count updates as well as row/table changes. Only documented time/lease fields and explicitly
-listed time-derived references are normalized in the retained logical digest. Two fresh-state runs
-produce the same manifest/SCA/logical checksums. The hardened manifest checksum is
-`sha256:4961012f7ac0a102608aed048be69a4a6a97d22c03428c1b0cdf763f4d4e0ef8`.
+and 98 skipped paths. Its bounded relational effect proof uses one read-only SQLite transaction and
+dynamically covers all 33 current user tables, complete table/index/view/trigger schema records,
+column/foreign-key/index metadata and every typed value. Exact physical bytes before/after replay
+catch same-count updates as well as row and schema changes. Only documented time/lease fields and
+explicitly listed time-derived references are normalized in the retained logical digest. Two fresh-
+state runs produce the same manifest/SCA/logical checksums. The hardened manifest checksum is
+`sha256:84d6345e2d597aef0f068d6a6c3b24f4bf0acaf438b24311066d8fda8b304f40`.
 
-The dedicated proof uses the preprovisioned lock only through
-`uv run --offline --frozen --no-sync`; it cannot fetch or mutate dependencies. A missing environment
-is `INTEGRATION_REQUIRED`, not an invitation to sync.
+The dedicated proof clears inherited variables and invokes the preprovisioned locked virtual
+environment's Python directly with isolated mode; it does not invoke a package manager or network.
+Its standard-library supervisor allowlists child variables, caps both streams, enforces a global
+timeout/process-group kill, and accepts only the exact PASS schema. A missing or unsafe environment
+is `INTEGRATION_REQUIRED`, not an invitation to install or sync.
 
 Compatibility gaps remain explicit: arbitrary Gradle/Maven execution or dynamic dependency logic,
 multi-module build graphs, nonstandard source/schema roots, Hibernate/native-query extensions not in

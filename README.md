@@ -122,16 +122,21 @@ export LINEAGE_ACCEPTANCE_RUN_ID=spring-petclinic-local
 The runner verifies the official origin and exact revision, composes two fresh local SQLite/object
 states, runs the actual durable `collect-checkout` flow in each, repeats one delivery to prove
 duplicate no-effect, and requires the complete 131-path disposition and exact 15-edge oracle. The
-duplicate proof dynamically snapshots every user table (currently 33), including schema metadata
-and every typed value, and compares the bounded canonical bytes before and after replay; a same-row-
-count update cannot escape detection. The retained logical database digest normalizes only the
-documented time/lease values and time-derived references needed for fresh-run reproducibility.
+duplicate proof opens SQLite read-only with `query_only`, holds one transaction across every read,
+and dynamically snapshots every user table (currently 33). The bounded canonical proof includes
+every `sqlite_schema` table/index/view/trigger record, `table_xinfo`, foreign keys, index metadata,
+and every typed value; same-row-count data or schema changes cannot escape detection. The retained
+logical database digest normalizes only the documented time/lease values and time-derived references
+needed for fresh-run reproducibility.
 
-The shell uses only the already provisioned lock/environment through
-`uv run --offline --frozen --no-sync`; it cannot resolve, download, install, or update a dependency.
-If that environment is absent, the result is bounded `INTEGRATION_REQUIRED`, never an implicit
-sync. The runner does not build or execute Petclinic. On success it prints bounded JSON and retains
-canonical, content-addressed evidence at
+The shell clears the inherited environment and invokes the already provisioned
+`apps/api/.venv/bin/python` directly in isolated mode. A standard-library supervisor enforces a
+secret-free allowlist, a wall timeout, process-group termination, stdout/stderr caps, and the exact
+PASS JSON schema. No package manager is invoked and the runner neither resolves nor downloads
+dependencies. If the locked environment is absent or unsafe, the result is bounded
+`INTEGRATION_REQUIRED`, never an install. The runner does not build or execute Petclinic. On success
+it prints bounded JSON and publishes canonical evidence with no-follow, directory-descriptor-anchored
+write-once operations at
 `data/acceptance/spring-petclinic-local/java-spring/sha256-<checksum>.json`. The manifest contains no
 checkout path, source bytes, raw query, credential, or timestamp. Missing checkout, a wrong
 origin/revision, incomplete scope, tampering, or oracle drift exits `2` and cannot report a pass.
