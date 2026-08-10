@@ -416,8 +416,39 @@ def test_annotations_preserve_literals_and_dynamic_query_is_residue() -> None:
     assert "SELECT o FROM Owner o" in literal_query[0].attribute("query")
     dynamic = [entry for entry in result.residue if entry.code == "dynamic-query"]
     assert len(dynamic) == 1
-    assert dynamic[0].symbol == "BASE_QUERY"
+    assert dynamic[0].symbol.startswith("dynamic-query:sha256:")
     assert dynamic[0].location.ast_kind == "annotation"
+
+
+def test_residue_never_contains_malformed_java_or_dynamic_query_source_secrets() -> None:
+    secret = "SUPER_SECRET_MARKER_7d78d5"
+    malformed = f"class Broken {{ void bad( {{ {secret} }}"
+    query = f'''package example;
+import org.springframework.data.jpa.repository.Query;
+interface Queries {{ @Query({secret}) Object find(); }}
+'''
+
+    result = JavaSpringScaAnalyzer().analyze(
+        (
+            _source("pom.xml", _maven_build()),
+            _source("src/example/Broken.java", malformed),
+            _source("src/example/Queries.java", query),
+        )
+    )
+
+    assert {entry.code for entry in result.residue} >= {
+        "malformed-java",
+        "dynamic-query",
+    }
+    for entry in result.residue:
+        assert secret not in entry.message
+        assert secret not in entry.symbol
+        assert len(entry.code) <= 64
+        assert len(entry.message) <= 96
+        assert len(entry.symbol) <= 128
+        assert len(entry.location.path.encode("utf-8")) <= 512
+        assert len(entry.location.ast_kind) <= 64
+        assert len(entry.location.ast_path) <= 512
 
 
 @pytest.mark.parametrize(
@@ -478,7 +509,13 @@ interface OwnerRepository extends JpaRepository<Owner, Integer> {
 
     assert _facts(result, "spring.repository-association") == ()
     assert _facts(result, "spring.query") == ()
-    assert {entry.symbol for entry in result.residue} >= {"JpaRepository", "Query"}
+    assert {
+        entry.code for entry in result.residue
+    } >= {"unresolved-framework-symbol"}
+    assert all(
+        entry.symbol.startswith(f"{entry.code}:sha256:")
+        for entry in result.residue
+    )
 
 
 def test_repository_local_type_cannot_shadow_an_approved_fqn() -> None:
@@ -622,6 +659,120 @@ class UnboundController {
         "shadowed-repository-receiver",
         "unbound-repository-receiver",
     }
+
+
+def test_lambda_catch_and_enhanced_for_binders_shadow_repository_field() -> None:
+    repository = '''package example;
+import org.springframework.data.jpa.repository.JpaRepository;
+class Owner {}
+interface OwnerRepository extends JpaRepository<Owner, Integer> {}
+'''
+    service = '''package example;
+import java.util.List;
+class OwnerService {
+  private final OwnerRepository owners;
+  OwnerService(OwnerRepository owners) { this.owners = owners; }
+  void lambda(List<OwnerRepository> values) {
+    values.forEach(owners -> owners.save(null));
+  }
+  void caught() {
+    try { throw new RuntimeException(); }
+    catch (RuntimeException owners) { owners.save(null); }
+  }
+  void loop(List<OwnerRepository> values) {
+    for (OwnerRepository owners : values) { owners.save(null); }
+  }
+}
+'''
+    result = JavaSpringScaAnalyzer().analyze(
+        (
+            _source("pom.xml", _maven_build()),
+            _source("src/example/OwnerRepository.java", repository),
+            _source("src/example/OwnerService.java", service),
+        )
+    )
+
+    assert _facts(result, "java.invocation") == ()
+    assert len(
+        [
+            entry
+            for entry in result.residue
+            if entry.code == "shadowed-repository-receiver"
+        ]
+    ) == 3
+
+
+def test_block_local_repository_shadow_preserves_calls_outside_its_scope() -> None:
+    repository = '''package example;
+import org.springframework.data.jpa.repository.JpaRepository;
+class Owner {}
+interface OwnerRepository extends JpaRepository<Owner, Integer> {}
+'''
+    service = '''package example;
+class OwnerService {
+  private final OwnerRepository owners;
+  OwnerService(OwnerRepository owners) { this.owners = owners; }
+  void scoped() {
+    owners.save(null);
+    { OwnerRepository owners = null; owners.save(null); }
+    owners.save(null);
+  }
+}
+'''
+    result = JavaSpringScaAnalyzer().analyze(
+        (
+            _source("pom.xml", _maven_build()),
+            _source("src/example/OwnerRepository.java", repository),
+            _source("src/example/OwnerService.java", service),
+        )
+    )
+
+    assert len(_facts(result, "java.invocation")) == 2
+    assert len(
+        [
+            entry
+            for entry in result.residue
+            if entry.code == "shadowed-repository-receiver"
+        ]
+    ) == 1
+
+
+def test_pattern_and_resource_binders_shadow_only_their_lexical_scopes() -> None:
+    repository = '''package example;
+import org.springframework.data.jpa.repository.JpaRepository;
+class Owner {}
+interface OwnerRepository extends JpaRepository<Owner, Integer> {}
+'''
+    service = '''package example;
+class OwnerService {
+  private final OwnerRepository owners;
+  OwnerService(OwnerRepository owners) { this.owners = owners; }
+  OwnerRepository acquire() { return this.owners; }
+  void scoped(Object candidate) throws Exception {
+    owners.save(null);
+    if (candidate instanceof OwnerRepository owners) { owners.save(null); }
+    owners.save(null);
+    try (OwnerRepository owners = acquire()) { owners.save(null); }
+    owners.save(null);
+  }
+}
+'''
+    result = JavaSpringScaAnalyzer().analyze(
+        (
+            _source("pom.xml", _maven_build()),
+            _source("src/example/OwnerRepository.java", repository),
+            _source("src/example/OwnerService.java", service),
+        )
+    )
+
+    assert len(_facts(result, "java.invocation")) == 3
+    assert len(
+        [
+            entry
+            for entry in result.residue
+            if entry.code == "shadowed-repository-receiver"
+        ]
+    ) == 2
 
 
 def test_multiple_constructors_do_not_prove_repository_injection() -> None:
@@ -831,6 +982,10 @@ def test_malformed_java_is_quarantined_without_partial_facts() -> None:
     ("source", "message"),
     [
         (JavaSpringSource("../escape.java", b"class A {}"), "relative tracked path"),
+        (
+            JavaSpringSource(f"{'a' * 513}.java", b"class A {}"),
+            "source path byte limit",
+        ),
         (JavaSpringSource("A.java", "not-bytes"), "content must be bytes"),
         (JavaSpringSource("A.java", b"class A {}", sql_dialect="h2"), "SQL dialect"),
     ],
@@ -868,6 +1023,98 @@ def test_source_generator_stops_after_exact_limit_plus_one() -> None:
         JavaSpringScaAnalyzer(JavaSpringScaLimits(max_files=2)).analyze(sources())
 
     assert consumed == [0, 1, 2]
+
+
+def test_wide_ast_is_indexed_once_and_obeys_ast_node_budget(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fields = "\n".join(f"  int field{index};" for index in range(1_500))
+    java = f"class Wide {{\n{fields}\n}}"
+    analyzer = JavaSpringScaAnalyzer()
+    original = analyzer._index_ast_paths
+    calls = 0
+
+    def counted(path, root):
+        nonlocal calls
+        calls += 1
+        return original(path, root)
+
+    monkeypatch.setattr(analyzer, "_index_ast_paths", counted)
+    result = analyzer.analyze(
+        (_source("pom.xml", _maven_build()), _source("src/Wide.java", java))
+    )
+
+    assert calls == 1
+    assert 1_500 < result.stats.ast_nodes_indexed < 10_000
+    with pytest.raises(JavaSpringAnalysisError, match="AST node limit"):
+        JavaSpringScaAnalyzer(
+            JavaSpringScaLimits(max_ast_nodes=100)
+        ).analyze(
+            (_source("pom.xml", _maven_build()), _source("src/Wide.java", java))
+        )
+
+
+@pytest.mark.parametrize(
+    "build",
+    [
+        "}" + _gradle_build(),
+        _gradle_build()[:-1],
+        f"allprojects {{ {_gradle_build()} }}",
+    ],
+)
+def test_malformed_or_nested_gradle_build_context_is_residue(build: str) -> None:
+    result = JavaSpringScaAnalyzer().analyze(
+        (_source("build.gradle", build),)
+    )
+
+    assert result.framework.status == "unsupported"
+    assert "malformed-build-file" in {entry.code for entry in result.residue}
+
+
+@pytest.mark.parametrize(
+    "build",
+    [
+        '''def fake = /plugins {
+  id "org.springframework.boot" version "3.5.5"
+}
+dependencies {
+  implementation "org.springframework.boot:spring-boot-starter-data-jpa:3.5.5"
+}/''',
+        '''def fake = """plugins {
+  id "org.springframework.boot" version "3.5.5"
+}
+dependencies {
+  implementation "org.springframework.boot:spring-boot-starter-data-jpa:3.5.5"
+}"""''',
+        '''def fake = $/plugins {
+  id "org.springframework.boot" version "3.5.5"
+}
+dependencies {
+  implementation "org.springframework.boot:spring-boot-starter-data-jpa:3.5.5"
+}/$''',
+    ],
+)
+def test_unsupported_gradle_string_forms_fail_closed(build: str) -> None:
+    result = JavaSpringScaAnalyzer().analyze((_source("build.gradle", build),))
+
+    assert result.framework.status == "unsupported"
+    assert "malformed-build-file" in {entry.code for entry in result.residue}
+
+
+@pytest.mark.parametrize(
+    "build",
+    [
+        f"wrapper({_gradle_build()})",
+        f"def builds = [{_gradle_build()}]",
+    ],
+)
+def test_gradle_framework_blocks_inside_parens_or_brackets_fail_closed(
+    build: str,
+) -> None:
+    result = JavaSpringScaAnalyzer().analyze((_source("build.gradle", build),))
+
+    assert result.framework.status == "unsupported"
+    assert "malformed-build-file" in {entry.code for entry in result.residue}
 
 
 def test_fact_and_residue_limits_fail_closed() -> None:

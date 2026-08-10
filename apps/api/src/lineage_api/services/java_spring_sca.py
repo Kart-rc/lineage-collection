@@ -4,6 +4,7 @@ import hashlib
 import json
 import re
 import xml.etree.ElementTree as ET
+from bisect import bisect_right
 from dataclasses import dataclass
 from pathlib import PurePosixPath
 from typing import Iterable, TypeAlias
@@ -54,6 +55,47 @@ _SQLGLOT_DIALECTS = {
     "postgres": "postgres",
     "postgresql": "postgres",
 }
+_MAX_SOURCE_PATH_BYTES = 512
+_MAX_AST_KIND_CHARS = 64
+_MAX_AST_PATH_CHARS = 512
+_RESIDUE_CODES = frozenset(
+    {
+        "ambiguous-framework-evidence",
+        "ambiguous-framework-symbol",
+        "ambiguous-repository-injection",
+        "dynamic-framework-evidence",
+        "dynamic-query",
+        "dynamic-sql-identifier",
+        "dynamic-table-mapping",
+        "incompatible-framework-cell",
+        "invalid-build-encoding",
+        "invalid-java-encoding",
+        "invalid-repository-declaration",
+        "invalid-repository-generics",
+        "invalid-sql-encoding",
+        "malformed-build-file",
+        "malformed-java",
+        "malformed-sql",
+        "missing-boot-evidence",
+        "missing-boot-version",
+        "missing-jpa-dependency",
+        "missing-jpa-version",
+        "missing-sql-dialect",
+        "shadowed-framework-symbol",
+        "shadowed-repository-receiver",
+        "unbound-repository-receiver",
+        "unknown-framework",
+        "unresolved-framework-symbol",
+        "unresolved-repository-entity",
+        "unresolved-table-mapping",
+        "unsupported-boot-version",
+        "unsupported-direct-spring-data-jpa",
+        "unsupported-h2-construct",
+        "unsupported-jpa-version",
+        "unsupported-sql",
+        "wildcard-framework-symbol",
+    }
+)
 
 
 class JavaSpringAnalysisError(ValueError):
@@ -74,6 +116,7 @@ class JavaSpringScaLimits:
     max_total_bytes: int = 64 * 1024 * 1024
     max_facts: int = 100_000
     max_residue: int = 10_000
+    max_ast_nodes: int = 500_000
 
     def __post_init__(self) -> None:
         for name in (
@@ -82,6 +125,7 @@ class JavaSpringScaLimits:
             "max_total_bytes",
             "max_facts",
             "max_residue",
+            "max_ast_nodes",
         ):
             value = getattr(self, name)
             if not isinstance(value, int) or isinstance(value, bool) or value < 1:
@@ -135,6 +179,7 @@ class AnalysisStats:
     sql_files_parsed: int
     fact_count: int
     residue_count: int
+    ast_nodes_indexed: int
 
 
 @dataclass(frozen=True, slots=True)
@@ -226,11 +271,15 @@ class JavaSpringScaAnalyzer:
         self._parser = Parser(Language(tree_sitter_java.language()))
         self._facts: list[SyntaxFact] = []
         self._residue: list[AnalysisResidue] = []
+        self._ast_paths: dict[str, dict[int, str]] = {}
+        self._ast_nodes_indexed = 0
 
     def analyze(self, sources: Iterable[JavaSpringSource]) -> JavaSpringAnalysis:
         ordered = self._validate_sources(self._bounded_sources(sources))
         self._facts = []
         self._residue = []
+        self._ast_paths = {}
+        self._ast_nodes_indexed = 0
         framework = self._classify_framework(ordered)
         parsed_java: list[_ParsedJava] = []
         sql_files_parsed = 0
@@ -270,6 +319,7 @@ class JavaSpringScaAnalyzer:
                 sql_files_parsed=sql_files_parsed,
                 fact_count=len(facts),
                 residue_count=len(residue),
+                ast_nodes_indexed=self._ast_nodes_indexed,
             ),
         )
 
@@ -580,7 +630,7 @@ class JavaSpringScaAnalyzer:
         jpa: list[_BuildEvidence] = []
         invalid = False
         tokens, malformed = _gradle_tokens(text)
-        if malformed:
+        if malformed or _gradle_has_invalid_build_context(tokens):
             self._add_residue(
                 "malformed-build-file",
                 "Gradle build metadata is outside the bounded literal subset",
@@ -696,6 +746,7 @@ class JavaSpringScaAnalyzer:
             )
             return None
         tree = self._parser.parse(source.content)
+        self._index_ast_paths(source.path, tree.root_node)
         if tree.root_node.has_error:
             error = next(
                 (node for node in _walk(tree.root_node) if node.is_error or node.is_missing),
@@ -704,8 +755,8 @@ class JavaSpringScaAnalyzer:
             self._add_residue(
                 "malformed-java",
                 "Tree-sitter reported malformed Java syntax; the file was quarantined",
-                _node_text(error, source.content),
-                _node_location(source.path, error),
+                f"{error.type}:{error.end_byte - error.start_byte}",
+                self._node_location(source.path, error),
             )
             return None
         package_node = next(
@@ -720,6 +771,36 @@ class JavaSpringScaAnalyzer:
         if package_node is not None and package_node.named_children:
             package = _node_text(package_node.named_children[0], source.content)
         return _ParsedJava(source, tree, package)
+
+    def _index_ast_paths(self, path: str, root: Node) -> None:
+        indexed: dict[int, str] = {}
+        stack: list[tuple[Node, str]] = [(root, root.type)]
+        while stack:
+            node, ast_path = stack.pop()
+            self._ast_nodes_indexed += 1
+            if self._ast_nodes_indexed > self._limits.max_ast_nodes:
+                raise JavaSpringAnalysisError("analysis AST node limit exceeded")
+            indexed[node.id] = ast_path
+            children = node.named_children
+            for index in range(len(children) - 1, -1, -1):
+                child = children[index]
+                segment = f"{child.type}.named[{index}]"
+                stack.append((child, _bounded_ast_path(ast_path, segment)))
+        self._ast_paths[path] = indexed
+
+    def _node_location(self, path: str, node: Node) -> SourceLocation:
+        try:
+            ast_path = self._ast_paths[path][node.id]
+        except KeyError as error:
+            raise JavaSpringAnalysisError("AST node is outside the indexed source tree") from error
+        return SourceLocation(
+            path,
+            node.start_point.row + 1,
+            node.start_byte,
+            node.end_byte,
+            node.type,
+            ast_path,
+        )
 
     def _extract_java_facts(
         self,
@@ -736,7 +817,7 @@ class JavaSpringScaAnalyzer:
                         "java.package",
                         _node_text(child.named_children[0], parsed.source.content),
                         (),
-                        _node_location(parsed.source.path, child),
+                        self._node_location(parsed.source.path, child),
                     )
                 elif child.type == "import_declaration" and child.named_children:
                     imported = _java_import_text(child, parsed.source.content)
@@ -744,7 +825,7 @@ class JavaSpringScaAnalyzer:
                         "java.import",
                         imported,
                         (),
-                        _node_location(parsed.source.path, child),
+                        self._node_location(parsed.source.path, child),
                     )
 
             for declaration in _type_declarations(root):
@@ -768,7 +849,7 @@ class JavaSpringScaAnalyzer:
                     "java.type",
                     qualified_name,
                     attributes,
-                    _node_location(parsed.source.path, declaration),
+                    self._node_location(parsed.source.path, declaration),
                 )
                 annotations = self._emit_annotations(
                     parsed, declaration, qualified_name, symbols
@@ -795,7 +876,7 @@ class JavaSpringScaAnalyzer:
                                 "invalid-repository-declaration",
                                 "Spring Data repository association requires an interface declaration",
                                 qualified_name,
-                                _node_location(parsed.source.path, declaration),
+                                self._node_location(parsed.source.path, declaration),
                             )
                             continue
                         if len(arguments) != 2:
@@ -804,7 +885,7 @@ class JavaSpringScaAnalyzer:
                                 "repository bases require exactly entity and identifier "
                                 "generic arguments",
                                 base_type,
-                                _node_location(parsed.source.path, generic),
+                                self._node_location(parsed.source.path, generic),
                             )
                             continue
                         entity_fqn = self._resolve_java_symbol(
@@ -815,7 +896,7 @@ class JavaSpringScaAnalyzer:
                                 "unresolved-repository-entity",
                                 "repository entity generic must resolve to one local declaration",
                                 arguments[0],
-                                _node_location(parsed.source.path, generic),
+                                self._node_location(parsed.source.path, generic),
                             )
                             continue
                         repository_types.add(qualified_name)
@@ -829,7 +910,7 @@ class JavaSpringScaAnalyzer:
                                 ("entityType", arguments[0]),
                                 ("idType", arguments[1]),
                             ),
-                            _node_location(parsed.source.path, generic),
+                            self._node_location(parsed.source.path, generic),
                         )
                 self._emit_members(
                     parsed,
@@ -875,7 +956,7 @@ class JavaSpringScaAnalyzer:
                 "java.annotation",
                 f"{target_subject}:@{name}",
                 attributes,
-                _node_location(parsed.source.path, annotation),
+                self._node_location(parsed.source.path, annotation),
             )
             annotations.append(
                 _AnnotationRecord(
@@ -903,14 +984,14 @@ class JavaSpringScaAnalyzer:
         )
         table_name = qualified_name.rsplit(".", 1)[-1]
         explicit = "false"
-        location = _node_location(source.path, declaration)
+        location = self._node_location(source.path, declaration)
         if syntactic_table is not None:
             if syntactic_table.resolved_fqn != _TABLE_FQN:
                 self._add_residue(
                     "unresolved-table-mapping",
                     "present @Table annotation did not resolve to jakarta.persistence.Table",
                     syntactic_table.raw_name,
-                    _node_location(source.path, syntactic_table.node),
+                    self._node_location(source.path, syntactic_table.node),
                 )
                 return
             values = dict(syntactic_table.literal_values)
@@ -919,13 +1000,13 @@ class JavaSpringScaAnalyzer:
                     "dynamic-table-mapping",
                     "present @Table name is dynamic and cannot default safely",
                     syntactic_table.dynamic_values[0],
-                    _node_location(source.path, syntactic_table.node),
+                    self._node_location(source.path, syntactic_table.node),
                 )
                 return
             if values.get("name"):
                 table_name = values["name"]
                 explicit = "true"
-                location = _node_location(source.path, syntactic_table.node)
+                location = self._node_location(source.path, syntactic_table.node)
         self._add_fact(
             "spring.entity-table",
             qualified_name,
@@ -964,14 +1045,14 @@ class JavaSpringScaAnalyzer:
                         "java.field",
                         f"{owner}#{name}",
                         (("type", _node_text(field_type, parsed.source.content)),),
-                        _node_location(parsed.source.path, declarator),
+                        self._node_location(parsed.source.path, declarator),
                     )
             elif member.type == "constructor_declaration":
                 self._add_fact(
                     "java.constructor",
                     owner,
                     (("parameters", _parameter_signature(member, parsed.source.content)),),
-                    _node_location(parsed.source.path, member),
+                    self._node_location(parsed.source.path, member),
                 )
                 self._emit_annotations(
                     parsed, member, f"{owner}#<init>", symbols
@@ -995,7 +1076,7 @@ class JavaSpringScaAnalyzer:
                         ),
                         ("parameters", _parameter_signature(member, parsed.source.content)),
                     ),
-                    _node_location(parsed.source.path, member),
+                    self._node_location(parsed.source.path, member),
                 )
                 annotations = self._emit_annotations(
                     parsed, member, subject, symbols
@@ -1012,7 +1093,7 @@ class JavaSpringScaAnalyzer:
                             "spring.query",
                             subject,
                             (("literal", "true"), ("query", query_value)),
-                            _node_location(parsed.source.path, query.node),
+                            self._node_location(parsed.source.path, query.node),
                         )
                     else:
                         symbol = (
@@ -1024,7 +1105,7 @@ class JavaSpringScaAnalyzer:
                             "dynamic-query",
                             "Spring @Query text is not a string literal",
                             symbol,
-                            _node_location(parsed.source.path, query.node),
+                            self._node_location(parsed.source.path, query.node),
                         )
 
     def _resolve_java_symbol(
@@ -1035,7 +1116,7 @@ class JavaSpringScaAnalyzer:
         symbols: _JavaSymbolIndex,
     ) -> str | None:
         simple_name = _simple_type(raw_name)
-        location = _node_location(parsed.source.path, node)
+        location = self._node_location(parsed.source.path, node)
         if "." in raw_name:
             if (
                 raw_name in _APPROVED_FRAMEWORK_SYMBOLS
@@ -1201,7 +1282,7 @@ class JavaSpringScaAnalyzer:
                         "multiple constructors do not prove which repository "
                         "injection path Spring selects",
                         owner,
-                        _node_location(parsed.source.path, declaration),
+                        self._node_location(parsed.source.path, declaration),
                     )
                 for member in eligible_constructors:
                     if member.type == "constructor_declaration":
@@ -1233,7 +1314,7 @@ class JavaSpringScaAnalyzer:
                                     ("parameter", parameter_name),
                                     ("repositoryType", repository_type),
                                 ),
-                                _node_location(parsed.source.path, assignment),
+                                self._node_location(parsed.source.path, assignment),
                             )
                 for member in body.named_children:
                     if member.type == "method_declaration":
@@ -1243,9 +1324,8 @@ class JavaSpringScaAnalyzer:
                         enclosing_method = _node_text(
                             method_name_node, parsed.source.content
                         )
-                        shadowed_names = set(_parameters(member, parsed.source.content))
-                        shadowed_names.update(
-                            _local_variable_names(member, parsed.source.content)
+                        binder_ranges = _lexical_binder_ranges(
+                            member, parsed.source.content
                         )
                         for invocation in (
                             node
@@ -1265,12 +1345,16 @@ class JavaSpringScaAnalyzer:
                             receiver, explicit_field = receiver_info
                             if fields.get(receiver) not in repository_types:
                                 continue
-                            if not explicit_field and receiver in shadowed_names:
+                            if not explicit_field and _is_lexically_shadowed(
+                                binder_ranges,
+                                receiver,
+                                receiver_node.start_byte,
+                            ):
                                 self._add_residue(
                                     "shadowed-repository-receiver",
                                     "method-local symbol shadows the bound repository field",
                                     receiver,
-                                    _node_location(parsed.source.path, invocation),
+                                    self._node_location(parsed.source.path, invocation),
                                 )
                                 continue
                             if receiver not in bound_fields:
@@ -1278,7 +1362,7 @@ class JavaSpringScaAnalyzer:
                                     "unbound-repository-receiver",
                                     "repository receiver lacks a proven injection binding",
                                     receiver,
-                                    _node_location(parsed.source.path, invocation),
+                                    self._node_location(parsed.source.path, invocation),
                                 )
                                 continue
                             called = _node_text(called_node, parsed.source.content)
@@ -1290,7 +1374,7 @@ class JavaSpringScaAnalyzer:
                                     ("receiver", receiver),
                                     ("repositoryType", fields[receiver]),
                                 ),
-                                _node_location(parsed.source.path, invocation),
+                                self._node_location(parsed.source.path, invocation),
                             )
 
     def _has_resolved_annotation(
@@ -1476,12 +1560,29 @@ class JavaSpringScaAnalyzer:
     ) -> None:
         if len(self._residue) >= self._limits.max_residue:
             raise JavaSpringAnalysisError("analysis residue limit exceeded")
-        self._residue.append(AnalysisResidue(code, message, symbol, location))
+        if code not in _RESIDUE_CODES:
+            raise JavaSpringAnalysisError("analysis residue code is outside the closed set")
+        if (
+            len(location.path.encode("utf-8")) > _MAX_SOURCE_PATH_BYTES
+            or len(location.ast_kind) > _MAX_AST_KIND_CHARS
+            or len(location.ast_path) > _MAX_AST_PATH_CHARS
+        ):
+            raise JavaSpringAnalysisError("analysis residue location limit exceeded")
+        symbol_bytes = str(symbol).encode("utf-8", errors="replace")
+        safe_symbol = (
+            f"{code}:sha256:{hashlib.sha256(symbol_bytes).hexdigest()}"
+            f":bytes:{len(symbol_bytes)}"
+        )
+        self._residue.append(
+            AnalysisResidue(code, f"diagnostic:{code}", safe_symbol, location)
+        )
 
 
 def _validate_source_path(path: str) -> None:
     if not isinstance(path, str) or not path or "\\" in path or "\x00" in path:
         raise JavaSpringAnalysisError("source path must be a relative tracked path")
+    if len(path.encode("utf-8")) > _MAX_SOURCE_PATH_BYTES:
+        raise JavaSpringAnalysisError("source path byte limit exceeded")
     candidate = PurePosixPath(path)
     if (
         candidate.is_absolute()
@@ -1577,31 +1678,13 @@ def _node_text(node: Node | None, content: bytes) -> str:
     return content[node.start_byte : node.end_byte].decode("utf-8", errors="strict")
 
 
-def _node_location(path: str, node: Node) -> SourceLocation:
-    return SourceLocation(
-        path,
-        node.start_point.row + 1,
-        node.start_byte,
-        node.end_byte,
-        node.type,
-        _node_ast_path(node),
-    )
-
-
-def _node_ast_path(node: Node) -> str:
-    parts: list[str] = []
-    current = node
-    while current.parent is not None:
-        parent = current.parent
-        index = next(
-            index
-            for index, child in enumerate(parent.named_children)
-            if child == current
-        )
-        parts.append(f"{current.type}.named[{index}]")
-        current = parent
-    parts.append(current.type)
-    return "/".join(reversed(parts))
+def _bounded_ast_path(parent: str, segment: str) -> str:
+    candidate = f"{parent}/{segment}"
+    if len(candidate) <= _MAX_AST_PATH_CHARS:
+        return candidate
+    digest = hashlib.sha256(candidate.encode("utf-8")).hexdigest()
+    marker = f"/truncated:sha256:{digest}"
+    return f"{candidate[: _MAX_AST_PATH_CHARS - len(marker)]}{marker}"
 
 
 def _whole_file_location(source: JavaSpringSource, ast_kind: str) -> SourceLocation:
@@ -1678,6 +1761,9 @@ def _is_supported_version(version: str) -> bool:
 
 def _gradle_tokens(text: str) -> tuple[tuple[_GradleToken, ...], bool]:
     tokens: list[_GradleToken] = []
+    delimiters: list[str] = []
+    opening_delimiters = {"{", "(", "["}
+    closing_delimiters = {"}": "{", ")": "(", "]": "["}
     index = 0
     while index < len(text):
         character = text[index]
@@ -1694,6 +1780,11 @@ def _gradle_tokens(text: str) -> tuple[tuple[_GradleToken, ...], bool]:
                 return tuple(tokens), True
             index = close + 2
             continue
+        if (
+            text.startswith(('"""', "'''", "$/"), index)
+            or character == "/"
+        ):
+            return tuple(tokens), True
         if character in {"'", '"'}:
             quote = character
             start = index + 1
@@ -1722,9 +1813,38 @@ def _gradle_tokens(text: str) -> tuple[tuple[_GradleToken, ...], bool]:
                 index += 1
             tokens.append(_GradleToken("identifier", text[start:index], start, index))
             continue
+        if character in opening_delimiters:
+            delimiters.append(character)
+        elif character in closing_delimiters:
+            if not delimiters or delimiters.pop() != closing_delimiters[character]:
+                return tuple(tokens), True
         tokens.append(_GradleToken("symbol", character, index, index + 1))
         index += 1
-    return tuple(tokens), False
+    return tuple(tokens), bool(delimiters)
+
+
+def _gradle_has_invalid_build_context(tokens: tuple[_GradleToken, ...]) -> bool:
+    delimiters: list[str] = []
+    closing_delimiters = {"}": "{", ")": "(", "]": "["}
+    for index, token in enumerate(tokens):
+        if token.kind != "symbol":
+            continue
+        if token.value in {"{", "(", "["}:
+            label = (
+                tokens[index - 1].value
+                if index > 0 and tokens[index - 1].kind == "identifier"
+                else None
+            )
+            if (
+                token.value == "{"
+                and label in {"dependencies", "plugins"}
+                and delimiters
+            ):
+                return True
+            delimiters.append(token.value)
+        elif token.value in closing_delimiters:
+            delimiters.pop()
+    return False
 
 
 def _gradle_literal_dependencies(
@@ -1750,7 +1870,7 @@ def _gradle_literal_dependencies(
             index += 1
             continue
         if (
-            "dependencies" in block_stack
+            block_stack == ["dependencies"]
             and token.kind == "identifier"
             and token.value in _GRADLE_CONFIGURATIONS
         ):
@@ -1791,7 +1911,11 @@ def _gradle_boot_plugins(
                 block_stack.pop()
             index += 1
             continue
-        if "plugins" not in block_stack or token.kind != "identifier" or token.value != "id":
+        if (
+            block_stack != ["plugins"]
+            or token.kind != "identifier"
+            or token.value != "id"
+        ):
             index += 1
             continue
         candidate = index + 1
@@ -1945,18 +2069,171 @@ def _parameters(declaration: Node, content: bytes) -> dict[str, str]:
     return result
 
 
-def _local_variable_names(declaration: Node, content: bytes) -> tuple[str, ...]:
-    names: set[str] = set()
-    for local in (
-        node for node in _walk(declaration) if node.type == "local_variable_declaration"
-    ):
-        for declarator in (
-            child for child in local.named_children if child.type == "variable_declarator"
-        ):
-            name = declarator.child_by_field_name("name")
+def _lexical_binder_ranges(
+    declaration: Node,
+    content: bytes,
+) -> dict[str, tuple[tuple[int, ...], tuple[int, ...]]]:
+    ranges: dict[str, list[tuple[int, int]]] = {}
+
+    def add(name: Node | None, start: int, end: int) -> None:
+        if name is None or start >= end:
+            return
+        ranges.setdefault(_node_text(name, content), []).append((start, end))
+
+    body = declaration.child_by_field_name("body") or declaration
+    parameters = declaration.child_by_field_name("parameters")
+    for name in _parameter_name_nodes(parameters):
+        add(name, body.start_byte, body.end_byte)
+
+    for node in _walk(body):
+        if node.type == "local_variable_declaration":
+            scope = _local_variable_scope(node, body)
+            for declarator in (
+                child
+                for child in node.named_children
+                if child.type == "variable_declarator"
+            ):
+                name = declarator.child_by_field_name("name")
+                add(name, name.end_byte if name is not None else 0, scope.end_byte)
+        elif node.type == "lambda_expression":
+            scope = node.child_by_field_name("body") or node
+            for name in _parameter_name_nodes(
+                node.child_by_field_name("parameters")
+            ):
+                add(name, scope.start_byte, scope.end_byte)
+        elif node.type == "catch_clause":
+            scope = node.child_by_field_name("body") or node
+            parameter = next(
+                (
+                    child
+                    for child in node.named_children
+                    if child.type == "catch_formal_parameter"
+                ),
+                None,
+            )
+            add(
+                parameter.child_by_field_name("name") if parameter is not None else None,
+                scope.start_byte,
+                scope.end_byte,
+            )
+        elif node.type == "enhanced_for_statement":
+            scope = node.child_by_field_name("body") or node
+            add(
+                node.child_by_field_name("name"),
+                scope.start_byte,
+                scope.end_byte,
+            )
+        elif node.type == "resource":
+            statement = _ancestor_of_type(node, {"try_with_resources_statement"}, body)
+            scope = statement.child_by_field_name("body") if statement is not None else None
+            name = node.child_by_field_name("name")
+            if scope is not None:
+                add(name, name.end_byte if name is not None else 0, scope.end_byte)
+        elif node.type in {
+            "instanceof_expression",
+            "record_pattern_component",
+            "type_pattern",
+        }:
+            name = node.child_by_field_name("name") or _pattern_name_node(node)
+            scope = _pattern_binding_scope(node, body)
+            if scope is not None:
+                add(name, name.end_byte if name is not None else 0, scope.end_byte)
+
+    indexed: dict[str, tuple[tuple[int, ...], tuple[int, ...]]] = {}
+    for name, found_ranges in ranges.items():
+        ordered = sorted(found_ranges)
+        starts: list[int] = []
+        prefix_ends: list[int] = []
+        maximum_end = 0
+        for start, end in ordered:
+            starts.append(start)
+            maximum_end = max(maximum_end, end)
+            prefix_ends.append(maximum_end)
+        indexed[name] = (tuple(starts), tuple(prefix_ends))
+    return indexed
+
+
+def _parameter_name_nodes(parameters: Node | None) -> tuple[Node, ...]:
+    if parameters is None:
+        return ()
+    if parameters.type == "identifier":
+        return (parameters,)
+    names: list[Node] = []
+    for node in _walk(parameters):
+        if node.type in {"formal_parameter", "spread_parameter"}:
+            name = node.child_by_field_name("name")
             if name is not None:
-                names.add(_node_text(name, content))
-    return tuple(sorted(names))
+                names.append(name)
+        elif node.type == "inferred_parameters":
+            names.extend(
+                child for child in node.named_children if child.type == "identifier"
+            )
+    return tuple(names)
+
+
+def _local_variable_scope(declaration: Node, boundary: Node) -> Node:
+    current = declaration.parent
+    while current is not None and current.id != boundary.id:
+        if current.type in {
+            "block",
+            "constructor_body",
+            "for_statement",
+            "switch_block_statement_group",
+            "switch_rule",
+        }:
+            return current
+        current = current.parent
+    return boundary
+
+
+def _ancestor_of_type(
+    node: Node,
+    types: set[str],
+    boundary: Node,
+) -> Node | None:
+    current = node.parent
+    while current is not None and current.id != boundary.id:
+        if current.type in types:
+            return current
+        current = current.parent
+    return None
+
+
+def _pattern_name_node(pattern: Node) -> Node | None:
+    return next(
+        (
+            child
+            for child in reversed(pattern.named_children)
+            if child.type == "identifier"
+        ),
+        None,
+    )
+
+
+def _pattern_binding_scope(pattern: Node, boundary: Node) -> Node | None:
+    current = pattern.parent
+    while current is not None and current.id != boundary.id:
+        if current.type == "switch_rule":
+            return current
+        if current.type == "if_statement":
+            return current.child_by_field_name("consequence") or current
+        if current.type in {"for_statement", "while_statement"}:
+            return current.child_by_field_name("body") or current
+        current = current.parent
+    return None
+
+
+def _is_lexically_shadowed(
+    ranges: dict[str, tuple[tuple[int, ...], tuple[int, ...]]],
+    name: str,
+    position: int,
+) -> bool:
+    indexed = ranges.get(name)
+    if indexed is None:
+        return False
+    starts, prefix_ends = indexed
+    candidate = bisect_right(starts, position) - 1
+    return candidate >= 0 and position < prefix_ends[candidate]
 
 
 def _constructor_binding(
