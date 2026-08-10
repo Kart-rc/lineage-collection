@@ -31,8 +31,9 @@ SQLGlot, pytest, JSON Schema, Git CLI, existing evidence/consolidation/review/pu
 Specify a closed descriptor with canonical HTTPS origin, repository, exact 40/64-hex revision,
 checkout root, environment/platform/system, analyzer pack and ruleset. Test a temporary Git checkout
 for exact revision/origin, sorted tracked paths and deterministic scope digest. Add fail-closed cases
-for wrong revision, dirty tracked content, credential-bearing origin, symlink, submodule, path escape,
-file-count, per-file and total-byte bounds.
+for wrong revision, index/path/type/mode drift, credential-bearing origin, symlink, submodule, path
+escape, file-count, per-file and total-byte bounds. Verify that regular worktree transformations or
+dirty bytes never replace the exact committed blob bytes supplied to analyzers.
 
 ```python
 snapshot = LocalGitRepositorySource(limits).snapshot(descriptor)
@@ -55,11 +56,12 @@ Expected: missing contract/module failures.
 
 **Step 3: Implement the source port and adapter**
 
-Use `subprocess.run([...], shell=False, check=True, capture_output=True, text=True)` with explicit Git
-arguments. Strip URL userinfo before comparing/reporting origins. Enumerate `git ls-files -z`, reject
-non-regular or escaping resolved paths, hash canonical path/size/content tuples, and return immutable
-`RepositorySnapshot` metadata plus a bounded `read_bytes(relative_path)` method. Never invoke a
-repository-controlled executable.
+Use the bounded binary process runner with fixed Git argv, `shell=False`, a sanitized environment and
+explicit stdout/stderr/time limits. Strip URL userinfo before comparing/reporting origins. Enumerate
+`git ls-files -z`, reject non-regular or escaping resolved paths, bind the index to the exact HEAD
+tree, and read each verified blob OID through bounded trusted Git plumbing without filters. Hash
+canonical path/size/committed-blob tuples and return immutable `RepositorySnapshot` metadata plus a
+bounded `read_bytes(relative_path)` method. Never invoke a repository-controlled executable.
 
 **Step 4: Verify GREEN and regressions**
 

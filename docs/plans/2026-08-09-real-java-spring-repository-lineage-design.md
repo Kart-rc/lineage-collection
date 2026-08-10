@@ -158,8 +158,9 @@ Implementation follows RED -> GREEN -> REFACTOR with isolated commits and journa
 1. Unit corpus: positive Spring Data calls, entity/table mapping, explicit queries, nested syntax,
    comments/strings, malformed Java, unknown methods, dynamic queries and hostile paths.
 2. Determinism: reordered filesystem enumeration and replay produce byte-identical evidence.
-3. Checkout security: wrong revision/origin, dirty tracked files, symlinks, submodules, path escape,
-   credential-bearing URLs and size/count bounds fail closed.
+3. Checkout security: wrong revision/origin, index/path/type/mode drift, symlinks, submodules, path
+   escape, credential-bearing URLs and size/count bounds fail closed. Analysis reads bounded exact
+   committed blobs; regular dirty or EOL-transformed worktree bytes are never analyzed.
 4. Flow integration: a real-repository result reaches `IN_REVIEW`, preserves coverage and exact
    citations, and can use the existing explicit review/fenced publication path.
 5. Real compatibility cell: an opt-in test runs against the pinned Spring Petclinic checkout and

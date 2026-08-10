@@ -170,15 +170,39 @@ def test_snapshot_rejects_wrong_revision_or_origin(
         _source().snapshot(_descriptor(root, revision or actual_revision, origin=origin))
 
 
-def test_snapshot_rejects_dirty_tracked_content_but_not_untracked_files(tmp_path: Path) -> None:
+def test_snapshot_reads_exact_committed_bytes_instead_of_dirty_worktree_content(
+    tmp_path: Path,
+) -> None:
     root, revision = _repository(tmp_path)
+    clean_snapshot = _source().snapshot(_descriptor(root, revision))
     (root / "README.md").write_text("changed\n", encoding="utf-8")
 
-    with pytest.raises(RepositorySourceError, match="tracked content is not clean"):
-        _source().snapshot(_descriptor(root, revision))
+    dirty_worktree_snapshot = _source().snapshot(_descriptor(root, revision))
+
+    assert dirty_worktree_snapshot.read_bytes("README.md") == b"demo\n"
+    assert dirty_worktree_snapshot.scope_digest == clean_snapshot.scope_digest
 
 
-def test_cleanliness_check_never_executes_repository_configured_filters(tmp_path: Path) -> None:
+def test_snapshot_reads_lf_blob_when_attributes_checkout_crlf(tmp_path: Path) -> None:
+    committed = b"@echo off\necho canonical\n"
+    root, revision = _repository(
+        tmp_path,
+        files={
+            ".gitattributes": b"*.bat text eol=crlf\n",
+            "gradlew.bat": committed,
+        },
+    )
+    (root / "gradlew.bat").unlink()
+    _git(root, "checkout", "--", "gradlew.bat")
+    assert (root / "gradlew.bat").read_bytes() == committed.replace(b"\n", b"\r\n")
+    assert _git(root, "status", "--porcelain=v1") == ""
+
+    snapshot = _source().snapshot(_descriptor(root, revision))
+
+    assert snapshot.read_bytes("gradlew.bat") == committed
+
+
+def test_snapshot_never_executes_repository_configured_filters(tmp_path: Path) -> None:
     root, revision = _repository(
         tmp_path,
         files={
@@ -186,14 +210,70 @@ def test_cleanliness_check_never_executes_repository_configured_filters(tmp_path
             "README.md": b"original\n",
         },
     )
-    marker = tmp_path / "filter-ran"
-    _git(root, "config", "filter.hostile.clean", f"touch '{marker}'; cat")
+    clean_marker = tmp_path / "clean-filter-ran"
+    smudge_marker = tmp_path / "smudge-filter-ran"
+    _git(root, "config", "filter.hostile.clean", f"touch '{clean_marker}'; cat")
+    _git(root, "config", "filter.hostile.smudge", f"touch '{smudge_marker}'; cat")
     (root / "README.md").write_text("mutated!\n", encoding="utf-8")
 
-    with pytest.raises(RepositorySourceError, match="tracked content is not clean"):
+    snapshot = _source().snapshot(_descriptor(root, revision))
+
+    assert snapshot.read_bytes("README.md") == b"original\n"
+    assert not clean_marker.exists()
+    assert not smudge_marker.exists()
+
+
+def test_snapshot_reads_each_verified_blob_oid_once_with_a_byte_bound(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root, revision = _repository(tmp_path)
+    expected_oid = _git(root, "rev-parse", "HEAD:README.md")
+    cat_file_calls: list[tuple[str, int]] = []
+    original_git = LocalGitRepositorySource._git
+
+    def recording_git(
+        source: LocalGitRepositorySource,
+        checkout: Path,
+        *arguments: str,
+        stdout_limit: int,
+    ) -> bytes:
+        if arguments[:2] == ("cat-file", "blob"):
+            cat_file_calls.append((arguments[2], stdout_limit))
+        return original_git(source, checkout, *arguments, stdout_limit=stdout_limit)
+
+    monkeypatch.setattr(LocalGitRepositorySource, "_git", recording_git)
+
+    snapshot = _source().snapshot(_descriptor(root, revision))
+
+    assert snapshot.read_bytes("README.md") == b"demo\n"
+    assert cat_file_calls == [(expected_oid, 1025)]
+
+
+def test_snapshot_rejects_blob_bytes_that_do_not_match_the_verified_oid(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root, revision = _repository(tmp_path)
+    original_git = LocalGitRepositorySource._git
+    secret = b"forged-secret-blob-content"
+
+    def corrupt_blob(
+        source: LocalGitRepositorySource,
+        checkout: Path,
+        *arguments: str,
+        stdout_limit: int,
+    ) -> bytes:
+        if arguments[:2] == ("cat-file", "blob"):
+            return secret
+        return original_git(source, checkout, *arguments, stdout_limit=stdout_limit)
+
+    monkeypatch.setattr(LocalGitRepositorySource, "_git", corrupt_blob)
+
+    with pytest.raises(RepositorySourceError, match="verified object ID") as captured:
         _source().snapshot(_descriptor(root, revision))
 
-    assert not marker.exists()
+    assert secret.decode("ascii") not in str(captured.value)
 
 
 def test_git_commands_ignore_caller_global_and_system_configuration(
@@ -340,6 +420,7 @@ def test_git_child_environment_is_a_minimal_allowlist(
         "GIT_CONFIG_GLOBAL",
         "GIT_CONFIG_NOSYSTEM",
         "GIT_CONFIG_SYSTEM",
+        "GIT_NO_LAZY_FETCH",
         "GIT_NO_REPLACE_OBJECTS",
         "GIT_OPTIONAL_LOCKS",
         "GIT_PAGER",
@@ -351,6 +432,7 @@ def test_git_child_environment_is_a_minimal_allowlist(
         "XDG_CONFIG_HOME",
     }
     assert environment["PATH"] == os.defpath
+    assert environment["GIT_NO_LAZY_FETCH"] == "1"
     assert environment["HOME"] == "/var/empty"
     assert environment["XDG_CONFIG_HOME"] == "/var/empty"
 
@@ -496,13 +578,14 @@ def test_snapshot_read_rejects_paths_outside_explicit_tracked_scope(
         snapshot.read_bytes(relative_path)
 
 
-def test_snapshot_read_revalidates_content_after_snapshot(tmp_path: Path) -> None:
+def test_snapshot_read_remains_bound_to_committed_bytes_after_worktree_change(
+    tmp_path: Path,
+) -> None:
     root, revision = _repository(tmp_path)
     snapshot = _source().snapshot(_descriptor(root, revision))
     (root / "README.md").write_bytes(b"same-size")
 
-    with pytest.raises(RepositorySourceError, match="changed after snapshot"):
-        snapshot.read_bytes("README.md")
+    assert snapshot.read_bytes("README.md") == b"demo\n"
 
 
 def test_snapshot_read_rejects_fifo_replacement_without_blocking(tmp_path: Path) -> None:

@@ -149,34 +149,27 @@ class _ExecutableIdentity:
 class _FileRecord:
     path: str
     mode: str
-    size: int
-    digest: str
+    object_id: str
+    content: bytes
 
 
 @dataclass(frozen=True, slots=True)
 class _BoundSnapshotReader:
     root: Path
-    max_file_bytes: int
     records: tuple[_FileRecord, ...]
 
     def __call__(self, relative_path: str) -> bytes:
         record = next((item for item in self.records if item.path == relative_path), None)
         if record is None:
             raise RepositorySourceError("source path is outside the explicit tracked scope")
-        content = _read_regular_file(
-            self.root,
-            relative_path,
-            self.max_file_bytes,
-            expected_mode=record.mode,
-        )
-        digest = hashlib.sha256(content).hexdigest()
-        if len(content) != record.size or digest != record.digest:
-            raise RepositorySourceError("tracked file changed after snapshot creation")
-        return content
+        _validate_regular_file(self.root, relative_path, expected_mode=record.mode)
+        if _git_blob_id(record.content, len(record.object_id)) != record.object_id:
+            raise RepositorySourceError("cached blob does not match the verified object ID")
+        return record.content
 
 
 class LocalGitRepositorySource:
-    """Builds an immutable, resource-bounded view of a clean local Git checkout."""
+    """Builds a bounded view of exact committed blobs from a verified local checkout."""
 
     def __init__(self, limits: RepositorySourceLimits) -> None:
         _require_supported_posix_platform()
@@ -202,19 +195,12 @@ class LocalGitRepositorySource:
             if mode not in {"100644", "100755"}:
                 raise RepositorySourceError("tracked path is not a regular file")
 
-            content = _read_regular_file(
-                root,
-                relative_path,
-                self._limits.max_file_bytes,
-                expected_mode=mode,
-            )
-            if _git_blob_id(content, len(descriptor.revision)) != object_id:
-                raise RepositorySourceError("tracked content is not clean")
+            _validate_regular_file(root, relative_path, expected_mode=mode)
+            content = self._read_blob(root, object_id, len(descriptor.revision))
             total_bytes += len(content)
             if total_bytes > self._limits.max_total_bytes:
                 raise RepositorySourceError("repository exceeds the total byte limit")
-            content_digest = hashlib.sha256(content).hexdigest()
-            records.append(_FileRecord(relative_path, mode, len(content), content_digest))
+            records.append(_FileRecord(relative_path, mode, object_id, content))
             encoded_path = relative_path.encode("utf-8")
             scope.update(len(encoded_path).to_bytes(8, "big"))
             scope.update(encoded_path)
@@ -223,7 +209,7 @@ class LocalGitRepositorySource:
 
         self._validate_git_state(root, descriptor)
         self._validate_committed_index(root, paths, self._tracked_entries(root))
-        reader = _BoundSnapshotReader(root, self._limits.max_file_bytes, tuple(records))
+        reader = _BoundSnapshotReader(root, tuple(records))
         return RepositorySnapshot(
             descriptor=descriptor,
             paths=paths,
@@ -436,6 +422,26 @@ class LocalGitRepositorySource:
             raise RepositorySourceError("local Git returned ambiguous metadata")
         return value
 
+    def _read_blob(self, root: Path, object_id: str, digest_length: int) -> bytes:
+        if (
+            len(object_id) != digest_length
+            or digest_length not in {40, 64}
+            or any(character not in "0123456789abcdef" for character in object_id)
+        ):
+            raise RepositorySourceError("Git tree contains an unsafe object ID")
+        content = self._git(
+            root,
+            "cat-file",
+            "blob",
+            object_id,
+            stdout_limit=self._limits.max_file_bytes + 1,
+        )
+        if len(content) > self._limits.max_file_bytes:
+            raise RepositorySourceError("tracked file exceeds the per-file byte limit")
+        if _git_blob_id(content, digest_length) != object_id:
+            raise RepositorySourceError("tracked blob does not match the verified object ID")
+        return content
+
     def _git(self, root: Path, *arguments: str, stdout_limit: int) -> bytes:
         _revalidate_executable(self._git_executable)
         return self._runner.run(
@@ -453,6 +459,7 @@ def _git_environment() -> dict[str, str]:
         "GIT_CONFIG_GLOBAL": os.devnull,
         "GIT_CONFIG_NOSYSTEM": "1",
         "GIT_CONFIG_SYSTEM": os.devnull,
+        "GIT_NO_LAZY_FETCH": "1",
         "GIT_NO_REPLACE_OBJECTS": "1",
         "GIT_OPTIONAL_LOCKS": "0",
         "GIT_PAGER": "cat",
@@ -613,13 +620,12 @@ def _git_blob_id(content: bytes, digest_length: int) -> str:
     return hasher.hexdigest()
 
 
-def _read_regular_file(
+def _validate_regular_file(
     root: Path,
     relative_path: str,
-    max_file_bytes: int,
     *,
     expected_mode: str,
-) -> bytes:
+) -> None:
     path = validate_relative_tracked_path(relative_path)
     parts = path.split("/")
     descriptors: list[int] = []
@@ -641,38 +647,6 @@ def _read_regular_file(
         actual_executable = bool(before.st_mode & stat.S_IXUSR)
         if actual_executable != expected_executable:
             raise RepositorySourceError("tracked content is not clean")
-        if before.st_size > max_file_bytes:
-            raise RepositorySourceError("tracked file exceeds the per-file byte limit")
-
-        chunks: list[bytes] = []
-        remaining = max_file_bytes + 1
-        while remaining:
-            chunk = os.read(file_descriptor, min(64 * 1024, remaining))
-            if not chunk:
-                break
-            chunks.append(chunk)
-            remaining -= len(chunk)
-        content = b"".join(chunks)
-        if len(content) > max_file_bytes:
-            raise RepositorySourceError("tracked file exceeds the per-file byte limit")
-        after = os.fstat(file_descriptor)
-        identity_before = (
-            before.st_dev,
-            before.st_ino,
-            before.st_size,
-            before.st_mtime_ns,
-            before.st_ctime_ns,
-        )
-        identity_after = (
-            after.st_dev,
-            after.st_ino,
-            after.st_size,
-            after.st_mtime_ns,
-            after.st_ctime_ns,
-        )
-        if identity_before != identity_after or len(content) != after.st_size:
-            raise RepositorySourceError("tracked file changed while it was being read")
-        return content
     except RepositorySourceError:
         raise
     except OSError as error:
