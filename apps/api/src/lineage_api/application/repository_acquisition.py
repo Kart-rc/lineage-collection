@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import ipaddress
 import re
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Literal
+from urllib.parse import urlsplit
 
 from lineage_api.application.repository_collection import (
     AnalyzerIdentity,
@@ -16,6 +18,39 @@ from lineage_api.application.repository_sources import RepositorySnapshot
 
 _EXACT_COMMIT = re.compile(r"[0-9a-f]{40}")
 _MAX_LOCAL_PATH_BYTES = 4_096
+_LOCAL_HOSTNAME_SUFFIXES = (
+    "localhost",
+    "local",
+    "localdomain",
+    "internal",
+    "lan",
+    "home",
+    "home.arpa",
+)
+_PUBLIC_GIT_ORIGIN_ERROR = "GIT repository origin must be a public HTTPS endpoint"
+
+
+def _validate_public_git_origin(origin: str) -> None:
+    parsed = urlsplit(origin)
+    hostname = parsed.hostname
+    if hostname is None or parsed.port is not None:
+        raise ValueError(_PUBLIC_GIT_ORIGIN_ERROR)
+
+    try:
+        address = ipaddress.ip_address(hostname)
+    except ValueError:
+        labels = hostname.split(".")
+        if len(labels) < 2 or any(
+            hostname == suffix or hostname.endswith(f".{suffix}")
+            for suffix in _LOCAL_HOSTNAME_SUFFIXES
+        ):
+            raise ValueError(_PUBLIC_GIT_ORIGIN_ERROR) from None
+    else:
+        if not address.is_global or address.is_multicast:
+            raise ValueError(_PUBLIC_GIT_ORIGIN_ERROR)
+
+    # Task 2B must resolve and revalidate every clone destination immediately
+    # before connection to block DNS rebinding and private resolved addresses.
 
 
 @dataclass(frozen=True, slots=True)
@@ -79,6 +114,10 @@ class LocalCheckoutRequest(_RepositoryRequest):
 @dataclass(frozen=True, slots=True)
 class GitRepositoryRequest(_RepositoryRequest):
     source_type: Literal["GIT"] = field(init=False, default="GIT")
+
+    def __post_init__(self) -> None:
+        _RepositoryRequest.__post_init__(self)
+        _validate_public_git_origin(self.origin)
 
 
 RepositorySourceRequest = LocalCheckoutRequest | GitRepositoryRequest

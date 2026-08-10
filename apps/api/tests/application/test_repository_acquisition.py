@@ -94,6 +94,49 @@ def test_source_requests_are_frozen_bounded_and_exact() -> None:
         )
 
 
+@pytest.mark.parametrize(
+    "origin",
+    (
+        "https://localhost/acme/spring-service",
+        "https://git.localhost/acme/spring-service",
+        "https://intranet/acme/spring-service",
+        "https://127.0.0.1/acme/spring-service",
+        "https://0.0.0.0/acme/spring-service",
+        "https://10.0.0.1/acme/spring-service",
+        "https://172.16.0.1/acme/spring-service",
+        "https://192.168.0.1/acme/spring-service",
+        "https://169.254.1.1/acme/spring-service",
+        "https://224.0.0.1/acme/spring-service",
+        "https://240.0.0.1/acme/spring-service",
+        "https://[::1]/acme/spring-service",
+        "https://git.local/acme/spring-service",
+        "https://example.com./acme/spring-service",
+        "https://example.com:8443/acme/spring-service",
+    ),
+)
+def test_git_requests_reject_non_public_or_ambiguous_origins_without_echoing(
+    origin: str,
+) -> None:
+    with pytest.raises(ValueError) as captured:
+        GitRepositoryRequest(**{**_request_fields(), "origin": origin})
+
+    message = str(captured.value)
+    assert len(message.encode()) <= 160
+    assert origin not in message
+    assert message in {
+        "origin must be a canonical HTTPS repository URL",
+        "GIT repository origin must be a public HTTPS endpoint",
+    }
+
+
+def test_git_requests_accept_canonical_public_https_origins() -> None:
+    origin = "https://github.com/acme/spring-service"
+
+    request = GitRepositoryRequest(**{**_request_fields(), "origin": origin})
+
+    assert request.origin == origin
+
+
 def test_local_checkout_is_rejected_fail_closed_before_provider_or_collection(
     tmp_path: Path,
 ) -> None:
