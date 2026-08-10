@@ -6,10 +6,12 @@ import hmac
 import sqlite3
 import subprocess
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
 from lineage_api.cli import run
+from lineage_api.services.analyzer_registry import AnalyzerRegistry, AnalyzerSelection
 
 
 ORIGIN = "https://example.com/acme/spring-service"
@@ -233,35 +235,109 @@ dependencies { implementation 'org.springframework.boot:spring-boot-starter-data
 
 
 @pytest.mark.parametrize(
-    ("overrides", "removed", "reason"),
+    "untrusted_path",
     [
-        ({}, ("src/main/resources/db/postgres/schema.sql",), "missing-profile-schema"),
-        (
-            {
-                "module/src/main/resources/db/postgres/schema.sql": (
-                    "create table owners (id integer primary key);"
-                )
-            },
-            (),
-            "ambiguous-profile-schema",
-        ),
+        "src/test/resources/db/postgres/schema.sql",
+        "test/fixtures/db/postgres/schema.sql",
+        "scripts/setup/db/postgres/schema.sql",
+        "user/db/postgres/schema.sql",
     ],
 )
-def test_profile_schema_selection_is_explicit(
+def test_untrusted_profile_schema_paths_cannot_authorize_tables(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
-    overrides: dict[str, str],
-    removed: tuple[str, ...],
-    reason: str,
+    untrusted_path: str,
 ) -> None:
-    checkout, revision = _checkout(tmp_path, overrides=overrides, removed=removed)
-    monkeypatch.setenv("LINEAGE_DATA_DIR", str(tmp_path / reason))
+    checkout, revision = _checkout(
+        tmp_path,
+        overrides={
+            untrusted_path: "create table owners (id integer primary key);"
+        },
+        removed=("src/main/resources/db/postgres/schema.sql",),
+    )
+    monkeypatch.setenv("LINEAGE_DATA_DIR", str(tmp_path / "untrusted-schema"))
 
     assert run(_arguments(checkout, revision)) == 2
     result = json.loads(capsys.readouterr().out)
     assert result["outcome"] == "INTEGRATION_REQUIRED"
-    assert reason in result["statusReasons"]
+    assert result["counts"]["edges"] == 0
+    assert "missing-profile-schema" in result["statusReasons"]
+
+
+def test_exact_production_schema_path_is_selected_while_alternates_are_ignored(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    checkout, revision = _checkout(
+        tmp_path,
+        overrides={
+            "module/src/main/resources/db/postgres/schema.sql": (
+                "create table ignored_module_table (id integer primary key);"
+            ),
+            "src/test/resources/db/postgres/schema.sql": (
+                "create table ignored_test_table (id integer primary key);"
+            ),
+        },
+    )
+    monkeypatch.setenv("LINEAGE_DATA_DIR", str(tmp_path / "trusted-schema"))
+
+    assert run(_arguments(checkout, revision)) == 0
+    result = json.loads(capsys.readouterr().out)
+    assert result["outcome"] == "ACCEPTED"
+    assert result["counts"] == {
+        "edges": 2,
+        "reads": 1,
+        "residue": 0,
+        "unresolved": 0,
+        "writes": 1,
+    }
+
+
+def test_duplicate_trusted_schema_candidates_remain_ambiguous() -> None:
+    sources = {
+        "pom.xml": b"""<project><parent><groupId>org.springframework.boot</groupId>
+<artifactId>spring-boot-starter-parent</artifactId><version>4.1.0</version></parent>
+<dependencies><dependency><groupId>org.springframework.boot</groupId>
+<artifactId>spring-boot-starter-data-jpa</artifactId></dependency></dependencies></project>""",
+        "src/main/resources/db/postgres/schema.sql": (
+            b"create table owners (id integer primary key);"
+        ),
+    }
+    snapshot = SimpleNamespace(
+        origin=ORIGIN,
+        repository="spring-service",
+        revision="a" * 40,
+        scope_digest="sha256:" + "b" * 64,
+        environment="staging",
+        platform="postgres",
+        system="orders",
+        analyzer_pack="java-spring-data-jpa-v1",
+        ruleset="spring-data-rules-v1",
+        paths=(
+            "pom.xml",
+            "src/main/resources/db/postgres/schema.sql",
+            "src/main/resources/db/postgres/schema.sql",
+        ),
+        read_bytes=lambda path: sources[path],
+    )
+
+    result = AnalyzerRegistry.default().analyze(
+        snapshot,
+        AnalyzerSelection(
+            analyzer_pack="java-spring-data-jpa-v1",
+            ruleset="spring-data-rules-v1",
+            source_kind="git-checkout",
+            framework="spring-data-jpa",
+            schema_profile="postgres",
+        ),
+        "run-ambiguous-schema",
+        "correlation-ambiguous-schema",
+    )
+
+    assert result.status == "INTEGRATION_REQUIRED"
+    assert "ambiguous-profile-schema" in result.status_reasons
 
 
 def test_failure_after_sca_checkpoint_resumes_without_reanalysis(

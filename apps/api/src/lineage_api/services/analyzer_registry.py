@@ -626,7 +626,14 @@ def canonical_source_metadata(
 
 def _is_profile_schema_path(path: str, schema_profile: str) -> bool:
     parts = PurePosixPath(path).parts
-    return len(parts) >= 3 and parts[-3:] == ("db", schema_profile, "schema.sql")
+    return parts == (
+        "src",
+        "main",
+        "resources",
+        "db",
+        schema_profile,
+        "schema.sql",
+    )
 
 
 def _is_main_java_path(path: str) -> bool:

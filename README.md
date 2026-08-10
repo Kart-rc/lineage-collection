@@ -66,9 +66,10 @@ uv run --project apps/api python -m lineage_api.cli collect-checkout \
 
 The v1 pack is repository-neutral. It reconciles literal root Maven and Gradle Spring Boot/Data JPA
 cells, analyzes production Java under `src/main/java`, and selects exactly one
-`db/<profile>/schema.sql`. Conflicting or dynamic build cells and missing or multiple profile
-schemas return `INTEGRATION_REQUIRED`. Seed data, user/setup scripts and test Java are outside this
-static production scope. The H2 profile is deliberately approximation-only and returns
+repository-relative `src/main/resources/db/<profile>/schema.sql`. Conflicting or dynamic build
+cells and missing or multiple trusted schema candidates return `INTEGRATION_REQUIRED`. Alternate
+module, fixture, test, seed-data, user and setup paths are outside this static production scope.
+The H2 profile is deliberately approximation-only and returns
 `INTEGRATION_REQUIRED`; use a trusted PostgreSQL or MySQL schema profile to authorize tables.
 
 The bounded JSON result contains only identifiers, digests, status, stage names and counts. Static
