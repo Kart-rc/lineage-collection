@@ -16,6 +16,8 @@ from sqlglot.errors import ErrorLevel, ParseError, TokenError
 from sqlglot.tokens import Token, TokenType
 from tree_sitter import Language, Node, Parser, Tree
 
+from lineage_api.domain.urns import LineageUrn
+
 
 FactValue: TypeAlias = str | tuple[str, ...]
 _SUPPORTED_COORDINATES = {
@@ -46,8 +48,32 @@ _SENSITIVE_FRAMEWORK_NAMES = frozenset(
     fqn.rsplit(".", 1)[-1] for fqn in _APPROVED_FRAMEWORK_SYMBOLS
 )
 _APPROVED_REPOSITORY_BASES = frozenset({_JPA_REPOSITORY_FQN, _REPOSITORY_FQN})
+_JPA_INHERITED_OPERATIONS = frozenset(
+    {
+        "count",
+        "delete",
+        "deleteAll",
+        "deleteAllById",
+        "deleteAllByIdInBatch",
+        "deleteAllInBatch",
+        "deleteById",
+        "existsById",
+        "findAll",
+        "findAllById",
+        "findById",
+        "getById",
+        "getOne",
+        "getReferenceById",
+        "save",
+        "saveAll",
+        "saveAllAndFlush",
+        "saveAndFlush",
+    }
+)
 _DYNAMIC_BUILD_TOKEN = re.compile(r"(?:\$\{|\$[A-Za-z_]|\+)")
 _SEMANTIC_VERSION = re.compile(r"([0-9]+)\.([0-9]+)\.([0-9]+)")
+_EVIDENCE_JAVA_IDENTIFIER = re.compile(r"[A-Za-z_$][A-Za-z0-9_$]{0,127}")
+_EVIDENCE_TABLE_IDENTIFIER = re.compile(r"[A-Za-z_][A-Za-z0-9_$]{0,127}")
 _GRADLE_CONFIGURATIONS = {"api", "compileOnly", "implementation", "runtimeOnly"}
 _SQLGLOT_DIALECTS = {
     "h2": "postgres",
@@ -188,6 +214,867 @@ class JavaSpringAnalysis:
     facts: tuple[SyntaxFact, ...]
     residue: tuple[AnalysisResidue, ...]
     stats: AnalysisStats
+
+
+@dataclass(frozen=True, slots=True)
+class JavaSpringEvidenceContext:
+    origin: str
+    repository: str
+    revision: str
+    scope_digest: str
+    environment: str
+    platform: str
+    system: str
+    analyzer_pack: str
+    ruleset_version: str
+    resolver_version: str
+    schema_profile: str
+    scope_complete: bool = True
+
+    def __post_init__(self) -> None:
+        if re.fullmatch(r"[0-9a-f]{40}|[0-9a-f]{64}", self.revision) is None:
+            raise ValueError("revision must be an exact lowercase digest")
+        if re.fullmatch(r"sha256:[0-9a-f]{64}", self.scope_digest) is None:
+            raise ValueError("scope digest must be an exact sha256 digest")
+        if re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}", self.repository) is None:
+            raise ValueError("repository must be a safe name")
+        if self.analyzer_pack != "java-spring-data-jpa-v1":
+            raise ValueError("analyzer pack is outside the closed Java/Spring cell")
+        if self.schema_profile not in _SQLGLOT_DIALECTS:
+            raise ValueError("schema profile is outside the supported closed set")
+        for name in (
+            "origin",
+            "environment",
+            "platform",
+            "system",
+            "ruleset_version",
+            "resolver_version",
+        ):
+            value = getattr(self, name)
+            if not isinstance(value, str) or not value or value != value.strip():
+                raise ValueError(f"{name.replace('_', ' ')} must be a non-empty determinant")
+            if len(value) > 512 or any(ord(character) < 32 for character in value):
+                raise ValueError(f"{name.replace('_', ' ')} exceeds evidence bounds")
+        if not self.origin.startswith("https://") or any(
+            token in self.origin for token in ("@", "?", "#")
+        ):
+            raise ValueError("origin must be credential-free canonical HTTPS")
+        LineageUrn(self.environment, self.platform, self.system, "__schema__")
+        if not isinstance(self.scope_complete, bool):
+            raise ValueError("scope complete must be boolean")
+
+
+@dataclass(frozen=True, slots=True)
+class JavaSpringFactReference:
+    identifier: str
+    kind: str
+    subject: str
+    location: SourceLocation
+    attributes: tuple[tuple[str, FactValue], ...]
+
+    @classmethod
+    def from_fact(cls, fact: SyntaxFact) -> "JavaSpringFactReference":
+        return cls(
+            fact.identifier,
+            fact.kind,
+            fact.subject,
+            fact.location,
+            _evidence_fact_attributes(fact),
+        )
+
+    def as_dict(self) -> dict[str, object]:
+        return {
+            "identifier": self.identifier,
+            "kind": self.kind,
+            "subject": self.subject,
+            "location": _location_dict(self.location),
+            "attributes": [
+                {"name": name, "value": list(value) if isinstance(value, tuple) else value}
+                for name, value in self.attributes
+            ],
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class JavaSpringEdgeEvidence:
+    origin: str
+    repository_name: str
+    revision: str
+    scope_digest: str
+    analyzer_pack: str
+    ruleset_version: str
+    resolver_version: str
+    schema_profile: str
+    framework_evidence: tuple[str, ...]
+    operation_rationale: str
+    invocations: tuple[JavaSpringFactReference, ...]
+    repository: JavaSpringFactReference
+    entity: JavaSpringFactReference
+    table: JavaSpringFactReference
+    query: JavaSpringFactReference | None = None
+
+    @property
+    def invocation(self) -> JavaSpringFactReference:
+        return self.invocations[0]
+
+    def as_dict(self) -> dict[str, object]:
+        return {
+            "file": self.invocation.location.path,
+            "line": self.invocation.location.line,
+            "astPath": self.invocation.location.ast_path,
+            "origin": self.origin,
+            "revision": self.revision,
+            "scopeDigest": self.scope_digest,
+            "analyzerPack": self.analyzer_pack,
+            "rulesetVersion": self.ruleset_version,
+            "resolverVersion": self.resolver_version,
+            "schemaProfile": self.schema_profile,
+            "frameworkEvidence": list(self.framework_evidence),
+            "operationRationale": self.operation_rationale,
+            "invocations": [item.as_dict() for item in self.invocations],
+            "repository": self.repository.as_dict(),
+            "entity": self.entity.as_dict(),
+            "table": self.table.as_dict(),
+            "query": self.query.as_dict() if self.query is not None else None,
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class JavaSpringLineageEdge:
+    stable_id: str
+    from_urn: str
+    to_urn: str
+    edge_type: str
+    transform: str
+    service_urn: str
+    dataset_urn: str
+    exact: bool
+    executed: bool
+    mechanism: str
+    evidence: JavaSpringEdgeEvidence
+
+    @property
+    def lineage_tuple(self) -> tuple[str, str, str, str]:
+        return self.from_urn, self.to_urn, self.edge_type, self.transform
+
+    def as_dict(self) -> dict[str, object]:
+        return {
+            "stableId": self.stable_id,
+            "from": [self.from_urn],
+            "to": self.to_urn,
+            "edgeType": self.edge_type,
+            "transform": self.transform,
+            "serviceUrn": self.service_urn,
+            "datasetUrn": self.dataset_urn,
+            "mechanism": self.mechanism,
+            "exact": self.exact,
+            "executed": self.executed,
+            "repo": self.evidence.repository_name,
+            "digest": self.evidence.revision,
+            "scopeDigest": self.evidence.scope_digest,
+            "analyzerPack": self.evidence.analyzer_pack,
+            "rulesetVersion": self.evidence.ruleset_version,
+            "resolverVersion": self.evidence.resolver_version,
+            "snapshotId": self.evidence.scope_digest,
+            "schemaProfile": self.evidence.schema_profile,
+            "evidence": self.evidence.as_dict(),
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class JavaSpringCompilationResidue:
+    code: str
+    location: SourceLocation
+    fact_ids: tuple[str, ...] = ()
+
+    def as_dict(self) -> dict[str, object]:
+        return {
+            "code": self.code,
+            "location": _location_dict(self.location),
+            "factIds": list(self.fact_ids),
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class JavaSpringCoverage:
+    supported_java_files: int
+    syntax_facts: int
+    parser_residue: int
+    invocations_seen: int
+    invocations_proven: int
+    invocations_unresolved: int
+    edge_candidates: int
+    edges_emitted: int
+    edges_deduplicated: int
+    residue_count: int
+
+    def as_dict(self) -> dict[str, int]:
+        return {
+            "supportedJavaFiles": self.supported_java_files,
+            "syntaxFacts": self.syntax_facts,
+            "parserResidue": self.parser_residue,
+            "invocationsSeen": self.invocations_seen,
+            "invocationsProven": self.invocations_proven,
+            "invocationsUnresolved": self.invocations_unresolved,
+            "edgeCandidates": self.edge_candidates,
+            "edgesEmitted": self.edges_emitted,
+            "edgesDeduplicated": self.edges_deduplicated,
+            "residueCount": self.residue_count,
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class JavaSpringLineageEvidence:
+    status: str
+    status_reasons: tuple[str, ...]
+    context: JavaSpringEvidenceContext
+    edges: tuple[JavaSpringLineageEdge, ...]
+    residue: tuple[JavaSpringCompilationResidue, ...]
+    coverage: JavaSpringCoverage
+
+    def as_dict(self) -> dict[str, object]:
+        return {
+            "schemaVersion": "1.0.0",
+            "status": self.status,
+            "statusReasons": list(self.status_reasons),
+            "context": {
+                "origin": self.context.origin,
+                "repository": self.context.repository,
+                "revision": self.context.revision,
+                "scopeDigest": self.context.scope_digest,
+                "environment": self.context.environment,
+                "platform": self.context.platform,
+                "system": self.context.system,
+                "analyzerPack": self.context.analyzer_pack,
+                "rulesetVersion": self.context.ruleset_version,
+                "resolverVersion": self.context.resolver_version,
+                "schemaProfile": self.context.schema_profile,
+                "scopeComplete": self.context.scope_complete,
+            },
+            "edges": [edge.as_dict() for edge in self.edges],
+            "residue": [item.as_dict() for item in self.residue],
+            "coverage": self.coverage.as_dict(),
+        }
+
+    def to_bytes(self) -> bytes:
+        return json.dumps(
+            self.as_dict(), sort_keys=True, separators=(",", ":"), ensure_ascii=False
+        ).encode()
+
+
+@dataclass(frozen=True, slots=True)
+class _CompiledCandidate:
+    from_urn: str
+    to_urn: str
+    edge_type: str
+    transform: str
+    service_urn: str
+    dataset_urn: str
+    rationale: str
+    invocation: SyntaxFact
+    repository: SyntaxFact
+    entity: SyntaxFact
+    table: SyntaxFact
+    query: SyntaxFact | None
+
+
+@dataclass(frozen=True, slots=True)
+class _Operation:
+    edge_type: str
+    label: str
+    rationale: str
+    query: SyntaxFact | None = None
+
+
+class JavaSpringEvidenceCompiler:
+    """Compiles only complete Spring Data call-site proof chains into static edges."""
+
+    _BLOCKING_ANALYSIS_RESIDUE = frozenset(
+        {
+            "ambiguous-framework-evidence",
+            "ambiguous-repository-injection",
+            "dynamic-framework-evidence",
+            "incompatible-framework-cell",
+            "invalid-build-encoding",
+            "invalid-java-encoding",
+            "invalid-repository-declaration",
+            "invalid-repository-generics",
+            "invalid-sql-encoding",
+            "malformed-build-file",
+            "malformed-java",
+            "malformed-sql",
+            "missing-boot-evidence",
+            "missing-boot-version",
+            "missing-jpa-dependency",
+            "missing-jpa-version",
+            "missing-sql-dialect",
+            "shadowed-framework-symbol",
+            "shadowed-repository-receiver",
+            "unknown-framework",
+            "unbound-repository-receiver",
+            "unresolved-repository-entity",
+            "unsupported-boot-version",
+            "unsupported-direct-spring-data-jpa",
+            "unsupported-jpa-version",
+        }
+    )
+
+    def compile(
+        self,
+        analysis: JavaSpringAnalysis,
+        context: JavaSpringEvidenceContext,
+    ) -> JavaSpringLineageEvidence:
+        facts = tuple(sorted(analysis.facts, key=lambda item: item.identifier))
+        by_kind = {
+            kind: tuple(item for item in facts if item.kind == kind)
+            for kind in {
+                "java.annotation",
+                "java.invocation",
+                "java.method",
+                "spring.entity-table",
+                "spring.query",
+                "spring.repository-association",
+                "sql.table",
+            }
+        }
+        residue: list[JavaSpringCompilationResidue] = [
+            JavaSpringCompilationResidue(item.code, item.location)
+            for item in analysis.residue
+        ]
+        status_reasons = {
+            item.code
+            for item in analysis.residue
+            if item.code in self._BLOCKING_ANALYSIS_RESIDUE
+        }
+        if analysis.framework.status != "supported":
+            status_reasons.add("unsupported-framework")
+        if analysis.stats.java_files_parsed == 0:
+            status_reasons.add("zero-supported-java-files")
+        if not context.scope_complete:
+            status_reasons.add("incomplete-scope")
+
+        repositories = _unique_facts_by_subject(
+            by_kind["spring.repository-association"]
+        )
+        entities = _unique_facts_by_subject(by_kind["spring.entity-table"])
+        queries = _facts_by_subject(by_kind["spring.query"])
+        methods = _facts_by_subject(by_kind["java.method"])
+        query_annotations = _query_annotations(by_kind["java.annotation"])
+        tables = _native_profile_tables(by_kind["sql.table"], context.schema_profile)
+        candidates: list[_CompiledCandidate] = []
+        unresolved = 0
+
+        for invocation in by_kind["java.invocation"]:
+            invocation_facts = (invocation.identifier,)
+            repository_name = str(invocation.attribute("repositoryType"))
+            repository = repositories.get(repository_name)
+            if repository is None:
+                unresolved += 1
+                code = (
+                    "ambiguous-repository"
+                    if repository_name in repositories.duplicates
+                    else "missing-repository"
+                )
+                residue.append(
+                    JavaSpringCompilationResidue(
+                        code, invocation.location, invocation_facts
+                    )
+                )
+                status_reasons.add(code)
+                continue
+            entity_name = str(repository.attribute("entityFqn"))
+            entity = entities.get(entity_name)
+            if entity is None:
+                unresolved += 1
+                code = (
+                    "ambiguous-entity-mapping"
+                    if entity_name in entities.duplicates
+                    else "missing-entity-mapping"
+                )
+                residue.append(
+                    JavaSpringCompilationResidue(
+                        code,
+                        invocation.location,
+                        (invocation.identifier, repository.identifier),
+                    )
+                )
+                status_reasons.add(code)
+                continue
+            table_name = str(entity.attribute("table"))
+            matching_tables = tables.get(table_name.casefold(), ())
+            if len(matching_tables) != 1:
+                unresolved += 1
+                code = (
+                    "ambiguous-schema-table"
+                    if len(matching_tables) > 1
+                    else "missing-schema-table"
+                )
+                residue.append(
+                    JavaSpringCompilationResidue(
+                        code,
+                        invocation.location,
+                        (invocation.identifier, repository.identifier, entity.identifier),
+                    )
+                )
+                status_reasons.add(code)
+                continue
+            table = matching_tables[0]
+            called = str(invocation.attribute("method"))
+            owner_and_method = invocation.subject.rsplit(":", 1)[0]
+            owner, separator, enclosing_method = owner_and_method.partition("#")
+            if not (
+                _bounded_java_fqn(repository.subject)
+                and _bounded_java_fqn(entity_name)
+                and _bounded_java_fqn(owner)
+                and separator
+                and _EVIDENCE_JAVA_IDENTIFIER.fullmatch(enclosing_method)
+                and _EVIDENCE_JAVA_IDENTIFIER.fullmatch(called)
+                and _EVIDENCE_TABLE_IDENTIFIER.fullmatch(table_name)
+            ):
+                unresolved += 1
+                code = "unsupported-edge-identity"
+                residue.append(
+                    JavaSpringCompilationResidue(
+                        code,
+                        invocation.location,
+                        (
+                            invocation.identifier,
+                            repository.identifier,
+                            entity.identifier,
+                            table.identifier,
+                        ),
+                    )
+                )
+                status_reasons.add(code)
+                continue
+            operation, operation_error = _resolve_operation(
+                repository,
+                entity,
+                table,
+                called,
+                queries,
+                query_annotations,
+                methods,
+                context.schema_profile,
+            )
+            if operation is None:
+                unresolved += 1
+                code = operation_error or "unsupported-operation"
+                residue.append(
+                    JavaSpringCompilationResidue(
+                        code,
+                        invocation.location,
+                        (
+                            invocation.identifier,
+                            repository.identifier,
+                            entity.identifier,
+                            table.identifier,
+                        ),
+                    )
+                )
+                status_reasons.add(code)
+                continue
+
+            service_urn = f"service://{context.repository}/{owner_and_method}"
+            dataset_urn = str(
+                LineageUrn(
+                    context.environment,
+                    context.platform,
+                    context.system,
+                    table_name,
+                )
+            )
+            repository_simple = repository.subject.rsplit(".", 1)[-1]
+            transform = f"{repository_simple}.{called} -> {table_name}{operation.label}"
+            from_urn, to_urn = (
+                (dataset_urn, service_urn)
+                if operation.edge_type == "READS"
+                else (service_urn, dataset_urn)
+            )
+            candidates.append(
+                _CompiledCandidate(
+                    from_urn,
+                    to_urn,
+                    operation.edge_type,
+                    transform,
+                    service_urn,
+                    dataset_urn,
+                    operation.rationale,
+                    invocation,
+                    repository,
+                    entity,
+                    table,
+                    operation.query,
+                )
+            )
+
+        edges = _collapse_java_spring_candidates(
+            candidates, context, analysis.framework.evidence
+        )
+        ordered_residue = tuple(
+            sorted(
+                set(residue),
+                key=lambda item: (
+                    item.location.path,
+                    item.location.start_byte,
+                    item.code,
+                    item.fact_ids,
+                ),
+            )
+        )
+        coverage = JavaSpringCoverage(
+            supported_java_files=analysis.stats.java_files_parsed,
+            syntax_facts=len(facts),
+            parser_residue=len(analysis.residue),
+            invocations_seen=len(by_kind["java.invocation"]),
+            invocations_proven=len(candidates),
+            invocations_unresolved=unresolved,
+            edge_candidates=len(candidates),
+            edges_emitted=len(edges),
+            edges_deduplicated=len(candidates) - len(edges),
+            residue_count=len(ordered_residue),
+        )
+        reasons = tuple(sorted(status_reasons))
+        return JavaSpringLineageEvidence(
+            "INTEGRATION_REQUIRED" if reasons else "COMPLETE",
+            reasons,
+            context,
+            edges,
+            ordered_residue,
+            coverage,
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class _UniqueFactMap:
+    values: tuple[tuple[str, SyntaxFact], ...]
+    duplicates: frozenset[str]
+
+    def get(self, subject: str) -> SyntaxFact | None:
+        if subject in self.duplicates:
+            return None
+        return next(
+            (fact for found_subject, fact in self.values if found_subject == subject),
+            None,
+        )
+
+
+def _unique_facts_by_subject(facts: tuple[SyntaxFact, ...]) -> _UniqueFactMap:
+    grouped = _facts_by_subject(facts)
+    return _UniqueFactMap(
+        tuple(
+            (subject, values[0])
+            for subject, values in sorted(grouped.items())
+            if len(values) == 1
+        ),
+        frozenset(subject for subject, values in grouped.items() if len(values) != 1),
+    )
+
+
+def _facts_by_subject(
+    facts: tuple[SyntaxFact, ...],
+) -> dict[str, tuple[SyntaxFact, ...]]:
+    grouped: dict[str, list[SyntaxFact]] = {}
+    for fact in facts:
+        grouped.setdefault(fact.subject, []).append(fact)
+    return {
+        subject: tuple(sorted(values, key=lambda item: item.identifier))
+        for subject, values in sorted(grouped.items())
+    }
+
+
+def _optional_attribute(fact: SyntaxFact, name: str) -> FactValue | None:
+    try:
+        return fact.attribute(name)
+    except KeyError:
+        return None
+
+
+def _query_annotations(
+    annotations: tuple[SyntaxFact, ...],
+) -> dict[str, tuple[SyntaxFact, ...]]:
+    grouped: dict[str, list[SyntaxFact]] = {}
+    for fact in annotations:
+        if _optional_attribute(fact, "resolvedFqn") != _QUERY_FQN:
+            continue
+        subject = fact.subject.removesuffix(":@Query")
+        grouped.setdefault(subject, []).append(fact)
+    return {
+        subject: tuple(sorted(values, key=lambda item: item.identifier))
+        for subject, values in sorted(grouped.items())
+    }
+
+
+def _native_profile_tables(
+    facts: tuple[SyntaxFact, ...], schema_profile: str
+) -> dict[str, tuple[SyntaxFact, ...]]:
+    if schema_profile == "h2":
+        return {}
+    expected_dialect = _SQLGLOT_DIALECTS[schema_profile]
+    grouped: dict[str, list[SyntaxFact]] = {}
+    for fact in facts:
+        if (
+            _optional_attribute(fact, "dialectMode") != "native"
+            or _optional_attribute(fact, "dialect") != expected_dialect
+            or schema_profile not in PurePosixPath(fact.location.path).parts
+        ):
+            continue
+        grouped.setdefault(fact.subject.casefold(), []).append(fact)
+    return {
+        subject: tuple(sorted(values, key=lambda item: item.identifier))
+        for subject, values in sorted(grouped.items())
+    }
+
+
+def _resolve_operation(
+    repository: SyntaxFact,
+    entity: SyntaxFact,
+    table: SyntaxFact,
+    called: str,
+    queries: dict[str, tuple[SyntaxFact, ...]],
+    query_annotations: dict[str, tuple[SyntaxFact, ...]],
+    methods: dict[str, tuple[SyntaxFact, ...]],
+    schema_profile: str,
+) -> tuple[_Operation | None, str | None]:
+    method_subject = f"{repository.subject}#{called}"
+    annotations = query_annotations.get(method_subject, ())
+    if annotations:
+        if len(annotations) != 1:
+            return None, "ambiguous-query"
+        annotation = annotations[0]
+        if _optional_attribute(annotation, "dynamicValues"):
+            return None, "dynamic-query"
+        query_facts = queries.get(method_subject, ())
+        if len(query_facts) != 1:
+            return None, "ambiguous-query"
+        query = query_facts[0]
+        operation, target, language = _parse_explicit_query(query, schema_profile)
+        if operation is None or target is None or language is None:
+            return None, "unsupported-query"
+        expected = (
+            table.subject
+            if language == "SQL"
+            else str(repository.attribute("entityFqn")).rsplit(".", 1)[-1]
+        )
+        if target.casefold() != expected.casefold():
+            return None, "query-table-conflict" if language == "SQL" else "query-entity-conflict"
+        edge_type = "READS" if operation == "SELECT" else "WRITES"
+        return (
+            _Operation(
+                edge_type,
+                f" [{language} {operation}]",
+                f"explicit @Query parsed as {language} {operation}",
+                query,
+            ),
+            None,
+        )
+
+    inherited = (
+        repository.attribute("baseFqn") == _JPA_REPOSITORY_FQN
+        and called in _JPA_INHERITED_OPERATIONS
+    )
+    if method_subject not in methods and not inherited:
+        return None, "unsupported-operation"
+    lower = called.casefold()
+    if lower.startswith(("find", "get", "read", "count", "exists")):
+        return _Operation("READS", "", f"derived Spring Data read method {called}"), None
+    if lower.startswith(("save", "insert", "update")):
+        return _Operation("WRITES", "", f"derived Spring Data write method {called}"), None
+    if lower.startswith(("delete", "remove")):
+        return (
+            _Operation(
+                "WRITES",
+                " [DELETE]",
+                f"derived Spring Data delete method {called}",
+            ),
+            None,
+        )
+    return None, "unsupported-operation"
+
+
+def _parse_explicit_query(
+    query: SyntaxFact, schema_profile: str
+) -> tuple[str | None, str | None, str | None]:
+    statement = str(query.attribute("query"))
+    native = _optional_attribute(query, "nativeQuery") == "true"
+    dialect_name = _SQLGLOT_DIALECTS[schema_profile]
+    if native:
+        try:
+            expression = _silent_sqlglot_parse_one(
+                Dialect.get_or_raise(dialect_name), statement
+            )
+        except (ParseError, ValueError, TokenError):
+            return None, None, None
+        if isinstance(expression, exp.Select):
+            operation = "SELECT"
+        elif isinstance(expression, exp.Insert):
+            operation = "INSERT"
+        elif isinstance(expression, exp.Update):
+            operation = "UPDATE"
+        elif isinstance(expression, exp.Delete):
+            operation = "DELETE"
+        else:
+            return None, None, None
+        tables = tuple(expression.find_all(exp.Table))
+        unique = {
+            (item.catalog.casefold(), item.db.casefold(), item.name.casefold())
+            for item in tables
+        }
+        if len(tables) != 1 or len(unique) != 1:
+            return None, None, None
+        return operation, tables[0].name, "SQL"
+
+    try:
+        tokens = Dialect.get_or_raise("postgres").tokenizer().tokenize(statement)
+    except (ValueError, TokenError):
+        return None, None, None
+    token_text = [token.text.casefold() for token in tokens]
+    if not tokens or any(text in {";", "join", ",", "("} for text in token_text):
+        return None, None, None
+    operation = token_text[0].upper()
+    target_index: int | None = None
+    if operation == "SELECT" and token_text.count("from") == 1:
+        target_index = token_text.index("from") + 1
+    elif operation == "UPDATE":
+        target_index = 1
+    elif operation == "DELETE" and token_text[1:2] == ["from"]:
+        target_index = 2
+    if target_index is None or target_index >= len(tokens):
+        return None, None, None
+    target = tokens[target_index]
+    if target.token_type not in {TokenType.IDENTIFIER, TokenType.VAR}:
+        return None, None, None
+    return operation, target.text, "JPQL"
+
+
+def _collapse_java_spring_candidates(
+    candidates: list[_CompiledCandidate],
+    context: JavaSpringEvidenceContext,
+    framework_evidence: tuple[str, ...],
+) -> tuple[JavaSpringLineageEdge, ...]:
+    grouped: dict[
+        tuple[str, str, str, str, str, str, str, str, str, str | None],
+        list[_CompiledCandidate],
+    ] = {}
+    for candidate in candidates:
+        key = (
+            candidate.from_urn,
+            candidate.to_urn,
+            candidate.edge_type,
+            candidate.transform,
+            candidate.service_urn,
+            candidate.dataset_urn,
+            candidate.rationale,
+            candidate.repository.identifier,
+            candidate.entity.identifier,
+            candidate.table.identifier,
+            candidate.query.identifier if candidate.query is not None else None,
+        )
+        grouped.setdefault(key, []).append(candidate)
+
+    edges: list[JavaSpringLineageEdge] = []
+    for key, group in sorted(grouped.items(), key=lambda item: item[0]):
+        first = group[0]
+        invocation_facts = tuple(
+            sorted(
+                {item.invocation.identifier: item.invocation for item in group}.values(),
+                key=lambda item: item.identifier,
+            )
+        )
+        identity = json.dumps(
+            {
+                "origin": context.origin,
+                "repository": context.repository,
+                "revision": context.revision,
+                "scopeDigest": context.scope_digest,
+                "analyzerPack": context.analyzer_pack,
+                "rulesetVersion": context.ruleset_version,
+                "resolverVersion": context.resolver_version,
+                "schemaProfile": context.schema_profile,
+                "lineage": key,
+                "invocations": [item.identifier for item in invocation_facts],
+            },
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+        stable_id = f"spring-sca-{hashlib.sha256(identity.encode()).hexdigest()}"
+        evidence = JavaSpringEdgeEvidence(
+            context.origin,
+            context.repository,
+            context.revision,
+            context.scope_digest,
+            context.analyzer_pack,
+            context.ruleset_version,
+            context.resolver_version,
+            context.schema_profile,
+            tuple(sorted(framework_evidence)),
+            first.rationale,
+            tuple(JavaSpringFactReference.from_fact(item) for item in invocation_facts),
+            JavaSpringFactReference.from_fact(first.repository),
+            JavaSpringFactReference.from_fact(first.entity),
+            JavaSpringFactReference.from_fact(first.table),
+            JavaSpringFactReference.from_fact(first.query) if first.query is not None else None,
+        )
+        edges.append(
+            JavaSpringLineageEdge(
+                stable_id,
+                first.from_urn,
+                first.to_urn,
+                first.edge_type,
+                first.transform,
+                first.service_urn,
+                first.dataset_urn,
+                True,
+                False,
+                "SCA_STATIC",
+                evidence,
+            )
+        )
+    return tuple(
+        sorted(
+            edges,
+            key=lambda item: (
+                item.service_urn,
+                item.dataset_urn,
+                item.edge_type,
+                item.transform,
+                item.stable_id,
+            ),
+        )
+    )
+
+
+def _location_dict(location: SourceLocation) -> dict[str, object]:
+    return {
+        "path": location.path,
+        "line": location.line,
+        "startByte": location.start_byte,
+        "endByte": location.end_byte,
+        "astKind": location.ast_kind,
+        "astPath": location.ast_path,
+    }
+
+
+def _bounded_java_fqn(value: str) -> bool:
+    return len(value) <= 512 and all(
+        _EVIDENCE_JAVA_IDENTIFIER.fullmatch(part) is not None
+        for part in value.split(".")
+    )
+
+
+def _evidence_fact_attributes(
+    fact: SyntaxFact,
+) -> tuple[tuple[str, FactValue], ...]:
+    allowed = {
+        "java.invocation": {"method", "receiver", "repositoryType"},
+        "spring.repository-association": {"baseFqn", "entityFqn"},
+        "spring.entity-table": {"explicit", "table"},
+        "spring.query": {"literal", "nativeQuery"},
+        "sql.table": {"catalog", "dialect", "dialectMode", "schema"},
+    }.get(fact.kind, set())
+    return tuple(
+        (name, value) for name, value in fact.attributes if name in allowed
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -1089,10 +1976,18 @@ class JavaSpringScaAnalyzer:
                     values = dict(query.literal_values)
                     query_value = values.get("value")
                     if query_value is not None:
+                        query_attributes: list[tuple[str, FactValue]] = [
+                            ("literal", "true"),
+                            ("query", query_value),
+                        ]
+                        if "nativeQuery" in values:
+                            query_attributes.append(
+                                ("nativeQuery", values["nativeQuery"])
+                            )
                         self._add_fact(
                             "spring.query",
                             subject,
-                            (("literal", "true"), ("query", query_value)),
+                            query_attributes,
                             self._node_location(parsed.source.path, query.node),
                         )
                     else:

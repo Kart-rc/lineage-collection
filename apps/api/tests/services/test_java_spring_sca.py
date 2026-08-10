@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pytest
 
+import lineage_api.services.java_spring_sca as spring_sca
 from lineage_api.services.java_spring_sca import (
     JavaSpringAnalysisError,
     JavaSpringScaAnalyzer,
@@ -39,6 +40,30 @@ def _corpus_sources() -> tuple[JavaSpringSource, ...]:
 
 def _facts(result, kind: str):
     return tuple(fact for fact in result.facts if fact.kind == kind)
+
+
+def _compile_java_spring(
+    sources: tuple[JavaSpringSource, ...],
+    *,
+    schema_profile: str = "postgres",
+    scope_complete: bool = True,
+):
+    analysis = JavaSpringScaAnalyzer().analyze(sources)
+    context = spring_sca.JavaSpringEvidenceContext(
+        origin="https://github.com/example/spring-service",
+        repository="spring-service",
+        revision="1" * 40,
+        scope_digest="sha256:" + "2" * 64,
+        environment="staging",
+        platform=schema_profile,
+        system="petclinic",
+        analyzer_pack="java-spring-data-jpa-v1",
+        ruleset_version="spring-data-rules-v1",
+        resolver_version="schema-resolver-v1",
+        schema_profile=schema_profile,
+        scope_complete=scope_complete,
+    )
+    return spring_sca.JavaSpringEvidenceCompiler().compile(analysis, context)
 
 
 def _maven_build(
@@ -1215,3 +1240,455 @@ def test_results_are_deterministic_sorted_and_immutable() -> None:
     )
     with pytest.raises(FrozenInstanceError):
         first.framework.status = "changed"  # type: ignore[misc]
+
+
+def test_compiler_emits_only_proven_call_site_read_write_and_delete_edges() -> None:
+    entity = '''package example;
+import jakarta.persistence.Entity;
+import jakarta.persistence.Table;
+@Entity @Table(name = "owners") class Owner {}
+'''
+    repository = '''package example;
+import org.springframework.data.jpa.repository.JpaRepository;
+interface OwnerRepository extends JpaRepository<Owner, Integer> {}
+'''
+    service = '''package example;
+class OwnerService {
+  private final OwnerRepository owners;
+  OwnerService(OwnerRepository owners) { this.owners = owners; }
+  Owner load(Integer id) { return owners.findById(id).orElseThrow(); }
+  Owner store(Owner owner) { return owners.save(owner); }
+  void purge(Owner owner) { owners.delete(owner); }
+}
+'''
+    evidence = _compile_java_spring(
+        (
+            _source("pom.xml", _maven_build()),
+            _source("src/example/Owner.java", entity),
+            _source("src/example/OwnerRepository.java", repository),
+            _source("src/example/OwnerService.java", service),
+            _source(
+                "src/main/resources/db/postgres/schema.sql",
+                "create table public.owners (id integer primary key);",
+                dialect="postgres",
+            ),
+        )
+    )
+
+    assert evidence.status == "COMPLETE"
+    assert [edge.edge_type for edge in evidence.edges] == ["READS", "WRITES", "WRITES"]
+    assert evidence.edges[0].lineage_tuple == (
+        "urn:ldp:staging:postgres:petclinic:owners",
+        "service://spring-service/example.OwnerService#load",
+        "READS",
+        "OwnerRepository.findById -> owners",
+    )
+    assert evidence.edges[1].lineage_tuple == (
+        "service://spring-service/example.OwnerService#purge",
+        "urn:ldp:staging:postgres:petclinic:owners",
+        "WRITES",
+        "OwnerRepository.delete -> owners [DELETE]",
+    )
+    assert evidence.edges[2].lineage_tuple == (
+        "service://spring-service/example.OwnerService#store",
+        "urn:ldp:staging:postgres:petclinic:owners",
+        "WRITES",
+        "OwnerRepository.save -> owners",
+    )
+    assert evidence.coverage.invocations_seen == 3
+    assert evidence.coverage.invocations_proven == 3
+    assert evidence.coverage.invocations_unresolved == 0
+    assert evidence.coverage.edges_emitted == 3
+    assert all(edge.exact and not edge.executed for edge in evidence.edges)
+    for edge in evidence.edges:
+        assert edge.evidence.origin == "https://github.com/example/spring-service"
+        assert edge.evidence.revision == "1" * 40
+        assert edge.evidence.scope_digest == "sha256:" + "2" * 64
+        assert edge.evidence.analyzer_pack == "java-spring-data-jpa-v1"
+        assert edge.evidence.ruleset_version == "spring-data-rules-v1"
+        assert edge.evidence.resolver_version == "schema-resolver-v1"
+        assert edge.evidence.schema_profile == "postgres"
+        assert (
+            edge.evidence.invocation.location.end_byte
+            > edge.evidence.invocation.location.start_byte
+        )
+        assert edge.evidence.repository.kind == "spring.repository-association"
+        assert edge.evidence.entity.kind == "spring.entity-table"
+        assert edge.evidence.table.kind == "sql.table"
+        assert edge.evidence.framework_evidence
+        assert dict(edge.evidence.repository.attributes)["entityFqn"] == "example.Owner"
+        assert dict(edge.evidence.entity.attributes)["table"] == "owners"
+        assert dict(edge.evidence.table.attributes)["dialectMode"] == "native"
+        serialized = edge.as_dict()
+        assert serialized["from"] == [edge.from_urn]
+        assert serialized["repo"] == "spring-service"
+        assert serialized["digest"] == "1" * 40
+        assert serialized["scopeDigest"] == "sha256:" + "2" * 64
+        assert serialized["evidence"]["file"] == edge.evidence.invocation.location.path
+        assert serialized["evidence"]["line"] == edge.evidence.invocation.location.line
+        assert serialized["evidence"]["astPath"] == edge.evidence.invocation.location.ast_path
+
+
+@pytest.mark.parametrize(
+    ("query", "method", "expected_type", "expected_suffix"),
+    [
+        ('@Query("SELECT o FROM Owner o")', "customRead", "READS", "[JPQL SELECT]"),
+        ('@Query("UPDATE Owner o SET o.city = ?1")', "customMutation", "WRITES", "[JPQL UPDATE]"),
+        (
+            '@Query("DELETE FROM Owner o WHERE o.id = ?1")',
+            "customRemoval",
+            "WRITES",
+            "[JPQL DELETE]",
+        ),
+        (
+            '@Query(value = "SELECT * FROM owners", nativeQuery = true)',
+            "nativeFetch",
+            "READS",
+            "[SQL SELECT]",
+        ),
+        (
+            '@Query(value = "INSERT INTO owners (id) VALUES (1)", nativeQuery = true)',
+            "nativeInsert",
+            "WRITES",
+            "[SQL INSERT]",
+        ),
+        (
+            '@Query(value = "UPDATE owners SET city = \'x\'", nativeQuery = true)',
+            "nativeUpdate",
+            "WRITES",
+            "[SQL UPDATE]",
+        ),
+        (
+            '@Query(value = "DELETE FROM owners WHERE id = 1", nativeQuery = true)',
+            "nativeDelete",
+            "WRITES",
+            "[SQL DELETE]",
+        ),
+    ],
+)
+def test_literal_query_precedence_is_parsed_conservatively(
+    query: str, method: str, expected_type: str, expected_suffix: str
+) -> None:
+    repository = f'''package example;
+import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+interface OwnerRepository extends JpaRepository<Owner, Integer> {{
+  {query} Object {method}();
+}}
+'''
+    evidence = _compile_java_spring(
+        (
+            _source("pom.xml", _maven_build()),
+            _source(
+                "src/example/Owner.java",
+                'package example; import jakarta.persistence.Entity; import jakarta.persistence.Table; '
+                '@Entity @Table(name="owners") class Owner {}',
+            ),
+            _source("src/example/OwnerRepository.java", repository),
+            _source(
+                "src/example/OwnerService.java",
+                f'''package example;
+class OwnerService {{
+  private final OwnerRepository owners;
+  OwnerService(OwnerRepository owners) {{ this.owners = owners; }}
+  Object run() {{ return owners.{method}(); }}
+}}
+''',
+            ),
+            _source(
+                "src/main/resources/db/postgres/schema.sql",
+                "create table owners (id integer primary key, city text);",
+                dialect="postgres",
+            ),
+        )
+    )
+
+    assert evidence.status == "COMPLETE"
+    assert len(evidence.edges) == 1
+    assert evidence.edges[0].edge_type == expected_type
+    assert evidence.edges[0].transform.endswith(expected_suffix)
+    assert evidence.edges[0].evidence.operation_rationale.startswith("explicit @Query")
+    assert query.split('"', 2)[1] not in evidence.to_bytes().decode()
+
+
+def test_explicit_query_conflict_or_dynamic_query_never_falls_back_to_method_name() -> None:
+    repository = '''package example;
+import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+interface OwnerRepository extends JpaRepository<Owner, Integer> {
+  String QUERY = "SELECT o FROM Owner o";
+  @Query(QUERY) Object findDynamic();
+  @Query("SELECT p FROM Pet p") Object findConflict();
+}
+'''
+    evidence = _compile_java_spring(
+        (
+            _source("pom.xml", _maven_build()),
+            _source(
+                "src/example/Owner.java",
+                'package example; import jakarta.persistence.Entity; import jakarta.persistence.Table; '
+                '@Entity @Table(name="owners") class Owner {} class Pet {}',
+            ),
+            _source("src/example/OwnerRepository.java", repository),
+            _source(
+                "src/example/OwnerService.java",
+                '''package example;
+class OwnerService {
+  private final OwnerRepository owners;
+  OwnerService(OwnerRepository owners) { this.owners = owners; }
+  void run() { owners.findDynamic(); owners.findConflict(); }
+}
+''',
+            ),
+            _source(
+                "src/main/resources/db/postgres/schema.sql",
+                "create table owners (id integer primary key);",
+                dialect="postgres",
+            ),
+        )
+    )
+
+    assert evidence.edges == ()
+    assert evidence.status == "INTEGRATION_REQUIRED"
+    assert evidence.coverage.invocations_seen == 2
+    assert evidence.coverage.invocations_unresolved == 2
+    assert {item.code for item in evidence.residue} >= {
+        "dynamic-query",
+        "query-entity-conflict",
+    }
+
+
+@pytest.mark.parametrize(
+    ("schema_sources", "scope_complete", "expected_reason"),
+    [
+        ((), True, "missing-schema-table"),
+        (
+            (
+                _source("db/postgres/a.sql", "create table owners (id int);", dialect="postgres"),
+                _source("db/postgres/b.sql", "create table owners (id int);", dialect="postgres"),
+            ),
+            True,
+            "ambiguous-schema-table",
+        ),
+        (
+            (_source("db/h2/schema.sql", "create table owners (id int);", dialect="h2"),),
+            True,
+            "missing-schema-table",
+        ),
+        (
+            (_source("db/postgres/schema.sql", "create table owners (id int);", dialect="postgres"),),
+            False,
+            "incomplete-scope",
+        ),
+    ],
+)
+def test_incomplete_or_untrusted_schema_scope_is_integration_required(
+    schema_sources: tuple[JavaSpringSource, ...],
+    scope_complete: bool,
+    expected_reason: str,
+) -> None:
+    sources = (
+        _source("pom.xml", _maven_build()),
+        _source(
+            "src/example/Owner.java",
+            'package example; import jakarta.persistence.Entity; import jakarta.persistence.Table; '
+            '@Entity @Table(name="owners") class Owner {}',
+        ),
+        _source(
+            "src/example/OwnerRepository.java",
+            'package example; import org.springframework.data.jpa.repository.JpaRepository; '
+            'interface OwnerRepository extends JpaRepository<Owner,Integer> {}',
+        ),
+        _source(
+            "src/example/OwnerService.java",
+            'package example; class OwnerService { private final OwnerRepository owners; '
+            'OwnerService(OwnerRepository owners){this.owners=owners;} '
+            'Owner load(){return owners.findById(1).orElseThrow();}}',
+        ),
+        *schema_sources,
+    )
+    evidence = _compile_java_spring(sources, scope_complete=scope_complete)
+
+    assert evidence.status == "INTEGRATION_REQUIRED"
+    assert expected_reason in evidence.status_reasons
+    if expected_reason != "incomplete-scope":
+        assert evidence.edges == ()
+
+
+def test_unknown_operation_and_zero_supported_java_are_not_successful_empty_evidence() -> None:
+    zero = _compile_java_spring(
+        (
+            _source("pom.xml", _maven_build()),
+            _source(
+                "db/postgres/schema.sql",
+                "create table owners (id int);",
+                dialect="postgres",
+            ),
+        )
+    )
+    assert zero.status == "INTEGRATION_REQUIRED"
+    assert "zero-supported-java-files" in zero.status_reasons
+
+    unknown = _compile_java_spring(
+        (
+            _source("pom.xml", _maven_build()),
+            _source(
+                "src/example/Owner.java",
+                'package example; import jakarta.persistence.Entity; import jakarta.persistence.Table; '
+                '@Entity @Table(name="owners") class Owner {}',
+            ),
+            _source(
+                "src/example/OwnerRepository.java",
+                'package example; import org.springframework.data.jpa.repository.JpaRepository; '
+                'interface OwnerRepository extends JpaRepository<Owner,Integer> {}',
+            ),
+            _source(
+                "src/example/OwnerService.java",
+                'package example; class OwnerService { private final OwnerRepository owners; '
+                'OwnerService(OwnerRepository owners){this.owners=owners;} '
+                'Object run(){return owners.searchEverything();}}',
+            ),
+            _source(
+                "db/postgres/schema.sql",
+                "create table owners (id int);",
+                dialect="postgres",
+            ),
+        )
+    )
+    assert unknown.edges == ()
+    assert unknown.status == "INTEGRATION_REQUIRED"
+    assert unknown.coverage.invocations_unresolved == 1
+    assert "unsupported-operation" in {item.code for item in unknown.residue}
+
+
+def test_unbound_repository_call_is_integration_required_not_successful_empty() -> None:
+    evidence = _compile_java_spring(
+        (
+            _source("pom.xml", _maven_build()),
+            _source(
+                "src/example/Owner.java",
+                'package example; import jakarta.persistence.Entity; import jakarta.persistence.Table; '
+                '@Entity @Table(name="owners") class Owner {}',
+            ),
+            _source(
+                "src/example/OwnerRepository.java",
+                'package example; import org.springframework.data.jpa.repository.JpaRepository; '
+                'interface OwnerRepository extends JpaRepository<Owner,Integer> {}',
+            ),
+            _source(
+                "src/example/OwnerService.java",
+                'package example; class OwnerService { private OwnerRepository owners; '
+                'Owner load(){return owners.findById(1).orElseThrow();}}',
+            ),
+            _source(
+                "db/postgres/schema.sql",
+                "create table owners (id int);",
+                dialect="postgres",
+            ),
+        )
+    )
+
+    assert evidence.edges == ()
+    assert evidence.status == "INTEGRATION_REQUIRED"
+    assert "unbound-repository-receiver" in evidence.status_reasons
+
+
+def test_undeclared_custom_derived_method_is_not_assumed_from_its_prefix() -> None:
+    evidence = _compile_java_spring(
+        (
+            _source("pom.xml", _maven_build()),
+            _source(
+                "src/example/Owner.java",
+                'package example; import jakarta.persistence.Entity; import jakarta.persistence.Table; '
+                '@Entity @Table(name="owners") class Owner {}',
+            ),
+            _source(
+                "src/example/OwnerRepository.java",
+                'package example; import org.springframework.data.jpa.repository.JpaRepository; '
+                'interface OwnerRepository extends JpaRepository<Owner,Integer> {}',
+            ),
+            _source(
+                "src/example/OwnerService.java",
+                'package example; class OwnerService { private final OwnerRepository owners; '
+                'OwnerService(OwnerRepository owners){this.owners=owners;} '
+                'Object run(){return owners.findAnythingAtAll();}}',
+            ),
+            _source(
+                "db/postgres/schema.sql",
+                "create table owners (id int);",
+                dialect="postgres",
+            ),
+        )
+    )
+
+    assert evidence.edges == ()
+    assert evidence.status == "INTEGRATION_REQUIRED"
+    assert "unsupported-operation" in {item.code for item in evidence.residue}
+
+
+def test_edge_identities_are_bounded_before_serialization() -> None:
+    method = "find" + "A" * 300
+    evidence = _compile_java_spring(
+        (
+            _source("pom.xml", _maven_build()),
+            _source(
+                "src/example/Owner.java",
+                'package example; import jakarta.persistence.Entity; import jakarta.persistence.Table; '
+                '@Entity @Table(name="owners") class Owner {}',
+            ),
+            _source(
+                "src/example/OwnerRepository.java",
+                "package example; import org.springframework.data.jpa.repository."
+                "JpaRepository; interface OwnerRepository extends "
+                f"JpaRepository<Owner,Integer> {{ Object {method}(); }}",
+            ),
+            _source(
+                "src/example/OwnerService.java",
+                'package example; class OwnerService { private final OwnerRepository owners; '
+                'OwnerService(OwnerRepository owners){this.owners=owners;} '
+                f'Object run(){{return owners.{method}();}}}}',
+            ),
+            _source(
+                "db/postgres/schema.sql",
+                "create table owners (id int);",
+                dialect="postgres",
+            ),
+        )
+    )
+
+    assert evidence.edges == ()
+    assert evidence.status == "INTEGRATION_REQUIRED"
+    assert "unsupported-edge-identity" in {item.code for item in evidence.residue}
+
+
+def test_malformed_sql_marks_evidence_integration_required_even_with_a_proven_edge() -> None:
+    evidence = _compile_java_spring(
+        (
+            _source("pom.xml", _maven_build()),
+            _source(
+                "src/example/Owner.java",
+                'package example; import jakarta.persistence.Entity; import jakarta.persistence.Table; '
+                '@Entity @Table(name="owners") class Owner {}',
+            ),
+            _source(
+                "src/example/OwnerRepository.java",
+                'package example; import org.springframework.data.jpa.repository.JpaRepository; '
+                'interface OwnerRepository extends JpaRepository<Owner,Integer> {}',
+            ),
+            _source(
+                "src/example/OwnerService.java",
+                'package example; class OwnerService { private final OwnerRepository owners; '
+                'OwnerService(OwnerRepository owners){this.owners=owners;} '
+                'Owner run(){return owners.findById(1).orElseThrow();}}',
+            ),
+            _source(
+                "db/postgres/schema.sql",
+                "create table owners (id int); create table broken (",
+                dialect="postgres",
+            ),
+        )
+    )
+
+    assert len(evidence.edges) == 1
+    assert evidence.status == "INTEGRATION_REQUIRED"
+    assert "malformed-sql" in evidence.status_reasons
