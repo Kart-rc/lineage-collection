@@ -898,53 +898,103 @@ def _parse_explicit_query(
     statement = str(query.attribute("query"))
     native = _optional_attribute(query, "nativeQuery") == "true"
     dialect_name = _SQLGLOT_DIALECTS[schema_profile]
-    if native:
-        try:
-            expression = _silent_sqlglot_parse_one(
-                Dialect.get_or_raise(dialect_name), statement
-            )
-        except (ParseError, ValueError, TokenError):
-            return None, None, None
-        if isinstance(expression, exp.Select):
-            operation = "SELECT"
-        elif isinstance(expression, exp.Insert):
-            operation = "INSERT"
-        elif isinstance(expression, exp.Update):
-            operation = "UPDATE"
-        elif isinstance(expression, exp.Delete):
-            operation = "DELETE"
-        else:
-            return None, None, None
-        tables = tuple(expression.find_all(exp.Table))
-        unique = {
-            (item.catalog.casefold(), item.db.casefold(), item.name.casefold())
-            for item in tables
-        }
-        if len(tables) != 1 or len(unique) != 1:
-            return None, None, None
-        return operation, tables[0].name, "SQL"
-
     try:
-        tokens = Dialect.get_or_raise("postgres").tokenizer().tokenize(statement)
-    except (ValueError, TokenError):
+        dialect = Dialect.get_or_raise(dialect_name if native else "postgres")
+        tokens = dialect.tokenizer().tokenize(statement)
+        if not tokens or any(
+            token.token_type == TokenType.SEMICOLON for token in tokens
+        ):
+            return None, None, None
+        normalized = _normalize_jpa_positional_parameters(statement, tokens)
+        expressions = _silent_sqlglot_parse(dialect, normalized)
+    except (ParseError, ValueError, TokenError):
         return None, None, None
-    token_text = [token.text.casefold() for token in tokens]
-    if not tokens or any(text in {";", "join", ",", "("} for text in token_text):
+    if len(expressions) != 1:
         return None, None, None
-    operation = token_text[0].upper()
-    target_index: int | None = None
-    if operation == "SELECT" and token_text.count("from") == 1:
-        target_index = token_text.index("from") + 1
-    elif operation == "UPDATE":
-        target_index = 1
-    elif operation == "DELETE" and token_text[1:2] == ["from"]:
-        target_index = 2
-    if target_index is None or target_index >= len(tokens):
+    parsed = (
+        _native_query_operation(expressions[0])
+        if native
+        else _jpql_query_operation(expressions[0])
+    )
+    if parsed is None:
         return None, None, None
-    target = tokens[target_index]
-    if target.token_type not in {TokenType.IDENTIFIER, TokenType.VAR}:
+    operation, table = parsed
+    if not table.name or table.catalog or table.db:
         return None, None, None
-    return operation, target.text, "JPQL"
+    return operation, table.name, "SQL" if native else "JPQL"
+
+
+def _normalize_jpa_positional_parameters(
+    statement: str, tokens: list[Token]
+) -> str:
+    normalized = list(statement)
+    for placeholder, number in zip(tokens, tokens[1:]):
+        if (
+            placeholder.token_type == TokenType.PLACEHOLDER
+            and number.token_type == TokenType.NUMBER
+            and placeholder.end + 1 == number.start
+        ):
+            for index in range(number.start, number.end + 1):
+                normalized[index] = " "
+    return "".join(normalized)
+
+
+def _native_query_operation(
+    expression: exp.Expression,
+) -> tuple[str, exp.Table] | None:
+    tables = tuple(expression.find_all(exp.Table))
+    if len(tables) != 1:
+        return None
+    table = tables[0]
+    if isinstance(expression, exp.Select):
+        return ("SELECT", table) if expression.expressions else None
+    if isinstance(expression, exp.Insert):
+        return (
+            ("INSERT", table)
+            if expression.args.get("expression") is not None
+            else None
+        )
+    if isinstance(expression, exp.Update):
+        return ("UPDATE", table) if expression.expressions else None
+    if isinstance(expression, exp.Delete):
+        return "DELETE", table
+    return None
+
+
+def _jpql_query_operation(
+    expression: exp.Expression,
+) -> tuple[str, exp.Table] | None:
+    if any(
+        expression.find(kind) is not None
+        for kind in (exp.Join, exp.Subquery, exp.Union, exp.With)
+    ):
+        return None
+    tables = tuple(expression.find_all(exp.Table))
+    if len(tables) != 1:
+        return None
+    table = tables[0]
+    if not _EVIDENCE_JAVA_IDENTIFIER.fullmatch(table.name):
+        return None
+    if isinstance(expression, exp.Select):
+        projection = expression.expressions
+        source = expression.args.get("from")
+        if (
+            len(projection) != 1
+            or not isinstance(projection[0], exp.Column)
+            or not isinstance(source, exp.From)
+            or source.this is not table
+        ):
+            return None
+        return "SELECT", table
+    if isinstance(expression, exp.Update):
+        return (
+            ("UPDATE", table)
+            if expression.this is table and expression.expressions
+            else None
+        )
+    if isinstance(expression, exp.Delete):
+        return ("DELETE", table) if expression.this is table else None
+    return None
 
 
 def _collapse_java_spring_candidates(
@@ -3292,6 +3342,13 @@ def _unsupported_h2_tokens(tokens: tuple[Token, ...]) -> bool:
 def _silent_sqlglot_parse_one(
     dialect: Dialect, statement: str
 ) -> exp.Expression | None:
+    parsed = _silent_sqlglot_parse(dialect, statement)
+    return parsed[0] if len(parsed) == 1 else None
+
+
+def _silent_sqlglot_parse(
+    dialect: Dialect, statement: str
+) -> tuple[exp.Expression, ...]:
     parser_class = dialect.parser_class
 
     class _SilentParser(parser_class):  # type: ignore[valid-type, misc]
@@ -3301,7 +3358,7 @@ def _silent_sqlglot_parse_one(
     parsed = _SilentParser(error_level=ErrorLevel.RAISE, dialect=dialect).parse(
         dialect.tokenizer().tokenize(statement), statement
     )
-    return parsed[0] if parsed else None
+    return tuple(item for item in parsed if item is not None)
 
 
 def _create_table_token_locations(

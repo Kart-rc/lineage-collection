@@ -1411,6 +1411,67 @@ class OwnerService {{
     assert query.split('"', 2)[1] not in evidence.to_bytes().decode()
 
 
+@pytest.mark.parametrize(
+    "query",
+    [
+        '@Query("SELECT FROM Owner")',
+        '@Query("SELECT o FROM Owner o; DELETE FROM Owner o")',
+        '@Query("UPDATE Owner o")',
+        '@Query("DELETE Owner o")',
+        (
+            '@Query(value = "SELECT * FROM owners; DELETE FROM owners", '
+            "nativeQuery = true)"
+        ),
+        (
+            '@Query(value = "SELECT * FROM owners; /* boundary */ '
+            'DELETE FROM owners", nativeQuery = true)'
+        ),
+        '@Query(value = "SELECT * FROM owners; -- trailing", nativeQuery = true)',
+    ],
+)
+def test_malformed_or_multi_statement_explicit_query_is_residue(query: str) -> None:
+    evidence = _compile_java_spring(
+        (
+            _source("pom.xml", _maven_build()),
+            _source(
+                "src/example/Owner.java",
+                'package example; import jakarta.persistence.Entity; import jakarta.persistence.Table; '
+                '@Entity @Table(name="owners") class Owner {}',
+            ),
+            _source(
+                "src/example/OwnerRepository.java",
+                f'''package example;
+import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+interface OwnerRepository extends JpaRepository<Owner, Integer> {{
+  {query} Object custom();
+}}
+''',
+            ),
+            _source(
+                "src/example/OwnerService.java",
+                '''package example;
+class OwnerService {
+  private final OwnerRepository owners;
+  OwnerService(OwnerRepository owners) { this.owners = owners; }
+  Object run() { return owners.custom(); }
+}
+''',
+            ),
+            _source(
+                "src/main/resources/db/postgres/schema.sql",
+                "create table owners (id integer primary key);",
+                dialect="postgres",
+            ),
+        )
+    )
+
+    assert evidence.edges == ()
+    assert evidence.status == "INTEGRATION_REQUIRED"
+    assert evidence.coverage.invocations_unresolved == 1
+    assert "unsupported-query" in {item.code for item in evidence.residue}
+
+
 def test_explicit_query_conflict_or_dynamic_query_never_falls_back_to_method_name() -> None:
     repository = '''package example;
 import org.springframework.data.jpa.repository.JpaRepository;
