@@ -25,7 +25,10 @@ from lineage_api.services.analyzer_registry import AnalyzerSelectionError
 
 
 SOURCE_TYPES = ("LOCAL_CHECKOUT", "GIT")
-TERMINAL_COMMAND_STATUSES = frozenset({"SUCCEEDED", "FAILED_TERMINAL"})
+# The durable command vocabulary is QUEUED, RUNNING, RETRY_WAIT, COMPLETED,
+# FAILED_REDRIVABLE and FAILED_TERMINAL. Only the last two of those are settled;
+# a redrivable failure can still make progress, so it is not terminal.
+TERMINAL_COMMAND_STATUSES = frozenset({"COMPLETED", "FAILED_TERMINAL"})
 
 MAX_ORIGIN_LENGTH = 2_048
 MAX_PATH_LENGTH = 4_096
@@ -199,7 +202,16 @@ class CollectionService:
         command_id = document.get("commandId")
         if not isinstance(command_id, str) or not command_id:
             raise CollectionError(500, "PIPELINE_FAILED", "repository collection failed")
-        self._store.record(document)
+
+        # A settled collection is authoritative. Re-submitting an equivalent request
+        # must return the recorded outcome unchanged rather than overwriting it with
+        # this request's DUPLICATE verdict, so the status resource stays stable and a
+        # duplicate produces no durable change at all.
+        stored = self._store.get(command_id)
+        if stored is not None and stored.get("terminal") is True:
+            document = dict(stored)
+        else:
+            self._store.record(document)
         return CollectionSubmission(
             status_code=202,
             location=f"/api/collections/{command_id}",

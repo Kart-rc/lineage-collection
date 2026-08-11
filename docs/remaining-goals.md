@@ -224,7 +224,27 @@ resource.
 
 ### G4 — Replace the placeholder with the repository collection product flow
 
-**Status:** `READY` after G3
+**Status:** `IN_PROGRESS` — implemented and covered; browser smoke remains
+
+Delivered on branch `feat/remaining-goals` (`bb1198c`):
+
+- typed `submitCollection` / `collection` client methods with defensive normalization that drops
+  non-conforming members rather than rendering them;
+- `RepositoryCollectionForm` with a source-mode switch, exact-revision validation, accessible
+  labels, single submit while pending, bounded error rendering with code and correlation ID, and
+  retained input after a recoverable failure;
+- `CollectionStatus` rendering the stage timeline, coverage counts, edge/read/write/residue/
+  unresolved counts and run/proposal links, polling only while `terminal` is false and invalidating
+  the overview, runs and proposals queries exactly once per finished collection;
+- Operations now leads with repository collection; the seeded demo is a labelled secondary action
+  shown only under the development policy;
+- production rendering omits local-checkout mode rather than disabling it, and a checkout path is
+  never serialized for a `GIT` source, so a stale form value cannot reach the wire.
+
+Evidence: 11 new component tests plus 2 client tests; the full web suite is 28 passing and the
+TypeScript build is clean.
+
+Remaining before `COMPLETE`: the browser accessibility and behavior smoke against a running app.
 
 Make real repository collection the primary Operations workflow while retaining the seeded demo only
 as a clearly labelled secondary development action.
@@ -251,7 +271,28 @@ as a clearly labelled secondary development action.
 
 ### G5 — Prove the complete Petclinic product flow
 
-**Status:** `READY` after G2–G4
+**Status:** `IN_PROGRESS` — API-level product flow proven; browser verification remains
+
+`tests/integration/test_repository_collection_product_flow.py` drives the pinned checkout through
+`POST /api/collections` and `GET /api/collections/{commandId}` — not a simulated fixture path — and
+passes 4/4 against revision `88e37c15cf6fc8490b01bc3e8e2c800cec1ac272`:
+
+- terminal run and proposal both `IN_REVIEW`; 15 edges, 10 reads, 5 writes, 8 bounded residue
+  entries, zero unresolved;
+- coverage 131 expected = 33 completed + 98 skipped, zero unsupported, zero failed;
+- `runtimeStatus` explicitly `NOT_PROVIDED`;
+- duplicate submission returns identical durable identities with a byte-identical database and
+  evidence digest;
+- neither the responses nor the retained evidence contain the checkout path, source, credentials or
+  stack traces.
+
+Writing this test found three real defects, all fixed: `terminal` was computed against a
+non-existent `SUCCEEDED` command status so a finished collection never stopped polling; a duplicate
+submission overwrote the recorded `ACCEPTED` outcome with `DUPLICATE`; and this document's expected
+residue count was wrong.
+
+Remaining before `COMPLETE`: the browser smoke over submission, progress, counts, run timeline and
+proposal navigation.
 
 Run the actual pinned Spring Petclinic repository through the collection API and React workflow,
 not through a simulated fixture path.
@@ -261,7 +302,9 @@ not through a simulated fixture path.
 - accepted or safely reused durable collection;
 - terminal run and proposal in `IN_REVIEW`;
 - 15 edges: 10 reads and 5 writes;
-- zero residue and zero unresolved invocations;
+- 8 bounded residue entries, all `ignored-schema-statement`, and zero unresolved invocations
+  (this document previously said "zero residue", which contradicted the established oracle in
+  `tests/integration/test_spring_petclinic_repository.py`; the verified value is 8);
 - coverage: 131 expected, 33 completed, 98 skipped, zero unsupported, zero failed;
 - runtime status explicitly `NOT_PROVIDED`, never silently treated as runtime corroboration;
 - duplicate submission returns the same durable identities and identical database/evidence state.

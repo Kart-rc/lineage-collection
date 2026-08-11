@@ -110,6 +110,19 @@ stage ledger, while a completed command returns `DUPLICATE` with the same comman
 and no extra ledger effects. A completed `INTEGRATION_REQUIRED` command remains non-successful on
 repeat rather than being relabeled as a successful duplicate.
 
+To drive the same pinned revision through the product API instead of the CLI, run the collection
+product-flow proof:
+
+```bash
+LINEAGE_REAL_REPOSITORY_CHECKOUT=/path/to/spring-petclinic \
+  uv run --project apps/api --extra dev pytest \
+  tests/integration/test_repository_collection_product_flow.py -q
+```
+
+It submits the checkout through `POST /api/collections`, polls `GET /api/collections/{commandId}`,
+and requires the 15/10/5 oracle, the complete 131-path disposition, `NOT_PROVIDED` runtime status,
+and a duplicate submission with byte-identical database and evidence digests.
+
 To run the reproducible compatibility proof rather than the one-shot operator command, use the
 dedicated opt-in acceptance runner:
 
@@ -123,7 +136,7 @@ The runner verifies the official origin and exact revision, composes two fresh l
 states, runs the actual durable `collect-checkout` flow in each, repeats one delivery to prove
 duplicate no-effect, and requires the complete 131-path disposition and exact 15-edge oracle. The
 duplicate proof opens SQLite read-only with `query_only`, holds one transaction across every read,
-and dynamically snapshots every user table (currently 33). The bounded canonical proof includes
+and dynamically snapshots every user table (currently 34). The bounded canonical proof includes
 every `sqlite_schema` table/index/view/trigger record, `table_xinfo`, foreign keys, index metadata,
 and every typed value; same-row-count data or schema changes cannot escape detection. The retained
 logical database digest normalizes only the documented time/lease values and time-derived references

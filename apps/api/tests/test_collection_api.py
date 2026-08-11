@@ -222,6 +222,10 @@ def test_duplicate_submissions_return_the_same_durable_identities(tmp_path: Path
     for key in ("commandId", "collectionId", "runId", "proposalId", "determinantDigest"):
         assert first[key] == second[key], key
     assert first["scopeDigest"] == second["scopeDigest"]
+    # A settled collection is authoritative: re-submitting must not rewrite the
+    # recorded outcome with this request's DUPLICATE verdict.
+    assert first == second
+    assert client.get(f"/api/collections/{first['commandId']}").json() == first
 
 
 def test_status_of_an_unknown_command_is_a_stable_not_found(tmp_path: Path) -> None:
