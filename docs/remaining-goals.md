@@ -73,15 +73,15 @@ implemented autonomously. In the order that unblocks the most:
 | # | Needed from the owner | Unblocks |
 |---|---|---|
 | 1 | Approve one outbound fetch of the pinned public Petclinic commit (`LINEAGE_REAL_REMOTE_ACQUISITION=1`, `tests/integration/test_remote_repository_acquisition.py`) | G2 → `COMPLETE` |
-| 2 | Visually inspect `docs/architecture/lineage-platform-target.html` and render its Mermaid block | G1 → `COMPLETE` |
-| 3 | Run the app and browser-smoke the collection form, progress, counts, run timeline and proposal links | G4, G5 → `COMPLETE` |
+| 2 | Sign off the architecture review, and render the Mermaid block in a Mermaid renderer (the offline HTML has been rendered and inspected) | G1 → `COMPLETE` |
+| 3 | Sign off the product experience (the browser smoke has been run and passes) | G4, G5 → `COMPLETE` |
 | 4 | Approve an AWS account, profile, region, context values, and opt in to billable/externally visible traffic | G6, and the deferred AWS `submit_collection` in G3 |
 | 5 | Decide the branch and pull request: work sits on `feat/remaining-goals`, nothing is pushed, and PR #2 named above is already merged | G7 |
 
 
 ### G1 — Publish the canonical target AWS architecture
 
-**Status:** `IN_PROGRESS` — artifacts and assertions complete; two verification steps remain
+**Status:** `IN_PROGRESS` — artifacts, assertions and visual inspection complete; owner review remains
 
 Delivered on branch `feat/remaining-goals` (`f205d39`):
 
@@ -94,10 +94,19 @@ Delivered on branch `feat/remaining-goals` (`f205d39`):
   labelled arrows with durable-transport asynchrony, the review/fencing/coverage/exact-artifact
   invariants, the evidence boundaries, and byte-exact Mermaid-to-HTML parity.
 
+The offline HTML was rendered and inspected in headless Chrome with no network access: the
+evidence-boundary banner, the four-class legend, the component tally (24 verified, 19 synthesized,
+9 partial, 7 planned = 59), all eight layers with correct status colouring, the double-bordered
+human-review gate, the arrow legend, and the full 88-row edge table with its synchronous/durable
+column all render correctly.
+
+That inspection found and fixed real staleness: repository acquisition and the React product
+application were still `partial` after G2 and G4 landed.
+
 Remaining before `COMPLETE`:
 
-- render the Mermaid block in a Mermaid renderer (no offline renderer is installed in this repo);
-- human visual inspection of the offline HTML and target-only architecture review.
+- render the Mermaid block itself in a Mermaid renderer (no offline renderer is installed here);
+- owner sign-off on the target-only architecture review.
 
 Create one authoritative architecture view that describes the production AWS target only. It must
 not show SQLite, local files, Vite, in-process workers, or other local mappings as architecture
@@ -236,7 +245,7 @@ resource.
 
 ### G4 — Replace the placeholder with the repository collection product flow
 
-**Status:** `IN_PROGRESS` — implemented and covered; browser smoke remains
+**Status:** `IN_PROGRESS` — implemented, covered and browser-smoked; owner sign-off remains
 
 Delivered on branch `feat/remaining-goals` (`bb1198c`):
 
@@ -256,7 +265,17 @@ Delivered on branch `feat/remaining-goals` (`bb1198c`):
 Evidence: 11 new component tests plus 2 client tests; the full web suite is 28 passing and the
 TypeScript build is clean.
 
-Remaining before `COMPLETE`: the browser accessibility and behavior smoke against a running app.
+A headless-Chrome smoke against the built app (API on `:8000`, `vite preview` on `:5199`) verified:
+every form control carries an associated label; both source modes are offered under the development
+policy; the submit control is keyboard focusable; a non-exact revision is refused with an accessible
+alert and the typed values survive; a real submission renders the stage chips, the count grid and
+both navigation links; and the console is free of errors throughout.
+
+The smoke found a defect the unit tests had enshrined: the status panel linked to `/proposals/{id}`,
+which is not a route and fell through to the Operations page. The proposal detail route is
+`/review/{id}` (`85795cc`).
+
+Remaining before `COMPLETE`: owner sign-off on the rendered experience.
 
 Make real repository collection the primary Operations workflow while retaining the seeded demo only
 as a clearly labelled secondary development action.
@@ -283,7 +302,7 @@ as a clearly labelled secondary development action.
 
 ### G5 — Prove the complete Petclinic product flow
 
-**Status:** `IN_PROGRESS` — API-level product flow proven; browser verification remains
+**Status:** `IN_PROGRESS` — API and browser flows both proven; owner sign-off remains
 
 `tests/integration/test_repository_collection_product_flow.py` drives the pinned checkout through
 `POST /api/collections` and `GET /api/collections/{commandId}` — not a simulated fixture path — and
@@ -303,8 +322,14 @@ non-existent `SUCCEEDED` command status so a finished collection never stopped p
 submission overwrote the recorded `ACCEPTED` outcome with `DUPLICATE`; and this document's expected
 residue count was wrong.
 
-Remaining before `COMPLETE`: the browser smoke over submission, progress, counts, run timeline and
-proposal navigation.
+The same pinned revision was also driven through the running application in headless Chrome. The
+rendered result agreed with the retained result on every value: `COMPLETED` command, `ACCEPTED`
+outcome, run `IN_REVIEW`, the eight stages `QUEUED` through `IN_REVIEW`, 15 edges / 10 reads /
+5 writes / 8 residue / 0 unresolved, coverage 131 expected with 33 completed, 98 skipped, 0
+unsupported and 0 failed, runtime `NOT_PROVIDED`, analysis `COMPLETE`. Both links resolved: the run
+timeline rendered 8 stages and the proposal page rendered `proposal-…` in `IN_REVIEW`.
+
+Remaining before `COMPLETE`: owner sign-off.
 
 Run the actual pinned Spring Petclinic repository through the collection API and React workflow,
 not through a simulated fixture path.
