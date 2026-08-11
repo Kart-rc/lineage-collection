@@ -73,7 +73,7 @@ implemented autonomously. In the order that unblocks the most:
 | # | Needed from the owner | Unblocks |
 |---|---|---|
 | 1 | Approve one outbound fetch of the pinned public Petclinic commit (`LINEAGE_REAL_REMOTE_ACQUISITION=1`, `tests/integration/test_remote_repository_acquisition.py`) | G2 → `COMPLETE` |
-| 2 | Sign off the architecture review, and render the Mermaid block in a Mermaid renderer (the offline HTML has been rendered and inspected) | G1 → `COMPLETE` |
+| 2 | Sign off the architecture review (both the offline HTML and the Mermaid block have been rendered and inspected) | G1 → `COMPLETE` |
 | 3 | Sign off the product experience (the browser smoke has been run and passes) | G4, G5 → `COMPLETE` |
 | 4 | Approve an AWS account, profile, region, context values, and opt in to billable/externally visible traffic | G6, and the deferred AWS `submit_collection` in G3 |
 | 5 | Decide the branch and pull request: work sits on `feat/remaining-goals`, nothing is pushed, and PR #2 named above is already merged | G7 |
@@ -103,10 +103,16 @@ column all render correctly.
 That inspection found and fixed real staleness: repository acquisition and the React product
 application were still `partial` after G2 and G4 landed.
 
-Remaining before `COMPLETE`:
+The normative Mermaid block was also rendered (Mermaid 11, headless Chrome): it parses with no
+errors and produces exactly 59 nodes and 88 edges, matching both the parser and the HTML rendering,
+with the status colouring and the hexagonal review gate intact.
 
-- render the Mermaid block itself in a Mermaid renderer (no offline renderer is installed here);
-- owner sign-off on the target-only architecture review.
+One honest observation from that render: with eight subgraphs and 88 edges, the `flowchart LR`
+auto-layout is correct but dense, and long edge routing makes it hard to read as a presentation
+graphic. The generated HTML companion — layers plus an explicit edge table — is the better artifact
+for a human reader; the Mermaid block remains normative as the machine-checkable source.
+
+Remaining before `COMPLETE`: owner sign-off on the target-only architecture review.
 
 Create one authoritative architecture view that describes the production AWS target only. It must
 not show SQLite, local files, Vite, in-process workers, or other local mappings as architecture
