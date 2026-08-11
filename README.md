@@ -207,6 +207,23 @@ One Python package is reused, but deployment boundaries are explicit and indepen
 
 The local implementation proves behavior and recovery. CDK assertions and offline synth prove topology. A real AWS deployment, canary, scale window and recovery drill remain separate evidence gates.
 
+## Target AWS architecture
+
+The canonical production target — with no local mapping shown as an architecture component — lives in
+[`docs/architecture/lineage-platform-target.md`](docs/architecture/lineage-platform-target.md). The
+Mermaid block in that file is normative; the offline browser-ready rendering at
+[`docs/architecture/lineage-platform-target.html`](docs/architecture/lineage-platform-target.html) is
+generated from it and must never be edited by hand.
+
+```bash
+make architecture
+make architecture-check
+```
+
+`make architecture-check` fails when the rendering is stale. The same parity check, the layer/status
+legend, the arrow semantics, and the evidence boundaries are asserted by
+`tests/test_documentation.py`.
+
 ## Generated workflow safety
 
 `apps/api/src/lineage_api/application/workflows/definitions.py` is the workflow authority. The checked-in files under `infra/workflows/` are deterministic exports; do not edit ASL or the generated contract by hand.
