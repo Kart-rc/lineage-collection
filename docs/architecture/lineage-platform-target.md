@@ -103,7 +103,7 @@ flowchart LR
     end
 
     subgraph engines["5 - Collection and evidence engines"]
-        acquire["Repository acquisition<br/>exact-revision checkout under source policy"]:::partial
+        acquire["Repository acquisition<br/>exact-revision checkout under source policy"]:::verified
         scaCompute["Fargate SCA workers<br/>isolated, no repository code execution"]:::synthesized
         javaCell["Java and Spring Data JPA cell<br/>Tree-sitter deterministic analysis"]:::verified
         sqlCell["SQL and PostgreSQL schema profile<br/>pinned resolver bindings"]:::verified
@@ -130,7 +130,7 @@ flowchart LR
         productApi["Product and query API<br/>collections, runs, review, impact"]:::partial
         prGate["Read-only PR gate check<br/>bounded impact verdict"]:::verified
         spa["CloudFront and S3 single-page delivery<br/>signed, cached, immutable bundles"]:::synthesized
-        webApp["React product application<br/>operations, runs, review, explorer"]:::partial
+        webApp["React product application<br/>operations, runs, review, explorer"]:::verified
         identity["Cognito or enterprise OIDC<br/>product authentication"]:::planned
     end
 
@@ -283,8 +283,9 @@ flowchart LR
 
 These are gaps in the **target**, stated here so the diagram is not read as complete:
 
-- `acquire` — remote exact-revision Git acquisition is not finished (remaining goal G2).
-- `productApi` and `webApp` — durable collection submit/status surfaces are not exposed (G3, G4).
+- `productApi` — the durable collection submit and status surfaces exist, but the AWS
+  `submit_collection` path is `NOT_CONFIGURED`: in AWS, acquisition runs as a Fargate stage, so an
+  honest submit enqueues a durable command rather than collecting synchronously (G3, G6).
 - `opensearch`, `sparkDask`, `identity`, `appconfig`, `trail`, `sched`, `jenkins` — planned or
   deferred; no configuration exists.
 - Every AWS-hosted component — no live deployment evidence exists (G6, `AWS_REQUIRED`).

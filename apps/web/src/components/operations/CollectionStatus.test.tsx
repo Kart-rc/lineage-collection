@@ -105,9 +105,11 @@ test("links to the generated run and proposal", () => {
     "href",
     "/runs/run-1",
   );
+  // The proposal detail route is /review/{id}; /proposals/{id} falls through to
+  // the Operations page, which a browser smoke caught and this assertion had missed.
   expect(screen.getByRole("link", { name: "Open proposal" })).toHaveAttribute(
     "href",
-    "/proposals/prop-1",
+    "/review/prop-1",
   );
 });
 

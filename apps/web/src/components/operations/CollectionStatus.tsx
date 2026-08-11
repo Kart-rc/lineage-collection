@@ -143,7 +143,7 @@ export function CollectionStatus({ commandId, initial, onTerminal }: CollectionS
           <Link to={`/runs/${collection.runId}`}>Open run timeline</Link>
         )}
         {collection.proposalId && (
-          <Link to={`/proposals/${collection.proposalId}`}>Open proposal</Link>
+          <Link to={`/review/${collection.proposalId}`}>Open proposal</Link>
         )}
       </p>
     </section>
