@@ -8,6 +8,7 @@ from urllib.parse import urlsplit, urlunsplit
 
 
 _EXACT_REVISION = re.compile(r"(?:[0-9a-f]{40}|[0-9a-f]{64})")
+_EXACT_COMMIT = re.compile(r"[0-9a-f]{40}")
 _REPOSITORY_NAME = re.compile(r"[A-Za-z0-9](?:[A-Za-z0-9._-]{0,126}[A-Za-z0-9])?")
 _SCOPE_DIGEST = re.compile(r"sha256:[0-9a-f]{64}")
 _HTTPS_HOST = re.compile(r"[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?")
@@ -201,5 +202,49 @@ class RepositorySnapshot:
         return self._reader(path)
 
 
+@dataclass(frozen=True, slots=True)
+class RemoteRepositoryRequest:
+    """A bounded request for an exact remote revision, without a local checkout root."""
+
+    origin: str
+    repository: str
+    revision: str
+    environment: str
+    platform: str
+    system: str
+    analyzer_pack: str
+    ruleset: str
+    schema_version: str = "1.0.0"
+
+    def __post_init__(self) -> None:
+        validate_repository_identity(self.origin, self.repository)
+        if _EXACT_COMMIT.fullmatch(self.revision) is None:
+            raise ValueError("revision must be an exact lowercase 40-hex commit")
+        if self.schema_version != "1.0.0":
+            raise ValueError("repository checkout schema version must be 1.0.0")
+        for name in ("environment", "platform", "system", "analyzer_pack", "ruleset"):
+            value = getattr(self, name)
+            if not isinstance(value, str) or not value or value != value.strip():
+                raise ValueError(f"{name.replace('_', ' ')} must be a non-empty determinant")
+
+    def checkout_descriptor(self, checkout_root: Path) -> RepositoryCheckoutDescriptor:
+        return RepositoryCheckoutDescriptor(
+            origin=self.origin,
+            repository=self.repository,
+            revision=self.revision,
+            checkout_root=checkout_root,
+            environment=self.environment,
+            platform=self.platform,
+            system=self.system,
+            analyzer_pack=self.analyzer_pack,
+            ruleset=self.ruleset,
+            schema_version=self.schema_version,
+        )
+
+
 class RepositorySource(Protocol):
     def snapshot(self, descriptor: RepositoryCheckoutDescriptor) -> RepositorySnapshot: ...
+
+
+class RemoteRepositorySource(Protocol):
+    def acquire(self, request: RemoteRepositoryRequest) -> RepositorySnapshot: ...

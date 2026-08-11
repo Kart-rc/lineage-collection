@@ -1,7 +1,11 @@
 import { apiPath, readRuntimeConfig } from "../config/runtime";
 import type {
   ApiErrorShape,
+  CollectionCounts,
+  CollectionCoverage,
   CollectionResult,
+  RepositoryCollection,
+  RepositoryCollectionRequest,
   DemoReset,
   ImpactResponse,
   LineageEdge,
@@ -149,6 +153,78 @@ function normalizeRun(value: unknown, stageValues?: unknown): Run {
     stages: records(stageSource).map((stage, index) =>
       normalizeStage(stage, index, correlationId),
     ),
+  };
+}
+
+
+function count(value: unknown): number {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0
+    ? Math.trunc(value)
+    : 0;
+}
+
+
+function strings(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
+}
+
+
+function normalizeCoverage(value: unknown): CollectionCoverage | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const coverage = record(value);
+  const counts = record(coverage.counts);
+  return {
+    manifestId: text(coverage.manifestId) || null,
+    state: text(coverage.state) || null,
+    counts: {
+      expected: count(counts.expected),
+      completed: count(counts.completed),
+      skipped: count(counts.skipped),
+      unsupported: count(counts.unsupported),
+      failed: count(counts.failed),
+    },
+  };
+}
+
+
+function normalizeCollection(value: unknown): RepositoryCollection {
+  const collection = record(value);
+  const counts = record(collection.counts);
+  const commandId = text(collection.commandId || collection.collectionId, "unknown");
+  const sourceType = text(collection.sourceType);
+  const totals: CollectionCounts = {
+    edges: count(counts.edges),
+    reads: count(counts.reads),
+    writes: count(counts.writes),
+    residue: count(counts.residue),
+    unresolved: count(counts.unresolved),
+  };
+  return {
+    commandId,
+    collectionId: text(collection.collectionId, commandId),
+    statusUrl: text(collection.statusUrl, `/api/collections/${commandId}`),
+    sourceType:
+      sourceType === "LOCAL_CHECKOUT" || sourceType === "GIT" ? sourceType : "UNKNOWN",
+    origin: text(collection.origin, "Not reported"),
+    repository: text(collection.repository, "Unknown workload"),
+    revision: text(collection.revision, "Not reported"),
+    environment: text(collection.environment, "Unknown"),
+    system: text(collection.system, "Unknown"),
+    outcome: text(collection.outcome, "UNKNOWN"),
+    reasonCode: text(collection.reasonCode) || null,
+    commandStatus: text(collection.commandStatus, "UNKNOWN"),
+    terminal: collection.terminal === true,
+    runId: text(collection.runId) || null,
+    runStatus: text(collection.runStatus) || null,
+    proposalId: text(collection.proposalId) || null,
+    proposalStatus: text(collection.proposalStatus) || null,
+    runtimeStatus: text(collection.runtimeStatus, "NOT_PROVIDED"),
+    analysisStatus: text(collection.analysisStatus) || null,
+    statusReasons: strings(collection.statusReasons),
+    stages: strings(collection.stages),
+    counts: totals,
+    coverage: normalizeCoverage(collection.coverageManifest ?? collection.coverage),
+    correlationId: text(collection.correlationId, "unavailable"),
   };
 }
 
@@ -345,6 +421,24 @@ export const api = {
       proposal: result.proposal ? normalizeProposal(result.proposal) : null,
     };
   },
+  submitCollection: async (
+    body: RepositoryCollectionRequest,
+    signal?: AbortSignal,
+  ): Promise<RepositoryCollection> =>
+    normalizeCollection(
+      await request(
+        "/collections",
+        { method: "POST", body: JSON.stringify(body) },
+        signal,
+      ),
+    ),
+  collection: async (
+    commandId: string,
+    signal?: AbortSignal,
+  ): Promise<RepositoryCollection> =>
+    normalizeCollection(
+      await request(`/collections/${encodeURIComponent(commandId)}`, {}, signal),
+    ),
   runs: async (signal?: AbortSignal, cursor?: string): Promise<Page<Run>> => {
     const value = await request(pagePath("/runs", cursor), {}, signal);
     if (Array.isArray(value)) {

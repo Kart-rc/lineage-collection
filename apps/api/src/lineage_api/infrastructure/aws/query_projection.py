@@ -253,6 +253,39 @@ class AwsProductQueryProjection:
             raise RuntimeError("run timeline exceeded the workflow stage bound")
         return {"run": _run(summary), "stages": [_stage(item) for item in items]}
 
+    def get_collection(self, *, command_id: str, **_audit: str) -> dict[str, object]:
+        response = aws_call(
+            "dynamodb.get_collection_status",
+            self._client.get_item,
+            TableName=self._ledger_table,
+            Key={
+                "pk": {"S": f"COLLECTION#{command_id}"},
+                "sk": {"S": "STATUS"},
+            },
+            ConsistentRead=True,
+        )
+        item = response.get("Item")
+        if not isinstance(item, Mapping):
+            raise ProductApiError(
+                404, "COLLECTION_NOT_FOUND", "collection is not known"
+            )
+        return _document(item, "collection")
+
+    def submit_collection(self, **_request: object) -> dict[str, object]:
+        """Refuse rather than fork the semantics.
+
+        In AWS, repository acquisition runs as a Fargate stage, so an honest submit
+        enqueues a durable command and returns a non-terminal QUEUED status. That
+        acquisition stage does not exist yet, and synthesizing a local-shaped
+        synchronous submit here would introduce exactly the AWS-only semantic fork the
+        architecture forbids. Fail closed with a stable code until the stage lands.
+        """
+        raise ProductApiError(
+            501,
+            "COLLECTION_SUBMIT_NOT_CONFIGURED",
+            "collection submission is not configured in this environment",
+        )
+
     def list_proposals(
         self,
         *,

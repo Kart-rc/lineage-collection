@@ -54,8 +54,9 @@ def _validate_public_git_origin(origin: str) -> None:
         if not address.is_global or address.is_multicast:
             raise ValueError(_PUBLIC_GIT_ORIGIN_ERROR)
 
-    # Task 2B must resolve and revalidate every clone destination immediately
-    # before connection to block DNS rebinding and private resolved addresses.
+    # This is the request-shape gate only. The remote adapter resolves and
+    # revalidates the destination immediately before connection, so a name that
+    # passes here still cannot be rebound to a private address at connect time.
 
 
 @dataclass(frozen=True, slots=True)

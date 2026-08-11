@@ -1,0 +1,352 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="./fonts.css">
+<style>
+body { margin: 0; background: #17150F; }
+a { color: #C8511B; } a:hover { color: #BD0816; }
+</style>
+</helmet>
+<x-import component-from-global-scope="deck-stage" from="./deck-stage.js" width="1920" height="1080" hint-size="100%,100%">
+
+<section data-label="The repo" data-screen-label="Example repo" data-speaker-notes="The repo's own seeded fixture: payments-pipeline reads raw.transactions and tenant shards, writes daily_revenue; a second illustrative job derives customer features. Three exact element mappings plus one dynamic name the analyzer cannot resolve — that residue drives the LLM slide." style="position:relative;width:1920px;height:1080px;background:#FFFFFF;font-family:'IBM Plex Sans',sans-serif;color:#232F3E;overflow:hidden;box-sizing:border-box;padding:44px 60px 36px;display:flex;flex-direction:column;">
+  <div style="font-family:'IBM Plex Mono',monospace;font-size:18px;letter-spacing:2px;color:#5F6B7A;font-weight:600;">WORKED EXAMPLE · SEEDED FIXTURE payments-pipeline · CATALOG SNAPSHOT catalog-demo-v1</div>
+  <div style="font-size:40px;font-weight:600;margin-top:4px;">The example repo — inputs, outputs, and one unresolvable name</div>
+  <div style="font-family:'IBM Plex Mono',monospace;font-size:13px;color:#5F6B7A;margin-top:6px;">Presents the component PRDs (L01–L16); every AWS path is AWS_REQUIRED until the approved ephemeral deploy and smoke workflow runs. Normative production AWS view: docs/architecture/lineage-platform-target.md</div>
+  <div style="display:grid;grid-template-columns:760px 1fr;gap:40px;margin-top:24px;flex:1;">
+    <div>
+      <div style="background:#232F3E;color:#E8ECF1;border-radius:8px;padding:18px 20px;font-family:'IBM Plex Mono',monospace;font-size:15px;line-height:1.65;">
+        <span style="color:#8C9BAB;"># pipeline.py — job 1</span><br>
+        transactions = read_dataset(<br>
+        &nbsp;&nbsp;<span style="color:#6CAE3E;">"snowflake://payments/raw.transactions"</span>,<br>
+        &nbsp;&nbsp;elements=[<span style="color:#6CAE3E;">"customer_id"</span>, <span style="color:#6CAE3E;">"amount"</span>, <span style="color:#6CAE3E;">"occurred_at"</span>])<br>
+        write_dataset(<span style="color:#6CAE3E;">"analytics.daily_revenue"</span>, sources=[transactions],<br>
+        &nbsp;&nbsp;mappings={ <span style="color:#6CAE3E;">"customer_id"</span>: <span style="color:#6CAE3E;">"customer_id"</span>,<br>
+        &nbsp;&nbsp;&nbsp;&nbsp;<span style="color:#6CAE3E;">"gross_revenue"</span>: <span style="color:#6CAE3E;">"SUM(amount)"</span>,<br>
+        &nbsp;&nbsp;&nbsp;&nbsp;<span style="color:#6CAE3E;">"revenue_date"</span>: <span style="color:#6CAE3E;">"DATE(occurred_at)"</span> })<br>
+        <br>
+        <span style="color:#8C9BAB;"># the analyzer cannot resolve this statically ↓</span><br>
+        dynamic_dataset_name = f<span style="color:#FF9900;">"tenant_{tenant}.transactions"</span><br>
+        read_dataset(dynamic_dataset_name)
+      </div>
+      <div style="border:1.5px solid #B9C2CC;border-radius:8px;padding:14px 18px;margin-top:16px;">
+        <div style="font-family:'IBM Plex Mono',monospace;font-size:14px;font-weight:600;color:#5F6B7A;letter-spacing:1px;">CATALOG SNAPSHOT catalog-demo-v1 · THE URN AUTHORITY</div>
+        <div style="font-family:'IBM Plex Mono',monospace;font-size:14px;line-height:1.7;margin-top:8px;">raw.transactions <span style="color:#5F6B7A;">— transaction_id · customer_id · amount · occurred_at</span><br>analytics.daily_revenue <span style="color:#5F6B7A;">— revenue_date · customer_id · gross_revenue</span><br>risk.customer_features <span style="color:#5F6B7A;">— customer_id · lifetime_value</span></div>
+        <div style="font-size:14px;color:#5F6B7A;margin-top:8px;">Aliases registered: <span style="font-family:'IBM Plex Mono',monospace;font-size:13px;">snowflake://payments/raw.transactions · RAW.TRANSACTIONS · DAILY_REVENUE</span></div>
+      </div>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:14px;">
+      <div style="font-size:20px;font-weight:700;">Dataset graph the platform must discover</div>
+      <div style="display:flex;align-items:center;gap:12px;">
+        <div style="flex:1;border:2px solid #232F3E;border-radius:8px;padding:10px 14px;"><div style="font-size:16px;font-weight:700;">raw.transactions</div><div style="font-size:13px;color:#5F6B7A;">input · 4 elements</div></div>
+        <svg width="30" height="12" viewBox="0 0 30 12"><line x1="0" y1="6" x2="22" y2="6" stroke="#232F3E" stroke-width="2"></line><path d="M22,1 L29,6 L22,11 Z" fill="#232F3E"></path></svg>
+        <div style="flex:1;border:2px solid #232F3E;border-radius:8px;padding:10px 14px;background:#F2F4F6;"><div style="font-size:16px;font-weight:700;">analytics.daily_revenue</div><div style="font-size:13px;color:#5F6B7A;">output · 3 elements</div></div>
+        <svg width="30" height="12" viewBox="0 0 30 12"><line x1="0" y1="6" x2="22" y2="6" stroke="#232F3E" stroke-width="2"></line><path d="M22,1 L29,6 L22,11 Z" fill="#232F3E"></path></svg>
+        <div style="flex:1;border:2px solid #7D8998;border-radius:8px;padding:10px 14px;"><div style="font-size:16px;font-weight:700;">risk.customer_features</div><div style="font-size:13px;color:#5F6B7A;">downstream job (job 2, illustrative)</div></div>
+      </div>
+      <div style="display:flex;align-items:center;gap:12px;">
+        <div style="flex:1;border:2px dashed #BD0816;border-radius:8px;padding:10px 14px;"><div style="font-size:16px;font-weight:700;">tenant_{t}.transactions</div><div style="font-size:13px;color:#BD0816;">dynamic input — unresolvable statically</div></div>
+        <svg width="30" height="12" viewBox="0 0 30 12"><line x1="0" y1="6" x2="22" y2="6" stroke="#BD0816" stroke-width="2" stroke-dasharray="4 4"></line><path d="M22,1 L29,6 L22,11 Z" fill="#BD0816"></path></svg>
+        <div style="flex:2;font-size:14px;color:#5F6B7A;">residue → LLM tier-1 handoff (slide 3)</div>
+      </div>
+      <div style="border:1.5px solid #B9C2CC;border-radius:8px;padding:12px 16px;">
+        <div style="font-family:'IBM Plex Mono',monospace;font-size:14px;font-weight:600;color:#5F6B7A;letter-spacing:1px;">EXPECTED ELEMENT EDGES (expected-lineage.json)</div>
+        <div style="display:grid;grid-template-columns:auto auto 1fr;gap:6px 16px;font-family:'IBM Plex Mono',monospace;font-size:14px;margin-top:10px;align-items:baseline;">
+          <span>customer_id</span><span style="color:#7D8998;">→ customer_id</span><span style="color:#C8511B;">identity</span>
+          <span>amount</span><span style="color:#7D8998;">→ gross_revenue</span><span style="color:#C8511B;">SUM(amount)</span>
+          <span>occurred_at</span><span style="color:#7D8998;">→ revenue_date</span><span style="color:#C8511B;">DATE(occurred_at)</span>
+          <span style="color:#5F6B7A;">gross_revenue</span><span style="color:#7D8998;">→ lifetime_value</span><span style="color:#C8511B;">SUM(gross_revenue) <span style="color:#7D8998;">· job 2</span></span>
+        </div>
+      </div>
+      <div style="font-size:15px;color:#5F6B7A;line-height:1.5;">Every edge the platform publishes must be an <b>element-level</b> edge between <b>catalog-backed URNs</b> like<br><span style="font-family:'IBM Plex Mono',monospace;font-size:13px;">urn:ldp:staging:snowflake:payments:raw.transactions#amount</span> — a name the catalog doesn't know is quarantined, never guessed.</div>
+    </div>
+  </div>
+</section>
+
+<section data-label="Baseline" data-screen-label="Baseline lineage" data-speaker-notes="Baseline is the first full pass: classify, analyze at an exact digest, resolve every raw name against the pinned snapshot, write immutable evidence, merge into SINGLE-band edges, propose against an empty graph, publish v1." style="position:relative;width:1920px;height:1080px;background:#FFFFFF;font-family:'IBM Plex Sans',sans-serif;color:#232F3E;overflow:hidden;box-sizing:border-box;padding:44px 60px 36px;display:flex;flex-direction:column;">
+  <div style="font-family:'IBM Plex Mono',monospace;font-size:18px;letter-spacing:2px;color:#5F6B7A;font-weight:600;">STEP 1 OF THE LIFECYCLE · BASELINE WORKFLOW (BULK LANE)</div>
+  <div style="font-size:40px;font-weight:600;margin-top:4px;">How baseline lineage gets created</div>
+  <div style="font-family:'IBM Plex Mono',monospace;font-size:13px;color:#5F6B7A;margin-top:6px;">Presents the component PRDs (L01–L16); every AWS path is AWS_REQUIRED until the approved ephemeral deploy and smoke workflow runs. Normative production AWS view: docs/architecture/lineage-platform-target.md</div>
+  <div style="display:grid;grid-template-columns:1.15fr 1fr;gap:44px;margin-top:22px;flex:1;">
+    <div style="display:flex;flex-direction:column;gap:13px;">
+      <div style="display:flex;gap:12px;align-items:flex-start;"><div style="flex-shrink:0;width:26px;height:26px;border-radius:50%;background:#232F3E;color:#fff;font-size:14px;font-weight:700;display:flex;align-items:center;justify-content:center;">1</div><div style="font-size:16px;line-height:1.45;"><b>Classify first (L13).</b> Evidence in precedence order: level 1 governed catalog metadata and level 4 manifest structure both say <span style="font-family:'IBM Plex Mono',monospace;font-size:14px;">DATA_PIPELINE</span> → included, incremental + native lineage. A conflict would mean UNKNOWN and block baseline completion.</div></div>
+      <div style="display:flex;gap:12px;align-items:flex-start;"><div style="flex-shrink:0;width:26px;height:26px;border-radius:50%;background:#232F3E;color:#fff;font-size:14px;font-weight:700;display:flex;align-items:center;justify-content:center;">2</div><div style="font-size:16px;line-height:1.45;"><b>Schedule (L03).</b> Baseline workflow submits an SCA task spec on the bulk lane: <span style="font-family:'IBM Plex Mono',monospace;font-size:14px;">repo=payments-pipeline · digest=4f2a… · resolver pin=catalog-demo-v1</span>. No engine runs without the pin.</div></div>
+      <div style="display:flex;gap:12px;align-items:flex-start;"><div style="flex-shrink:0;width:26px;height:26px;border-radius:50%;background:#232F3E;color:#fff;font-size:14px;font-weight:700;display:flex;align-items:center;justify-content:center;">3</div><div style="font-size:16px;line-height:1.45;"><b>Analyze (L04).</b> Fargate checks out at the digest, walks the AST: <span style="font-family:'IBM Plex Mono',monospace;font-size:14px;">read_dataset / write_dataset</span> calls plus the mappings dict yield <b>3 exact candidates</b> with file:line + AST path; the f-string read becomes <b>residue(dynamic-name)</b> — listed, never skipped.</div></div>
+      <div style="display:flex;gap:12px;align-items:flex-start;"><div style="flex-shrink:0;width:26px;height:26px;border-radius:50%;background:#232F3E;color:#fff;font-size:14px;font-weight:700;display:flex;align-items:center;justify-content:center;">4</div><div style="font-size:16px;line-height:1.45;"><b>Resolve (L01).</b> Alias <span style="font-family:'IBM Plex Mono',monospace;font-size:14px;">snowflake://payments/raw.transactions</span> matches the catalog exactly; <span style="font-family:'IBM Plex Mono',monospace;font-size:14px;">analytics.daily_revenue</span> matches by normalized name; elements verified against the catalog schema. Zero or two matches → quarantine + gap report.</div></div>
+      <div style="display:flex;gap:12px;align-items:flex-start;"><div style="flex-shrink:0;width:26px;height:26px;border-radius:50%;background:#232F3E;color:#fff;font-size:14px;font-weight:700;display:flex;align-items:center;justify-content:center;">5</div><div style="font-size:16px;line-height:1.45;"><b>Preserve (L08).</b> The ScaEvidenceFile is serialized deterministically, SHA-256 checksummed, written once to <span style="font-family:'IBM Plex Mono',monospace;font-size:13px;">evidence/sca/payments-pipeline/4f2a…/ruleset-1.json</span>.</div></div>
+      <div style="display:flex;gap:12px;align-items:flex-start;"><div style="flex-shrink:0;width:26px;height:26px;border-radius:50%;background:#232F3E;color:#fff;font-size:14px;font-weight:700;display:flex;align-items:center;justify-content:center;">6</div><div style="font-size:16px;line-height:1.45;"><b>Merge (L07).</b> Three consolidated edges, each with one SCA provenance entry → band <b>SINGLE</b>; all three carry the <b>parser-exact</b> stamp (exact transform, SCA provenance, no conflict).</div></div>
+      <div style="display:flex;gap:12px;align-items:flex-start;"><div style="flex-shrink:0;width:26px;height:26px;border-radius:50%;background:#232F3E;color:#fff;font-size:14px;font-weight:700;display:flex;align-items:center;justify-content:center;">7</div><div style="font-size:16px;line-height:1.45;"><b>Propose &amp; publish (L09 → L10).</b> Proposal v1 against the empty graph: +3 edges. Parser-exact edges may auto-publish under the sampled-audit policy (5%/week); everything else waits for a human. Approval mints manifest → fencing token → namespace v1 → pointer. <b>The baseline now exists.</b></div></div>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:14px;">
+      <div style="background:#232F3E;color:#E8ECF1;border-radius:8px;padding:16px 20px;font-family:'IBM Plex Mono',monospace;font-size:13.5px;line-height:1.7;">
+        <span style="color:#8C9BAB;">// ScaEvidenceFile (excerpt)</span><br>
+        { "edge": {<br>
+        &nbsp;&nbsp;"from": "urn:…:raw.transactions#amount",<br>
+        &nbsp;&nbsp;"to": "urn:…:analytics.daily_revenue#gross_revenue",<br>
+        &nbsp;&nbsp;"type": "DERIVES", "transform": <span style="color:#FF9900;">"SUM(amount)"</span> },<br>
+        &nbsp;&nbsp;"evidence": { "file": "pipeline.py", "line": 11,<br>
+        &nbsp;&nbsp;&nbsp;&nbsp;"astPath": "Module.build_daily_revenue.Call[1]" },<br>
+        &nbsp;&nbsp;"mechanism": "SCA", "class": <span style="color:#6CAE3E;">"exact"</span> }<br>
+        <br>
+        <span style="color:#8C9BAB;">// residue — the LLM handoff</span><br>
+        { "symbol": "dynamic_dataset_name",<br>
+        &nbsp;&nbsp;"reason": <span style="color:#FF5252;">"dynamic-name"</span>, "file": "pipeline.py",<br>
+        &nbsp;&nbsp;"knownUrns": [3 datasets], "nearbyFacts": […] }
+      </div>
+      <div style="border:1.5px solid #B9C2CC;border-radius:8px;padding:14px 18px;">
+        <div style="font-family:'IBM Plex Mono',monospace;font-size:14px;font-weight:600;color:#5F6B7A;letter-spacing:1px;">BASELINE GUARANTEES</div>
+        <div style="font-size:15px;line-height:1.55;margin-top:8px;">Same (digest, ruleset, config) → byte-identical evidence, CI-enforced. Every raw name resolves or quarantines — a guessed URN is a defect. Nothing costly ran before classification. UNKNOWN class on a critical repo blocks baseline completion.</div>
+      </div>
+      <div style="border:1.5px solid #B9C2CC;border-radius:8px;padding:14px 18px;">
+        <div style="font-family:'IBM Plex Mono',monospace;font-size:14px;font-weight:600;color:#5F6B7A;letter-spacing:1px;">AT 10,000-REPO SCALE</div>
+        <div style="font-size:15px;line-height:1.55;margin-top:8px;">Classification is cheap (metadata + manifests) and fans out via Distributed Map; the Fargate bulk fleet target-tracks queue depth; humans review only LLM-only, CONFLICTING and corrections — parser-exact volume rides auto-publish.</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section data-label="LLM" data-screen-label="How the LLM works" data-speaker-notes="The LLM answers only what SCA could not: the dynamic tenant read. Chunk, context with SCA facts, cache, one guarded call. Guardrails validate schema, citation, URN, budget in order; unresolvable is a first-class answer feeding the runtime watch list. LLM edges are always marked inferred and capped at LOWEST." style="position:relative;width:1920px;height:1080px;background:#FFFFFF;font-family:'IBM Plex Sans',sans-serif;color:#232F3E;overflow:hidden;box-sizing:border-box;padding:44px 60px 36px;display:flex;flex-direction:column;">
+  <div style="font-family:'IBM Plex Mono',monospace;font-size:18px;letter-spacing:2px;color:#5F6B7A;font-weight:600;">STEP 2 · L05 — ONLY WHAT SCA COULD NOT ANSWER</div>
+  <div style="font-size:40px;font-weight:600;margin-top:4px;">How the LLM works — the tenant_{t} residue <span style="font-family:'IBM Plex Mono',monospace;font-size:15px;font-weight:700;letter-spacing:.06em;color:#6B6B75;border:2px dashed #6B6B75;border-radius:5px;padding:2px 8px;vertical-align:middle;">PLANNED · NOT_CONFIGURED</span></div>
+  <div style="font-family:'IBM Plex Mono',monospace;font-size:13px;color:#5F6B7A;margin-top:6px;">Presents the component PRDs (L01–L16); every AWS path is AWS_REQUIRED until the approved ephemeral deploy and smoke workflow runs. Normative production AWS view: docs/architecture/lineage-platform-target.md</div>
+  <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;font-family:'IBM Plex Mono',monospace;font-size:15px;margin-top:18px;">
+    <span style="background:#F2F4F6;border:1.5px solid #7D8998;border-radius:6px;padding:4px 10px;">T1 TRIGGER — residue</span><span>→</span><span style="background:#F2F4F6;border:1.5px solid #7D8998;border-radius:6px;padding:4px 10px;">CHUNK ≤ 8k</span><span>→</span><span style="background:#F2F4F6;border:1.5px solid #7D8998;border-radius:6px;padding:4px 10px;">CONTEXT</span><span>→</span><span style="background:#F2F4F6;border:1.5px solid #7D8998;border-radius:6px;padding:4px 10px;">CACHE</span><span>→</span><span style="background:#F2F4F6;border:1.5px solid #7D8998;border-radius:6px;padding:4px 10px;">BEDROCK CALL</span><span>→</span><span style="background:#FDF0DC;border:1.5px solid #C8511B;border-radius:6px;padding:4px 10px;">GUARDRAILS ×4</span><span>→</span><span style="background:#F2F4F6;border:1.5px solid #7D8998;border-radius:6px;padding:4px 10px;">EMIT | REJECT | UNRESOLVABLE</span>
+  </div>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:44px;margin-top:20px;flex:1;">
+    <div style="display:flex;flex-direction:column;justify-content:space-evenly;gap:14px;">
+      <div style="display:flex;gap:12px;align-items:flex-start;"><div style="flex-shrink:0;width:26px;height:26px;border-radius:50%;background:#232F3E;color:#fff;font-size:14px;font-weight:700;display:flex;align-items:center;justify-content:center;">1</div><div style="font-size:17.5px;line-height:1.55;"><b>Chunk.</b> The span ± its enclosing function + imports + config keys → a stable chunk digest. Same code next run = same digest = cache hit, no re-bill.</div></div>
+      <div style="display:flex;gap:12px;align-items:flex-start;"><div style="flex-shrink:0;width:26px;height:26px;border-radius:50%;background:#232F3E;color:#fff;font-size:14px;font-weight:700;display:flex;align-items:center;justify-content:center;">2</div><div style="font-size:17.5px;line-height:1.55;"><b>Context = SCA's own facts.</b> The prompt carries the residue's nearby facts and the repo's known URNs (all three catalog datasets). The prompt records which facts were provided — for audit and calibration.</div></div>
+      <div style="display:flex;gap:12px;align-items:flex-start;"><div style="flex-shrink:0;width:26px;height:26px;border-radius:50%;background:#232F3E;color:#fff;font-size:14px;font-weight:700;display:flex;align-items:center;justify-content:center;">3</div><div style="font-size:17.5px;line-height:1.55;"><b>Cache lookup</b> on <span style="font-family:'IBM Plex Mono',monospace;font-size:14px;">(chunk digest, promptVersion, modelId)</span>. Miss → one structured-output call to Bedrock via the enterprise gateway (PLANNED — Bedrock is absent from infra/lib); budget ledger debited per repo/day.</div></div>
+      <div style="display:flex;gap:12px;align-items:flex-start;"><div style="flex-shrink:0;width:26px;height:26px;border-radius:50%;background:#C8511B;color:#fff;font-size:14px;font-weight:700;display:flex;align-items:center;justify-content:center;">4</div><div style="font-size:17.5px;line-height:1.55;"><b>Guardrails, in order:</b> schema validate → citation must exist in the digest → URN must resolve via L01 → budget check. First failure stops the chain and persists a reject with <span style="font-family:'IBM Plex Mono',monospace;font-size:14px;">failedGuardrail</span> — nothing unvalidated ever reaches merge.</div></div>
+      <div style="display:flex;gap:12px;align-items:flex-start;"><div style="flex-shrink:0;width:26px;height:26px;border-radius:50%;background:#232F3E;color:#fff;font-size:14px;font-weight:700;display:flex;align-items:center;justify-content:center;">5</div><div style="font-size:17.5px;line-height:1.55;"><b>Three possible outcomes</b> for the tenant read: an edge that resolves (marked <b>inferred</b>, band capped at <b>LOWEST</b>) · a persisted reject · or an <span style="font-family:'IBM Plex Mono',monospace;font-size:14px;">unresolvable[]</span> entry — a first-class answer that feeds the <b>runtime watch list</b> so L06 can catch the real tenant tables executing.</div></div>
+    </div>
+    <div style="display:flex;flex-direction:column;justify-content:space-evenly;gap:16px;">
+      <div style="background:#232F3E;color:#E8ECF1;border-radius:8px;padding:20px 22px;font-family:'IBM Plex Mono',monospace;font-size:14.5px;line-height:1.8;">
+        <span style="color:#8C9BAB;">// LlmResponse after guardrails (excerpt)</span><br>
+        { "assertions": [{<br>
+        &nbsp;&nbsp;"kind": "READS",<br>
+        &nbsp;&nbsp;"rawName": <span style="color:#FF9900;">"tenant_*.transactions"</span>,<br>
+        &nbsp;&nbsp;"citation": { "file": "pipeline.py", "line": 19 },<br>
+        &nbsp;&nbsp;"class": <span style="color:#6CAE3E;">"probable"</span>, "inferred": true }],<br>
+        &nbsp;&nbsp;"unresolvable": [{ "symbol": "dynamic_dataset_name",<br>
+        &nbsp;&nbsp;&nbsp;&nbsp;"reason": "no catalog match for tenant_* shards"<br>
+        &nbsp;&nbsp;&nbsp;&nbsp;<span style="color:#8C9BAB;">→ runtime watch list</span> }],<br>
+        &nbsp;&nbsp;"promptVersion": "v3", "cacheKey": "sha256:9c1e…" }
+      </div>
+      <div style="border:1.5px solid #BD0816;border-radius:8px;padding:14px 18px;">
+        <div style="font-family:'IBM Plex Mono',monospace;font-size:14px;font-weight:600;color:#BD0816;letter-spacing:1px;">REJECT EXAMPLE</div>
+        <div style="font-size:15px;line-height:1.5;margin-top:6px;">Model cites <span style="font-family:'IBM Plex Mono',monospace;font-size:14px;">pipeline.py:99</span> — a line that doesn't exist in the digest → <span style="font-family:'IBM Plex Mono',monospace;font-size:14px;">CITATION_REJECT</span> persisted to <span style="font-family:'IBM Plex Mono',monospace;font-size:13px;">llm-rejects/</span>, visible to reviewers, never merged.</div>
+      </div>
+      <div style="border:1.5px solid #B9C2CC;border-radius:8px;padding:14px 18px;">
+        <div style="font-family:'IBM Plex Mono',monospace;font-size:14px;font-weight:600;color:#5F6B7A;letter-spacing:1px;">HARD RULES</div>
+        <div style="font-size:15px;line-height:1.55;margin-top:8px;">The LLM <b>proposes and never gates</b>: LLM-only edges cap at LOWEST, never block a PR, never auto-publish. It never runs on the PR path (parsers + cache only). Cache hit ≥ 90% is a target launch gate; a prompt/model bump re-derives a bounded % per day — old entries serve until replaced.</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section data-label="Incremental" data-screen-label="Incremental lineage" data-speaker-notes="A developer changes one transform. The push is signed, deduped, routed to the events lane; the Incremental workflow re-derives only this repo's scope; unchanged chunks are cache hits; merge computes a diff against the published graph and the proposal shows exactly one modified edge." style="position:relative;width:1920px;height:1080px;background:#FFFFFF;font-family:'IBM Plex Sans',sans-serif;color:#232F3E;overflow:hidden;box-sizing:border-box;padding:44px 60px 36px;display:flex;flex-direction:column;">
+  <div style="font-family:'IBM Plex Mono',monospace;font-size:18px;letter-spacing:2px;color:#5F6B7A;font-weight:600;">STEP 3 · ONE PUSH, ONE BOUNDED RUN</div>
+  <div style="font-size:40px;font-weight:600;margin-top:4px;">How incremental lineage gets collected</div>
+  <div style="font-family:'IBM Plex Mono',monospace;font-size:13px;color:#5F6B7A;margin-top:6px;">Presents the component PRDs (L01–L16); every AWS path is AWS_REQUIRED until the approved ephemeral deploy and smoke workflow runs. Normative production AWS view: docs/architecture/lineage-platform-target.md</div>
+  <div style="border:1.5px solid #B9C2CC;border-radius:8px;padding:12px 18px;margin-top:16px;font-size:16px;">The change: <span style="font-family:'IBM Plex Mono',monospace;font-size:14px;background:#FBE9EA;padding:2px 6px;border-radius:4px;">"revenue_date": "DATE(occurred_at)"</span> → <span style="font-family:'IBM Plex Mono',monospace;font-size:14px;background:#F0F7E6;padding:2px 6px;border-radius:4px;">"revenue_date": "CAST(occurred_at AS DATE)"</span> — a transform edit on one existing edge, pushed as commit <span style="font-family:'IBM Plex Mono',monospace;font-size:14px;">b91c…</span></div>
+  <div style="display:grid;grid-template-columns:1.15fr 1fr;gap:44px;margin-top:18px;flex:1;">
+    <div style="display:flex;flex-direction:column;justify-content:space-evenly;gap:14px;">
+      <div style="display:flex;gap:12px;align-items:flex-start;"><div style="flex-shrink:0;width:26px;height:26px;border-radius:50%;background:#232F3E;color:#fff;font-size:14px;font-weight:700;display:flex;align-items:center;justify-content:center;">1</div><div style="font-size:17.5px;line-height:1.55;"><b>Intake (L02).</b> GitHub delivery <span style="font-family:'IBM Plex Mono',monospace;font-size:14px;">d-7f3e</span> (repo, sha, changed files, HMAC signature). Signature verified; delivery ID conditionally recorded — <b>replaying the same delivery returns DUPLICATE and creates no second run.</b> Envelope → events lane.</div></div>
+      <div style="display:flex;gap:12px;align-items:flex-start;"><div style="flex-shrink:0;width:26px;height:26px;border-radius:50%;background:#232F3E;color:#fff;font-size:14px;font-weight:700;display:flex;align-items:center;justify-content:center;">2</div><div style="font-size:17.5px;line-height:1.55;"><b>Bounded targeting (L03).</b> The Incremental workflow starts run <span style="font-family:'IBM Plex Mono',monospace;font-size:14px;">r-102</span> with a shared correlation ID. Determinants say only <span style="font-family:'IBM Plex Mono',monospace;font-size:14px;">payments-pipeline</span>'s scope is affected — a one-file push re-derives only its edges, never the estate.</div></div>
+      <div style="display:flex;gap:12px;align-items:flex-start;"><div style="flex-shrink:0;width:26px;height:26px;border-radius:50%;background:#232F3E;color:#fff;font-size:14px;font-weight:700;display:flex;align-items:center;justify-content:center;">3</div><div style="font-size:17.5px;line-height:1.55;"><b>Analyze the changed scope only (L04).</b> SCA re-runs at digest <span style="font-family:'IBM Plex Mono',monospace;font-size:14px;">b91c…</span>: two edges unchanged, one transform now <span style="font-family:'IBM Plex Mono',monospace;font-size:14px;">CAST(occurred_at AS DATE)</span>. The unchanged tenant chunk is an <b>LLM cache hit — no model call, no cost.</b></div></div>
+      <div style="display:flex;gap:12px;align-items:flex-start;"><div style="flex-shrink:0;width:26px;height:26px;border-radius:50%;background:#232F3E;color:#fff;font-size:14px;font-weight:700;display:flex;align-items:center;justify-content:center;">4</div><div style="font-size:17.5px;line-height:1.55;"><b>Merge diff (L07).</b> New evidence appends to the same edgeKey; <span style="font-family:'IBM Plex Mono',monospace;font-size:14px;">DATE(x)</span> and <span style="font-family:'IBM Plex Mono',monospace;font-size:14px;">CAST(x AS DATE)</span> normalize to the same canonical tree via sqlglot → <b>no conflict</b>, transform updated, prior provenance retained. (Had they differed: CONFLICTING → review queue, both kept verbatim.)</div></div>
+      <div style="display:flex;gap:12px;align-items:flex-start;"><div style="flex-shrink:0;width:26px;height:26px;border-radius:50%;background:#232F3E;color:#fff;font-size:14px;font-weight:700;display:flex;align-items:center;justify-content:center;">5</div><div style="font-size:17.5px;line-height:1.55;"><b>Proposal v+1 (L09).</b> Diff vs the active graph version: 1 modified edge, 0 added, 0 removed. Parser-exact → eligible for auto-publish; the pipeline tail publishes exactly as baseline did. <b>Push-to-proposal ≤ 30 min p95.</b></div></div>
+    </div>
+    <div style="display:flex;flex-direction:column;justify-content:space-evenly;gap:16px;">
+      <div style="border:1.5px solid #B9C2CC;border-radius:8px;padding:18px 20px;">
+        <div style="font-family:'IBM Plex Mono',monospace;font-size:14px;font-weight:600;color:#5F6B7A;letter-spacing:1px;">RUN TIMELINE r-102 · correlation c-55a1</div>
+        <div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;font-family:'IBM Plex Mono',monospace;font-size:13.5px;margin-top:10px;">
+          <span style="background:#F2F4F6;border:1.5px solid #7D8998;border-radius:6px;padding:2px 8px;">QUEUED</span><span>→</span><span style="background:#F2F4F6;border:1.5px solid #7D8998;border-radius:6px;padding:2px 8px;">CLASSIFIED</span><span>→</span><span style="background:#F2F4F6;border:1.5px solid #7D8998;border-radius:6px;padding:2px 8px;">ANALYZED</span><span>→</span><span style="background:#F2F4F6;border:1.5px solid #7D8998;border-radius:6px;padding:2px 8px;">RESOLVED</span><span>→</span><span style="background:#F2F4F6;border:1.5px solid #7D8998;border-radius:6px;padding:2px 8px;">MERGED</span><span>→</span><span style="background:#F2F4F6;border:1.5px solid #7D8998;border-radius:6px;padding:2px 8px;">PROPOSED</span><span>→</span><span style="background:#FDF0DC;border:1.5px solid #C8511B;border-radius:6px;padding:2px 8px;">IN_REVIEW</span><span>→</span><span style="background:#F0F7E6;border:1.5px solid #7AA116;border-radius:6px;padding:2px 8px;">PUBLISHED</span>
+        </div>
+        <div style="font-size:14px;color:#5F6B7A;margin-top:10px;">Every stage transition is written to the run ledger; a failed stage is redrivable without re-running completed work.</div>
+      </div>
+      <div style="border:1.5px solid #B9C2CC;border-radius:8px;padding:14px 18px;">
+        <div style="font-family:'IBM Plex Mono',monospace;font-size:14px;font-weight:600;color:#5F6B7A;letter-spacing:1px;">WHAT MAKES IT CHEAP</div>
+        <div style="font-size:15px;line-height:1.55;margin-top:8px;">Dedupe kills webhook replays at the door · determinant scoping keeps runs bounded · SCA cache serves unchanged (repo, digest, ruleset) without re-analysis · LLM cache serves unchanged chunks free · the interactive lane is never starved by this bulk traffic.</div>
+      </div>
+      <div style="border:1.5px solid #B9C2CC;border-radius:8px;padding:14px 18px;">
+        <div style="font-family:'IBM Plex Mono',monospace;font-size:14px;font-weight:600;color:#5F6B7A;letter-spacing:1px;">DETERMINANT BUMPS</div>
+        <div style="font-size:15px;line-height:1.55;margin-top:8px;">The same machinery handles platform changes: a new ruleset, prompt, resolver or catalog snapshot version re-queues <b>exactly the affected scopes</b> — an auditable, bounded re-derivation instead of a big bang.</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section data-label="Fusion" data-screen-label="Fusion — the merge" data-speaker-notes="Fusion is a union by URN triple, never an average. One edge key, three independent provenance entries. Idempotent by provenanceId, commutative across arrival order. Conflicts route to review with everything kept; late arrivals on published edges become proposal v+1." style="position:relative;width:1920px;height:1080px;background:#FFFFFF;font-family:'IBM Plex Sans',sans-serif;color:#232F3E;overflow:hidden;box-sizing:border-box;padding:44px 60px 36px;display:flex;flex-direction:column;">
+  <div style="font-family:'IBM Plex Mono',monospace;font-size:18px;letter-spacing:2px;color:#5F6B7A;font-weight:600;">STEP 4 · L07 — THREE ENGINES, ONE EDGE</div>
+  <div style="font-size:40px;font-weight:600;margin-top:4px;">How fusion happens — union by URN, never an average</div>
+  <div style="font-family:'IBM Plex Mono',monospace;font-size:13px;color:#5F6B7A;margin-top:6px;">Presents the component PRDs (L01–L16); every AWS path is AWS_REQUIRED until the approved ephemeral deploy and smoke workflow runs. Normative production AWS view: docs/architecture/lineage-platform-target.md</div>
+  <div style="border:2px solid #232F3E;border-radius:8px;padding:16px 22px;margin-top:20px;">
+    <div style="font-family:'IBM Plex Mono',monospace;font-size:15px;">edgeKey = sha256( sorted(from[]) + to + type ) &nbsp;=&nbsp; sha256( raw.transactions#amount → analytics.daily_revenue#gross_revenue, DERIVES ) = <span style="color:#C8511B;">e-a41f…</span></div>
+    <div style="display:grid;grid-template-columns:150px 1fr 1fr 1fr;gap:0;margin-top:16px;border:1.5px solid #B9C2CC;border-radius:6px;overflow:hidden;font-size:15px;">
+      <div style="background:#232F3E;color:#fff;font-size:15px;font-weight:700;padding:8px 14px;">Provenance</div>
+      <div style="background:#232F3E;color:#fff;font-size:15px;font-weight:700;padding:8px 14px;">SCA (L04)</div>
+      <div style="background:#232F3E;color:#fff;font-size:15px;font-weight:700;padding:8px 14px;">LLM (L05)</div>
+      <div style="background:#232F3E;color:#fff;font-size:15px;font-weight:700;padding:8px 14px;">Runtime (L06)</div>
+      <div style="padding:10px 14px;border-top:1px solid #B9C2CC;font-size:14px;color:#5F6B7A;">assertion</div>
+      <div style="padding:10px 14px;border-top:1px solid #B9C2CC;font-family:'IBM Plex Mono',monospace;font-size:14.5px;line-height:1.7;">transform <b>exact</b> SUM(amount)<br>pipeline.py:11 + AST path<br>ruleset 1.0 · run r-088</div>
+      <div style="padding:10px 14px;border-top:1px solid #B9C2CC;font-family:'IBM Plex Mono',monospace;font-size:14.5px;line-height:1.7;">transform <b>probable</b> SUM(amount)<br>citation pipeline.py:11<br>promptVersion v3 · inferred</div>
+      <div style="padding:10px 14px;border-top:1px solid #B9C2CC;font-family:'IBM Plex Mono',monospace;font-size:14.5px;line-height:1.7;">observed WRITE, elements[amount→gross_revenue]<br>session s-889 · COMPLETE<br>schema fingerprint fp-c3…</div>
+    </div>
+    <div style="display:flex;gap:20px;margin-top:12px;font-family:'IBM Plex Mono',monospace;font-size:14px;"><span>→ mechanisms: SCA + LLM + runtime = band <b style="color:#C8511B;">HIGHEST</b></span><span>· transform selection: exact &gt; probable → <b>SUM(amount)</b></span><span>· corroboration: <b>ELEMENT</b> (separate field)</span></div>
+  </div>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:40px;margin-top:26px;flex:1;">
+    <div style="display:flex;flex-direction:column;justify-content:center;gap:16px;border:1.5px solid #B9C2CC;border-radius:8px;padding:20px 26px;">
+      <div style="font-size:21px;font-weight:700;">Union rules</div>
+      <div style="font-size:17.5px;line-height:1.7;">• <b>Idempotent:</b> replaying any assertion N times yields one provenance entry (stable provenanceId) and a stable version.<br>• <b>Commutative:</b> arrival order across engines never changes the final record — proven in CI.<br>• <b>Append-only:</b> a provenance entry is never rewritten or deleted; decay marks stale after 3 silent cycles, never removes.<br>• <b>Cross-repo stitching:</b> when another repo reads <span style="font-family:'IBM Plex Mono',monospace;font-size:14px;">daily_revenue</span> and writes <span style="font-family:'IBM Plex Mono',monospace;font-size:14px;">customer_features</span>, the edge appears once both repos are analyzed — matched purely by URN.</div>
+    </div>
+    <div style="display:flex;flex-direction:column;justify-content:center;gap:16px;border:1.5px solid #BD0816;border-radius:8px;padding:20px 26px;">
+      <div style="font-size:21px;font-weight:700;color:#BD0816;">When engines disagree</div>
+      <div style="font-size:17.5px;line-height:1.7;">• Two exact/probable transforms whose <b>normalized forms differ</b> (canonical sqlglot trees) → <span style="font-family:'IBM Plex Mono',monospace;font-size:14px;color:#BD0816;">CONFLICTING</span> → review queue, all provenance intact — <b>never averaged</b>.<br>• SCA asserts WRITE but ≥ 3 COMPLETE runtime sessions covering that path observe nothing → CONFLICTING.<br>• Late arrival on a PUBLISHED edge (e.g. runtime evidence lands next week) → <b>proposal v+1</b> through the normal gate — never a direct graph write.<br>• Absence is never negative evidence; an incomplete session never demotes.</div>
+    </div>
+  </div>
+</section>
+
+<section data-label="Storage" data-screen-label="How lineage is stored" data-speaker-notes="Two layers: S3 is immutable truth — evidence, proposals, approvals, manifests under Object Lock; DynamoDB is control state — the edge ledger, caches, locks and pointers. Projections are disposable and rebuild from S3 alone." style="position:relative;width:1920px;height:1080px;background:#FFFFFF;font-family:'IBM Plex Sans',sans-serif;color:#232F3E;overflow:hidden;box-sizing:border-box;padding:44px 60px 36px;display:flex;flex-direction:column;">
+  <div style="font-family:'IBM Plex Mono',monospace;font-size:18px;letter-spacing:2px;color:#5F6B7A;font-weight:600;">STEP 5 · L08 — S3 IS TRUTH, EVERYTHING ELSE REBUILDS</div>
+  <div style="font-size:40px;font-weight:600;margin-top:4px;">How lineage gets stored</div>
+  <div style="font-family:'IBM Plex Mono',monospace;font-size:13px;color:#5F6B7A;margin-top:6px;">Presents the component PRDs (L01–L16); every AWS path is AWS_REQUIRED until the approved ephemeral deploy and smoke workflow runs. Normative production AWS view: docs/architecture/lineage-platform-target.md</div>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:40px;margin-top:22px;flex:1;">
+    <div style="display:flex;flex-direction:column;gap:14px;">
+      <div style="font-size:19px;font-weight:700;">Truth layer — S3 + Object Lock <span style="font-size:14px;font-weight:400;color:#5F6B7A;">(immutable, KMS, cross-Region replicated)</span></div>
+      <div style="background:#232F3E;color:#E8ECF1;border-radius:8px;padding:16px 20px;font-family:'IBM Plex Mono',monospace;font-size:14px;line-height:1.8;flex:1;">
+        ldp-truth/<br>
+        ├ evidence/sca/payments-pipeline/b91c…/ruleset-1.json<br>
+        ├ evidence/llm/sha256:9c1e….json<br>
+        ├ evidence/runtime/s-889/urn…daily_revenue/0001.json<br>
+        ├ llm-rejects/2026-08-11/… &nbsp;<span style="color:#8C9BAB;">← lifecycle expiry</span><br>
+        ├ quarantine/2026-08-11/… &nbsp;&nbsp;<span style="color:#8C9BAB;">← lifecycle expiry</span><br>
+        ├ proposals/payments/p-3301/v2.json<br>
+        ├ approvals/payments/p-3301/a-1.json<br>
+        ├ manifests/staging/v2.json &nbsp;<span style="color:#6CAE3E;">← publish input</span><br>
+        └ catalog-snapshots/catalog-demo-v1.json<br>
+        <br>
+        <span style="color:#8C9BAB;">// every artifact referenced by a small stable ref:</span><br>
+        EvidenceRef { bucket, key, checksum: "sha256:…",<br>
+        &nbsp;&nbsp;kind: "ScaEvidenceFile", schemaVersion: "1.0.0" }
+      </div>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:14px;">
+      <div style="font-size:19px;font-weight:700;">Control state — DynamoDB <span style="font-size:14px;font-weight:400;color:#5F6B7A;">(conditional writes, PITR)</span></div>
+      <div style="background:#232F3E;color:#E8ECF1;border-radius:8px;padding:16px 20px;font-family:'IBM Plex Mono',monospace;font-size:14px;line-height:1.75;">
+        <span style="color:#8C9BAB;">// edge_ledger — the consolidated edge</span><br>
+        { "edgeKey": "e-a41f…", "version": 3,<br>
+        &nbsp;&nbsp;"from": ["urn:…raw.transactions#amount"],<br>
+        &nbsp;&nbsp;"to": "urn:…daily_revenue#gross_revenue",<br>
+        &nbsp;&nbsp;"band": <span style="color:#FF9900;">"HIGHEST"</span>, "corroboration": "ELEMENT",<br>
+        &nbsp;&nbsp;"status": "PUBLISHED", "provenance": [3 refs → S3] }
+      </div>
+      <div style="display:flex;flex-wrap:wrap;gap:8px;font-family:'IBM Plex Mono',monospace;font-size:14px;">
+        <span style="background:#F2F4F6;border:1.5px solid #B9C2CC;border-radius:6px;padding:4px 10px;">dedupe (eventId, TTL 14d)</span>
+        <span style="background:#F2F4F6;border:1.5px solid #B9C2CC;border-radius:6px;padding:4px 10px;">run_ledger · determinants</span>
+        <span style="background:#F2F4F6;border:1.5px solid #B9C2CC;border-radius:6px;padding:4px 10px;">llm_cache · budget ledger</span>
+        <span style="background:#F2F4F6;border:1.5px solid #B9C2CC;border-radius:6px;padding:4px 10px;">sessions</span>
+        <span style="background:#F2F4F6;border:1.5px solid #B9C2CC;border-radius:6px;padding:4px 10px;">publish_lock · pointers</span>
+      </div>
+      <div style="border:1.5px solid #B9C2CC;border-radius:8px;padding:14px 18px;">
+        <div style="font-family:'IBM Plex Mono',monospace;font-size:14px;font-weight:600;color:#5F6B7A;letter-spacing:1px;">INVARIANTS</div>
+        <div style="font-size:15px;line-height:1.55;margin-top:8px;">Writes go through one client library: validate kind → checksum → <b>conditional put, no overwrite</b> (a second write to the same key is accepted only if the checksum is identical). Corrupt evidence fails verification and is never merged or served. Neptune and OpenSearch (PLANNED) are <b>disposable projections</b> — delete them and rebuild from manifests with zero divergence. Target: a quarterly drill; none has run.</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section data-label="Confidence" data-screen-label="Confidence scoring" data-speaker-notes="Confidence is derived, not assigned: the band is a pure function of which independent mechanisms agree, on the example's own edges. Corroboration is a separate axis and never changes the band. Every band is recomputable from provenance alone." style="position:relative;width:1920px;height:1080px;background:#FFFFFF;font-family:'IBM Plex Sans',sans-serif;color:#232F3E;overflow:hidden;box-sizing:border-box;padding:44px 60px 36px;display:flex;flex-direction:column;">
+  <div style="font-family:'IBM Plex Mono',monospace;font-size:18px;letter-spacing:2px;color:#5F6B7A;font-weight:600;">STEP 6 · L07 §15 — AGREEMENT SETS CONFIDENCE</div>
+  <div style="font-size:40px;font-weight:600;margin-top:4px;">Confidence scoring on the example's own edges</div>
+  <div style="font-family:'IBM Plex Mono',monospace;font-size:13px;color:#5F6B7A;margin-top:6px;">Presents the component PRDs (L01–L16); every AWS path is AWS_REQUIRED until the approved ephemeral deploy and smoke workflow runs. Normative production AWS view: docs/architecture/lineage-platform-target.md</div>
+  <div style="display:grid;grid-template-columns:230px 1fr 320px;gap:0;margin-top:24px;border:2px solid #232F3E;border-radius:8px;overflow:hidden;">
+    <div style="background:#232F3E;color:#fff;font-size:16px;font-weight:700;padding:10px 16px;">Band</div>
+    <div style="background:#232F3E;color:#fff;font-size:16px;font-weight:700;padding:10px 16px;">Example edge</div>
+    <div style="background:#232F3E;color:#fff;font-size:16px;font-weight:700;padding:10px 16px;">Mechanisms present</div>
+    <div style="padding:12px 16px;border-top:1px solid #B9C2CC;font-family:'IBM Plex Mono',monospace;font-size:16px;font-weight:600;color:#7D8998;">LOWEST</div>
+    <div style="padding:16px;border-top:1px solid #B9C2CC;font-size:16px;">tenant_*.transactions → daily_revenue — the LLM's inferred read of the dynamic name</div>
+    <div style="padding:12px 16px;border-top:1px solid #B9C2CC;font-family:'IBM Plex Mono',monospace;font-size:14px;">LLM only</div>
+    <div style="padding:12px 16px;border-top:1px solid #B9C2CC;font-family:'IBM Plex Mono',monospace;font-size:16px;font-weight:600;color:#7D8998;">SINGLE</div>
+    <div style="padding:16px;border-top:1px solid #B9C2CC;font-size:16px;">occurred_at → revenue_date right after baseline — one deterministic mechanism</div>
+    <div style="padding:12px 16px;border-top:1px solid #B9C2CC;font-family:'IBM Plex Mono',monospace;font-size:14px;">SCA</div>
+    <div style="padding:12px 16px;border-top:1px solid #B9C2CC;font-family:'IBM Plex Mono',monospace;font-size:16px;font-weight:600;">MEDIUM</div>
+    <div style="padding:16px;border-top:1px solid #B9C2CC;font-size:16px;">customer_id → customer_id once the LLM's T2 pass agrees with SCA</div>
+    <div style="padding:12px 16px;border-top:1px solid #B9C2CC;font-family:'IBM Plex Mono',monospace;font-size:14px;">SCA + LLM</div>
+    <div style="padding:12px 16px;border-top:1px solid #B9C2CC;font-family:'IBM Plex Mono',monospace;font-size:16px;font-weight:600;color:#C8511B;">HIGH</div>
+    <div style="padding:16px;border-top:1px solid #B9C2CC;font-size:16px;">amount → gross_revenue after integration tests observe the write (session COMPLETE)</div>
+    <div style="padding:12px 16px;border-top:1px solid #B9C2CC;font-family:'IBM Plex Mono',monospace;font-size:14px;">SCA + runtime</div>
+    <div style="padding:12px 16px;border-top:1px solid #B9C2CC;font-family:'IBM Plex Mono',monospace;font-size:16px;font-weight:700;color:#fff;background:#C8511B;">HIGHEST</div>
+    <div style="padding:16px;border-top:1px solid #B9C2CC;font-size:16px;">amount → gross_revenue with all three mechanisms in agreement</div>
+    <div style="padding:12px 16px;border-top:1px solid #B9C2CC;font-family:'IBM Plex Mono',monospace;font-size:14px;">SCA + LLM + runtime</div>
+  </div>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:40px;margin-top:28px;flex:1;">
+    <div style="border:1.5px solid #B9C2CC;border-radius:8px;padding:24px 28px;display:flex;flex-direction:column;justify-content:center;">
+      <div style="font-size:21px;font-weight:700;">Corroboration is a separate axis</div>
+      <div style="font-size:17.5px;line-height:1.7;margin-top:12px;"><span style="font-family:'IBM Plex Mono',monospace;font-size:14px;">corroboration: NONE | DATASET | ELEMENT</span> — a Spark run without the columnLineage facet observes only that <span style="font-family:'IBM Plex Mono',monospace;font-size:14px;">daily_revenue</span> was written → badge <b>DATASET</b>, band unchanged. The UI always shows band + badge together. Policy may render (SINGLE, DATASET) as a WARN, but <b>BLOCK decisions read the band alone</b>.</div>
+    </div>
+    <div style="border:1.5px solid #B9C2CC;border-radius:8px;padding:24px 28px;display:flex;flex-direction:column;justify-content:center;">
+      <div style="font-size:21px;font-weight:700;">Derived, never assigned</div>
+      <div style="font-size:17.5px;line-height:1.7;margin-top:12px;">No numeric scores at MVP — ordinal bands only, each <b>recomputable from provenance alone</b> (a read-only audit job recomputes and must match). Decay: a mechanism silent for 3 consecutive analyses marks its provenance stale and the band recomputes — the edge goes STALE, never deleted. Absence is never negative evidence.</div>
+    </div>
+  </div>
+</section>
+
+<section data-label="Publication" data-screen-label="Publication" data-speaker-notes="Publication is the fenced tail: approval mints an immutable manifest, a monotonic fencing token guards staging into an inactive namespace, verification compares counts and checksums, and one conditional transaction swaps the active pointer. Queries and impact analysis read only through that pointer." style="position:relative;width:1920px;height:1080px;background:#FFFFFF;font-family:'IBM Plex Sans',sans-serif;color:#232F3E;overflow:hidden;box-sizing:border-box;padding:44px 60px 36px;display:flex;flex-direction:column;">
+  <div style="font-family:'IBM Plex Mono',monospace;font-size:18px;letter-spacing:2px;color:#5F6B7A;font-weight:600;">STEP 7 · L09 → L10 → L11 — THE FENCED TAIL</div>
+  <div style="font-size:40px;font-weight:600;margin-top:4px;">How it gets published — and queried</div>
+  <div style="font-family:'IBM Plex Mono',monospace;font-size:13px;color:#5F6B7A;margin-top:6px;">Presents the component PRDs (L01–L16); every AWS path is AWS_REQUIRED until the approved ephemeral deploy and smoke workflow runs. Normative production AWS view: docs/architecture/lineage-platform-target.md</div>
+  <div style="display:flex;gap:0;align-items:stretch;margin-top:22px;">
+    <div style="flex:1;border:2px solid #232F3E;border-radius:8px;padding:12px 14px;"><div style="font-family:'IBM Plex Mono',monospace;font-size:13px;font-weight:600;color:#5F6B7A;">1 · APPROVE</div><div style="font-size:15px;line-height:1.4;margin-top:4px;">Reviewer inspects provenance + diff, enters a rationale, approves proposal <span style="font-family:'IBM Plex Mono',monospace;font-size:13px;">p-3301 v2</span>. Server-enforced, audited.</div></div>
+    <div style="width:30px;display:flex;align-items:center;justify-content:center;"><svg width="22" height="12" viewBox="0 0 22 12"><line x1="0" y1="6" x2="14" y2="6" stroke="#232F3E" stroke-width="2"></line><path d="M14,1 L21,6 L14,11 Z" fill="#232F3E"></path></svg></div>
+    <div style="flex:1;border:2px solid #232F3E;border-radius:8px;padding:12px 14px;"><div style="font-family:'IBM Plex Mono',monospace;font-size:13px;font-weight:600;color:#5F6B7A;">2 · MANIFEST</div><div style="font-size:15px;line-height:1.4;margin-top:4px;">Checksummed <span style="font-family:'IBM Plex Mono',monospace;font-size:13px;">manifests/staging/v2.json</span>: proposal version, reviewer, expected prior <b>v1</b>, full edge enumeration. Object-Locked.</div></div>
+    <div style="width:30px;display:flex;align-items:center;justify-content:center;"><svg width="22" height="12" viewBox="0 0 22 12"><line x1="0" y1="6" x2="14" y2="6" stroke="#232F3E" stroke-width="2"></line><path d="M14,1 L21,6 L14,11 Z" fill="#232F3E"></path></svg></div>
+    <div style="flex:1;border:2px solid #232F3E;border-radius:8px;padding:12px 14px;"><div style="font-family:'IBM Plex Mono',monospace;font-size:13px;font-weight:600;color:#5F6B7A;">3 · RESERVE + FENCE</div><div style="font-size:15px;line-height:1.4;margin-top:4px;">Conditional DynamoDB lock; monotonic fencing token <span style="font-family:'IBM Plex Mono',monospace;font-size:13px;">t=1</span>. An expired or stale worker can never win.</div></div>
+    <div style="width:30px;display:flex;align-items:center;justify-content:center;"><svg width="22" height="12" viewBox="0 0 22 12"><line x1="0" y1="6" x2="14" y2="6" stroke="#232F3E" stroke-width="2"></line><path d="M14,1 L21,6 L14,11 Z" fill="#232F3E"></path></svg></div>
+    <div style="flex:1;border:2px solid #232F3E;border-radius:8px;padding:12px 14px;"><div style="font-family:'IBM Plex Mono',monospace;font-size:13px;font-weight:600;color:#5F6B7A;">4 · STAGE + VERIFY</div><div style="font-size:15px;line-height:1.4;margin-top:4px;">Edges written into <b>inactive</b> namespace v2; counts + checksums verified against the manifest. Any mismatch → staging discarded, no swap.</div></div>
+    <div style="width:30px;display:flex;align-items:center;justify-content:center;"><svg width="22" height="12" viewBox="0 0 22 12"><line x1="0" y1="6" x2="14" y2="6" stroke="#232F3E" stroke-width="2"></line><path d="M14,1 L21,6 L14,11 Z" fill="#232F3E"></path></svg></div>
+    <div style="flex:1;border:2px solid #7AA116;border-radius:8px;padding:12px 14px;background:#F7FAF0;"><div style="font-family:'IBM Plex Mono',monospace;font-size:13px;font-weight:600;color:#5F6B7A;">5 · ATOMIC SWAP</div><div style="font-size:15px;line-height:1.4;margin-top:4px;">One transaction advances the pointer iff reservation + token + expected-prior all match. <span style="font-family:'IBM Plex Mono',monospace;font-size:13px;">staging: v1 → v2</span>. Rollback = re-point, never rewrite.</div></div>
+  </div>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:40px;margin-top:24px;flex:1;">
+    <div style="background:#232F3E;color:#E8ECF1;border-radius:8px;padding:16px 20px;font-family:'IBM Plex Mono',monospace;font-size:13.5px;line-height:1.7;">
+      <span style="color:#8C9BAB;">// the graph is now queryable — through the pointer only</span><br>
+      GET /lineage/urn:…daily_revenue%23gross_revenue?direction=up<br>
+      → { "namespaceVersion": "v2", "edges": [{<br>
+      &nbsp;&nbsp;&nbsp;&nbsp;"from": "urn:…raw.transactions#amount",<br>
+      &nbsp;&nbsp;&nbsp;&nbsp;"band": <span style="color:#FF9900;">"HIGHEST"</span>, "corroboration": "ELEMENT",<br>
+      &nbsp;&nbsp;&nbsp;&nbsp;"transform": "SUM(amount)", "evidence": [3 refs] }] }<br>
+      <br>
+      POST /impact { "subject": "urn:…raw.transactions#amount",<br>
+      &nbsp;&nbsp;"changeType": "COLUMN_DROP" }<br>
+      → { "affected": [{ "urn": "…#gross_revenue",<br>
+      &nbsp;&nbsp;&nbsp;&nbsp;"band": "HIGHEST", "severity": <span style="color:#FF5252;">"BLOCK"</span> },<br>
+      &nbsp;&nbsp;{ "urn": "…#lifetime_value", "pathLength": 2,<br>
+      &nbsp;&nbsp;&nbsp;&nbsp;"severity": <span style="color:#FF5252;">"BLOCK"</span> }],<br>
+      &nbsp;&nbsp;"summary": { "block": 2, "warn": 0, "info": 1 } }
+    </div>
+    <div style="display:flex;flex-direction:column;gap:14px;">
+      <div style="border:1.5px solid #B9C2CC;border-radius:8px;padding:14px 18px;">
+        <div style="font-family:'IBM Plex Mono',monospace;font-size:14px;font-weight:600;color:#5F6B7A;letter-spacing:1px;">WHY FENCING MATTERS</div>
+        <div style="font-size:15.5px;line-height:1.55;margin-top:8px;">Two publishers racing? The loser's token is stale — its transaction fails and its staging is discarded. Split-brain is impossible by construction (property-tested + chaos-drilled). Version history is retained: pinned queries against v1 still answer.</div>
+      </div>
+      <div style="border:1.5px solid #B9C2CC;border-radius:8px;padding:14px 18px;">
+        <div style="font-family:'IBM Plex Mono',monospace;font-size:14px;font-weight:600;color:#5F6B7A;letter-spacing:1px;">WHAT USERS SEE (L11)</div>
+        <div style="font-size:15.5px;line-height:1.55;margin-top:8px;">Every rendered edge shows band + mechanisms + evidence links — no bare edges, never more certainty than the band supports. Depth ≤ 5 traversal, version watermark on every response, and the dropped-column impact above turns into a PR-gate <b>BLOCK</b> — only ever from a HIGH/HIGHEST band, never from an LLM-only edge.</div>
+      </div>
+      <div style="font-family:'IBM Plex Mono',monospace;font-size:14px;color:#5F6B7A;border-top:2px solid #232F3E;padding-top:10px;">full circle: the next push starts the incremental loop again — dedupe → bounded run → diff → review → fenced publish v3</div>
+    </div>
+  </div>
+</section>
+
+</x-import>
+</x-dc>
+</body>
+</html>

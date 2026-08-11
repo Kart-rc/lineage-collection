@@ -33,7 +33,12 @@ def handler(event: object, _context: object) -> dict[str, Any]:
         result = service.handle(**request)
         if not isinstance(result, ProductApiResult):
             raise RuntimeError("invalid product API result")
-        return _response(result.status_code, result.document, correlation_id)
+        return _response(
+            result.status_code,
+            result.document,
+            correlation_id,
+            extra_headers=result.headers,
+        )
     except ProductApiError as error:
         return _response(
             error.status_code,
@@ -172,11 +177,16 @@ def _correlation_id(event: object) -> str:
 
 
 def _response(
-    status_code: int, document: Mapping[str, object], correlation_id: str
+    status_code: int,
+    document: Mapping[str, object],
+    correlation_id: str,
+    *,
+    extra_headers: Mapping[str, str] | None = None,
 ) -> dict[str, Any]:
     body = json.dumps(document, sort_keys=True, separators=(",", ":"), default=str)
     if len(body.encode("utf-8")) > MAX_RESPONSE_BYTES:
         status_code = 500
+        extra_headers = None
         body = json.dumps(
             {
                 "error": {
@@ -188,13 +198,24 @@ def _response(
             sort_keys=True,
             separators=(",", ":"),
         )
+    headers = {
+        "content-type": "application/json",
+        "cache-control": "no-store",
+        "x-content-type-options": "nosniff",
+        "x-correlation-id": correlation_id,
+    }
+    for key, value in (extra_headers or {}).items():
+        if (
+            not isinstance(key, str)
+            or not isinstance(value, str)
+            or key.lower() in headers
+            or len(value) > 1_024
+            or any(character in value for character in "\r\n")
+        ):
+            raise RuntimeError("product API returned an unsafe response header")
+        headers[key.lower()] = value
     return {
         "statusCode": status_code,
-        "headers": {
-            "content-type": "application/json",
-            "cache-control": "no-store",
-            "x-content-type-options": "nosniff",
-            "x-correlation-id": correlation_id,
-        },
+        "headers": headers,
         "body": body,
     }

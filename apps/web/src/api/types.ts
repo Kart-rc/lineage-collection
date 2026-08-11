@@ -210,6 +210,70 @@ export interface CollectionResult {
   proposal: Proposal | null;
 }
 
+export type CollectionSourceType = "LOCAL_CHECKOUT" | "GIT";
+
+export interface RepositoryCollectionRequest {
+  readonly sourceType: CollectionSourceType;
+  readonly origin: string;
+  readonly repository: string;
+  readonly revision: string;
+  readonly environment: string;
+  readonly platform: string;
+  readonly system: string;
+  readonly analyzerPack: string;
+  readonly ruleset: string;
+  readonly schemaProfile: string;
+  /** Only ever sent for LOCAL_CHECKOUT, and only under the development policy. */
+  readonly checkoutPath?: string;
+}
+
+export interface CollectionCounts {
+  readonly edges: number;
+  readonly reads: number;
+  readonly writes: number;
+  readonly residue: number;
+  readonly unresolved: number;
+}
+
+export interface CollectionCoverage {
+  readonly manifestId: string | null;
+  readonly state: string | null;
+  readonly counts: {
+    readonly expected: number;
+    readonly completed: number;
+    readonly skipped: number;
+    readonly unsupported: number;
+    readonly failed: number;
+  };
+}
+
+export interface RepositoryCollection {
+  readonly commandId: string;
+  readonly collectionId: string;
+  readonly statusUrl: string;
+  readonly sourceType: CollectionSourceType | "UNKNOWN";
+  readonly origin: string;
+  readonly repository: string;
+  readonly revision: string;
+  readonly environment: string;
+  readonly system: string;
+  readonly outcome: string;
+  readonly reasonCode: string | null;
+  readonly commandStatus: string;
+  readonly terminal: boolean;
+  readonly runId: string | null;
+  readonly runStatus: string | null;
+  readonly proposalId: string | null;
+  readonly proposalStatus: string | null;
+  readonly runtimeStatus: string;
+  readonly analysisStatus: string | null;
+  readonly statusReasons: readonly string[];
+  readonly stages: readonly string[];
+  readonly counts: CollectionCounts;
+  readonly coverage: CollectionCoverage | null;
+  readonly correlationId: string;
+}
+
 export interface LineageResponse {
   subject: string;
   direction: "up" | "down";

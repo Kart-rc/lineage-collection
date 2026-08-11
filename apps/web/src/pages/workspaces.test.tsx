@@ -182,9 +182,15 @@ test("deployed operations removes local demo controls", async () => {
 
   renderApp("/");
 
-  expect(await screen.findByText("Provider-driven collection")).toBeVisible();
+  // Repository collection is the primary workflow in every environment; only the
+  // seeded demo and the local-path source mode are development-only.
+  expect(await screen.findByText("Collect a repository")).toBeVisible();
   expect(screen.queryByRole("button", { name: "Run seeded collection" })).toBeNull();
-  expect(screen.getByText("production")).toBeVisible();
+  expect(screen.queryByText("Seeded demonstration")).toBeNull();
+  expect(
+    screen.getAllByRole("option").map((option) => (option as HTMLOptionElement).value),
+  ).toEqual(["GIT"]);
+  expect(screen.queryByLabelText("Development checkout path")).toBeNull();
 });
 
 test("operations exposes gate values and runs the signed seeded collection", async () => {

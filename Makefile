@@ -1,4 +1,4 @@
-.PHONY: setup test dev reset build synth package-aws workflow-export workflow-check aws-deploy aws-smoke aws-cleanup acceptance-smoke verify
+.PHONY: setup test dev reset build synth package-aws workflow-export workflow-check architecture architecture-check aws-deploy aws-smoke aws-cleanup acceptance-smoke verify
 
 setup:
 	uv sync --project apps/api --extra dev
@@ -27,6 +27,12 @@ workflow-export:
 
 workflow-check:
 	npm run workflow:check
+
+architecture:
+	uv run --project apps/api python scripts/render_target_architecture.py
+
+architecture-check:
+	uv run --project apps/api python scripts/render_target_architecture.py --check
 
 aws-deploy:
 	./scripts/deploy_ephemeral_aws.sh

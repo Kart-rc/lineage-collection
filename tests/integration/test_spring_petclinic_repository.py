@@ -1895,9 +1895,10 @@ def test_real_spring_petclinic_repository_acceptance(tmp_path: Path) -> None:
     database_proof = manifest["databaseEffectProof"]
     assert database_proof["algorithm"] == "sqlite-canonical-relational-snapshot-v1"
     assert database_proof["schemaVersion"] == "1.0.0"
-    assert database_proof["tableCount"] == 33
-    assert len(database_proof["tableNames"]) == 33
-    assert database_proof["schemaObjectCount"] >= 33
+    # 34 since schema v9 added repository_collections for the collection API.
+    assert database_proof["tableCount"] == 34
+    assert len(database_proof["tableNames"]) == 34
+    assert database_proof["schemaObjectCount"] >= 34
     assert {item["type"] for item in database_proof["schemaObjects"]}.issuperset(
         {"index", "table"}
     )

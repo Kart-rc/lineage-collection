@@ -1,0 +1,1050 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lineage Platform Target AWS Architecture</title>
+<style>
+    :root {
+      color-scheme: light;
+      --page: #ffffff;
+      --ink: #14161a;
+      --muted: #55606e;
+      --rule: #d5dae2;
+      --surface: #f7f8fa;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      padding: 2rem 1.25rem 4rem;
+      background: var(--page);
+      color: var(--ink);
+      font: 16px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    }
+    main { max-width: 76rem; margin: 0 auto; }
+    h1 { font-size: 1.75rem; margin: 0 0 0.25rem; }
+    h2 { font-size: 1.25rem; margin: 2.5rem 0 0.75rem; }
+    h3 { font-size: 1rem; margin: 0 0 0.75rem; letter-spacing: 0.02em; text-transform: uppercase; color: var(--muted); }
+    p { margin: 0 0 0.75rem; }
+    .architecture-subtitle { color: var(--muted); margin-bottom: 1.5rem; }
+    .architecture-boundary {
+      border: 2px solid #a86a00;
+      background: #fdf3e2;
+      color: #3d2600;
+      border-radius: 0.5rem;
+      padding: 0.85rem 1rem;
+      margin: 0 0 1.5rem;
+    }
+    .architecture-legend {
+      list-style: none;
+      display: grid;
+      gap: 0.75rem;
+      grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr));
+      margin: 0 0 1rem;
+      padding: 0;
+    }
+    .architecture-legend__item { border: 2px solid; border-radius: 0.5rem; padding: 0.6rem 0.75rem; }
+    .architecture-legend__name { display: block; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; font-size: 0.78rem; }
+    .architecture-legend__meaning { display: block; font-size: 0.85rem; }
+    .architecture-tally { color: var(--muted); font-size: 0.9rem; margin-bottom: 2rem; }
+    .architecture-layer {
+      border: 1px solid var(--rule);
+      border-radius: 0.75rem;
+      background: var(--surface);
+      padding: 1rem;
+      margin: 0 0 1rem;
+    }
+    .architecture-layer__nodes {
+      list-style: none;
+      display: grid;
+      gap: 0.75rem;
+      grid-template-columns: repeat(auto-fit, minmax(17rem, 1fr));
+      margin: 0;
+      padding: 0;
+    }
+    .architecture-node { border: 2px solid; border-radius: 0.5rem; padding: 0.65rem 0.75rem; }
+    .architecture-node--gate { border-style: double; border-width: 4px; }
+    .architecture-node__title { display: block; font-weight: 650; }
+    .architecture-node__detail { display: block; font-size: 0.85rem; opacity: 0.85; }
+    .architecture-node--verified {
+      background: #e7f6ec;
+      border-color: #1a7f37;
+      color: #0b2b15;
+    }
+    .architecture-node--synthesized {
+      background: #eaf1fb;
+      border-color: #1f4e9c;
+      color: #0d2545;
+    }
+    .architecture-node--partial {
+      background: #fdf3e2;
+      border-color: #a86a00;
+      color: #3d2600;
+    }
+    .architecture-node--planned {
+      background: #f2f2f4;
+      border-color: #6b6b75;
+      color: #2b2b31;
+    }
+    .architecture-edges { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+    .architecture-edges caption { text-align: left; color: var(--muted); padding-bottom: 0.5rem; }
+    .architecture-edges th, .architecture-edges td {
+      border-bottom: 1px solid var(--rule);
+      padding: 0.4rem 0.5rem;
+      text-align: left;
+      vertical-align: top;
+    }
+    .architecture-edge--durable { background: #f7f9fd; }
+    .architecture-edge__arrow { font-size: 1.1rem; color: var(--muted); }
+    .architecture-edge__kind { color: var(--muted); white-space: nowrap; }
+    .architecture-scroll { overflow-x: auto; }
+</style>
+</head>
+<body>
+  <main>
+    <h1>Lineage Platform Target AWS Architecture</h1>
+    <p class="architecture-subtitle">
+      Production AWS target only. No SQLite, local filesystem, Vite, or in-process worker appears as
+      an architecture component. Generated from the normative Mermaid source in
+      <code>docs/architecture/lineage-platform-target.md</code>.
+    </p>
+    <p class="architecture-boundary">
+      <strong>Evidence boundary:</strong> no component below carries live AWS evidence. Every AWS
+      runtime path remains <code>AWS_REQUIRED</code> until the approved ephemeral deploy, smoke, and
+      cleanup workflow runs. <em>Verified</em> means proven by executable evidence, not observed in AWS.
+    </p>
+
+    <h2>Status legend</h2>
+    <ul class="architecture-legend">
+      <li class="architecture-legend__item architecture-node--verified" data-legend="verified">
+        <span class="architecture-legend__name">verified</span>
+        <span class="architecture-legend__meaning">Implemented and verified by fresh executable evidence.</span>
+      </li>
+      <li class="architecture-legend__item architecture-node--synthesized" data-legend="synthesized">
+        <span class="architecture-legend__name">synthesized</span>
+        <span class="architecture-legend__meaning">Implemented as production-shaped infrastructure; synthesis evidence only.</span>
+      </li>
+      <li class="architecture-legend__item architecture-node--partial" data-legend="partial">
+        <span class="architecture-legend__name">partial</span>
+        <span class="architecture-legend__meaning">Partially wired; required behavior remains.</span>
+      </li>
+      <li class="architecture-legend__item architecture-node--planned" data-legend="planned">
+        <span class="architecture-legend__name">planned</span>
+        <span class="architecture-legend__meaning">Planned or deferred; not configured.</span>
+      </li>
+    </ul>
+    <p class="architecture-tally">Component tally &mdash; verified: 26 &middot; synthesized: 19 &middot; partial: 7 &middot; planned: 7</p>
+
+    <h2>Layers and components</h2>
+    <section class="architecture-layer" data-layer="sources">
+      <h3>1 - Triggers and evidence sources</h3>
+      <ul class="architecture-layer__nodes">
+        <li class="architecture-node architecture-node--partial" data-node="ghSrc" data-status="partial">
+          <span class="architecture-node__title">GitHub App and repository webhooks</span>
+          <span class="architecture-node__detail">signed push, pull-request, and branch events</span>
+        </li>
+        <li class="architecture-node architecture-node--planned" data-node="jenkins" data-status="planned">
+          <span class="architecture-node__title">Jenkins CI pipelines</span>
+          <span class="architecture-node__detail">build completion and exact artifact digests</span>
+        </li>
+        <li class="architecture-node architecture-node--partial" data-node="tas" data-status="partial">
+          <span class="architecture-node__title">TAS deployment signals</span>
+          <span class="architecture-node__detail">signed promotion and rollback events</span>
+        </li>
+        <li class="architecture-node architecture-node--planned" data-node="sched" data-status="planned">
+          <span class="architecture-node__title">EventBridge schedules</span>
+          <span class="architecture-node__detail">nightly reconciliation and onboarding sweeps</span>
+        </li>
+        <li class="architecture-node architecture-node--partial" data-node="catalog" data-status="partial">
+          <span class="architecture-node__title">Enterprise catalog snapshots</span>
+          <span class="architecture-node__detail">pinned dataset dictionary</span>
+        </li>
+        <li class="architecture-node architecture-node--partial" data-node="rtApps" data-status="partial">
+          <span class="architecture-node__title">Instrumented non-production runtimes</span>
+          <span class="architecture-node__detail">test and integration workloads</span>
+        </li>
+      </ul>
+    </section>
+    <section class="architecture-layer" data-layer="ingress">
+      <h3>2 - Edge and durable intake</h3>
+      <ul class="architecture-layer__nodes">
+        <li class="architecture-node architecture-node--synthesized" data-node="edgeApi" data-status="synthesized">
+          <span class="architecture-node__title">API Gateway REST edge</span>
+          <span class="architecture-node__detail">IAM authorization, throttling, access logs</span>
+        </li>
+        <li class="architecture-node architecture-node--synthesized" data-node="normalize" data-status="synthesized">
+          <span class="architecture-node__title">Normalization Lambda</span>
+          <span class="architecture-node__detail">authenticate, canonicalize, deduplicate</span>
+        </li>
+        <li class="architecture-node architecture-node--synthesized" data-node="bus" data-status="synthesized">
+          <span class="architecture-node__title">EventBridge lineage bus</span>
+          <span class="architecture-node__detail">lineage.*.requested routing</span>
+        </li>
+        <li class="architecture-node architecture-node--synthesized" data-node="archive" data-status="synthesized">
+          <span class="architecture-node__title">EventBridge archive</span>
+          <span class="architecture-node__detail">replayable signed event history</span>
+        </li>
+        <li class="architecture-node architecture-node--synthesized" data-node="qInt" data-status="synthesized">
+          <span class="architecture-node__title">SQS interactive FIFO lane</span>
+          <span class="architecture-node__detail">PR-gate latency class</span>
+        </li>
+        <li class="architecture-node architecture-node--synthesized" data-node="qEvt" data-status="synthesized">
+          <span class="architecture-node__title">SQS events FIFO lane</span>
+          <span class="architecture-node__detail">ordered incremental collection</span>
+        </li>
+        <li class="architecture-node architecture-node--synthesized" data-node="qBulk" data-status="synthesized">
+          <span class="architecture-node__title">SQS bulk lane</span>
+          <span class="architecture-node__detail">fair baseline and reconciliation work</span>
+        </li>
+        <li class="architecture-node architecture-node--synthesized" data-node="dlq" data-status="synthesized">
+          <span class="architecture-node__title">Per-lane dead-letter queues</span>
+          <span class="architecture-node__detail">age and dead-letter alarms</span>
+        </li>
+        <li class="architecture-node architecture-node--synthesized" data-node="rtStream" data-status="synthesized">
+          <span class="architecture-node__title">Kinesis runtime-evidence lane</span>
+          <span class="architecture-node__detail">metadata-only runtime observation records</span>
+        </li>
+      </ul>
+    </section>
+    <section class="architecture-layer" data-layer="control">
+      <h3>3 - Durable control plane</h3>
+      <ul class="architecture-layer__nodes">
+        <li class="architecture-node architecture-node--verified" data-node="ctrlCmd" data-status="verified">
+          <span class="architecture-node__title">DynamoDB control table</span>
+          <span class="architecture-node__detail">durable commands, dedupe keys, leases</span>
+        </li>
+        <li class="architecture-node architecture-node--verified" data-node="ctrlLedger" data-status="verified">
+          <span class="architecture-node__title">DynamoDB ledger table and stream</span>
+          <span class="architecture-node__detail">stage ledger, coverage, transactional outbox</span>
+        </li>
+        <li class="architecture-node architecture-node--verified" data-node="ctrlProp" data-status="verified">
+          <span class="architecture-node__title">DynamoDB proposal table</span>
+          <span class="architecture-node__detail">proposals and review decisions</span>
+        </li>
+        <li class="architecture-node architecture-node--verified" data-node="ctrlPtr" data-status="verified">
+          <span class="architecture-node__title">DynamoDB pointer table</span>
+          <span class="architecture-node__detail">environment pointers and fencing tokens</span>
+        </li>
+        <li class="architecture-node architecture-node--verified" data-node="stageExec" data-status="verified">
+          <span class="architecture-node__title">Stage execution and lease manager</span>
+          <span class="architecture-node__detail">idempotent stages, fenced retries</span>
+        </li>
+        <li class="architecture-node architecture-node--verified" data-node="coverageGate" data-status="verified">
+          <span class="architecture-node__title">Coverage completeness gate</span>
+          <span class="architecture-node__detail">every tracked path reaches a disposition</span>
+        </li>
+      </ul>
+    </section>
+    <section class="architecture-layer" data-layer="orchestration">
+      <h3>4 - Versioned orchestration</h3>
+      <ul class="architecture-layer__nodes">
+        <li class="architecture-node architecture-node--verified" data-node="sfnBaseline" data-status="verified">
+          <span class="architecture-node__title">Baseline workflow</span>
+          <span class="architecture-node__detail">Step Functions Standard</span>
+        </li>
+        <li class="architecture-node architecture-node--verified" data-node="sfnIncremental" data-status="verified">
+          <span class="architecture-node__title">Incremental workflow</span>
+          <span class="architecture-node__detail">Step Functions Standard</span>
+        </li>
+        <li class="architecture-node architecture-node--verified" data-node="sfnPrGate" data-status="verified">
+          <span class="architecture-node__title">PRGate workflow</span>
+          <span class="architecture-node__detail">Step Functions Standard</span>
+        </li>
+        <li class="architecture-node architecture-node--verified" data-node="sfnNightly" data-status="verified">
+          <span class="architecture-node__title">NightlyReconciliation workflow</span>
+          <span class="architecture-node__detail">Step Functions Standard</span>
+        </li>
+        <li class="architecture-node architecture-node--verified" data-node="sfnDeployment" data-status="verified">
+          <span class="architecture-node__title">Deployment promotion workflow</span>
+          <span class="architecture-node__detail">exact-artifact gate</span>
+        </li>
+        <li class="architecture-node architecture-node--verified" data-node="sfnRuntime" data-status="verified">
+          <span class="architecture-node__title">Runtime session orchestration</span>
+          <span class="architecture-node__detail">windows, leases, revocation</span>
+        </li>
+        <li class="architecture-node architecture-node--verified" data-node="classifier" data-status="verified">
+          <span class="architecture-node__title">Repository classifier</span>
+          <span class="architecture-node__detail">determinant router and analyzer selection</span>
+        </li>
+      </ul>
+    </section>
+    <section class="architecture-layer" data-layer="engines">
+      <h3>5 - Collection and evidence engines</h3>
+      <ul class="architecture-layer__nodes">
+        <li class="architecture-node architecture-node--verified" data-node="acquire" data-status="verified">
+          <span class="architecture-node__title">Repository acquisition</span>
+          <span class="architecture-node__detail">exact-revision checkout under source policy</span>
+        </li>
+        <li class="architecture-node architecture-node--synthesized" data-node="scaCompute" data-status="synthesized">
+          <span class="architecture-node__title">Fargate SCA workers</span>
+          <span class="architecture-node__detail">isolated, no repository code execution</span>
+        </li>
+        <li class="architecture-node architecture-node--verified" data-node="javaCell" data-status="verified">
+          <span class="architecture-node__title">Java and Spring Data JPA cell</span>
+          <span class="architecture-node__detail">Tree-sitter deterministic analysis</span>
+        </li>
+        <li class="architecture-node architecture-node--verified" data-node="sqlCell" data-status="verified">
+          <span class="architecture-node__title">SQL and PostgreSQL schema profile</span>
+          <span class="architecture-node__detail">pinned resolver bindings</span>
+        </li>
+        <li class="architecture-node architecture-node--verified" data-node="pyCell" data-status="verified">
+          <span class="architecture-node__title">Deterministic Python analyzer</span>
+          <span class="architecture-node__detail">pinned rule pack</span>
+        </li>
+        <li class="architecture-node architecture-node--planned" data-node="sparkDask" data-status="planned">
+          <span class="architecture-node__title">Spark and Dask cells</span>
+          <span class="architecture-node__detail">deferred analyzer packs</span>
+        </li>
+        <li class="architecture-node architecture-node--partial" data-node="residue" data-status="partial">
+          <span class="architecture-node__title">Bounded residue handling</span>
+          <span class="architecture-node__detail">explicit unresolved disposition</span>
+        </li>
+        <li class="architecture-node architecture-node--verified" data-node="otel" data-status="verified">
+          <span class="architecture-node__title">OTel runtime path</span>
+          <span class="architecture-node__detail">metadata-only span export</span>
+        </li>
+        <li class="architecture-node architecture-node--verified" data-node="openlineage" data-status="verified">
+          <span class="architecture-node__title">OpenLineage runtime path</span>
+          <span class="architecture-node__detail">metadata-only lineage events</span>
+        </li>
+        <li class="architecture-node architecture-node--verified" data-node="rtValidate" data-status="verified">
+          <span class="architecture-node__title">Runtime session validator</span>
+          <span class="architecture-node__detail">leases, windows, revocation, kill switch</span>
+        </li>
+      </ul>
+    </section>
+    <section class="architecture-layer" data-layer="trust">
+      <h3>6 - Evidence, consolidation, and trust</h3>
+      <ul class="architecture-layer__nodes">
+        <li class="architecture-node architecture-node--synthesized" data-node="s3Evidence" data-status="synthesized">
+          <span class="architecture-node__title">S3 immutable evidence store</span>
+          <span class="architecture-node__detail">versioned, KMS encrypted, replicated</span>
+        </li>
+        <li class="architecture-node architecture-node--synthesized" data-node="s3Package" data-status="synthesized">
+          <span class="architecture-node__title">S3 immutable package store</span>
+          <span class="architecture-node__detail">exact deployable artifacts</span>
+        </li>
+        <li class="architecture-node architecture-node--verified" data-node="consolidate" data-status="verified">
+          <span class="architecture-node__title">Deterministic consolidation</span>
+          <span class="architecture-node__detail">confidence scoring and conflict resolution</span>
+        </li>
+        <li class="architecture-node architecture-node--verified" data-node="proposal" data-status="verified">
+          <span class="architecture-node__title">Versioned lineage proposal</span>
+          <span class="architecture-node__detail">reviewable candidate graph</span>
+        </li>
+        <li class="architecture-node architecture-node--verified architecture-node--gate" data-node="review" data-status="verified">
+          <span class="architecture-node__title">Human review and policy gate</span>
+          <span class="architecture-node__detail">approve, correct, or reject</span>
+        </li>
+        <li class="architecture-node architecture-node--verified" data-node="publish" data-status="verified">
+          <span class="architecture-node__title">Fenced publisher</span>
+          <span class="architecture-node__detail">resumable, monotonic fencing tokens</span>
+        </li>
+      </ul>
+    </section>
+    <section class="architecture-layer" data-layer="projections">
+      <h3>7 - Projections and product surfaces</h3>
+      <ul class="architecture-layer__nodes">
+        <li class="architecture-node architecture-node--synthesized" data-node="neptune" data-status="synthesized">
+          <span class="architecture-node__title">Neptune graph cluster</span>
+          <span class="architecture-node__detail">versioned lineage projection across three AZs</span>
+        </li>
+        <li class="architecture-node architecture-node--planned" data-node="opensearch" data-status="planned">
+          <span class="architecture-node__title">OpenSearch discovery projection</span>
+          <span class="architecture-node__detail">rebuildable search index</span>
+        </li>
+        <li class="architecture-node architecture-node--partial" data-node="productApi" data-status="partial">
+          <span class="architecture-node__title">Product and query API</span>
+          <span class="architecture-node__detail">collections, runs, review, impact</span>
+        </li>
+        <li class="architecture-node architecture-node--verified" data-node="prGate" data-status="verified">
+          <span class="architecture-node__title">Read-only PR gate check</span>
+          <span class="architecture-node__detail">bounded impact verdict</span>
+        </li>
+        <li class="architecture-node architecture-node--synthesized" data-node="spa" data-status="synthesized">
+          <span class="architecture-node__title">CloudFront and S3 single-page delivery</span>
+          <span class="architecture-node__detail">signed, cached, immutable bundles</span>
+        </li>
+        <li class="architecture-node architecture-node--verified" data-node="webApp" data-status="verified">
+          <span class="architecture-node__title">React product application</span>
+          <span class="architecture-node__detail">operations, runs, review, explorer</span>
+        </li>
+        <li class="architecture-node architecture-node--planned" data-node="identity" data-status="planned">
+          <span class="architecture-node__title">Cognito or enterprise OIDC</span>
+          <span class="architecture-node__detail">product authentication</span>
+        </li>
+      </ul>
+    </section>
+    <section class="architecture-layer" data-layer="platform">
+      <h3>8 - Security, operations, and recovery</h3>
+      <ul class="architecture-layer__nodes">
+        <li class="architecture-node architecture-node--synthesized" data-node="iam" data-status="synthesized">
+          <span class="architecture-node__title">IAM least-privilege roles</span>
+          <span class="architecture-node__detail">per deployable unit</span>
+        </li>
+        <li class="architecture-node architecture-node--synthesized" data-node="kms" data-status="synthesized">
+          <span class="architecture-node__title">KMS customer-managed keys</span>
+          <span class="architecture-node__detail">per-domain grants</span>
+        </li>
+        <li class="architecture-node architecture-node--planned" data-node="appconfig" data-status="planned">
+          <span class="architecture-node__title">AppConfig policy and kill switches</span>
+          <span class="architecture-node__detail">runtime hard-deny controls</span>
+        </li>
+        <li class="architecture-node architecture-node--synthesized" data-node="cw" data-status="synthesized">
+          <span class="architecture-node__title">CloudWatch logs, metrics, and alarms</span>
+          <span class="architecture-node__detail">lane age, DLQ, and error budgets</span>
+        </li>
+        <li class="architecture-node architecture-node--synthesized" data-node="xray" data-status="synthesized">
+          <span class="architecture-node__title">X-Ray distributed tracing</span>
+          <span class="architecture-node__detail">API and workflow spans</span>
+        </li>
+        <li class="architecture-node architecture-node--planned" data-node="trail" data-status="planned">
+          <span class="architecture-node__title">CloudTrail audit trail</span>
+          <span class="architecture-node__detail">control-plane action history</span>
+        </li>
+        <li class="architecture-node architecture-node--synthesized" data-node="backup" data-status="synthesized">
+          <span class="architecture-node__title">AWS Backup vault and cross-region recovery</span>
+          <span class="architecture-node__detail">point-in-time restore</span>
+        </li>
+        <li class="architecture-node architecture-node--partial" data-node="redrive" data-status="partial">
+          <span class="architecture-node__title">Retry, DLQ redrive, and replay</span>
+          <span class="architecture-node__detail">operator-initiated recovery</span>
+        </li>
+      </ul>
+    </section>
+
+    <h2>Arrows</h2>
+    <p>
+      <strong>&#8594; synchronous</strong> request/response or in-process invocation within one
+      deployable unit. <strong>&#8674; durable asynchronous</strong> handoff &mdash; a queued message,
+      stream record, durable command, event, or immutable object; the producer does not block.
+    </p>
+    <div class="architecture-scroll">
+      <table class="architecture-edges">
+        <caption>Every arrow carries an explicit artifact or event meaning.</caption>
+        <thead>
+          <tr><th>From</th><th></th><th>To</th><th>Artifact or event</th><th>Kind</th></tr>
+        </thead>
+        <tbody>
+        <tr class="architecture-edge architecture-edge--synchronous" data-edge="ghSrc-&gt;edgeApi" data-kind="synchronous">
+          <td class="architecture-edge__endpoint">GitHub App and repository webhooks</td>
+          <td class="architecture-edge__arrow">&#8594;</td>
+          <td class="architecture-edge__endpoint">API Gateway REST edge</td>
+          <td class="architecture-edge__label">signed webhook request</td>
+          <td class="architecture-edge__kind">synchronous</td>
+        </tr>
+        <tr class="architecture-edge architecture-edge--synchronous" data-edge="jenkins-&gt;edgeApi" data-kind="synchronous">
+          <td class="architecture-edge__endpoint">Jenkins CI pipelines</td>
+          <td class="architecture-edge__arrow">&#8594;</td>
+          <td class="architecture-edge__endpoint">API Gateway REST edge</td>
+          <td class="architecture-edge__label">build completion signal</td>
+          <td class="architecture-edge__kind">synchronous</td>
+        </tr>
+        <tr class="architecture-edge architecture-edge--durable" data-edge="jenkins-&gt;s3Package" data-kind="durable">
+          <td class="architecture-edge__endpoint">Jenkins CI pipelines</td>
+          <td class="architecture-edge__arrow">&#8674;</td>
+          <td class="architecture-edge__endpoint">S3 immutable package store</td>
+          <td class="architecture-edge__label">immutable build artifact</td>
+          <td class="architecture-edge__kind">durable</td>
+        </tr>
+        <tr class="architecture-edge architecture-edge--synchronous" data-edge="tas-&gt;edgeApi" data-kind="synchronous">
+          <td class="architecture-edge__endpoint">TAS deployment signals</td>
+          <td class="architecture-edge__arrow">&#8594;</td>
+          <td class="architecture-edge__endpoint">API Gateway REST edge</td>
+          <td class="architecture-edge__label">signed deployment event</td>
+          <td class="architecture-edge__kind">synchronous</td>
+        </tr>
+        <tr class="architecture-edge architecture-edge--durable" data-edge="sched-&gt;bus" data-kind="durable">
+          <td class="architecture-edge__endpoint">EventBridge schedules</td>
+          <td class="architecture-edge__arrow">&#8674;</td>
+          <td class="architecture-edge__endpoint">EventBridge lineage bus</td>
+          <td class="architecture-edge__label">scheduled request event</td>
+          <td class="architecture-edge__kind">durable</td>
+        </tr>
+        <tr class="architecture-edge architecture-edge--durable" data-edge="catalog-&gt;s3Evidence" data-kind="durable">
+          <td class="architecture-edge__endpoint">Enterprise catalog snapshots</td>
+          <td class="architecture-edge__arrow">&#8674;</td>
+          <td class="architecture-edge__endpoint">S3 immutable evidence store</td>
+          <td class="architecture-edge__label">pinned catalog snapshot</td>
+          <td class="architecture-edge__kind">durable</td>
+        </tr>
+        <tr class="architecture-edge architecture-edge--synchronous" data-edge="rtApps-&gt;otel" data-kind="synchronous">
+          <td class="architecture-edge__endpoint">Instrumented non-production runtimes</td>
+          <td class="architecture-edge__arrow">&#8594;</td>
+          <td class="architecture-edge__endpoint">OTel runtime path</td>
+          <td class="architecture-edge__label">in-process instrumentation</td>
+          <td class="architecture-edge__kind">synchronous</td>
+        </tr>
+        <tr class="architecture-edge architecture-edge--synchronous" data-edge="rtApps-&gt;openlineage" data-kind="synchronous">
+          <td class="architecture-edge__endpoint">Instrumented non-production runtimes</td>
+          <td class="architecture-edge__arrow">&#8594;</td>
+          <td class="architecture-edge__endpoint">OpenLineage runtime path</td>
+          <td class="architecture-edge__label">in-process instrumentation</td>
+          <td class="architecture-edge__kind">synchronous</td>
+        </tr>
+        <tr class="architecture-edge architecture-edge--synchronous" data-edge="edgeApi-&gt;normalize" data-kind="synchronous">
+          <td class="architecture-edge__endpoint">API Gateway REST edge</td>
+          <td class="architecture-edge__arrow">&#8594;</td>
+          <td class="architecture-edge__endpoint">Normalization Lambda</td>
+          <td class="architecture-edge__label">authenticated intake request</td>
+          <td class="architecture-edge__kind">synchronous</td>
+        </tr>
+        <tr class="architecture-edge architecture-edge--synchronous" data-edge="edgeApi-&gt;productApi" data-kind="synchronous">
+          <td class="architecture-edge__endpoint">API Gateway REST edge</td>
+          <td class="architecture-edge__arrow">&#8594;</td>
+          <td class="architecture-edge__endpoint">Product and query API</td>
+          <td class="architecture-edge__label">authorized product request</td>
+          <td class="architecture-edge__kind">synchronous</td>
+        </tr>
+        <tr class="architecture-edge architecture-edge--durable" data-edge="normalize-&gt;archive" data-kind="durable">
+          <td class="architecture-edge__endpoint">Normalization Lambda</td>
+          <td class="architecture-edge__arrow">&#8674;</td>
+          <td class="architecture-edge__endpoint">EventBridge archive</td>
+          <td class="architecture-edge__label">canonical signed event</td>
+          <td class="architecture-edge__kind">durable</td>
+        </tr>
+        <tr class="architecture-edge architecture-edge--durable" data-edge="normalize-&gt;bus" data-kind="durable">
+          <td class="architecture-edge__endpoint">Normalization Lambda</td>
+          <td class="architecture-edge__arrow">&#8674;</td>
+          <td class="architecture-edge__endpoint">EventBridge lineage bus</td>
+          <td class="architecture-edge__label">lineage request event</td>
+          <td class="architecture-edge__kind">durable</td>
+        </tr>
+        <tr class="architecture-edge architecture-edge--durable" data-edge="normalize-&gt;ctrlCmd" data-kind="durable">
+          <td class="architecture-edge__endpoint">Normalization Lambda</td>
+          <td class="architecture-edge__arrow">&#8674;</td>
+          <td class="architecture-edge__endpoint">DynamoDB control table</td>
+          <td class="architecture-edge__label">durable command with dedupe key</td>
+          <td class="architecture-edge__kind">durable</td>
+        </tr>
+        <tr class="architecture-edge architecture-edge--durable" data-edge="bus-&gt;qInt" data-kind="durable">
+          <td class="architecture-edge__endpoint">EventBridge lineage bus</td>
+          <td class="architecture-edge__arrow">&#8674;</td>
+          <td class="architecture-edge__endpoint">SQS interactive FIFO lane</td>
+          <td class="architecture-edge__label">interactive request</td>
+          <td class="architecture-edge__kind">durable</td>
+        </tr>
+        <tr class="architecture-edge architecture-edge--durable" data-edge="bus-&gt;qEvt" data-kind="durable">
+          <td class="architecture-edge__endpoint">EventBridge lineage bus</td>
+          <td class="architecture-edge__arrow">&#8674;</td>
+          <td class="architecture-edge__endpoint">SQS events FIFO lane</td>
+          <td class="architecture-edge__label">ordered incremental request</td>
+          <td class="architecture-edge__kind">durable</td>
+        </tr>
+        <tr class="architecture-edge architecture-edge--durable" data-edge="bus-&gt;qBulk" data-kind="durable">
+          <td class="architecture-edge__endpoint">EventBridge lineage bus</td>
+          <td class="architecture-edge__arrow">&#8674;</td>
+          <td class="architecture-edge__endpoint">SQS bulk lane</td>
+          <td class="architecture-edge__label">bulk baseline request</td>
+          <td class="architecture-edge__kind">durable</td>
+        </tr>
+        <tr class="architecture-edge architecture-edge--durable" data-edge="bus-&gt;sfnDeployment" data-kind="durable">
+          <td class="architecture-edge__endpoint">EventBridge lineage bus</td>
+          <td class="architecture-edge__arrow">&#8674;</td>
+          <td class="architecture-edge__endpoint">Deployment promotion workflow</td>
+          <td class="architecture-edge__label">deployment promotion event</td>
+          <td class="architecture-edge__kind">durable</td>
+        </tr>
+        <tr class="architecture-edge architecture-edge--durable" data-edge="qInt-&gt;dlq" data-kind="durable">
+          <td class="architecture-edge__endpoint">SQS interactive FIFO lane</td>
+          <td class="architecture-edge__arrow">&#8674;</td>
+          <td class="architecture-edge__endpoint">Per-lane dead-letter queues</td>
+          <td class="architecture-edge__label">exhausted redelivery</td>
+          <td class="architecture-edge__kind">durable</td>
+        </tr>
+        <tr class="architecture-edge architecture-edge--durable" data-edge="qEvt-&gt;dlq" data-kind="durable">
+          <td class="architecture-edge__endpoint">SQS events FIFO lane</td>
+          <td class="architecture-edge__arrow">&#8674;</td>
+          <td class="architecture-edge__endpoint">Per-lane dead-letter queues</td>
+          <td class="architecture-edge__label">exhausted redelivery</td>
+          <td class="architecture-edge__kind">durable</td>
+        </tr>
+        <tr class="architecture-edge architecture-edge--durable" data-edge="qBulk-&gt;dlq" data-kind="durable">
+          <td class="architecture-edge__endpoint">SQS bulk lane</td>
+          <td class="architecture-edge__arrow">&#8674;</td>
+          <td class="architecture-edge__endpoint">Per-lane dead-letter queues</td>
+          <td class="architecture-edge__label">exhausted redelivery</td>
+          <td class="architecture-edge__kind">durable</td>
+        </tr>
+        <tr class="architecture-edge architecture-edge--durable" data-edge="archive-&gt;bus" data-kind="durable">
+          <td class="architecture-edge__endpoint">EventBridge archive</td>
+          <td class="architecture-edge__arrow">&#8674;</td>
+          <td class="architecture-edge__endpoint">EventBridge lineage bus</td>
+          <td class="architecture-edge__label">operator event replay</td>
+          <td class="architecture-edge__kind">durable</td>
+        </tr>
+        <tr class="architecture-edge architecture-edge--durable" data-edge="qInt-&gt;sfnPrGate" data-kind="durable">
+          <td class="architecture-edge__endpoint">SQS interactive FIFO lane</td>
+          <td class="architecture-edge__arrow">&#8674;</td>
+          <td class="architecture-edge__endpoint">PRGate workflow</td>
+          <td class="architecture-edge__label">PR gate command</td>
+          <td class="architecture-edge__kind">durable</td>
+        </tr>
+        <tr class="architecture-edge architecture-edge--durable" data-edge="qEvt-&gt;sfnIncremental" data-kind="durable">
+          <td class="architecture-edge__endpoint">SQS events FIFO lane</td>
+          <td class="architecture-edge__arrow">&#8674;</td>
+          <td class="architecture-edge__endpoint">Incremental workflow</td>
+          <td class="architecture-edge__label">incremental command</td>
+          <td class="architecture-edge__kind">durable</td>
+        </tr>
+        <tr class="architecture-edge architecture-edge--durable" data-edge="qBulk-&gt;sfnBaseline" data-kind="durable">
+          <td class="architecture-edge__endpoint">SQS bulk lane</td>
+          <td class="architecture-edge__arrow">&#8674;</td>
+          <td class="architecture-edge__endpoint">Baseline workflow</td>
+          <td class="architecture-edge__label">baseline command</td>
+          <td class="architecture-edge__kind">durable</td>
+        </tr>
+        <tr class="architecture-edge architecture-edge--durable" data-edge="qBulk-&gt;sfnNightly" data-kind="durable">
+          <td class="architecture-edge__endpoint">SQS bulk lane</td>
+          <td class="architecture-edge__arrow">&#8674;</td>
+          <td class="architecture-edge__endpoint">NightlyReconciliation workflow</td>
+          <td class="architecture-edge__label">reconciliation command</td>
+          <td class="architecture-edge__kind">durable</td>
+        </tr>
+        <tr class="architecture-edge architecture-edge--durable" data-edge="otel-&gt;rtStream" data-kind="durable">
+          <td class="architecture-edge__endpoint">OTel runtime path</td>
+          <td class="architecture-edge__arrow">&#8674;</td>
+          <td class="architecture-edge__endpoint">Kinesis runtime-evidence lane</td>
+          <td class="architecture-edge__label">metadata-only span export</td>
+          <td class="architecture-edge__kind">durable</td>
+        </tr>
+        <tr class="architecture-edge architecture-edge--durable" data-edge="openlineage-&gt;rtStream" data-kind="durable">
+          <td class="architecture-edge__endpoint">OpenLineage runtime path</td>
+          <td class="architecture-edge__arrow">&#8674;</td>
+          <td class="architecture-edge__endpoint">Kinesis runtime-evidence lane</td>
+          <td class="architecture-edge__label">metadata-only lineage event</td>
+          <td class="architecture-edge__kind">durable</td>
+        </tr>
+        <tr class="architecture-edge architecture-edge--durable" data-edge="rtStream-&gt;rtValidate" data-kind="durable">
+          <td class="architecture-edge__endpoint">Kinesis runtime-evidence lane</td>
+          <td class="architecture-edge__arrow">&#8674;</td>
+          <td class="architecture-edge__endpoint">Runtime session validator</td>
+          <td class="architecture-edge__label">runtime observation batch</td>
+          <td class="architecture-edge__kind">durable</td>
+        </tr>
+        <tr class="architecture-edge architecture-edge--durable" data-edge="sfnRuntime-&gt;rtValidate" data-kind="durable">
+          <td class="architecture-edge__endpoint">Runtime session orchestration</td>
+          <td class="architecture-edge__arrow">&#8674;</td>
+          <td class="architecture-edge__endpoint">Runtime session validator</td>
+          <td class="architecture-edge__label">session window command</td>
+          <td class="architecture-edge__kind">durable</td>
+        </tr>
+        <tr class="architecture-edge architecture-edge--synchronous" data-edge="ctrlCmd-&gt;stageExec" data-kind="synchronous">
+          <td class="architecture-edge__endpoint">DynamoDB control table</td>
+          <td class="architecture-edge__arrow">&#8594;</td>
+          <td class="architecture-edge__endpoint">Stage execution and lease manager</td>
+          <td class="architecture-edge__label">leased durable command</td>
+          <td class="architecture-edge__kind">synchronous</td>
+        </tr>
+        <tr class="architecture-edge architecture-edge--synchronous" data-edge="sfnBaseline-&gt;stageExec" data-kind="synchronous">
+          <td class="architecture-edge__endpoint">Baseline workflow</td>
+          <td class="architecture-edge__arrow">&#8594;</td>
+          <td class="architecture-edge__endpoint">Stage execution and lease manager</td>
+          <td class="architecture-edge__label">stage invocation</td>
+          <td class="architecture-edge__kind">synchronous</td>
+        </tr>
+        <tr class="architecture-edge architecture-edge--synchronous" data-edge="sfnIncremental-&gt;stageExec" data-kind="synchronous">
+          <td class="architecture-edge__endpoint">Incremental workflow</td>
+          <td class="architecture-edge__arrow">&#8594;</td>
+          <td class="architecture-edge__endpoint">Stage execution and lease manager</td>
+          <td class="architecture-edge__label">stage invocation</td>
+          <td class="architecture-edge__kind">synchronous</td>
+        </tr>
+        <tr class="architecture-edge architecture-edge--synchronous" data-edge="sfnPrGate-&gt;stageExec" data-kind="synchronous">
+          <td class="architecture-edge__endpoint">PRGate workflow</td>
+          <td class="architecture-edge__arrow">&#8594;</td>
+          <td class="architecture-edge__endpoint">Stage execution and lease manager</td>
+          <td class="architecture-edge__label">stage invocation</td>
+          <td class="architecture-edge__kind">synchronous</td>
+        </tr>
+        <tr class="architecture-edge architecture-edge--synchronous" data-edge="sfnNightly-&gt;stageExec" data-kind="synchronous">
+          <td class="architecture-edge__endpoint">NightlyReconciliation workflow</td>
+          <td class="architecture-edge__arrow">&#8594;</td>
+          <td class="architecture-edge__endpoint">Stage execution and lease manager</td>
+          <td class="architecture-edge__label">stage invocation</td>
+          <td class="architecture-edge__kind">synchronous</td>
+        </tr>
+        <tr class="architecture-edge architecture-edge--synchronous" data-edge="sfnDeployment-&gt;stageExec" data-kind="synchronous">
+          <td class="architecture-edge__endpoint">Deployment promotion workflow</td>
+          <td class="architecture-edge__arrow">&#8594;</td>
+          <td class="architecture-edge__endpoint">Stage execution and lease manager</td>
+          <td class="architecture-edge__label">stage invocation</td>
+          <td class="architecture-edge__kind">synchronous</td>
+        </tr>
+        <tr class="architecture-edge architecture-edge--synchronous" data-edge="sfnRuntime-&gt;stageExec" data-kind="synchronous">
+          <td class="architecture-edge__endpoint">Runtime session orchestration</td>
+          <td class="architecture-edge__arrow">&#8594;</td>
+          <td class="architecture-edge__endpoint">Stage execution and lease manager</td>
+          <td class="architecture-edge__label">stage invocation</td>
+          <td class="architecture-edge__kind">synchronous</td>
+        </tr>
+        <tr class="architecture-edge architecture-edge--durable" data-edge="stageExec-&gt;ctrlLedger" data-kind="durable">
+          <td class="architecture-edge__endpoint">Stage execution and lease manager</td>
+          <td class="architecture-edge__arrow">&#8674;</td>
+          <td class="architecture-edge__endpoint">DynamoDB ledger table and stream</td>
+          <td class="architecture-edge__label">idempotent stage record</td>
+          <td class="architecture-edge__kind">durable</td>
+        </tr>
+        <tr class="architecture-edge architecture-edge--durable" data-edge="stageExec-&gt;coverageGate" data-kind="durable">
+          <td class="architecture-edge__endpoint">Stage execution and lease manager</td>
+          <td class="architecture-edge__arrow">&#8674;</td>
+          <td class="architecture-edge__endpoint">Coverage completeness gate</td>
+          <td class="architecture-edge__label">scope disposition</td>
+          <td class="architecture-edge__kind">durable</td>
+        </tr>
+        <tr class="architecture-edge architecture-edge--synchronous" data-edge="stageExec-&gt;classifier" data-kind="synchronous">
+          <td class="architecture-edge__endpoint">Stage execution and lease manager</td>
+          <td class="architecture-edge__arrow">&#8594;</td>
+          <td class="architecture-edge__endpoint">Repository classifier</td>
+          <td class="architecture-edge__label">classification stage</td>
+          <td class="architecture-edge__kind">synchronous</td>
+        </tr>
+        <tr class="architecture-edge architecture-edge--durable" data-edge="ctrlLedger-&gt;bus" data-kind="durable">
+          <td class="architecture-edge__endpoint">DynamoDB ledger table and stream</td>
+          <td class="architecture-edge__arrow">&#8674;</td>
+          <td class="architecture-edge__endpoint">EventBridge lineage bus</td>
+          <td class="architecture-edge__label">transactional outbox delivery</td>
+          <td class="architecture-edge__kind">durable</td>
+        </tr>
+        <tr class="architecture-edge architecture-edge--synchronous" data-edge="classifier-&gt;acquire" data-kind="synchronous">
+          <td class="architecture-edge__endpoint">Repository classifier</td>
+          <td class="architecture-edge__arrow">&#8594;</td>
+          <td class="architecture-edge__endpoint">Repository acquisition</td>
+          <td class="architecture-edge__label">determinant-routed acquisition</td>
+          <td class="architecture-edge__kind">synchronous</td>
+        </tr>
+        <tr class="architecture-edge architecture-edge--synchronous" data-edge="acquire-&gt;scaCompute" data-kind="synchronous">
+          <td class="architecture-edge__endpoint">Repository acquisition</td>
+          <td class="architecture-edge__arrow">&#8594;</td>
+          <td class="architecture-edge__endpoint">Fargate SCA workers</td>
+          <td class="architecture-edge__label">immutable exact-revision snapshot</td>
+          <td class="architecture-edge__kind">synchronous</td>
+        </tr>
+        <tr class="architecture-edge architecture-edge--synchronous" data-edge="scaCompute-&gt;javaCell" data-kind="synchronous">
+          <td class="architecture-edge__endpoint">Fargate SCA workers</td>
+          <td class="architecture-edge__arrow">&#8594;</td>
+          <td class="architecture-edge__endpoint">Java and Spring Data JPA cell</td>
+          <td class="architecture-edge__label">analyzer cell selection</td>
+          <td class="architecture-edge__kind">synchronous</td>
+        </tr>
+        <tr class="architecture-edge architecture-edge--synchronous" data-edge="scaCompute-&gt;sqlCell" data-kind="synchronous">
+          <td class="architecture-edge__endpoint">Fargate SCA workers</td>
+          <td class="architecture-edge__arrow">&#8594;</td>
+          <td class="architecture-edge__endpoint">SQL and PostgreSQL schema profile</td>
+          <td class="architecture-edge__label">analyzer cell selection</td>
+          <td class="architecture-edge__kind">synchronous</td>
+        </tr>
+        <tr class="architecture-edge architecture-edge--synchronous" data-edge="scaCompute-&gt;pyCell" data-kind="synchronous">
+          <td class="architecture-edge__endpoint">Fargate SCA workers</td>
+          <td class="architecture-edge__arrow">&#8594;</td>
+          <td class="architecture-edge__endpoint">Deterministic Python analyzer</td>
+          <td class="architecture-edge__label">analyzer cell selection</td>
+          <td class="architecture-edge__kind">synchronous</td>
+        </tr>
+        <tr class="architecture-edge architecture-edge--synchronous" data-edge="scaCompute-&gt;sparkDask" data-kind="synchronous">
+          <td class="architecture-edge__endpoint">Fargate SCA workers</td>
+          <td class="architecture-edge__arrow">&#8594;</td>
+          <td class="architecture-edge__endpoint">Spark and Dask cells</td>
+          <td class="architecture-edge__label">analyzer cell selection</td>
+          <td class="architecture-edge__kind">synchronous</td>
+        </tr>
+        <tr class="architecture-edge architecture-edge--synchronous" data-edge="scaCompute-&gt;residue" data-kind="synchronous">
+          <td class="architecture-edge__endpoint">Fargate SCA workers</td>
+          <td class="architecture-edge__arrow">&#8594;</td>
+          <td class="architecture-edge__endpoint">Bounded residue handling</td>
+          <td class="architecture-edge__label">unresolved invocation residue</td>
+          <td class="architecture-edge__kind">synchronous</td>
+        </tr>
+        <tr class="architecture-edge architecture-edge--durable" data-edge="javaCell-&gt;s3Evidence" data-kind="durable">
+          <td class="architecture-edge__endpoint">Java and Spring Data JPA cell</td>
+          <td class="architecture-edge__arrow">&#8674;</td>
+          <td class="architecture-edge__endpoint">S3 immutable evidence store</td>
+          <td class="architecture-edge__label">static evidence record</td>
+          <td class="architecture-edge__kind">durable</td>
+        </tr>
+        <tr class="architecture-edge architecture-edge--durable" data-edge="sqlCell-&gt;s3Evidence" data-kind="durable">
+          <td class="architecture-edge__endpoint">SQL and PostgreSQL schema profile</td>
+          <td class="architecture-edge__arrow">&#8674;</td>
+          <td class="architecture-edge__endpoint">S3 immutable evidence store</td>
+          <td class="architecture-edge__label">schema binding evidence</td>
+          <td class="architecture-edge__kind">durable</td>
+        </tr>
+        <tr class="architecture-edge architecture-edge--durable" data-edge="pyCell-&gt;s3Evidence" data-kind="durable">
+          <td class="architecture-edge__endpoint">Deterministic Python analyzer</td>
+          <td class="architecture-edge__arrow">&#8674;</td>
+          <td class="architecture-edge__endpoint">S3 immutable evidence store</td>
+          <td class="architecture-edge__label">static evidence record</td>
+          <td class="architecture-edge__kind">durable</td>
+        </tr>
+        <tr class="architecture-edge architecture-edge--durable" data-edge="residue-&gt;s3Evidence" data-kind="durable">
+          <td class="architecture-edge__endpoint">Bounded residue handling</td>
+          <td class="architecture-edge__arrow">&#8674;</td>
+          <td class="architecture-edge__endpoint">S3 immutable evidence store</td>
+          <td class="architecture-edge__label">bounded residue record</td>
+          <td class="architecture-edge__kind">durable</td>
+        </tr>
+        <tr class="architecture-edge architecture-edge--durable" data-edge="rtValidate-&gt;s3Evidence" data-kind="durable">
+          <td class="architecture-edge__endpoint">Runtime session validator</td>
+          <td class="architecture-edge__arrow">&#8674;</td>
+          <td class="architecture-edge__endpoint">S3 immutable evidence store</td>
+          <td class="architecture-edge__label">runtime observation evidence</td>
+          <td class="architecture-edge__kind">durable</td>
+        </tr>
+        <tr class="architecture-edge architecture-edge--synchronous" data-edge="rtValidate-&gt;ctrlCmd" data-kind="synchronous">
+          <td class="architecture-edge__endpoint">Runtime session validator</td>
+          <td class="architecture-edge__arrow">&#8594;</td>
+          <td class="architecture-edge__endpoint">DynamoDB control table</td>
+          <td class="architecture-edge__label">session lease and window state</td>
+          <td class="architecture-edge__kind">synchronous</td>
+        </tr>
+        <tr class="architecture-edge architecture-edge--synchronous" data-edge="s3Evidence-&gt;consolidate" data-kind="synchronous">
+          <td class="architecture-edge__endpoint">S3 immutable evidence store</td>
+          <td class="architecture-edge__arrow">&#8594;</td>
+          <td class="architecture-edge__endpoint">Deterministic consolidation</td>
+          <td class="architecture-edge__label">immutable evidence read</td>
+          <td class="architecture-edge__kind">synchronous</td>
+        </tr>
+        <tr class="architecture-edge architecture-edge--synchronous" data-edge="coverageGate-&gt;consolidate" data-kind="synchronous">
+          <td class="architecture-edge__endpoint">Coverage completeness gate</td>
+          <td class="architecture-edge__arrow">&#8594;</td>
+          <td class="architecture-edge__endpoint">Deterministic consolidation</td>
+          <td class="architecture-edge__label">completeness verdict</td>
+          <td class="architecture-edge__kind">synchronous</td>
+        </tr>
+        <tr class="architecture-edge architecture-edge--durable" data-edge="rtValidate-&gt;consolidate" data-kind="durable">
+          <td class="architecture-edge__endpoint">Runtime session validator</td>
+          <td class="architecture-edge__arrow">&#8674;</td>
+          <td class="architecture-edge__endpoint">Deterministic consolidation</td>
+          <td class="architecture-edge__label">non-blocking corroboration only</td>
+          <td class="architecture-edge__kind">durable</td>
+        </tr>
+        <tr class="architecture-edge architecture-edge--synchronous" data-edge="consolidate-&gt;proposal" data-kind="synchronous">
+          <td class="architecture-edge__endpoint">Deterministic consolidation</td>
+          <td class="architecture-edge__arrow">&#8594;</td>
+          <td class="architecture-edge__endpoint">Versioned lineage proposal</td>
+          <td class="architecture-edge__label">scored candidate lineage</td>
+          <td class="architecture-edge__kind">synchronous</td>
+        </tr>
+        <tr class="architecture-edge architecture-edge--durable" data-edge="proposal-&gt;ctrlProp" data-kind="durable">
+          <td class="architecture-edge__endpoint">Versioned lineage proposal</td>
+          <td class="architecture-edge__arrow">&#8674;</td>
+          <td class="architecture-edge__endpoint">DynamoDB proposal table</td>
+          <td class="architecture-edge__label">versioned proposal record</td>
+          <td class="architecture-edge__kind">durable</td>
+        </tr>
+        <tr class="architecture-edge architecture-edge--synchronous" data-edge="proposal-&gt;review" data-kind="synchronous">
+          <td class="architecture-edge__endpoint">Versioned lineage proposal</td>
+          <td class="architecture-edge__arrow">&#8594;</td>
+          <td class="architecture-edge__endpoint">Human review and policy gate</td>
+          <td class="architecture-edge__label">review queue entry</td>
+          <td class="architecture-edge__kind">synchronous</td>
+        </tr>
+        <tr class="architecture-edge architecture-edge--durable" data-edge="review-&gt;ctrlProp" data-kind="durable">
+          <td class="architecture-edge__endpoint">Human review and policy gate</td>
+          <td class="architecture-edge__arrow">&#8674;</td>
+          <td class="architecture-edge__endpoint">DynamoDB proposal table</td>
+          <td class="architecture-edge__label">human decision record</td>
+          <td class="architecture-edge__kind">durable</td>
+        </tr>
+        <tr class="architecture-edge architecture-edge--synchronous" data-edge="review-&gt;publish" data-kind="synchronous">
+          <td class="architecture-edge__endpoint">Human review and policy gate</td>
+          <td class="architecture-edge__arrow">&#8594;</td>
+          <td class="architecture-edge__endpoint">Fenced publisher</td>
+          <td class="architecture-edge__label">approved proposal</td>
+          <td class="architecture-edge__kind">synchronous</td>
+        </tr>
+        <tr class="architecture-edge architecture-edge--synchronous" data-edge="publish-&gt;ctrlPtr" data-kind="synchronous">
+          <td class="architecture-edge__endpoint">Fenced publisher</td>
+          <td class="architecture-edge__arrow">&#8594;</td>
+          <td class="architecture-edge__endpoint">DynamoDB pointer table</td>
+          <td class="architecture-edge__label">fencing token compare-and-set</td>
+          <td class="architecture-edge__kind">synchronous</td>
+        </tr>
+        <tr class="architecture-edge architecture-edge--durable" data-edge="publish-&gt;neptune" data-kind="durable">
+          <td class="architecture-edge__endpoint">Fenced publisher</td>
+          <td class="architecture-edge__arrow">&#8674;</td>
+          <td class="architecture-edge__endpoint">Neptune graph cluster</td>
+          <td class="architecture-edge__label">versioned graph write</td>
+          <td class="architecture-edge__kind">durable</td>
+        </tr>
+        <tr class="architecture-edge architecture-edge--durable" data-edge="publish-&gt;opensearch" data-kind="durable">
+          <td class="architecture-edge__endpoint">Fenced publisher</td>
+          <td class="architecture-edge__arrow">&#8674;</td>
+          <td class="architecture-edge__endpoint">OpenSearch discovery projection</td>
+          <td class="architecture-edge__label">rebuildable search projection</td>
+          <td class="architecture-edge__kind">durable</td>
+        </tr>
+        <tr class="architecture-edge architecture-edge--durable" data-edge="publish-&gt;s3Evidence" data-kind="durable">
+          <td class="architecture-edge__endpoint">Fenced publisher</td>
+          <td class="architecture-edge__arrow">&#8674;</td>
+          <td class="architecture-edge__endpoint">S3 immutable evidence store</td>
+          <td class="architecture-edge__label">publication decision record</td>
+          <td class="architecture-edge__kind">durable</td>
+        </tr>
+        <tr class="architecture-edge architecture-edge--synchronous" data-edge="sfnDeployment-&gt;ctrlPtr" data-kind="synchronous">
+          <td class="architecture-edge__endpoint">Deployment promotion workflow</td>
+          <td class="architecture-edge__arrow">&#8594;</td>
+          <td class="architecture-edge__endpoint">DynamoDB pointer table</td>
+          <td class="architecture-edge__label">exact artifact digest match</td>
+          <td class="architecture-edge__kind">synchronous</td>
+        </tr>
+        <tr class="architecture-edge architecture-edge--synchronous" data-edge="s3Package-&gt;sfnDeployment" data-kind="synchronous">
+          <td class="architecture-edge__endpoint">S3 immutable package store</td>
+          <td class="architecture-edge__arrow">&#8594;</td>
+          <td class="architecture-edge__endpoint">Deployment promotion workflow</td>
+          <td class="architecture-edge__label">exact artifact digest</td>
+          <td class="architecture-edge__kind">synchronous</td>
+        </tr>
+        <tr class="architecture-edge architecture-edge--synchronous" data-edge="neptune-&gt;productApi" data-kind="synchronous">
+          <td class="architecture-edge__endpoint">Neptune graph cluster</td>
+          <td class="architecture-edge__arrow">&#8594;</td>
+          <td class="architecture-edge__endpoint">Product and query API</td>
+          <td class="architecture-edge__label">graph query</td>
+          <td class="architecture-edge__kind">synchronous</td>
+        </tr>
+        <tr class="architecture-edge architecture-edge--synchronous" data-edge="opensearch-&gt;productApi" data-kind="synchronous">
+          <td class="architecture-edge__endpoint">OpenSearch discovery projection</td>
+          <td class="architecture-edge__arrow">&#8594;</td>
+          <td class="architecture-edge__endpoint">Product and query API</td>
+          <td class="architecture-edge__label">discovery query</td>
+          <td class="architecture-edge__kind">synchronous</td>
+        </tr>
+        <tr class="architecture-edge architecture-edge--synchronous" data-edge="ctrlLedger-&gt;productApi" data-kind="synchronous">
+          <td class="architecture-edge__endpoint">DynamoDB ledger table and stream</td>
+          <td class="architecture-edge__arrow">&#8594;</td>
+          <td class="architecture-edge__endpoint">Product and query API</td>
+          <td class="architecture-edge__label">run and stage projection</td>
+          <td class="architecture-edge__kind">synchronous</td>
+        </tr>
+        <tr class="architecture-edge architecture-edge--synchronous" data-edge="ctrlProp-&gt;productApi" data-kind="synchronous">
+          <td class="architecture-edge__endpoint">DynamoDB proposal table</td>
+          <td class="architecture-edge__arrow">&#8594;</td>
+          <td class="architecture-edge__endpoint">Product and query API</td>
+          <td class="architecture-edge__label">proposal projection</td>
+          <td class="architecture-edge__kind">synchronous</td>
+        </tr>
+        <tr class="architecture-edge architecture-edge--synchronous" data-edge="ctrlPtr-&gt;productApi" data-kind="synchronous">
+          <td class="architecture-edge__endpoint">DynamoDB pointer table</td>
+          <td class="architecture-edge__arrow">&#8594;</td>
+          <td class="architecture-edge__endpoint">Product and query API</td>
+          <td class="architecture-edge__label">active version and fencing state</td>
+          <td class="architecture-edge__kind">synchronous</td>
+        </tr>
+        <tr class="architecture-edge architecture-edge--durable" data-edge="productApi-&gt;ctrlCmd" data-kind="durable">
+          <td class="architecture-edge__endpoint">Product and query API</td>
+          <td class="architecture-edge__arrow">&#8674;</td>
+          <td class="architecture-edge__endpoint">DynamoDB control table</td>
+          <td class="architecture-edge__label">durable collection command</td>
+          <td class="architecture-edge__kind">durable</td>
+        </tr>
+        <tr class="architecture-edge architecture-edge--synchronous" data-edge="productApi-&gt;prGate" data-kind="synchronous">
+          <td class="architecture-edge__endpoint">Product and query API</td>
+          <td class="architecture-edge__arrow">&#8594;</td>
+          <td class="architecture-edge__endpoint">Read-only PR gate check</td>
+          <td class="architecture-edge__label">bounded impact result</td>
+          <td class="architecture-edge__kind">synchronous</td>
+        </tr>
+        <tr class="architecture-edge architecture-edge--synchronous" data-edge="prGate-&gt;ghSrc" data-kind="synchronous">
+          <td class="architecture-edge__endpoint">Read-only PR gate check</td>
+          <td class="architecture-edge__arrow">&#8594;</td>
+          <td class="architecture-edge__endpoint">GitHub App and repository webhooks</td>
+          <td class="architecture-edge__label">read-only PR check result</td>
+          <td class="architecture-edge__kind">synchronous</td>
+        </tr>
+        <tr class="architecture-edge architecture-edge--synchronous" data-edge="spa-&gt;webApp" data-kind="synchronous">
+          <td class="architecture-edge__endpoint">CloudFront and S3 single-page delivery</td>
+          <td class="architecture-edge__arrow">&#8594;</td>
+          <td class="architecture-edge__endpoint">React product application</td>
+          <td class="architecture-edge__label">signed application bundle</td>
+          <td class="architecture-edge__kind">synchronous</td>
+        </tr>
+        <tr class="architecture-edge architecture-edge--synchronous" data-edge="webApp-&gt;edgeApi" data-kind="synchronous">
+          <td class="architecture-edge__endpoint">React product application</td>
+          <td class="architecture-edge__arrow">&#8594;</td>
+          <td class="architecture-edge__endpoint">API Gateway REST edge</td>
+          <td class="architecture-edge__label">typed product request</td>
+          <td class="architecture-edge__kind">synchronous</td>
+        </tr>
+        <tr class="architecture-edge architecture-edge--synchronous" data-edge="identity-&gt;edgeApi" data-kind="synchronous">
+          <td class="architecture-edge__endpoint">Cognito or enterprise OIDC</td>
+          <td class="architecture-edge__arrow">&#8594;</td>
+          <td class="architecture-edge__endpoint">API Gateway REST edge</td>
+          <td class="architecture-edge__label">OIDC identity assertion</td>
+          <td class="architecture-edge__kind">synchronous</td>
+        </tr>
+        <tr class="architecture-edge architecture-edge--durable" data-edge="iam-&gt;stageExec" data-kind="durable">
+          <td class="architecture-edge__endpoint">IAM least-privilege roles</td>
+          <td class="architecture-edge__arrow">&#8674;</td>
+          <td class="architecture-edge__endpoint">Stage execution and lease manager</td>
+          <td class="architecture-edge__label">least-privilege execution role</td>
+          <td class="architecture-edge__kind">durable</td>
+        </tr>
+        <tr class="architecture-edge architecture-edge--durable" data-edge="kms-&gt;s3Evidence" data-kind="durable">
+          <td class="architecture-edge__endpoint">KMS customer-managed keys</td>
+          <td class="architecture-edge__arrow">&#8674;</td>
+          <td class="architecture-edge__endpoint">S3 immutable evidence store</td>
+          <td class="architecture-edge__label">customer-managed encryption</td>
+          <td class="architecture-edge__kind">durable</td>
+        </tr>
+        <tr class="architecture-edge architecture-edge--durable" data-edge="kms-&gt;ctrlCmd" data-kind="durable">
+          <td class="architecture-edge__endpoint">KMS customer-managed keys</td>
+          <td class="architecture-edge__arrow">&#8674;</td>
+          <td class="architecture-edge__endpoint">DynamoDB control table</td>
+          <td class="architecture-edge__label">customer-managed encryption</td>
+          <td class="architecture-edge__kind">durable</td>
+        </tr>
+        <tr class="architecture-edge architecture-edge--durable" data-edge="appconfig-&gt;rtValidate" data-kind="durable">
+          <td class="architecture-edge__endpoint">AppConfig policy and kill switches</td>
+          <td class="architecture-edge__arrow">&#8674;</td>
+          <td class="architecture-edge__endpoint">Runtime session validator</td>
+          <td class="architecture-edge__label">runtime kill switch and policy</td>
+          <td class="architecture-edge__kind">durable</td>
+        </tr>
+        <tr class="architecture-edge architecture-edge--durable" data-edge="cw-&gt;redrive" data-kind="durable">
+          <td class="architecture-edge__endpoint">CloudWatch logs, metrics, and alarms</td>
+          <td class="architecture-edge__arrow">&#8674;</td>
+          <td class="architecture-edge__endpoint">Retry, DLQ redrive, and replay</td>
+          <td class="architecture-edge__label">alarm-driven operator action</td>
+          <td class="architecture-edge__kind">durable</td>
+        </tr>
+        <tr class="architecture-edge architecture-edge--durable" data-edge="xray-&gt;productApi" data-kind="durable">
+          <td class="architecture-edge__endpoint">X-Ray distributed tracing</td>
+          <td class="architecture-edge__arrow">&#8674;</td>
+          <td class="architecture-edge__endpoint">Product and query API</td>
+          <td class="architecture-edge__label">request and workflow trace</td>
+          <td class="architecture-edge__kind">durable</td>
+        </tr>
+        <tr class="architecture-edge architecture-edge--durable" data-edge="trail-&gt;s3Evidence" data-kind="durable">
+          <td class="architecture-edge__endpoint">CloudTrail audit trail</td>
+          <td class="architecture-edge__arrow">&#8674;</td>
+          <td class="architecture-edge__endpoint">S3 immutable evidence store</td>
+          <td class="architecture-edge__label">control-plane audit record</td>
+          <td class="architecture-edge__kind">durable</td>
+        </tr>
+        <tr class="architecture-edge architecture-edge--durable" data-edge="backup-&gt;ctrlCmd" data-kind="durable">
+          <td class="architecture-edge__endpoint">AWS Backup vault and cross-region recovery</td>
+          <td class="architecture-edge__arrow">&#8674;</td>
+          <td class="architecture-edge__endpoint">DynamoDB control table</td>
+          <td class="architecture-edge__label">point-in-time and vault recovery</td>
+          <td class="architecture-edge__kind">durable</td>
+        </tr>
+        <tr class="architecture-edge architecture-edge--durable" data-edge="redrive-&gt;dlq" data-kind="durable">
+          <td class="architecture-edge__endpoint">Retry, DLQ redrive, and replay</td>
+          <td class="architecture-edge__arrow">&#8674;</td>
+          <td class="architecture-edge__endpoint">Per-lane dead-letter queues</td>
+          <td class="architecture-edge__label">bounded redrive</td>
+          <td class="architecture-edge__kind">durable</td>
+        </tr>
+        <tr class="architecture-edge architecture-edge--durable" data-edge="redrive-&gt;archive" data-kind="durable">
+          <td class="architecture-edge__endpoint">Retry, DLQ redrive, and replay</td>
+          <td class="architecture-edge__arrow">&#8674;</td>
+          <td class="architecture-edge__endpoint">EventBridge archive</td>
+          <td class="architecture-edge__label">event replay</td>
+          <td class="architecture-edge__kind">durable</td>
+        </tr>
+        </tbody>
+      </table>
+    </div>
+  </main>
+</body>
+</html>

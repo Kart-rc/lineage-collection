@@ -9,12 +9,23 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
 
+from lineage_api.application.collections import CollectionService
 from lineage_api.application.outbox import OutboxDispatcher
+from lineage_api.application.repository_acquisition import (
+    GitRepositoryRequest,
+    LocalCheckoutRequest,
+    RepositoryAcquisitionService,
+)
 from lineage_api.application.repository_collection import (
     RepositoryCollectionService,
     RepositoryPushDelivery,
 )
-from lineage_api.application.repository_sources import RepositorySnapshot
+from lineage_api.application.repository_sources import (
+    RemoteRepositoryRequest,
+    RepositoryCheckoutDescriptor,
+    RepositorySnapshot,
+    RepositorySourceLimits,
+)
 from lineage_api.application.workflows.pr_gate import (
     EnvironmentPin,
     PRGateWorkflow,
@@ -25,6 +36,9 @@ from lineage_api.config import Settings
 from lineage_api.db import Database
 from lineage_api.domain.errors import DomainError
 from lineage_api.infrastructure.local_broker import LocalLaneBroker, SQLiteOutbox
+from lineage_api.infrastructure.local_git_source import LocalGitRepositorySource
+from lineage_api.infrastructure.sqlite_collections import SQLiteCollectionStore
+from lineage_api.infrastructure.remote_git_source import RemoteGitRepositorySource
 from lineage_api.infrastructure.sqlite_deployment import (
     HmacDeploymentAuthenticator,
     SQLiteDeploymentStore,
@@ -73,6 +87,7 @@ class AppServices:
     pr_gate: PRGateWorkflow
     deployment: DeploymentWorkflow
     observability: MetricsSnapshotPort
+    collections: CollectionService | None = None
 
     def reset(self) -> dict[str, Any]:
         if self.settings.object_directory.exists():
@@ -272,6 +287,14 @@ def build_services(
         deployment=deployment,
         observability=observability,
     )
+    if repository_snapshot is None:
+        # Only the outermost composition exposes the submit/status surface; nested
+        # pinned-snapshot builds exist solely to execute one durable command.
+        services.collections = CollectionService(
+            acquisition=build_repository_acquisition_service(settings),
+            store=SQLiteCollectionStore(database),
+            allow_local_sources=settings.allow_local_repository_sources,
+        )
     services.ensure_seeded()
     return services
 
@@ -288,4 +311,59 @@ def build_repository_collection_service(
     return RepositoryCollectionService(
         webhook_secret=settings.webhook_secret,
         process_push=process_repository_push,
+    )
+
+
+REPOSITORY_SOURCE_LIMITS = RepositorySourceLimits(
+    max_files=10_000,
+    max_file_bytes=4 * 1024 * 1024,
+    max_total_bytes=128 * 1024 * 1024,
+)
+
+
+def build_repository_acquisition_service(
+    settings: Settings,
+) -> RepositoryAcquisitionService:
+    """Compose the source policy with the local and remote exact-revision adapters."""
+
+    collection = build_repository_collection_service(settings)
+
+    def local_snapshot(request: LocalCheckoutRequest) -> RepositorySnapshot:
+        return LocalGitRepositorySource(REPOSITORY_SOURCE_LIMITS).snapshot(
+            RepositoryCheckoutDescriptor(
+                origin=request.origin,
+                repository=request.repository,
+                revision=request.revision,
+                checkout_root=request.checkout_root,
+                environment=request.environment,
+                platform=request.platform,
+                system=request.system,
+                analyzer_pack=request.analyzer_pack,
+                ruleset=request.ruleset,
+            )
+        )
+
+    def remote_snapshot(request: GitRepositoryRequest) -> RepositorySnapshot:
+        return RemoteGitRepositorySource(
+            REPOSITORY_SOURCE_LIMITS,
+            timeout_seconds=settings.repository_clone_timeout_seconds,
+            output_limit_bytes=settings.repository_git_output_limit_bytes,
+        ).acquire(
+            RemoteRepositoryRequest(
+                origin=request.origin,
+                repository=request.repository,
+                revision=request.revision,
+                environment=request.environment,
+                platform=request.platform,
+                system=request.system,
+                analyzer_pack=request.analyzer_pack,
+                ruleset=request.ruleset,
+            )
+        )
+
+    return RepositoryAcquisitionService(
+        allow_local_repository_sources=settings.allow_local_repository_sources,
+        local_snapshot_provider=local_snapshot,
+        remote_snapshot_provider=remote_snapshot,
+        collect=collection.collect,
     )
