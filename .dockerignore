@@ -1,0 +1,13 @@
+*
+!apps/
+!apps/api/
+!apps/api/pyproject.toml
+!apps/api/uv.lock
+!apps/api/src/
+!apps/api/src/**
+!infra/
+!infra/assets/
+!infra/assets/lambda/
+!infra/assets/lambda/Dockerfile
+!infra/assets/sca/
+!infra/assets/sca/Dockerfile

@@ -1,0 +1,817 @@
+{
+  "Comment": "Generated BASELINE 1.0.0; large payloads remain versioned S3 references",
+  "StartAt": "B1",
+  "States": {
+    "AWAITING_APPROVAL": {
+      "Type": "Succeed"
+    },
+    "B1": {
+      "Catch": [
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "Next": "FAILED_REDRIVABLE",
+          "ResultPath": "$.workflowError"
+        }
+      ],
+      "Next": "B1Outcome",
+      "Parameters": {
+        "FunctionName": "${ControlAliasArn}",
+        "Payload": {
+          "causationId.$": "$.causationId",
+          "commandId.$": "$.commandId",
+          "correlationId.$": "$.correlationId",
+          "determinantDigest.$": "$.determinantDigest",
+          "idempotencyKey.$": "States.Format('{}:B1', $.idempotencyKey)",
+          "input.$": "$.input",
+          "schemaVersion.$": "$.schemaVersion",
+          "stageId": "B1",
+          "stageName": "ACCEPT_AND_DEDUPLICATE_INTENT",
+          "workflowKind": "BASELINE",
+          "workflowVersion": "1.0.0"
+        }
+      },
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "ResultPath": "$._B1",
+      "Retry": [
+        {
+          "BackoffRate": 2,
+          "ErrorEquals": [
+            "Lambda.ServiceException",
+            "Lambda.SdkClientException",
+            "Lambda.TooManyRequestsException",
+            "ECS.AmazonECSException",
+            "States.Timeout"
+          ],
+          "IntervalSeconds": 2,
+          "MaxAttempts": 3
+        }
+      ],
+      "TimeoutSeconds": 30,
+      "Type": "Task"
+    },
+    "B10": {
+      "Catch": [
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "Next": "FAILED_REDRIVABLE",
+          "ResultPath": "$.workflowError"
+        }
+      ],
+      "Next": "B10Outcome",
+      "Parameters": {
+        "FunctionName": "${PublicationAliasArn}",
+        "Payload": {
+          "causationId.$": "$.causationId",
+          "commandId.$": "$.commandId",
+          "correlationId.$": "$.correlationId",
+          "determinantDigest.$": "$.determinantDigest",
+          "idempotencyKey.$": "States.Format('{}:B10', $.idempotencyKey)",
+          "input.$": "$._B9.Payload.output",
+          "schemaVersion.$": "$.schemaVersion",
+          "stageId": "B10",
+          "stageName": "STAGE_VERIFY_FENCE_AND_ACTIVATE",
+          "workflowKind": "BASELINE",
+          "workflowVersion": "1.0.0"
+        }
+      },
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "ResultPath": "$._B10",
+      "Retry": [
+        {
+          "BackoffRate": 2,
+          "ErrorEquals": [
+            "Lambda.ServiceException",
+            "Lambda.SdkClientException",
+            "Lambda.TooManyRequestsException",
+            "ECS.AmazonECSException",
+            "States.Timeout"
+          ],
+          "IntervalSeconds": 2,
+          "MaxAttempts": 3
+        }
+      ],
+      "TimeoutSeconds": 600,
+      "Type": "Task"
+    },
+    "B10Outcome": {
+      "Choices": [
+        {
+          "Next": "FAILED_REDRIVABLE",
+          "StringEquals": "REDRIVE_REQUIRED",
+          "Variable": "$._B10.Payload.outcome"
+        }
+      ],
+      "Default": "TerminalRoute",
+      "Type": "Choice"
+    },
+    "B1Outcome": {
+      "Choices": [
+        {
+          "Next": "FAILED_REDRIVABLE",
+          "StringEquals": "REDRIVE_REQUIRED",
+          "Variable": "$._B1.Payload.outcome"
+        }
+      ],
+      "Default": "B2",
+      "Type": "Choice"
+    },
+    "B2": {
+      "Catch": [
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "Next": "FAILED_REDRIVABLE",
+          "ResultPath": "$.workflowError"
+        }
+      ],
+      "Next": "B2Outcome",
+      "Parameters": {
+        "FunctionName": "${ControlAliasArn}",
+        "Payload": {
+          "causationId.$": "$.causationId",
+          "commandId.$": "$.commandId",
+          "correlationId.$": "$.correlationId",
+          "determinantDigest.$": "$.determinantDigest",
+          "idempotencyKey.$": "States.Format('{}:B2', $.idempotencyKey)",
+          "input.$": "$._B1.Payload.output",
+          "schemaVersion.$": "$.schemaVersion",
+          "stageId": "B2",
+          "stageName": "PIN_REPOSITORY_AND_DETERMINANTS",
+          "workflowKind": "BASELINE",
+          "workflowVersion": "1.0.0"
+        }
+      },
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "ResultPath": "$._B2",
+      "Retry": [
+        {
+          "BackoffRate": 2,
+          "ErrorEquals": [
+            "Lambda.ServiceException",
+            "Lambda.SdkClientException",
+            "Lambda.TooManyRequestsException",
+            "ECS.AmazonECSException",
+            "States.Timeout"
+          ],
+          "IntervalSeconds": 2,
+          "MaxAttempts": 3
+        }
+      ],
+      "TimeoutSeconds": 120,
+      "Type": "Task"
+    },
+    "B2Outcome": {
+      "Choices": [
+        {
+          "Next": "FAILED_REDRIVABLE",
+          "StringEquals": "REDRIVE_REQUIRED",
+          "Variable": "$._B2.Payload.outcome"
+        }
+      ],
+      "Default": "B3",
+      "Type": "Choice"
+    },
+    "B3": {
+      "Catch": [
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "Next": "FAILED_REDRIVABLE",
+          "ResultPath": "$.workflowError"
+        }
+      ],
+      "Next": "B3Outcome",
+      "Parameters": {
+        "FunctionName": "${ClassificationAliasArn}",
+        "Payload": {
+          "causationId.$": "$.causationId",
+          "commandId.$": "$.commandId",
+          "correlationId.$": "$.correlationId",
+          "determinantDigest.$": "$.determinantDigest",
+          "idempotencyKey.$": "States.Format('{}:B3', $.idempotencyKey)",
+          "input.$": "$._B2.Payload.output",
+          "schemaVersion.$": "$.schemaVersion",
+          "stageId": "B3",
+          "stageName": "CLASSIFY_REPOSITORY_AND_PATHS",
+          "workflowKind": "BASELINE",
+          "workflowVersion": "1.0.0"
+        }
+      },
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "ResultPath": "$._B3",
+      "Retry": [
+        {
+          "BackoffRate": 2,
+          "ErrorEquals": [
+            "Lambda.ServiceException",
+            "Lambda.SdkClientException",
+            "Lambda.TooManyRequestsException",
+            "ECS.AmazonECSException",
+            "States.Timeout"
+          ],
+          "IntervalSeconds": 2,
+          "MaxAttempts": 3
+        }
+      ],
+      "TimeoutSeconds": 300,
+      "Type": "Task"
+    },
+    "B3Outcome": {
+      "Choices": [
+        {
+          "Next": "FAILED_REDRIVABLE",
+          "StringEquals": "REDRIVE_REQUIRED",
+          "Variable": "$._B3.Payload.outcome"
+        }
+      ],
+      "Default": "B4",
+      "Type": "Choice"
+    },
+    "B4": {
+      "Catch": [
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "Next": "FAILED_REDRIVABLE",
+          "ResultPath": "$.workflowError"
+        }
+      ],
+      "Next": "B4Outcome",
+      "Parameters": {
+        "FunctionName": "${CoverageAliasArn}",
+        "Payload": {
+          "causationId.$": "$.causationId",
+          "commandId.$": "$.commandId",
+          "correlationId.$": "$.correlationId",
+          "determinantDigest.$": "$.determinantDigest",
+          "idempotencyKey.$": "States.Format('{}:B4', $.idempotencyKey)",
+          "input.$": "$._B3.Payload.output",
+          "schemaVersion.$": "$.schemaVersion",
+          "stageId": "B4",
+          "stageName": "BUILD_COVERAGE_PLAN",
+          "workflowKind": "BASELINE",
+          "workflowVersion": "1.0.0"
+        }
+      },
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "ResultPath": "$._B4",
+      "Retry": [
+        {
+          "BackoffRate": 2,
+          "ErrorEquals": [
+            "Lambda.ServiceException",
+            "Lambda.SdkClientException",
+            "Lambda.TooManyRequestsException",
+            "ECS.AmazonECSException",
+            "States.Timeout"
+          ],
+          "IntervalSeconds": 2,
+          "MaxAttempts": 3
+        }
+      ],
+      "TimeoutSeconds": 120,
+      "Type": "Task"
+    },
+    "B4Outcome": {
+      "Choices": [
+        {
+          "Next": "FAILED_REDRIVABLE",
+          "StringEquals": "REDRIVE_REQUIRED",
+          "Variable": "$._B4.Payload.outcome"
+        }
+      ],
+      "Default": "B5",
+      "Type": "Choice"
+    },
+    "B5": {
+      "Catch": [
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "Next": "FAILED_REDRIVABLE",
+          "ResultPath": "$.workflowError"
+        }
+      ],
+      "ItemProcessor": {
+        "ProcessorConfig": {
+          "ExecutionType": "STANDARD",
+          "Mode": "DISTRIBUTED"
+        },
+        "StartAt": "B5Worker",
+        "States": {
+          "B5Worker": {
+            "Catch": [
+              {
+                "ErrorEquals": [
+                  "States.ALL"
+                ],
+                "Next": "B5WorkerFailed",
+                "ResultPath": "$.workerError"
+              }
+            ],
+            "HeartbeatSeconds": 300,
+            "Next": "B5WorkerOutcome",
+            "Parameters": {
+              "Cluster": "${ScaClusterArn}",
+              "LaunchType": "FARGATE",
+              "NetworkConfiguration": {
+                "AwsvpcConfiguration": {
+                  "AssignPublicIp": "DISABLED",
+                  "SecurityGroups": [
+                    "${RuntimeSecurityGroupId}"
+                  ],
+                  "Subnets": [
+                    "${Subnet0}",
+                    "${Subnet1}",
+                    "${Subnet2}"
+                  ]
+                }
+              },
+              "Overrides": {
+                "ContainerOverrides": [
+                  {
+                    "Environment": [
+                      {
+                        "Name": "LINEAGE_TASK_TOKEN",
+                        "Value.$": "$$.Task.Token"
+                      },
+                      {
+                        "Name": "LINEAGE_STAGE_SCHEMA_VERSION",
+                        "Value.$": "$.schemaVersion"
+                      },
+                      {
+                        "Name": "LINEAGE_STAGE_COMMAND_ID",
+                        "Value.$": "$.commandId"
+                      },
+                      {
+                        "Name": "LINEAGE_STAGE_CORRELATION_ID",
+                        "Value.$": "$.correlationId"
+                      },
+                      {
+                        "Name": "LINEAGE_STAGE_CAUSATION_ID",
+                        "Value.$": "$.causationId"
+                      },
+                      {
+                        "Name": "LINEAGE_STAGE_DETERMINANT_DIGEST",
+                        "Value.$": "$.determinantDigest"
+                      },
+                      {
+                        "Name": "LINEAGE_STAGE_INPUT",
+                        "Value.$": "States.JsonToString($.input)"
+                      },
+                      {
+                        "Name": "LINEAGE_STAGE_IDEMPOTENCY_KEY",
+                        "Value.$": "$.idempotencyKey"
+                      },
+                      {
+                        "Name": "LINEAGE_STAGE_ID",
+                        "Value": "B5"
+                      },
+                      {
+                        "Name": "LINEAGE_STAGE_NAME",
+                        "Value": "RUN_BOUNDED_STATIC_ANALYSIS"
+                      },
+                      {
+                        "Name": "LINEAGE_WORKFLOW_KIND",
+                        "Value": "BASELINE"
+                      },
+                      {
+                        "Name": "LINEAGE_WORKFLOW_VERSION",
+                        "Value": "1.0.0"
+                      }
+                    ],
+                    "Name": "lineage-sca"
+                  }
+                ]
+              },
+              "TaskDefinition": "${ScaTaskDefinitionArn}"
+            },
+            "Resource": "arn:aws:states:::ecs:runTask.waitForTaskToken",
+            "ResultPath": "$._B5",
+            "Retry": [
+              {
+                "BackoffRate": 2,
+                "ErrorEquals": [
+                  "Lambda.ServiceException",
+                  "Lambda.SdkClientException",
+                  "Lambda.TooManyRequestsException",
+                  "ECS.AmazonECSException",
+                  "States.Timeout"
+                ],
+                "IntervalSeconds": 2,
+                "MaxAttempts": 3
+              }
+            ],
+            "TimeoutSeconds": 7200,
+            "Type": "Task"
+          },
+          "B5WorkerFailed": {
+            "Error": "REDRIVE_REQUIRED",
+            "Type": "Fail"
+          },
+          "B5WorkerOutcome": {
+            "Choices": [
+              {
+                "Next": "B5WorkerFailed",
+                "StringEquals": "REDRIVE_REQUIRED",
+                "Variable": "$._B5.outcome"
+              }
+            ],
+            "Default": "B5WorkerSucceeded",
+            "Type": "Choice"
+          },
+          "B5WorkerSucceeded": {
+            "Type": "Succeed"
+          }
+        }
+      },
+      "ItemReader": {
+        "Parameters": {
+          "Bucket.$": "$._B4.Payload.output.bucket",
+          "Key.$": "$._B4.Payload.output.key",
+          "VersionId.$": "$._B4.Payload.output.versionId"
+        },
+        "ReaderConfig": {
+          "InputType": "JSON",
+          "ItemsPointer": "/workUnitRefs"
+        },
+        "Resource": "arn:aws:states:::s3:getObject"
+      },
+      "ItemSelector": {
+        "causationId.$": "$.causationId",
+        "commandId.$": "$.commandId",
+        "correlationId.$": "$.correlationId",
+        "determinantDigest.$": "$.determinantDigest",
+        "idempotencyKey.$": "States.Format('{}:B5:{}', $.idempotencyKey, $$.Map.Item.Index)",
+        "input.$": "$$.Map.Item.Value",
+        "schemaVersion.$": "$.schemaVersion"
+      },
+      "MaxConcurrencyPath": "$.baselineMapConcurrency",
+      "Next": "B5Aggregate",
+      "ResultPath": "$._B5",
+      "ResultWriter": {
+        "Parameters": {
+          "Bucket": "${EvidenceBucketName}",
+          "Prefix.$": "States.Format('workflow-results/{}/B5', $.commandId)"
+        },
+        "Resource": "arn:aws:states:::s3:putObject",
+        "WriterConfig": {
+          "OutputType": "JSON",
+          "Transformation": "COMPACT"
+        }
+      },
+      "Type": "Map"
+    },
+    "B5Aggregate": {
+      "Catch": [
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "Next": "FAILED_REDRIVABLE",
+          "ResultPath": "$.workflowError"
+        }
+      ],
+      "Next": "B5AggregateOutcome",
+      "Parameters": {
+        "FunctionName": "${ControlAliasArn}",
+        "Payload": {
+          "causationId.$": "$.causationId",
+          "commandId.$": "$.commandId",
+          "correlationId.$": "$.correlationId",
+          "determinantDigest.$": "$.determinantDigest",
+          "idempotencyKey.$": "States.Format('{}:B5A', $.idempotencyKey)",
+          "mapResult.$": "$._B5",
+          "operation": "BASELINE_SCA_AGGREGATE",
+          "schemaVersion.$": "$.schemaVersion",
+          "workInventory.$": "$._B4.Payload.output",
+          "workflowKind": "BASELINE",
+          "workflowVersion": "1.0.0"
+        }
+      },
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "ResultPath": "$._B5Aggregate",
+      "Retry": [
+        {
+          "BackoffRate": 2,
+          "ErrorEquals": [
+            "Lambda.ServiceException",
+            "Lambda.SdkClientException",
+            "Lambda.TooManyRequestsException",
+            "States.Timeout"
+          ],
+          "IntervalSeconds": 2,
+          "MaxAttempts": 3
+        }
+      ],
+      "TimeoutSeconds": 300,
+      "Type": "Task"
+    },
+    "B5AggregateOutcome": {
+      "Choices": [
+        {
+          "Next": "FAILED_REDRIVABLE",
+          "StringEquals": "REDRIVE_REQUIRED",
+          "Variable": "$._B5Aggregate.Payload.outcome"
+        }
+      ],
+      "Default": "B6",
+      "Type": "Choice"
+    },
+    "B6": {
+      "Catch": [
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "Next": "FAILED_REDRIVABLE",
+          "ResultPath": "$.workflowError"
+        }
+      ],
+      "Next": "B6Outcome",
+      "Parameters": {
+        "FunctionName": "${RuntimeValidationAliasArn}",
+        "Payload": {
+          "causationId.$": "$.causationId",
+          "commandId.$": "$.commandId",
+          "correlationId.$": "$.correlationId",
+          "determinantDigest.$": "$.determinantDigest",
+          "idempotencyKey.$": "States.Format('{}:B6', $.idempotencyKey)",
+          "input.$": "$._B5Aggregate.Payload.output",
+          "schemaVersion.$": "$.schemaVersion",
+          "stageId": "B6",
+          "stageName": "VALIDATE_OPTIONAL_RUNTIME_EVIDENCE",
+          "workflowKind": "BASELINE",
+          "workflowVersion": "1.0.0"
+        }
+      },
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "ResultPath": "$._B6",
+      "Retry": [
+        {
+          "BackoffRate": 2,
+          "ErrorEquals": [
+            "Lambda.ServiceException",
+            "Lambda.SdkClientException",
+            "Lambda.TooManyRequestsException",
+            "ECS.AmazonECSException",
+            "States.Timeout"
+          ],
+          "IntervalSeconds": 2,
+          "MaxAttempts": 3
+        }
+      ],
+      "TimeoutSeconds": 900,
+      "Type": "Task"
+    },
+    "B6Outcome": {
+      "Choices": [
+        {
+          "Next": "FAILED_REDRIVABLE",
+          "StringEquals": "REDRIVE_REQUIRED",
+          "Variable": "$._B6.Payload.outcome"
+        }
+      ],
+      "Default": "B7",
+      "Type": "Choice"
+    },
+    "B7": {
+      "Catch": [
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "Next": "FAILED_REDRIVABLE",
+          "ResultPath": "$.workflowError"
+        }
+      ],
+      "Next": "B7Outcome",
+      "Parameters": {
+        "FunctionName": "${ConsolidationAliasArn}",
+        "Payload": {
+          "causationId.$": "$.causationId",
+          "commandId.$": "$.commandId",
+          "correlationId.$": "$.correlationId",
+          "determinantDigest.$": "$.determinantDigest",
+          "idempotencyKey.$": "States.Format('{}:B7', $.idempotencyKey)",
+          "input.$": "$._B6.Payload.output",
+          "schemaVersion.$": "$.schemaVersion",
+          "stageId": "B7",
+          "stageName": "ANALYZE_RESIDUE_WITH_POLICY",
+          "workflowKind": "BASELINE",
+          "workflowVersion": "1.0.0"
+        }
+      },
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "ResultPath": "$._B7",
+      "Retry": [
+        {
+          "BackoffRate": 2,
+          "ErrorEquals": [
+            "Lambda.ServiceException",
+            "Lambda.SdkClientException",
+            "Lambda.TooManyRequestsException",
+            "ECS.AmazonECSException",
+            "States.Timeout"
+          ],
+          "IntervalSeconds": 2,
+          "MaxAttempts": 3
+        }
+      ],
+      "TimeoutSeconds": 3600,
+      "Type": "Task"
+    },
+    "B7Outcome": {
+      "Choices": [
+        {
+          "Next": "FAILED_REDRIVABLE",
+          "StringEquals": "REDRIVE_REQUIRED",
+          "Variable": "$._B7.Payload.outcome"
+        }
+      ],
+      "Default": "B8",
+      "Type": "Choice"
+    },
+    "B8": {
+      "Catch": [
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "Next": "FAILED_REDRIVABLE",
+          "ResultPath": "$.workflowError"
+        }
+      ],
+      "Next": "B8Outcome",
+      "Parameters": {
+        "FunctionName": "${ConsolidationAliasArn}",
+        "Payload": {
+          "causationId.$": "$.causationId",
+          "commandId.$": "$.commandId",
+          "correlationId.$": "$.correlationId",
+          "determinantDigest.$": "$.determinantDigest",
+          "idempotencyKey.$": "States.Format('{}:B8', $.idempotencyKey)",
+          "input.$": "$._B7.Payload.output",
+          "schemaVersion.$": "$.schemaVersion",
+          "stageId": "B8",
+          "stageName": "CONSOLIDATE_AND_VERIFY_COVERAGE",
+          "workflowKind": "BASELINE",
+          "workflowVersion": "1.0.0"
+        }
+      },
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "ResultPath": "$._B8",
+      "Retry": [
+        {
+          "BackoffRate": 2,
+          "ErrorEquals": [
+            "Lambda.ServiceException",
+            "Lambda.SdkClientException",
+            "Lambda.TooManyRequestsException",
+            "ECS.AmazonECSException",
+            "States.Timeout"
+          ],
+          "IntervalSeconds": 2,
+          "MaxAttempts": 3
+        }
+      ],
+      "TimeoutSeconds": 1800,
+      "Type": "Task"
+    },
+    "B8Outcome": {
+      "Choices": [
+        {
+          "Next": "FAILED_REDRIVABLE",
+          "StringEquals": "REDRIVE_REQUIRED",
+          "Variable": "$._B8.Payload.outcome"
+        }
+      ],
+      "Default": "B9",
+      "Type": "Choice"
+    },
+    "B9": {
+      "Catch": [
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "Next": "FAILED_REDRIVABLE",
+          "ResultPath": "$.workflowError"
+        }
+      ],
+      "Next": "B9Outcome",
+      "Parameters": {
+        "FunctionName": "${ProposalAliasArn}",
+        "Payload": {
+          "causationId.$": "$.causationId",
+          "commandId.$": "$.commandId",
+          "correlationId.$": "$.correlationId",
+          "determinantDigest.$": "$.determinantDigest",
+          "idempotencyKey.$": "States.Format('{}:B9', $.idempotencyKey)",
+          "input.$": "$._B8.Payload.output",
+          "schemaVersion.$": "$.schemaVersion",
+          "stageId": "B9",
+          "stageName": "CREATE_PROPOSAL_OR_AUTOPUBLISH_DECISION",
+          "workflowKind": "BASELINE",
+          "workflowVersion": "1.0.0"
+        }
+      },
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "ResultPath": "$._B9",
+      "Retry": [
+        {
+          "BackoffRate": 2,
+          "ErrorEquals": [
+            "Lambda.ServiceException",
+            "Lambda.SdkClientException",
+            "Lambda.TooManyRequestsException",
+            "ECS.AmazonECSException",
+            "States.Timeout"
+          ],
+          "IntervalSeconds": 2,
+          "MaxAttempts": 3
+        }
+      ],
+      "TimeoutSeconds": 300,
+      "Type": "Task"
+    },
+    "B9Outcome": {
+      "Choices": [
+        {
+          "Next": "FAILED_REDRIVABLE",
+          "StringEquals": "REDRIVE_REQUIRED",
+          "Variable": "$._B9.Payload.outcome"
+        }
+      ],
+      "Default": "B10",
+      "Type": "Choice"
+    },
+    "FAILED_REDRIVABLE": {
+      "Error": "FAILED_REDRIVABLE",
+      "Type": "Fail"
+    },
+    "FAILED_TERMINAL": {
+      "Error": "FAILED_TERMINAL",
+      "Type": "Fail"
+    },
+    "NO_LINEAGE": {
+      "Type": "Succeed"
+    },
+    "PUBLISHED": {
+      "Type": "Succeed"
+    },
+    "QUARANTINED": {
+      "Error": "QUARANTINED",
+      "Type": "Fail"
+    },
+    "REJECTED": {
+      "Error": "REJECTED",
+      "Type": "Fail"
+    },
+    "TerminalRoute": {
+      "Choices": [
+        {
+          "Next": "AWAITING_APPROVAL",
+          "StringEquals": "AWAITING_APPROVAL",
+          "Variable": "$._B10.Payload.terminalOutcome"
+        },
+        {
+          "Next": "NO_LINEAGE",
+          "StringEquals": "NO_LINEAGE",
+          "Variable": "$._B10.Payload.terminalOutcome"
+        },
+        {
+          "Next": "REJECTED",
+          "StringEquals": "REJECTED",
+          "Variable": "$._B10.Payload.terminalOutcome"
+        },
+        {
+          "Next": "QUARANTINED",
+          "StringEquals": "QUARANTINED",
+          "Variable": "$._B10.Payload.terminalOutcome"
+        },
+        {
+          "Next": "FAILED_REDRIVABLE",
+          "StringEquals": "FAILED_REDRIVABLE",
+          "Variable": "$._B10.Payload.terminalOutcome"
+        },
+        {
+          "Next": "FAILED_TERMINAL",
+          "StringEquals": "FAILED_TERMINAL",
+          "Variable": "$._B10.Payload.terminalOutcome"
+        }
+      ],
+      "Default": "PUBLISHED",
+      "Type": "Choice"
+    }
+  },
+  "TimeoutSeconds": 43200
+}

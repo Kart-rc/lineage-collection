@@ -1,0 +1,47 @@
+{
+  "schemaVersion": "1.0.0",
+  "artifactType": "lineage-intent",
+  "context": {
+    "repository": "payments-pipeline",
+    "artifactDigest": "sha256:fixture-source-v2",
+    "environment": "staging",
+    "platform": "snowflake",
+    "system": "payments",
+    "acceptedAt": "2026-08-08T15:05:00Z",
+    "repositorySource": {
+      "bucket": "evidence",
+      "key": "sources/payments-pipeline-v2.zip",
+      "versionId": "source-v2",
+      "sha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+      "sizeBytes": 4096
+    },
+    "repositoryInventory": [
+      "pipeline.py"
+    ],
+    "catalogSnapshotId": "catalog-demo-v1",
+    "catalogSnapshotRef": {
+      "bucket": "evidence",
+      "key": "catalog/catalog-v1.json",
+      "versionId": "catalog-v1",
+      "sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "sizeBytes": 1510
+    },
+    "resolverVersion": "1.0.0",
+    "rulesetVersion": "python-demo-v1",
+    "classificationPolicyVersion": "1.0.0",
+    "changedPaths": [
+      "pipeline.py"
+    ],
+    "removedPaths": [],
+    "dependencyClosure": [],
+    "runtimeManifestRefs": []
+  },
+  "classificationEvidence": [
+    {
+      "level": 4,
+      "source": "APPLICATION_RUNTIME",
+      "repositoryClass": "DATA_PIPELINE",
+      "ref": "fixture-manifest-v2"
+    }
+  ]
+}

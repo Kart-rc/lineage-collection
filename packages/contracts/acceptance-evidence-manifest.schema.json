@@ -1,0 +1,43 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://lineage.local/contracts/acceptance-evidence-manifest/1.0.0",
+  "title": "AcceptanceEvidenceManifest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "buildId",
+    "acceptanceId",
+    "artifactDigest",
+    "outcome",
+    "evidenceRefs"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "1.0.0"
+    },
+    "buildId": {
+      "type": "string",
+      "pattern": "^B(0[1-9]|1[0-6])$"
+    },
+    "acceptanceId": {
+      "type": "string",
+      "pattern": "^B(0[1-9]|1[0-6])-AC-[0-9]{3}$"
+    },
+    "artifactDigest": {
+      "type": "string",
+      "minLength": 1
+    },
+    "outcome": {
+      "enum": ["PASS", "FAIL", "WAIVED", "AWS_REQUIRED", "NOT_CONFIGURED"]
+    },
+    "evidenceRefs": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    }
+  }
+}

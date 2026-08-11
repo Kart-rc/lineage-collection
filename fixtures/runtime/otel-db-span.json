@@ -1,0 +1,16 @@
+{
+  "schemaVersion": "1.0.0",
+  "observationId": "otel-observation-1",
+  "sequence": 1,
+  "artifactDigest": "sha256:runtime-artifact-v1",
+  "traceId": "0123456789abcdef0123456789abcdef",
+  "spanId": "0123456789abcdef",
+  "attributes": {
+    "db.system": "snowflake",
+    "db.namespace": "payments",
+    "db.operation.name": "INSERT",
+    "lineage.source.dataset": "snowflake://payments/raw.transactions",
+    "lineage.target.dataset": "snowflake://payments/analytics.daily_revenue"
+  },
+  "observedAt": "2026-08-06T12:00:00Z"
+}

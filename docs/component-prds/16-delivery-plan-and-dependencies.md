@@ -2,6 +2,13 @@
 
 # L16 Delivery Plan — Dependencies, Team Structure, Milestones
 
+## Build-ready implementation PRDs
+
+The [B01-B16 build-ready PRDs](../build-prds/README.md) translate these delivery tracks and the
+normative L01-L16 requirements into owned deployable boundaries, infrastructure bills of materials,
+failure models, security/SLO obligations and executable acceptance IDs. The B-series is the build
+index; this document remains the sequencing and dependency authority.
+
 ## 1. DE Review Verdict: keep the PRDs, add this plan
 
 The L-numbering is **data-flow order, not implementation order** — following

@@ -7,10 +7,18 @@ interface GateCardProps {
   value: string;
   detail: string;
   tone?: "neutral" | "trusted" | "attention" | "blocked";
+  statusLabel?: string;
 }
 
 
-export function GateCard({ index, label, value, detail, tone = "neutral" }: GateCardProps) {
+export function GateCard({
+  index,
+  label,
+  value,
+  detail,
+  tone = "neutral",
+  statusLabel,
+}: GateCardProps) {
   return (
     <article className="gate-card">
       <div className="gate-card__topline">
@@ -18,6 +26,7 @@ export function GateCard({ index, label, value, detail, tone = "neutral" }: Gate
         <StatusPill label={label} tone={tone} />
       </div>
       <strong className="gate-card__value">{value}</strong>
+      {statusLabel ? <span className={`gate-card__state gate-card__state--${tone}`}>{statusLabel}</span> : null}
       <p>{detail}</p>
     </article>
   );

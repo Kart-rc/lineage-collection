@@ -1,0 +1,57 @@
+{
+  "schemaURL": "https://openlineage.io/spec/2-0-2/OpenLineage.json",
+  "producer": "https://github.com/OpenLineage/OpenLineage/tree/1.39.0/integration/spark",
+  "schemaVersion": "1.0.0",
+  "observationId": "openlineage-multi-1",
+  "sequence": 1,
+  "artifactDigest": "sha256:runtime-artifact-v1",
+  "eventType": "COMPLETE",
+  "eventTime": "2026-08-07T12:00:00Z",
+  "run": {
+    "runId": "runtime-run-multi-1",
+    "facets": {
+      "parent": {
+        "_schemaURL": "https://openlineage.io/spec/facets/1-0-1/ParentRunFacet.json",
+        "run": {"runId": "parent-run-1"},
+        "job": {"namespace": "payments", "name": "daily-finance"}
+      },
+      "lineageControl": {
+        "_schemaURL": "https://lineage.local/openlineage-control/1.0.0",
+        "leaseId": "runtime-lease-001",
+        "profileId": "payments-spark-openlineage",
+        "profileVersion": "1.0.0",
+        "artifactDigest": "sha256:runtime-artifact-v1"
+      }
+    }
+  },
+  "job": {"namespace": "payments", "name": "daily-finance"},
+  "inputs": [
+    {"namespace": "snowflake://payments", "name": "raw.transactions"},
+    {"namespace": "snowflake://payments", "name": "raw.refunds"}
+  ],
+  "outputs": [
+    {
+      "namespace": "snowflake://payments",
+      "name": "analytics.daily_revenue",
+      "facets": {
+        "columnLineage": {
+          "_schemaURL": "https://openlineage.io/spec/facets/1-2-0/ColumnLineageDatasetFacet.json",
+          "fields": {
+            "gross_revenue": {
+              "inputFields": [
+                {"namespace": "snowflake://payments", "name": "raw.transactions", "field": "amount"},
+                {"namespace": "snowflake://payments", "name": "raw.refunds", "field": "amount"}
+              ],
+              "transformationDescription": "net amount"
+            }
+          }
+        }
+      }
+    },
+    {
+      "namespace": "snowflake://payments",
+      "name": "analytics.refund_summary",
+      "facets": {}
+    }
+  ]
+}

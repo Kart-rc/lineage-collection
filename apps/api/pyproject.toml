@@ -6,10 +6,16 @@ requires-python = ">=3.12,<3.14"
 dependencies = [
   "fastapi>=0.116,<0.117",
   "jsonschema>=4.25,<5",
+  "sqlglot==27.28.1",
+  "tree-sitter==0.25.2",
+  "tree-sitter-java==0.23.5",
   "uvicorn>=0.35,<0.36",
 ]
 
 [project.optional-dependencies]
+aws = [
+  "boto3>=1.40,<2",
+]
 dev = [
   "httpx>=0.28,<1",
   "pytest>=8.4,<9",

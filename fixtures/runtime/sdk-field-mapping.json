@@ -1,0 +1,17 @@
+{
+  "schemaVersion": "1.0.0",
+  "observationId": "sdk-observation-1",
+  "sequence": 1,
+  "artifactDigest": "sha256:runtime-artifact-v1",
+  "source": {
+    "dataset": "snowflake://payments/raw.transactions",
+    "field": "amount"
+  },
+  "target": {
+    "dataset": "snowflake://payments/analytics.daily_revenue",
+    "field": "gross_revenue"
+  },
+  "edgeType": "DERIVES",
+  "transform": "SUM(amount)",
+  "observedAt": "2026-08-06T12:00:00Z"
+}

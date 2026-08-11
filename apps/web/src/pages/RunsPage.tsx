@@ -15,9 +15,9 @@ export function RunsPage() {
       </header>
       {runs.isPending ? <p className="empty-state">Loading run ledger…</p> : null}
       {runs.isError ? <p className="inline-error" role="alert">Run ledger is unavailable.</p> : null}
-      {runs.data?.length === 0 ? <p className="empty-state">No runs yet. Start in Operations.</p> : null}
+      {runs.data?.items.length === 0 ? <p className="empty-state">No runs have been recorded.</p> : null}
       <div className="record-list">
-        {runs.data?.map((run) => (
+        {runs.data?.items.map((run) => (
           <Link key={run.runId} to={`/runs/${run.runId}`}>
             <span className="record-list__index">{run.stages.length} stages</span>
             <div><strong>{run.repo}</strong><code>{run.runId}</code></div>
@@ -26,6 +26,9 @@ export function RunsPage() {
           </Link>
         ))}
       </div>
+      {runs.data?.nextCursor ? (
+        <p className="empty-state">More runs are available through bounded pagination.</p>
+      ) : null}
     </div>
   );
 }

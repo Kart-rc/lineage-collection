@@ -73,7 +73,7 @@ export function LineageExplorerPage() {
                 onSelectNode={(urn) => setDraftSubject(urn)}
               />
             ) : (
-              <div className="empty-state graph-empty">No relationships are present in {lineage.data.namespaceVersion}. Publish the seeded proposal first.</div>
+              <div className="empty-state graph-empty">No relationships are present in {lineage.data.namespaceVersion}. Publish an approved proposal first.</div>
             )}
             <EdgeInspector edge={selectedEdge} />
           </div>

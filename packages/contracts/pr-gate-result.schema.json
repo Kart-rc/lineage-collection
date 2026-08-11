@@ -1,0 +1,63 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://lineage.local/contracts/pr-gate-result/1.0.0",
+  "title": "PRGateResult",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "checkId",
+    "repo",
+    "prNumber",
+    "headSha",
+    "environment",
+    "environmentVersion",
+    "environmentFence",
+    "deployedArtifactDigest",
+    "candidateArtifactDigest",
+    "policyVersion",
+    "verdict",
+    "reasons",
+    "truncated",
+    "evaluatedChangeTypes",
+    "evaluatedAt"
+  ],
+  "properties": {
+    "schemaVersion": {"const": "1.0.0"},
+    "checkId": {"type": "string", "minLength": 1},
+    "repo": {"type": "string", "minLength": 1},
+    "prNumber": {"type": "integer", "minimum": 1},
+    "headSha": {"type": "string", "minLength": 1},
+    "environment": {"type": "string", "minLength": 1},
+    "environmentVersion": {"type": "string", "minLength": 1},
+    "environmentFence": {"type": "integer", "minimum": 0},
+    "deployedArtifactDigest": {
+      "type": ["string", "null"],
+      "minLength": 1
+    },
+    "candidateArtifactDigest": {"type": "string", "minLength": 1},
+    "policyVersion": {"type": "string", "minLength": 1},
+    "verdict": {"enum": ["PASS", "WARN", "BLOCK"]},
+    "reasons": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {"type": "string", "minLength": 1}
+    },
+    "truncated": {"type": "boolean"},
+    "evaluatedChangeTypes": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "enum": [
+          "COLUMN_DROP",
+          "COLUMN_TYPE_CHANGE",
+          "DATASET_REMOVAL",
+          "COLUMN_RENAME",
+          "TRANSFORM_CHANGE",
+          "FINGERPRINT_DRIFT"
+        ]
+      }
+    },
+    "evaluatedAt": {"type": "string", "format": "date-time"}
+  }
+}

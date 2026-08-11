@@ -1,0 +1,67 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://lineage.local/contracts/coverage-manifest/1.0.0",
+  "title": "CoverageManifest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "manifestId",
+    "workflowKind",
+    "scope",
+    "artifactDigest",
+    "determinantDigest",
+    "state",
+    "expectedScope",
+    "completedScope",
+    "reusedScope",
+    "skippedScope",
+    "unsupportedScope",
+    "quarantinedScope",
+    "failedScope",
+    "createdAt"
+  ],
+  "properties": {
+    "schemaVersion": {"const": "1.0.0"},
+    "manifestId": {"type": "string", "minLength": 1},
+    "workflowKind": {
+      "enum": ["BASELINE", "INCREMENTAL", "PR_GATE", "DEPLOYMENT", "NIGHTLY"]
+    },
+    "scope": {"type": "string", "minLength": 1},
+    "artifactDigest": {"type": "string", "minLength": 1},
+    "determinantDigest": {"type": "string", "minLength": 1},
+    "sourceScopeDispositionDigest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "state": {"enum": ["PLANNED", "COMPLETE", "INCOMPLETE"]},
+    "expectedScope": {"$ref": "#/$defs/scopeItems"},
+    "completedScope": {"$ref": "#/$defs/scopeItems"},
+    "reusedScope": {"$ref": "#/$defs/scopeItems"},
+    "skippedScope": {"$ref": "#/$defs/scopeItems"},
+    "unsupportedScope": {"$ref": "#/$defs/scopeItems"},
+    "quarantinedScope": {"$ref": "#/$defs/scopeItems"},
+    "failedScope": {"$ref": "#/$defs/scopeItems"},
+    "runtimeEvidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "sessionIds"],
+      "properties": {
+        "status": {"enum": ["NOT_PROVIDED", "INCOMPLETE", "REJECTED", "VALIDATED"]},
+        "sessionIds": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {"type": "string", "minLength": 1}
+        }
+      }
+    },
+    "createdAt": {"type": "string", "format": "date-time"}
+  },
+  "$defs": {
+    "scopeItems": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {"type": "string", "minLength": 1}
+    }
+  }
+}

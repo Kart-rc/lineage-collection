@@ -1,0 +1,33 @@
+{
+  "resourceSpans": [
+    {
+      "schemaUrl": "https://opentelemetry.io/schemas/1.30.0",
+      "resource": {
+        "attributes": [
+          {"key": "service.name", "value": {"stringValue": "payments-service"}},
+          {"key": "deployment.environment.name", "value": {"stringValue": "production"}}
+        ]
+      },
+      "scopeSpans": [
+        {
+          "scope": {"name": "payments-db", "version": "1.2.0"},
+          "spans": [
+            {
+              "traceId": "0123456789abcdef0123456789abcdef",
+              "spanId": "0123456789abcdef",
+              "name": "SELECT raw.transactions",
+              "kind": 3,
+              "startTimeUnixNano": "1786104000000000000",
+              "attributes": [
+                {"key": "db.system.name", "value": {"stringValue": "snowflake"}},
+                {"key": "db.namespace", "value": {"stringValue": "payments"}},
+                {"key": "db.collection.name", "value": {"stringValue": "raw.transactions"}},
+                {"key": "db.operation.name", "value": {"stringValue": "SELECT"}}
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

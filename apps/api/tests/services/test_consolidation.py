@@ -173,3 +173,47 @@ def test_equivalent_normalized_transforms_do_not_conflict(tmp_path: Path) -> Non
     assert result.status == "PROPOSED"
     assert result.transform == "SUM( amount )"
     assert result.auto_publishable is True
+
+
+def test_complete_dataset_runtime_observation_corroborates_without_raising_band(
+    tmp_path: Path,
+) -> None:
+    service = _service(tmp_path)
+    static = service.merge(_assertion("SCA", "prov-sca"))
+    manifest = {
+        "sessionId": "runtime-session-dataset",
+        "outcome": "COMPLETE",
+        "observationChecksum": "sha256:runtime",
+    }
+    observation = {
+        "observationId": "runtime-dataset-1",
+        "sessionId": "runtime-session-dataset",
+        "mechanism": "OPENLINEAGE",
+        "granularity": "DATASET",
+        "sourceDatasets": ["snowflake://payments/raw.transactions"],
+        "targetDataset": "snowflake://payments/analytics.daily_revenue",
+        "edgeType": "DERIVES",
+        "exact": True,
+    }
+
+    merged = service.merge_runtime_observation(
+        observation,
+        manifest,
+        environment="staging",
+        repo="payments-pipeline",
+        correlation_id="corr-runtime-dataset",
+    )
+    replay = service.merge_runtime_observation(
+        observation,
+        manifest,
+        environment="staging",
+        repo="payments-pipeline",
+        correlation_id="corr-runtime-dataset",
+    )
+
+    assert len(merged) == 1
+    assert replay == merged
+    assert merged[0].edge_key == static.edge_key
+    assert merged[0].corroboration == "DATASET"
+    assert merged[0].band == "SINGLE"
+    assert service.version_count(static.edge_key) == 2

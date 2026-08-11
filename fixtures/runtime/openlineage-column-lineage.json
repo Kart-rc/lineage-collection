@@ -1,0 +1,35 @@
+{
+  "schemaVersion": "1.0.0",
+  "observationId": "openlineage-observation-1",
+  "sequence": 1,
+  "artifactDigest": "sha256:runtime-artifact-v1",
+  "eventType": "COMPLETE",
+  "eventTime": "2026-08-06T12:00:00Z",
+  "run": {"runId": "runtime-run-1"},
+  "job": {"namespace": "payments", "name": "daily-revenue"},
+  "inputs": [
+    {"namespace": "snowflake://payments", "name": "raw.transactions"}
+  ],
+  "outputs": [
+    {
+      "namespace": "snowflake://payments",
+      "name": "analytics.daily_revenue",
+      "facets": {
+        "columnLineage": {
+          "fields": {
+            "gross_revenue": {
+              "inputFields": [
+                {
+                  "namespace": "snowflake://payments",
+                  "name": "raw.transactions",
+                  "field": "amount"
+                }
+              ],
+              "transformationDescription": "SUM(amount)"
+            }
+          }
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,76 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://lineage.local/contracts/runtime-window-manifest/1.0.0",
+  "title": "RuntimeWindowManifest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion", "manifestId", "windowId", "leaseId", "profileId", "profileVersion",
+    "workloadId", "repo", "environment", "artifactDigest", "mechanism", "outcome",
+    "attempted", "accepted", "rejected", "duplicates", "retried", "buffered", "dropped",
+    "quarantined", "drained", "sourceChecksum", "observationChecksum", "reasons",
+    "reasonCounts", "emitterCounts", "closedAt"
+  ],
+  "properties": {
+    "schemaVersion": {"const": "1.0.0"},
+    "manifestId": {"type": "string", "minLength": 1},
+    "windowId": {"type": "string", "minLength": 1},
+    "leaseId": {"type": "string", "minLength": 1},
+    "profileId": {"type": "string", "minLength": 1},
+    "profileVersion": {"type": "string", "minLength": 1},
+    "workloadId": {"type": "string", "minLength": 1},
+    "repo": {"type": "string", "minLength": 1},
+    "environment": {"type": "string", "minLength": 1},
+    "artifactDigest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "mechanism": {"enum": ["OPENLINEAGE", "SDK", "OTEL", "DASK"]},
+    "outcome": {"enum": ["COMPLETE", "INCOMPLETE", "EXPIRED", "REVOKED", "DISABLED"]},
+    "attempted": {"type": "integer", "minimum": 0},
+    "accepted": {"type": "integer", "minimum": 0},
+    "rejected": {"type": "integer", "minimum": 0},
+    "duplicates": {"type": "integer", "minimum": 0},
+    "retried": {"type": "integer", "minimum": 0},
+    "buffered": {"type": "integer", "minimum": 0},
+    "dropped": {"type": "integer", "minimum": 0},
+    "quarantined": {"type": "integer", "minimum": 0},
+    "drained": {"type": "integer", "minimum": 0},
+    "sourceChecksum": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "observationChecksum": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "reasons": {
+      "type": "array", "uniqueItems": true,
+      "items": {"type": "string", "minLength": 1}
+    },
+    "reasonCounts": {
+      "type": "object",
+      "propertyNames": {"minLength": 1},
+      "additionalProperties": {"type": "integer", "minimum": 1}
+    },
+    "emitterCounts": {
+      "type": "object",
+      "minProperties": 1,
+      "propertyNames": {"minLength": 1},
+      "additionalProperties": {"$ref": "#/$defs/counterSet"}
+    },
+    "closedAt": {"type": "string", "format": "date-time"}
+  },
+  "$defs": {
+    "counterSet": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "attempted", "accepted", "rejected", "duplicates", "retried",
+        "buffered", "dropped", "quarantined", "drained"
+      ],
+      "properties": {
+        "attempted": {"type": "integer", "minimum": 0},
+        "accepted": {"type": "integer", "minimum": 0},
+        "rejected": {"type": "integer", "minimum": 0},
+        "duplicates": {"type": "integer", "minimum": 0},
+        "retried": {"type": "integer", "minimum": 0},
+        "buffered": {"type": "integer", "minimum": 0},
+        "dropped": {"type": "integer", "minimum": 0},
+        "quarantined": {"type": "integer", "minimum": 0},
+        "drained": {"type": "integer", "minimum": 0}
+      }
+    }
+  }
+}

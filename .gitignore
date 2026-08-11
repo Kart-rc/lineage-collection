@@ -11,6 +11,7 @@ dist/
 vite.config.js
 vite.config.d.ts
 coverage/
+cdk.out/
 output/
 data/
 source-materials/

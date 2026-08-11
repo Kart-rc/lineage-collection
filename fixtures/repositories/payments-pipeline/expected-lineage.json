@@ -1,6 +1,11 @@
 {
   "schemaVersion": "1.0.0",
   "repo": "payments-pipeline",
+  "baseline": {
+    "expectedScope": ["expected-lineage.json", "pipeline.py", "repository-evidence.json"],
+    "skippedScope": ["expected-lineage.json", "repository-evidence.json"],
+    "unsupportedScope": []
+  },
   "edges": [
     {
       "from": "urn:ldp:staging:snowflake:payments:raw.transactions#customer_id",

@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import type { PropsWithChildren } from "react";
 
 import { api } from "../../api/client";
+import { readRuntimeConfig } from "../../config/runtime";
 import { NavLink } from "../../routing";
 import { StatusPill } from "../shared/StatusPill";
 
@@ -15,6 +16,7 @@ const NAVIGATION = [
 
 
 export function AppShell({ children }: PropsWithChildren) {
+  const runtime = readRuntimeConfig();
   const overview = useQuery({
     queryKey: ["overview"],
     queryFn: ({ signal }) => api.overview(signal),
@@ -37,13 +39,18 @@ export function AppShell({ children }: PropsWithChildren) {
           </span>
         </NavLink>
         <div className="topbar__context" aria-live="polite">
-          <StatusPill label="Seeded prototype" tone="neutral" />
+          <StatusPill
+            label={runtime.demoActions ? "Seeded prototype" : runtime.environment}
+            tone="neutral"
+          />
           <span className="namespace-watermark">
             {overview.isPending
               ? "Resolving active graph…"
               : overview.isError
                 ? "Active graph unavailable"
-                : `Active graph ${overview.data.activeVersion}`}
+                : overview.data.activeVersion
+                  ? `Active graph ${overview.data.activeVersion}`
+                  : "No active graph"}
           </span>
         </div>
       </header>
@@ -64,7 +71,7 @@ export function AppShell({ children }: PropsWithChildren) {
       </main>
       <footer className="app-footer">
         <span>Evidence before assertion.</span>
-        <span>Local M1 walking skeleton · 2026-08-04</span>
+        <span>{runtime.environment} · revision {runtime.sourceRevision}</span>
       </footer>
     </div>
   );

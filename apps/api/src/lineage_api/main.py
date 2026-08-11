@@ -9,7 +9,16 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from lineage_api.api_models import CorrectionRequest, ImpactRequest, PushRequest, ReviewRequest
+from lineage_api.api_models import (
+    CorrectionRequest,
+    DeploymentOutcomeRequest,
+    ImpactRequest,
+    PRGateEvaluationRequest,
+    PushRequest,
+    ReviewRequest,
+)
+from lineage_api.application.workflows.deployment import DeploymentEvent
+from lineage_api.application.workflows.pr_gate import PRGateChange, PRGateRequest
 from lineage_api.config import Settings
 from lineage_api.dependencies import AppServices, build_services
 from lineage_api.domain.errors import DomainError
@@ -69,12 +78,16 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         request: Request, error: RequestValidationError
     ) -> JSONResponse:
         correlation_id = request.headers.get("x-correlation-id", "request-validation")
+        serializable_errors = [
+            {key: value for key, value in item.items() if key not in {"ctx", "url"}}
+            for item in error.errors()
+        ]
         return JSONResponse(
             {
                 "code": "INVALID_REQUEST",
                 "message": "Request did not match the API contract",
                 "correlationId": correlation_id,
-                "details": {"errors": error.errors(include_url=False, include_context=False)},
+                "details": {"errors": serializable_errors},
             },
             status_code=422,
         )
@@ -99,6 +112,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     def overview(request: Request) -> dict[str, Any]:
         current = _services(request)
         pointer = current.publisher.pointer("staging")
+        resilience = current.observability.snapshot()
         with current.database.connection() as connection:
             counts = {
                 "runs": int(connection.execute("SELECT COUNT(*) FROM runs").fetchone()[0]),
@@ -118,7 +132,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             "fencingToken": pointer.fencing_token,
             "counts": counts,
             "recentRuns": current.orchestration.list_runs()[:5],
+            "resilience": resilience,
         }
+
+    @application.get("/api/operations/resilience")
+    def resilience(request: Request) -> dict[str, Any]:
+        return _services(request).observability.snapshot()
 
     @application.get("/api/runs")
     def list_runs(request: Request) -> list[dict[str, Any]]:
@@ -189,6 +208,56 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     def impact(body: ImpactRequest, request: Request) -> dict[str, Any]:
         return _services(request).query.impact(
             body.subject, body.changeType, body.depth, body.version
+        )
+
+    @application.post("/api/pr-gate/evaluate")
+    def evaluate_pr_gate(
+        body: PRGateEvaluationRequest,
+        request: Request,
+    ) -> dict[str, object]:
+        return _services(request).pr_gate.evaluate(
+            PRGateRequest(
+                repo=body.repo,
+                pr_number=body.prNumber,
+                head_sha=body.headSha,
+                target_environment=body.targetEnvironment,
+                policy_version=body.policyVersion,
+                candidate_artifact_digest=body.candidateArtifactDigest,
+                coverage_complete=body.coverageComplete,
+                changes=tuple(
+                    PRGateChange(
+                        change_type=change.changeType,
+                        subject=change.subject,
+                        evidence_mechanisms=tuple(change.evidenceMechanisms),
+                    )
+                    for change in body.changes
+                ),
+                depth=body.depth,
+            )
+        )
+
+    @application.post("/api/deployments/outcomes")
+    def deployment_outcome(
+        body: DeploymentOutcomeRequest,
+        request: Request,
+    ) -> dict[str, object]:
+        payload = body.payload
+        return _services(request).deployment.handle(
+            DeploymentEvent(
+                event_id=payload.eventId,
+                event_type=payload.eventType,
+                provider=payload.provider,
+                provider_sequence=payload.providerSequence,
+                attempt=payload.attempt,
+                system=payload.system,
+                environment=payload.environment,
+                outcome=payload.outcome,
+                artifact_digest=payload.artifactDigest,
+                correlation_id=payload.correlationId,
+                audit_ref=payload.auditRef,
+                occurred_at=payload.occurredAt,
+            ),
+            signature=body.signature,
         )
 
     @application.get("/api/edges/{edge_key}")

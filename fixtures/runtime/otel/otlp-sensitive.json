@@ -1,0 +1,32 @@
+{
+  "resourceSpans": [
+    {
+      "schemaUrl": "https://opentelemetry.io/schemas/1.30.0",
+      "resource": {
+        "attributes": [
+          {"key": "service.name", "value": {"stringValue": "payments-service"}}
+        ]
+      },
+      "scopeSpans": [
+        {
+          "scope": {"name": "payments-http", "version": "1.2.0"},
+          "spans": [
+            {
+              "traceId": "11111111111111111111111111111111",
+              "spanId": "2222222222222222",
+              "name": "POST /charge",
+              "kind": 3,
+              "startTimeUnixNano": "1786104000000000000",
+              "attributes": [
+                {"key": "server.address", "value": {"stringValue": "api.payments.local"}},
+                {"key": "http.request.method", "value": {"stringValue": "POST"}},
+                {"key": "db.query.text", "value": {"stringValue": "select card_number from secrets"}},
+                {"key": "http.request.header.authorization", "value": {"stringValue": "Bearer private-token"}}
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

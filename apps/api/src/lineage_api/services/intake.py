@@ -3,9 +3,14 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
+import re
 from dataclasses import dataclass
+from datetime import datetime, timedelta
 from typing import Any, Literal
 
+from lineage_api.application.models import Command, OutboxEvent, WorkflowKind, parse_utc
+from lineage_api.application.ports import ClockPort, IntakeUnitOfWorkPort
+from lineage_api.application.repository_sources import validate_repository_identity
 from lineage_api.db import Database
 
 
@@ -19,6 +24,21 @@ LANE_POLICY = {
     "nightly": "bulk",
     "llm.batch": "bulk",
 }
+WORKFLOW_POLICY: dict[str, WorkflowKind] = {
+    "pr.updated": "PR_GATE",
+    "repo.push": "INCREMENTAL",
+    "deploy": "DEPLOYMENT",
+    "baseline": "BASELINE",
+    "backfill": "BASELINE",
+    "nightly": "NIGHTLY",
+    "llm.batch": "NIGHTLY",
+}
+LANE_DEADLINE_SECONDS = {
+    "interactive": 120,
+    "events": 900,
+    "bulk": 86_400,
+}
+LANE_MAX_ATTEMPTS = {"interactive": 2, "events": 5, "bulk": 3}
 
 
 @dataclass(frozen=True, slots=True)
@@ -39,12 +59,22 @@ class IntakeResult:
     policy_version: str
     reason: str | None = None
     quarantine_id: str | None = None
+    command: Command | None = None
+    outbox: OutboxEvent | None = None
 
 
 class IntakeService:
-    def __init__(self, database: Database, webhook_secret: str) -> None:
+    def __init__(
+        self,
+        database: Database,
+        webhook_secret: str,
+        unit_of_work: IntakeUnitOfWorkPort,
+        clock: ClockPort,
+    ) -> None:
         self._database = database
         self._secret = webhook_secret.encode()
+        self._unit_of_work = unit_of_work
+        self._clock = clock
 
     def accept(self, delivery: PushDelivery) -> IntakeResult:
         payload = delivery.payload
@@ -78,33 +108,52 @@ class IntakeService:
             "changedFiles": sorted(set(str(item) for item in payload.get("changedFiles", []))),
             "receivedAt": received_at,
         }
-        envelope_json = json.dumps(envelope, sort_keys=True, separators=(",", ":"))
-
-        with self._database.transaction() as connection:
-            existing = connection.execute(
-                "SELECT payload_json FROM events WHERE event_id = ?", (event_id,)
-            ).fetchone()
-            if existing is not None:
-                return IntakeResult(
-                    outcome="DUPLICATE",
-                    event_id=event_id,
-                    envelope=json.loads(existing["payload_json"]),
-                    policy_version=LANE_POLICY_VERSION,
-                    reason="DUPLICATE",
+        runtime_observation = payload.get("runtimeObservation")
+        if isinstance(runtime_observation, dict):
+            envelope["runtimeObservation"] = runtime_observation
+        repository_source = payload.get("repositorySource")
+        if repository_source is not None:
+            normalized_source = _repository_source(repository_source, repo)
+            if normalized_source is None:
+                return self._quarantine(
+                    payload, event_id, correlation_id, "INVALID_REPOSITORY_SOURCE"
                 )
-            connection.execute(
-                """
-                INSERT INTO events(event_id, payload_json, outcome, created_at)
-                VALUES (?, ?, ?, ?)
-                """,
-                (event_id, envelope_json, "ACCEPTED", received_at),
+            envelope["repositorySource"] = normalized_source
+        envelope_json = json.dumps(envelope, sort_keys=True, separators=(",", ":"))
+        try:
+            parse_utc(received_at)
+        except ValueError:
+            return self._quarantine(payload, event_id, correlation_id, "INVALID_TIMESTAMP")
+        created_at = self._clock.now()
+        command = self._command_for(envelope, created_at)
+        outbox = self._outbox_for(envelope, command, created_at)
+        durable = self._unit_of_work.accept(
+            event_id,
+            envelope_json,
+            created_at,
+            command,
+            outbox,
+        )
+        stored_envelope = json.loads(durable.envelope_json)
+
+        if not durable.created:
+            return IntakeResult(
+                outcome="DUPLICATE",
+                event_id=event_id,
+                envelope=stored_envelope,
+                policy_version=LANE_POLICY_VERSION,
+                reason="DUPLICATE",
+                command=durable.command,
+                outbox=durable.outbox,
             )
 
         return IntakeResult(
             outcome="ACCEPTED",
             event_id=event_id,
-            envelope=envelope,
+            envelope=stored_envelope,
             policy_version=LANE_POLICY_VERSION,
+            command=durable.command,
+            outbox=durable.outbox,
         )
 
     def event_count(self, event_id: str) -> int:
@@ -134,6 +183,67 @@ class IntakeService:
         expected = hmac.new(self._secret, delivery.canonical_body, hashlib.sha256).hexdigest()
         provided = delivery.signature.removeprefix("sha256=")
         return hmac.compare_digest(expected, provided)
+
+    def _command_for(self, envelope: dict[str, Any], created_at: datetime) -> Command:
+        determinant_body = {
+            "changedFiles": envelope["changedFiles"],
+            "environment": envelope["env"],
+            "eventType": envelope["eventType"],
+            "lanePolicyVersion": LANE_POLICY_VERSION,
+            "system": envelope["system"],
+            "runtimeObservationDigest": (
+                self._payload_digest(self._canonical(envelope["runtimeObservation"]))
+                if "runtimeObservation" in envelope
+                else None
+            ),
+            "repositorySource": envelope.get("repositorySource"),
+        }
+        determinant = f"sha256:{self._payload_digest(self._canonical(determinant_body))}"
+        workflow_kind = WORKFLOW_POLICY[envelope["eventType"]]
+        identity = {
+            "artifactDigest": envelope["digest"],
+            "determinantDigest": determinant,
+            "eventId": envelope["eventId"],
+            "scope": f"repo:{envelope['repo']}",
+            "workflowKind": workflow_kind,
+            "workflowVersion": "1.0.0",
+        }
+        identity_digest = self._payload_digest(self._canonical(identity))
+        lane = envelope["lane"]
+        return Command(
+            command_id=f"command-{hashlib.sha256(envelope['eventId'].encode()).hexdigest()[:20]}",
+            idempotency_key=f"command:sha256:{identity_digest}",
+            workflow_kind=workflow_kind,
+            workflow_version="1.0.0",
+            scope=f"repo:{envelope['repo']}",
+            artifact_digest=envelope["digest"],
+            determinant_digest=determinant,
+            status="QUEUED",
+            attempt=0,
+            max_attempts=LANE_MAX_ATTEMPTS[lane],
+            input_ref=f"event://{envelope['eventId']}",
+            correlation_id=envelope["correlationId"],
+            created_at=created_at,
+            deadline_at=created_at + timedelta(seconds=LANE_DEADLINE_SECONDS[lane]),
+        )
+
+    def _outbox_for(
+        self,
+        envelope: dict[str, Any],
+        command: Command,
+        created_at: datetime,
+    ) -> OutboxEvent:
+        return OutboxEvent(
+            outbox_id=f"outbox-{hashlib.sha256(command.command_id.encode()).hexdigest()[:20]}",
+            topic=envelope["lane"],
+            partition_key=command.scope,
+            payload_ref=f"command://{command.command_id}",
+            status="PENDING",
+            attempts=0,
+            available_at=created_at,
+            correlation_id=command.correlation_id,
+            created_at=created_at,
+        )
 
     def _quarantine(
         self,
@@ -181,3 +291,53 @@ class IntakeService:
     @staticmethod
     def _payload_digest(payload: bytes) -> str:
         return hashlib.sha256(payload).hexdigest()
+
+    @staticmethod
+    def _canonical(value: object) -> bytes:
+        return json.dumps(value, sort_keys=True, separators=(",", ":")).encode()
+
+
+_REPOSITORY_SOURCE_KEYS = frozenset(
+    {
+        "sourceKind",
+        "origin",
+        "revision",
+        "scopeDigest",
+        "scopeDispositionDigest",
+        "analyzerPack",
+        "ruleset",
+        "framework",
+        "schemaProfile",
+        "platform",
+    }
+)
+_SOURCE_TEXT = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}")
+_SOURCE_REVISION = re.compile(r"(?:[0-9a-f]{40}|[0-9a-f]{64})")
+_SOURCE_SCOPE = re.compile(r"sha256:[0-9a-f]{64}")
+
+
+def _repository_source(value: object, repository: str) -> dict[str, str] | None:
+    if not isinstance(value, dict) or set(value) != _REPOSITORY_SOURCE_KEYS:
+        return None
+    if not all(isinstance(value[key], str) for key in _REPOSITORY_SOURCE_KEYS):
+        return None
+    source = {key: str(value[key]) for key in sorted(_REPOSITORY_SOURCE_KEYS)}
+    try:
+        validate_repository_identity(source["origin"], repository)
+    except ValueError:
+        return None
+    if (
+        source["sourceKind"] != "git-checkout"
+        or source["framework"] != "spring-data-jpa"
+        or _SOURCE_REVISION.fullmatch(source["revision"]) is None
+        or _SOURCE_SCOPE.fullmatch(source["scopeDigest"]) is None
+        or _SOURCE_SCOPE.fullmatch(source["scopeDispositionDigest"]) is None
+        or source["schemaProfile"] not in {"h2", "mysql", "postgres"}
+        or source["platform"] != source["schemaProfile"]
+        or any(
+            _SOURCE_TEXT.fullmatch(source[field]) is None
+            for field in ("analyzerPack", "ruleset")
+        )
+    ):
+        return None
+    return source

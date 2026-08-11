@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://lineage.local/contracts/runtime-session-manifest/1.0.0",
+  "title": "RuntimeSessionManifest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "sessionId",
+    "repo",
+    "environment",
+    "artifactDigest",
+    "outcome",
+    "attempted",
+    "accepted",
+    "rejected",
+    "duplicates",
+    "buffered",
+    "dropped",
+    "drained",
+    "observationChecksum",
+    "closedAt"
+  ],
+  "properties": {
+    "schemaVersion": {"const": "1.0.0"},
+    "sessionId": {"type": "string", "minLength": 1},
+    "repo": {"type": "string", "minLength": 1},
+    "environment": {"type": "string", "minLength": 1},
+    "artifactDigest": {"type": "string", "minLength": 1},
+    "outcome": {"enum": ["COMPLETE", "INCOMPLETE", "EXPIRED", "REVOKED"]},
+    "attempted": {"type": "integer", "minimum": 0},
+    "accepted": {"type": "integer", "minimum": 0},
+    "rejected": {"type": "integer", "minimum": 0},
+    "duplicates": {"type": "integer", "minimum": 0},
+    "buffered": {"type": "integer", "minimum": 0},
+    "dropped": {"type": "integer", "minimum": 0},
+    "drained": {"type": "integer", "minimum": 0},
+    "observationChecksum": {"type": "string", "minLength": 1},
+    "closedAt": {"type": "string", "format": "date-time"}
+  }
+}

@@ -56,7 +56,15 @@ export interface Proposal {
   system: string;
   state: string;
   expectedBaseVersion: string;
-  diff: { added: LineageEdge[]; removed: LineageEdge[]; bandChanged: LineageEdge[] };
+  diff: {
+    added: LineageEdge[];
+    removed: LineageEdge[];
+    bandChanged: LineageEdge[];
+    addedEdgeIds: string[];
+    removedEdgeIds: string[];
+    bandChangedEdgeIds: string[];
+    edgeSetRef?: Record<string, unknown>;
+  };
   correlationId: string;
   createdAt: string;
   updatedAt: string;
@@ -97,10 +105,94 @@ export interface Run {
 }
 
 export interface Overview {
-  activeVersion: string;
+  environment: string;
+  activeVersion: string | null;
   fencingToken: number;
   counts: { runs: number; inReview: number; quarantined: number };
+  countsAreComplete: boolean;
   recentRuns: Run[];
+  inReviewSample: Proposal[];
+  resilience?: ResilienceSnapshot;
+}
+
+export interface Page<T> {
+  items: T[];
+  nextCursor: string | null;
+}
+
+export type OperationalStatus =
+  | "HEALTHY"
+  | "DEGRADED"
+  | "OUT_OF_SYNC"
+  | "COMPLETE"
+  | "INCOMPLETE"
+  | "CURRENT"
+  | "STALE"
+  | "IN_SYNC"
+  | "NOT_AVAILABLE"
+  | "NOT_CONFIGURED";
+
+export interface ResilienceSnapshot {
+  schemaVersion: string;
+  capturedAt: string | null;
+  status: OperationalStatus;
+  correlation: {
+    status: OperationalStatus;
+    trackedCount: number;
+    missingCount: number;
+  };
+  queue: {
+    status: OperationalStatus;
+    depth: number;
+    oldestAgeSeconds: number | null;
+    saturation: {
+      status: OperationalStatus;
+      observedDepth: number;
+      capacity: number | null;
+    };
+    retryCount: number;
+    deadLetterCount: number;
+    leaseStealCount: number;
+  };
+  coverage: {
+    status: OperationalStatus;
+    incompleteCount: number;
+    runtimeJoin: {
+      status: OperationalStatus;
+      joined: number;
+      eligible: number;
+      rate: number | null;
+    };
+    baseline: {
+      status: OperationalStatus;
+      ageSeconds: number | null;
+      maxAgeSeconds: number;
+    };
+  };
+  review: {
+    status: OperationalStatus;
+    oldestApprovalAgeSeconds: number | null;
+  };
+  publication: {
+    status: OperationalStatus;
+    publishLagSeconds: number | null;
+    pointerPackage: {
+      status: OperationalStatus;
+      activeVersion: string | null;
+      packageVersion: string | null;
+    };
+    watermark: {
+      status: OperationalStatus;
+      version: string | null;
+      updatedAt: string | null;
+      ageSeconds: number | null;
+    };
+  };
+  productionSignals: {
+    replication: { status: OperationalStatus; value: number | null };
+    errorBudgetBurn: { status: OperationalStatus; value: number | null };
+    unitCost: { status: OperationalStatus; value: number | null };
+  };
 }
 
 export interface DemoReset {

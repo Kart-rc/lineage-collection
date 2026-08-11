@@ -1,0 +1,444 @@
+{
+  "Comment": "Generated NIGHTLY 1.0.0; large payloads remain versioned S3 references",
+  "StartAt": "N1",
+  "States": {
+    "FAILED_REDRIVABLE": {
+      "Error": "FAILED_REDRIVABLE",
+      "Type": "Fail"
+    },
+    "FAILED_TERMINAL": {
+      "Error": "FAILED_TERMINAL",
+      "Type": "Fail"
+    },
+    "N1": {
+      "Catch": [
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "Next": "FAILED_REDRIVABLE",
+          "ResultPath": "$.workflowError"
+        }
+      ],
+      "Next": "N1Outcome",
+      "Parameters": {
+        "FunctionName": "${ControlAliasArn}",
+        "Payload": {
+          "causationId.$": "$.causationId",
+          "commandId.$": "$.commandId",
+          "correlationId.$": "$.correlationId",
+          "determinantDigest.$": "$.determinantDigest",
+          "idempotencyKey.$": "States.Format('{}:N1', $.idempotencyKey)",
+          "input.$": "$.input",
+          "schemaVersion.$": "$.schemaVersion",
+          "stageId": "N1",
+          "stageName": "RECONCILE_EVENTS_RECEIPTS_AND_ARCHIVES",
+          "workflowKind": "NIGHTLY",
+          "workflowVersion": "1.0.0"
+        }
+      },
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "ResultPath": "$._N1",
+      "Retry": [
+        {
+          "BackoffRate": 2,
+          "ErrorEquals": [
+            "Lambda.ServiceException",
+            "Lambda.SdkClientException",
+            "Lambda.TooManyRequestsException",
+            "ECS.AmazonECSException",
+            "States.Timeout"
+          ],
+          "IntervalSeconds": 2,
+          "MaxAttempts": 3
+        }
+      ],
+      "TimeoutSeconds": 1800,
+      "Type": "Task"
+    },
+    "N1Outcome": {
+      "Choices": [
+        {
+          "Next": "FAILED_REDRIVABLE",
+          "StringEquals": "REDRIVE_REQUIRED",
+          "Variable": "$._N1.Payload.outcome"
+        }
+      ],
+      "Default": "N2",
+      "Type": "Choice"
+    },
+    "N2": {
+      "Catch": [
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "Next": "FAILED_REDRIVABLE",
+          "ResultPath": "$.workflowError"
+        }
+      ],
+      "HeartbeatSeconds": 300,
+      "Next": "N2Outcome",
+      "Parameters": {
+        "Cluster": "${ScaClusterArn}",
+        "LaunchType": "FARGATE",
+        "NetworkConfiguration": {
+          "AwsvpcConfiguration": {
+            "AssignPublicIp": "DISABLED",
+            "SecurityGroups": [
+              "${RuntimeSecurityGroupId}"
+            ],
+            "Subnets": [
+              "${Subnet0}",
+              "${Subnet1}",
+              "${Subnet2}"
+            ]
+          }
+        },
+        "Overrides": {
+          "ContainerOverrides": [
+            {
+              "Environment": [
+                {
+                  "Name": "LINEAGE_TASK_TOKEN",
+                  "Value.$": "$$.Task.Token"
+                },
+                {
+                  "Name": "LINEAGE_STAGE_SCHEMA_VERSION",
+                  "Value.$": "$.schemaVersion"
+                },
+                {
+                  "Name": "LINEAGE_STAGE_COMMAND_ID",
+                  "Value.$": "$.commandId"
+                },
+                {
+                  "Name": "LINEAGE_STAGE_CORRELATION_ID",
+                  "Value.$": "$.correlationId"
+                },
+                {
+                  "Name": "LINEAGE_STAGE_CAUSATION_ID",
+                  "Value.$": "$.causationId"
+                },
+                {
+                  "Name": "LINEAGE_STAGE_DETERMINANT_DIGEST",
+                  "Value.$": "$.determinantDigest"
+                },
+                {
+                  "Name": "LINEAGE_STAGE_INPUT",
+                  "Value.$": "States.JsonToString($._N1.Payload.output)"
+                },
+                {
+                  "Name": "LINEAGE_STAGE_IDEMPOTENCY_KEY",
+                  "Value.$": "States.Format('{}:N2', $.idempotencyKey)"
+                },
+                {
+                  "Name": "LINEAGE_STAGE_ID",
+                  "Value": "N2"
+                },
+                {
+                  "Name": "LINEAGE_STAGE_NAME",
+                  "Value": "SAMPLE_PUBLISHED_LINEAGE_AGAINST_CLEAN_ANALYSIS"
+                },
+                {
+                  "Name": "LINEAGE_WORKFLOW_KIND",
+                  "Value": "NIGHTLY"
+                },
+                {
+                  "Name": "LINEAGE_WORKFLOW_VERSION",
+                  "Value": "1.0.0"
+                }
+              ],
+              "Name": "lineage-sca"
+            }
+          ]
+        },
+        "TaskDefinition": "${ScaTaskDefinitionArn}"
+      },
+      "Resource": "arn:aws:states:::ecs:runTask.waitForTaskToken",
+      "ResultPath": "$._N2",
+      "Retry": [
+        {
+          "BackoffRate": 2,
+          "ErrorEquals": [
+            "Lambda.ServiceException",
+            "Lambda.SdkClientException",
+            "Lambda.TooManyRequestsException",
+            "ECS.AmazonECSException",
+            "States.Timeout"
+          ],
+          "IntervalSeconds": 2,
+          "MaxAttempts": 3
+        }
+      ],
+      "TimeoutSeconds": 7200,
+      "Type": "Task"
+    },
+    "N2Outcome": {
+      "Choices": [
+        {
+          "Next": "FAILED_REDRIVABLE",
+          "StringEquals": "REDRIVE_REQUIRED",
+          "Variable": "$._N2.outcome"
+        }
+      ],
+      "Default": "N3",
+      "Type": "Choice"
+    },
+    "N3": {
+      "Catch": [
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "Next": "FAILED_REDRIVABLE",
+          "ResultPath": "$.workflowError"
+        }
+      ],
+      "Next": "N3Outcome",
+      "Parameters": {
+        "FunctionName": "${PublicationAliasArn}",
+        "Payload": {
+          "causationId.$": "$.causationId",
+          "commandId.$": "$.commandId",
+          "correlationId.$": "$.correlationId",
+          "determinantDigest.$": "$.determinantDigest",
+          "idempotencyKey.$": "States.Format('{}:N3', $.idempotencyKey)",
+          "input.$": "$._N2.output",
+          "schemaVersion.$": "$.schemaVersion",
+          "stageId": "N3",
+          "stageName": "VERIFY_PROJECTION_CHECKSUMS",
+          "workflowKind": "NIGHTLY",
+          "workflowVersion": "1.0.0"
+        }
+      },
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "ResultPath": "$._N3",
+      "Retry": [
+        {
+          "BackoffRate": 2,
+          "ErrorEquals": [
+            "Lambda.ServiceException",
+            "Lambda.SdkClientException",
+            "Lambda.TooManyRequestsException",
+            "ECS.AmazonECSException",
+            "States.Timeout"
+          ],
+          "IntervalSeconds": 2,
+          "MaxAttempts": 3
+        }
+      ],
+      "TimeoutSeconds": 1800,
+      "Type": "Task"
+    },
+    "N3Outcome": {
+      "Choices": [
+        {
+          "Next": "FAILED_REDRIVABLE",
+          "StringEquals": "REDRIVE_REQUIRED",
+          "Variable": "$._N3.Payload.outcome"
+        }
+      ],
+      "Default": "N4",
+      "Type": "Choice"
+    },
+    "N4": {
+      "Catch": [
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "Next": "FAILED_REDRIVABLE",
+          "ResultPath": "$.workflowError"
+        }
+      ],
+      "Next": "N4Outcome",
+      "Parameters": {
+        "FunctionName": "${ControlAliasArn}",
+        "Payload": {
+          "causationId.$": "$.causationId",
+          "commandId.$": "$.commandId",
+          "correlationId.$": "$.correlationId",
+          "determinantDigest.$": "$.determinantDigest",
+          "idempotencyKey.$": "States.Format('{}:N4', $.idempotencyKey)",
+          "input.$": "$._N3.Payload.output",
+          "schemaVersion.$": "$.schemaVersion",
+          "stageId": "N4",
+          "stageName": "DRAIN_BOUNDED_STALE_LLM_CACHE",
+          "workflowKind": "NIGHTLY",
+          "workflowVersion": "1.0.0"
+        }
+      },
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "ResultPath": "$._N4",
+      "Retry": [
+        {
+          "BackoffRate": 2,
+          "ErrorEquals": [
+            "Lambda.ServiceException",
+            "Lambda.SdkClientException",
+            "Lambda.TooManyRequestsException",
+            "ECS.AmazonECSException",
+            "States.Timeout"
+          ],
+          "IntervalSeconds": 2,
+          "MaxAttempts": 3
+        }
+      ],
+      "TimeoutSeconds": 1800,
+      "Type": "Task"
+    },
+    "N4Outcome": {
+      "Choices": [
+        {
+          "Next": "FAILED_REDRIVABLE",
+          "StringEquals": "REDRIVE_REQUIRED",
+          "Variable": "$._N4.Payload.outcome"
+        }
+      ],
+      "Default": "N5",
+      "Type": "Choice"
+    },
+    "N5": {
+      "Catch": [
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "Next": "FAILED_REDRIVABLE",
+          "ResultPath": "$.workflowError"
+        }
+      ],
+      "Next": "N5Outcome",
+      "Parameters": {
+        "FunctionName": "${ControlAliasArn}",
+        "Payload": {
+          "causationId.$": "$.causationId",
+          "commandId.$": "$.commandId",
+          "correlationId.$": "$.correlationId",
+          "determinantDigest.$": "$.determinantDigest",
+          "idempotencyKey.$": "States.Format('{}:N5', $.idempotencyKey)",
+          "input.$": "$._N4.Payload.output",
+          "schemaVersion.$": "$.schemaVersion",
+          "stageId": "N5",
+          "stageName": "EVALUATE_AUTOPUBLISH_AUDIT_SAMPLE",
+          "workflowKind": "NIGHTLY",
+          "workflowVersion": "1.0.0"
+        }
+      },
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "ResultPath": "$._N5",
+      "Retry": [
+        {
+          "BackoffRate": 2,
+          "ErrorEquals": [
+            "Lambda.ServiceException",
+            "Lambda.SdkClientException",
+            "Lambda.TooManyRequestsException",
+            "ECS.AmazonECSException",
+            "States.Timeout"
+          ],
+          "IntervalSeconds": 2,
+          "MaxAttempts": 3
+        }
+      ],
+      "TimeoutSeconds": 900,
+      "Type": "Task"
+    },
+    "N5Outcome": {
+      "Choices": [
+        {
+          "Next": "FAILED_REDRIVABLE",
+          "StringEquals": "REDRIVE_REQUIRED",
+          "Variable": "$._N5.Payload.outcome"
+        }
+      ],
+      "Default": "N6",
+      "Type": "Choice"
+    },
+    "N6": {
+      "Catch": [
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "Next": "FAILED_REDRIVABLE",
+          "ResultPath": "$.workflowError"
+        }
+      ],
+      "Next": "N6Outcome",
+      "Parameters": {
+        "FunctionName": "${ProposalAliasArn}",
+        "Payload": {
+          "causationId.$": "$.causationId",
+          "commandId.$": "$.commandId",
+          "correlationId.$": "$.correlationId",
+          "determinantDigest.$": "$.determinantDigest",
+          "idempotencyKey.$": "States.Format('{}:N6', $.idempotencyKey)",
+          "input.$": "$._N5.Payload.output",
+          "schemaVersion.$": "$.schemaVersion",
+          "stageId": "N6",
+          "stageName": "EMIT_PROPOSALS_ALERTS_AND_EVIDENCE",
+          "workflowKind": "NIGHTLY",
+          "workflowVersion": "1.0.0"
+        }
+      },
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "ResultPath": "$._N6",
+      "Retry": [
+        {
+          "BackoffRate": 2,
+          "ErrorEquals": [
+            "Lambda.ServiceException",
+            "Lambda.SdkClientException",
+            "Lambda.TooManyRequestsException",
+            "ECS.AmazonECSException",
+            "States.Timeout"
+          ],
+          "IntervalSeconds": 2,
+          "MaxAttempts": 3
+        }
+      ],
+      "TimeoutSeconds": 300,
+      "Type": "Task"
+    },
+    "N6Outcome": {
+      "Choices": [
+        {
+          "Next": "FAILED_REDRIVABLE",
+          "StringEquals": "REDRIVE_REQUIRED",
+          "Variable": "$._N6.Payload.outcome"
+        }
+      ],
+      "Default": "TerminalRoute",
+      "Type": "Choice"
+    },
+    "PROPOSALS_RAISED": {
+      "Type": "Succeed"
+    },
+    "RECONCILED": {
+      "Type": "Succeed"
+    },
+    "TerminalRoute": {
+      "Choices": [
+        {
+          "Next": "PROPOSALS_RAISED",
+          "StringEquals": "PROPOSALS_RAISED",
+          "Variable": "$._N6.Payload.terminalOutcome"
+        },
+        {
+          "Next": "FAILED_REDRIVABLE",
+          "StringEquals": "FAILED_REDRIVABLE",
+          "Variable": "$._N6.Payload.terminalOutcome"
+        },
+        {
+          "Next": "FAILED_TERMINAL",
+          "StringEquals": "FAILED_TERMINAL",
+          "Variable": "$._N6.Payload.terminalOutcome"
+        }
+      ],
+      "Default": "RECONCILED",
+      "Type": "Choice"
+    }
+  },
+  "TimeoutSeconds": 14400
+}

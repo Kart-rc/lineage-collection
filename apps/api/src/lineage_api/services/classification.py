@@ -1,43 +1,20 @@
 from __future__ import annotations
 
-import hashlib
 import json
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Callable
 
 from lineage_api.db import Database
-
-
-TREATMENTS = {
-    "APPLICATION_RUNTIME": ("INCLUDE", "INCREMENTAL_LINEAGE"),
-    "DATA_PIPELINE": ("INCLUDE", "INCREMENTAL_AND_NATIVE"),
-    "CONTRACT_SCHEMA_SOURCE": ("METADATA_ONLY", "REEVALUATE_DEPENDENTS"),
-    "SHARED_LIBRARY": ("EXCLUDE", "REANALYZE_CONSUMERS"),
-    "INFRASTRUCTURE": ("EXCLUDE", "EVALUATE_BINDINGS"),
-    "DOCUMENTATION": ("EXCLUDE", "NO_LINEAGE_IMPACT"),
-    "TEST_AUTOMATION": ("EXCLUDE", "UPDATE_COVERAGE"),
-    "MIXED_MONOREPO": ("PATH_LEVEL", "ROUTE_CHANGED_PATHS"),
-    "UNKNOWN": ("BLOCK", "REVIEW"),
-}
+from lineage_api.application.classification import (
+    ClassificationEvidence,
+    TREATMENTS,
+    evaluate_classification,
+)
 
 
 def _utc_now() -> str:
     return datetime.now(UTC).isoformat().replace("+00:00", "Z")
-
-
-@dataclass(frozen=True, slots=True)
-class ClassificationEvidence:
-    level: int
-    source: str
-    repository_class: str
-    ref: str
-
-    def __post_init__(self) -> None:
-        if self.level not in range(1, 8):
-            raise ValueError("Classification evidence level must be between 1 and 7")
-        if self.repository_class not in TREATMENTS:
-            raise ValueError(f"Unknown repository class: {self.repository_class}")
 
 
 @dataclass(frozen=True, slots=True)
@@ -73,44 +50,17 @@ class ClassificationService:
         evidence: list[ClassificationEvidence],
         correlation_id: str,
     ) -> ClassificationDecision:
-        if not evidence:
-            selected_level = 7
-            selected = []
-            repository_class = "UNKNOWN"
-            reason = "NO_DECISIVE_EVIDENCE"
-        else:
-            selected_level = min(item.level for item in evidence)
-            selected = sorted(
-                (item for item in evidence if item.level == selected_level),
-                key=lambda item: (item.repository_class, item.source, item.ref),
-            )
-            classes = {item.repository_class for item in selected}
-            if len(classes) > 1:
-                repository_class = "UNKNOWN"
-                reason = "EVIDENCE_CONFLICT"
-            else:
-                repository_class = next(iter(classes))
-                reason = None
-                if selected_level == 7 and TREATMENTS[repository_class][0] in {
-                    "EXCLUDE",
-                    "METADATA_ONLY",
-                }:
-                    repository_class = "UNKNOWN"
-                    reason = "HEURISTIC_EXCLUSION_FORBIDDEN"
-
-        baseline_treatment, on_change_treatment = TREATMENTS[repository_class]
-        status = "REVIEW_REQUIRED" if repository_class == "UNKNOWN" else "EVALUATED"
-        evidence_refs = tuple(item.ref for item in selected)
-        decision_identity = {
-            "repoOrPath": repo_or_path,
-            "evidence": [asdict(item) for item in selected],
-            "policyVersion": self._policy_version,
-            "correlationId": correlation_id,
-        }
-        digest = hashlib.sha256(
-            json.dumps(decision_identity, sort_keys=True, separators=(",", ":")).encode()
-        ).hexdigest()
-        decision_id = f"class-{digest[:20]}"
+        evaluation = evaluate_classification(
+            repo_or_path, evidence, self._policy_version, correlation_id
+        )
+        repository_class = evaluation.repository_class
+        baseline_treatment = evaluation.baseline_treatment
+        on_change_treatment = evaluation.on_change_treatment
+        selected_level = evaluation.evidence_level_used
+        evidence_refs = evaluation.evidence_refs
+        status = evaluation.status
+        reason = evaluation.reason
+        decision_id = evaluation.decision_id
 
         with self._database.transaction() as connection:
             existing = connection.execute(

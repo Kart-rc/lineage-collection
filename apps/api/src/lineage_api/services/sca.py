@@ -5,6 +5,7 @@ import hashlib
 import re
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Callable
 
 from lineage_api.domain.evidence import ResidueEntry, ScaEdgeEvidence, ScaEvidenceFile
 from lineage_api.services.resolver import (
@@ -40,15 +41,28 @@ class ScaAnalyzer:
         self._resolver = resolver
         self._ruleset_version = ruleset_version
 
+    @property
+    def ruleset_version(self) -> str:
+        return self._ruleset_version
+
+    @property
+    def resolver_version(self) -> str:
+        return self._resolver.resolver_version
+
+    @property
+    def snapshot_id(self) -> str:
+        return self._resolver.snapshot_id
+
     def analyze(
         self,
-        repository_root: Path,
+        repository_root: Path | None,
         repo: str,
         digest: str,
         scope_paths: tuple[str, ...],
         resolver_context: ResolveContext,
         run_id: str,
         correlation_id: str,
+        source_reader: Callable[[str], bytes] | None = None,
     ) -> ScaEvidenceFile:
         edges: list[ScaEdgeEvidence] = []
         pending_residue: list[_PendingResidue] = []
@@ -58,7 +72,13 @@ class ScaAnalyzer:
         for relative_path in sorted(scope_paths):
             if Path(relative_path).suffix != ".py":
                 continue
-            source = (repository_root / relative_path).read_text(encoding="utf-8")
+            if source_reader is None:
+                if repository_root is None:
+                    raise ValueError("repository root or source reader is required")
+                source_bytes = (repository_root / relative_path).read_bytes()
+            else:
+                source_bytes = source_reader(relative_path)
+            source = source_bytes.decode("utf-8", errors="strict")
             module = ast.parse(source, filename=relative_path)
             for function_index, node in enumerate(module.body):
                 if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
