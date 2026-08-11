@@ -174,7 +174,7 @@ class LocalGitRepositorySource:
     def __init__(self, limits: RepositorySourceLimits) -> None:
         _require_supported_posix_platform()
         self._limits = limits
-        self._git_executable = _trusted_system_git()
+        self._git_executable = trusted_system_git()
         self._runner = _BoundedProcessRunner()
 
     def snapshot(self, descriptor: RepositoryCheckoutDescriptor) -> RepositorySnapshot:
@@ -461,14 +461,14 @@ class LocalGitRepositorySource:
         _revalidate_executable(self._git_executable)
         return self._runner.run(
             [str(self._git_executable.path), *_GIT_OPTIONS, "-C", str(root), *arguments],
-            env=_git_environment(),
+            env=git_environment(),
             stdout_limit=stdout_limit,
             stderr_limit=_MAX_GIT_STDERR_BYTES,
             timeout_seconds=_GIT_TIMEOUT_SECONDS,
         ).stdout
 
 
-def _git_environment() -> dict[str, str]:
+def git_environment() -> dict[str, str]:
     return {
         "GIT_ATTR_NOSYSTEM": "1",
         "GIT_CONFIG_GLOBAL": os.devnull,
@@ -499,7 +499,7 @@ def _require_supported_posix_platform() -> None:
         )
 
 
-def _trusted_system_git() -> _ExecutableIdentity:
+def trusted_system_git() -> _ExecutableIdentity:
     executable = shutil.which("git", path=os.defpath)
     if executable is None:
         raise RuntimeError("trusted administrator-owned Git executable was not found")
@@ -669,3 +669,8 @@ def _validate_regular_file(
     finally:
         for descriptor in reversed(descriptors):
             os.close(descriptor)
+
+
+# Backwards-compatible private aliases retained for existing call sites and tests.
+_git_environment = git_environment
+_trusted_system_git = trusted_system_git
