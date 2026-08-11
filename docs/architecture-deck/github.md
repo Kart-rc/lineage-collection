@@ -43,6 +43,21 @@ source, and keep the tests green.
 `Delivery Roadmap.dc.html` keeps its figures unchanged: it is a forward-looking plan whose claims are
 already framed as dated gates.
 
+### `presentation/` — PowerPoint exports
+
+| File | Slides | State |
+|---|---|---|
+| `Lineage_Collection_Architecture_Diagram-4.pptx` | 4 | New-team onboarding agenda, pod split and clarity contract. Forward-looking, like the roadmap deck. |
+| `Lineage_Collection_Architecture_Diagram-5.pptx` | 2 | AWS deployment architecture + process flow. **Exported before the 2026-08-11 corrections.** |
+
+**`-5.pptx` is stale and contradicts the corrected decks.** Its text still contains Bedrock (x2),
+Data Firehose (x2), OpenSearch, and CloudTrail with no `PLANNED` marker, plus "zero loss" and
+"RPO 15 min" stated as achieved, and it carries no `AWS_REQUIRED` banner. Re-export it from the
+corrected `Lineage Architecture Diagram.dc.html` before using it with any audience.
+
+The assertions in `tests/test_documentation.py` cover `*.dc.html` only - they cannot see inside a
+`.pptx`, so nothing automatically catches this drift.
+
 ### Not yet reflected in these decks
 
 - **Repository acquisition and source policy** (G2, `75538d5`) — the SCA pipeline still starts at
