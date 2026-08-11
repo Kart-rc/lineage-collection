@@ -115,6 +115,7 @@ These rows are the minimum spine. Build PRDs may add rows but may not weaken the
 | B10-AC-001 | Duplicate and permuted assertions converge to one edge version with the exact band/conflict/corroboration result | Property report |
 | B11-AC-001 | Concurrent review has one winner; correction creates immutable successors; audit sample/narrowing is reproducible | Lifecycle report |
 | B12-AC-001 | A stale publisher can never activate; crash redrive yields exactly one active verified namespace; rebuild divergence is zero | Property/fault report |
+| B13-AC-002 | The exact pinned Petclinic revision submitted through `POST /api/collections` reaches a terminal `IN_REVIEW` run and proposal with the 15/10/5 oracle, the complete 131-path disposition, `NOT_PROVIDED` runtime status, and a duplicate submission that leaves the database and evidence digests byte-identical | Collection product-flow report |
 | B13-AC-001 | PRGate rechecks head/environment, writes no lineage state, and produces explicit `WARN` by 120 seconds when incomplete/degraded | E2E fault report |
 | B14-AC-001 | UI exposes stale/incomplete/out-of-sync states accessibly and renders only server-authoritative transitions | UI accessibility report |
 | B15-AC-001 | Every alarm has a tested runbook; each degradation row produces its promised visible state without corrupting truth | Operations drill report |
