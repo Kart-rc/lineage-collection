@@ -67,6 +67,18 @@ The most recent retained real-repository evidence checksum is
 
 ## 4. Remaining goals
 
+Every remaining item below is blocked on an owner decision or a human step. Nothing further can be
+implemented autonomously. In the order that unblocks the most:
+
+| # | Needed from the owner | Unblocks |
+|---|---|---|
+| 1 | Approve one outbound fetch of the pinned public Petclinic commit (`LINEAGE_REAL_REMOTE_ACQUISITION=1`, `tests/integration/test_remote_repository_acquisition.py`) | G2 → `COMPLETE` |
+| 2 | Visually inspect `docs/architecture/lineage-platform-target.html` and render its Mermaid block | G1 → `COMPLETE` |
+| 3 | Run the app and browser-smoke the collection form, progress, counts, run timeline and proposal links | G4, G5 → `COMPLETE` |
+| 4 | Approve an AWS account, profile, region, context values, and opt in to billable/externally visible traffic | G6, and the deferred AWS `submit_collection` in G3 |
+| 5 | Decide the branch and pull request: work sits on `feat/remaining-goals`, nothing is pushed, and PR #2 named above is already merged | G7 |
+
+
 ### G1 — Publish the canonical target AWS architecture
 
 **Status:** `IN_PROGRESS` — artifacts and assertions complete; two verification steps remain
