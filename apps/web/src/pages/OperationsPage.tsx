@@ -1,10 +1,17 @@
+import { useCallback, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "../routing";
 
 import { ApiError, api } from "../api/client";
+import { CollectionStatus } from "../components/operations/CollectionStatus";
 import { FlowRail } from "../components/operations/FlowRail";
 import { GateCard } from "../components/operations/GateCard";
-import type { OperationalStatus } from "../api/types";
+import { RepositoryCollectionForm } from "../components/operations/RepositoryCollectionForm";
+import type {
+  OperationalStatus,
+  RepositoryCollection,
+  RepositoryCollectionRequest,
+} from "../api/types";
 import { readRuntimeConfig } from "../config/runtime";
 
 
@@ -50,6 +57,29 @@ export function OperationsPage() {
       ]);
     },
   });
+  const [submitted, setSubmitted] = useState<RepositoryCollection | null>(null);
+  const [settled, setSettled] = useState<string | null>(null);
+  const repositoryCollection = useMutation({
+    mutationFn: (body: RepositoryCollectionRequest) => api.submitCollection(body),
+    onSuccess: (result) => {
+      setSubmitted(result);
+      setSettled(null);
+      queryClient.setQueryData(["collection", result.commandId], result);
+    },
+  });
+  const onTerminal = useCallback(
+    (finished: RepositoryCollection) => {
+      // Invalidate once per finished collection, not on every poll.
+      if (settled === finished.commandId) return;
+      setSettled(finished.commandId);
+      void Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["overview"] }),
+        queryClient.invalidateQueries({ queryKey: ["runs"] }),
+        queryClient.invalidateQueries({ queryKey: ["proposals"] }),
+      ]);
+    },
+    [queryClient, settled],
+  );
 
   const data = overview.data;
   const resilience = data?.resilience ?? resilienceQuery.data;
@@ -82,45 +112,60 @@ export function OperationsPage() {
             versioned lineage projection.
           </p>
         </div>
-        {runtime.demoActions ? (
-          <aside className="launch-card">
-            <span className="launch-card__label">Local verification</span>
-            <h2>Collect the payments pipeline</h2>
-            <p>Reset local state, verify a signed push, and stop at the human review gate.</p>
-            <button
-              className="button button--primary"
-              type="button"
-              onClick={() => collection.mutate()}
-              disabled={collection.isPending}
-            >
-              {collection.isPending ? "Collecting evidence…" : "Run seeded collection"}
-            </button>
-            {collection.data?.run && (
-              <div className="action-result" role="status">
-                <strong>Delivery accepted into review</strong>
-                <Link to={`/runs/${collection.data.run.runId}`}>Open run timeline</Link>
-              </div>
-            )}
-            {collection.error && (
-              <p className="inline-error" role="alert">
-                {collection.error instanceof ApiError
-                  ? collection.error.message
-                  : "Collection could not be completed."}
-              </p>
-            )}
-          </aside>
-        ) : (
-          <aside className="launch-card">
-            <span className="launch-card__label">{runtime.environment} environment</span>
-            <h2>Provider-driven collection</h2>
-            <p>
-              Production collection starts from authenticated repository, deployment,
-              scheduled baseline, or runtime events. Seed and reset controls are disabled.
-            </p>
-            <Link className="button button--primary" to="/runs">Inspect durable runs</Link>
-          </aside>
-        )}
+        <aside className="launch-card">
+          <span className="launch-card__label">Repository collection</span>
+          <RepositoryCollectionForm
+            onSubmit={(body) => repositoryCollection.mutate(body)}
+            pending={repositoryCollection.isPending}
+            error={repositoryCollection.error}
+            allowLocalCheckout={runtime.demoActions}
+          />
+        </aside>
       </section>
+
+      {submitted && (
+        <CollectionStatus
+          commandId={submitted.commandId}
+          initial={submitted}
+          onTerminal={onTerminal}
+        />
+      )}
+
+      {runtime.demoActions && (
+        <section className="demo-section" aria-labelledby="demo-heading">
+          <div className="section-heading">
+            <div>
+              <p className="eyebrow">Local development only</p>
+              <h2 id="demo-heading">Seeded demonstration</h2>
+            </div>
+          </div>
+          <p>
+            Secondary action. Resets local state and replays the seeded payments-pipeline
+            delivery — it does not collect a real repository.
+          </p>
+          <button
+            className="button"
+            type="button"
+            onClick={() => collection.mutate()}
+            disabled={collection.isPending}
+          >
+            {collection.isPending ? "Collecting evidence…" : "Run seeded collection"}
+          </button>
+          {collection.data?.run && (
+            <div className="action-result" role="status">
+              <strong>Delivery accepted into review</strong>
+              <Link to={`/runs/${collection.data.run.runId}`}>Open run timeline</Link>
+            </div>
+          )}
+          {collection.error && (
+            <p className="inline-error" role="alert">
+              {collection.error instanceof ApiError
+                ? collection.error.message
+                : "Collection could not be completed."}
+            </p>
+          )}
+        </section>
+      )}
 
       <FlowRail snapshot={resilience} />
 

@@ -166,3 +166,81 @@ test("demo endpoints remain unreachable when deployed configuration disables the
   await expect(api.reset()).rejects.toThrow(/local development/);
   expect(fetcher).not.toHaveBeenCalled();
 });
+
+
+test("serializes a git collection submission and normalizes the response", async () => {
+  const fetcher = vi.fn().mockResolvedValue({
+    ok: true,
+    json: async () => ({
+      commandId: "cmd-9",
+      statusUrl: "/api/collections/cmd-9",
+      sourceType: "GIT",
+      origin: "https://github.com/acme/demo",
+      repository: "demo",
+      revision: "b".repeat(40),
+      commandStatus: "SUCCEEDED",
+      terminal: true,
+      outcome: "ACCEPTED",
+      runId: "run-9",
+      proposalId: "prop-9",
+      stages: ["QUEUED", "IN_REVIEW", 42],
+      statusReasons: ["residue-bounded", 7],
+      counts: { edges: 15, reads: 10, writes: 5, residue: 0, unresolved: "nope" },
+      coverageManifest: {
+        manifestId: "manifest-9",
+        state: "COMPLETE",
+        counts: { expected: 131, completed: 33, skipped: 98, unsupported: 0, failed: 0 },
+      },
+      correlationId: "corr-9",
+    }),
+  });
+  vi.stubGlobal("fetch", fetcher);
+
+  const collection = await api.submitCollection({
+    sourceType: "GIT",
+    origin: "https://github.com/acme/demo",
+    repository: "demo",
+    revision: "b".repeat(40),
+    environment: "staging",
+    platform: "postgres",
+    system: "payments",
+    analyzerPack: "java-spring-data-jpa-v1",
+    ruleset: "spring-data-rules-v1",
+    schemaProfile: "postgres",
+  });
+
+  const [path, init] = fetcher.mock.calls[0];
+  expect(String(path)).toBe("/api/collections");
+  expect(init.method).toBe("POST");
+  expect(JSON.parse(init.body)).not.toHaveProperty("checkoutPath");
+  expect(collection.commandId).toBe("cmd-9");
+  expect(collection.terminal).toBe(true);
+  // Non-string and non-numeric members are dropped rather than rendered.
+  expect(collection.stages).toEqual(["QUEUED", "IN_REVIEW"]);
+  expect(collection.statusReasons).toEqual(["residue-bounded"]);
+  expect(collection.counts).toEqual({
+    edges: 15,
+    reads: 10,
+    writes: 5,
+    residue: 0,
+    unresolved: 0,
+  });
+  expect(collection.coverage?.counts.expected).toBe(131);
+  expect(collection.runtimeStatus).toBe("NOT_PROVIDED");
+});
+
+
+test("reads a collection status resource by durable command id", async () => {
+  const fetcher = vi.fn().mockResolvedValue({
+    ok: true,
+    json: async () => ({ commandId: "cmd-10", terminal: false, commandStatus: "QUEUED" }),
+  });
+  vi.stubGlobal("fetch", fetcher);
+
+  const collection = await api.collection("cmd 10");
+
+  expect(String(fetcher.mock.calls[0][0])).toBe("/api/collections/cmd%2010");
+  expect(collection.terminal).toBe(false);
+  expect(collection.coverage).toBeNull();
+  expect(collection.statusUrl).toBe("/api/collections/cmd-10");
+});

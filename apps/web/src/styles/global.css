@@ -1587,3 +1587,119 @@ h1 {
     transition-duration: 0.01ms !important;
   }
 }
+
+/* Repository collection — primary Operations workflow */
+.collection-form {
+  display: grid;
+  gap: 0.65rem;
+}
+
+.collection-form h2 {
+  margin: 0;
+}
+
+.collection-form__lede {
+  margin: 0;
+  font-size: 0.85rem;
+  opacity: 0.8;
+}
+
+.collection-form .form-field {
+  display: grid;
+  gap: 0.25rem;
+  margin: 0;
+  border: 0;
+  padding: 0;
+}
+
+.collection-form label,
+.collection-form legend {
+  font-size: 0.75rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  opacity: 0.75;
+}
+
+.collection-form input,
+.collection-form select {
+  width: 100%;
+  padding: 0.45rem 0.6rem;
+  border-radius: 6px;
+  border: 1px solid var(--rule, #d5dae2);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+}
+
+.collection-form input:disabled,
+.collection-form select:disabled {
+  opacity: 0.55;
+}
+
+.collection-status {
+  display: grid;
+  gap: 0.9rem;
+  border: 1px solid var(--rule, #d5dae2);
+  border-radius: 12px;
+  padding: 1.15rem 1.25rem;
+  margin-bottom: 1.5rem;
+}
+
+.collection-status__live {
+  margin: 0;
+  font-weight: 600;
+}
+
+.collection-status__stages {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.collection-status__stages li {
+  border: 1px solid var(--rule, #d5dae2);
+  border-radius: 999px;
+  padding: 0.15rem 0.7rem;
+  font-size: 0.78rem;
+  letter-spacing: 0.04em;
+}
+
+.collection-status__counts,
+.collection-status__meta {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
+  gap: 0.6rem 1rem;
+  margin: 0;
+}
+
+.collection-status__counts dt,
+.collection-status__meta dt {
+  font-size: 0.72rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  opacity: 0.7;
+}
+
+.collection-status__counts dd,
+.collection-status__meta dd {
+  margin: 0;
+  font-size: 1.05rem;
+  font-weight: 600;
+}
+
+.collection-status__links {
+  display: flex;
+  gap: 1rem;
+  margin: 0;
+}
+
+.demo-section {
+  border: 1px dashed var(--rule, #d5dae2);
+  border-radius: 12px;
+  padding: 1rem 1.25rem;
+  margin-bottom: 1.5rem;
+  opacity: 0.9;
+}
