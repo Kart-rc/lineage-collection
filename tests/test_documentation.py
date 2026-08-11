@@ -436,3 +436,106 @@ def test_target_architecture_html_is_offline_and_matches_the_mermaid_source() ->
     assert not re.search(r"https?://", committed), "the offline rendering must not fetch resources"
     assert "<script" not in committed
     assert "AWS_REQUIRED" in committed
+
+
+ARCHITECTURE_DECK = ROOT / "docs" / "architecture-deck"
+
+# Services the decks may name only if they also carry a PLANNED marker, because they do not
+# appear anywhere in infra/lib. Kept as a literal list so a reviewer sees exactly what is claimed.
+UNBUILT_AWS_SERVICES = (
+    "Bedrock",
+    "Firehose",
+    "OpenSearch",
+    "CloudTrail",
+)
+
+
+def _deck_paths() -> list[Path]:
+    decks = sorted(ARCHITECTURE_DECK.glob("*.dc.html"))
+    assert decks, "the architecture deck is missing"
+    return decks
+
+
+def _deck_text(path: Path) -> str:
+    return path.read_text(encoding="utf-8")
+
+
+def test_architecture_deck_defers_to_the_normative_target_view() -> None:
+    for deck in _deck_paths():
+        text = _deck_text(deck)
+        assert "docs/architecture/lineage-platform-target.md" in text, (
+            f"{deck.name} does not point at the normative production AWS view"
+        )
+        assert "component PRDs (L01–L16)" in text, (
+            f"{deck.name} does not state that it presents the component PRDs"
+        )
+
+
+def test_architecture_deck_never_claims_live_aws_evidence() -> None:
+    # The roadmap is a forward-looking plan; its own strip already frames figures as targets.
+    for deck in _deck_paths():
+        text = _deck_text(deck)
+        if deck.name == "Delivery Roadmap.dc.html":
+            assert "figures are targets" in text
+            continue
+        assert "AWS_REQUIRED" in text, f"{deck.name} omits the AWS_REQUIRED evidence banner"
+
+
+def test_architecture_deck_marks_every_service_absent_from_infrastructure() -> None:
+    infrastructure = "\n".join(
+        path.read_text(encoding="utf-8") for path in sorted((ROOT / "infra" / "lib").glob("*.ts"))
+    ).lower()
+
+    for service in UNBUILT_AWS_SERVICES:
+        assert service.lower() not in infrastructure, (
+            f"{service} now exists in infra/lib; promote it out of UNBUILT_AWS_SERVICES "
+            "and update the deck status"
+        )
+
+    for deck in _deck_paths():
+        # The roadmap is a plan for work not yet done, so naming unbuilt services is correct
+        # there; its provenance strip already frames every figure as a target.
+        if deck.name == "Delivery Roadmap.dc.html":
+            continue
+        text = _deck_text(deck)
+        for service in UNBUILT_AWS_SERVICES:
+            for line in text.splitlines():
+                if service not in line:
+                    continue
+                assert "PLANNED" in line, (
+                    f"{deck.name} names {service}, which is absent from infra/lib, "
+                    "without a PLANNED marker"
+                )
+
+
+def test_architecture_deck_analyzer_packs_match_the_closed_registry() -> None:
+    registry = _read("apps/api/src/lineage_api/services/analyzer_registry.py")
+    packs = set(re.findall(r'AnalyzerDefinition\(\s*"([a-z0-9-]+-v\d+)"', registry))
+    assert packs == {"python-fixture-v1", "java-spring-data-jpa-v1"}, packs
+
+    for deck in _deck_paths():
+        text = _deck_text(deck)
+        if "Rule packs" not in text:
+            continue
+        for line in text.splitlines():
+            if "Rule packs" not in line:
+                continue
+            assert "Spring Data JPA" in line, f"{deck.name} omits the built Java/Spring pack"
+            for unsupported in ("Kotlin", "JS/TS", "Go"):
+                if unsupported in line:
+                    assert "PLANNED" in line, (
+                        f"{deck.name} claims a {unsupported} rule pack that is not registered"
+                    )
+
+
+def test_architecture_deck_renders_without_any_network_access() -> None:
+    for deck in _deck_paths():
+        text = _deck_text(deck)
+        assert not re.search(r"https?://", text), (
+            f"{deck.name} fetches an external resource and will not render offline"
+        )
+    fonts = ARCHITECTURE_DECK / "fonts.css"
+    assert fonts.exists(), "the vendored font stylesheet is missing"
+    stylesheet = fonts.read_text(encoding="utf-8")
+    assert stylesheet.count("@font-face") == 7
+    assert not re.search(r"src:\s*url\(https?://", stylesheet)

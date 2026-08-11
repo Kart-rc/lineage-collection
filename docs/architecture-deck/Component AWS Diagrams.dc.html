@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="./fonts.css">
+<style>
+body { margin: 0; background: #17150F; }
+a { color: #1E7A72; } a:hover { color: #A8452E; }
+</style>
+</helmet>
+<x-import component-from-global-scope="deck-stage" from="./deck-stage.js" width="1920" height="1080" hint-size="100%,100%">
+<sc-for list="{{ comps }}" as="c" hint-placeholder-count="4">
+<section data-label="{{ c.id }}" data-screen-label="{{ c.label }}" style="position:relative;width:1920px;height:1080px;background:#FFFFFF;font-family:'IBM Plex Sans',sans-serif;color:#232F3E;overflow:hidden;box-sizing:border-box;padding:42px 60px 36px;display:flex;flex-direction:column;">
+  <div style="display:flex;align-items:center;gap:16px;">
+    <div style="background:#232F3E;color:#fff;font-family:'IBM Plex Mono',monospace;font-size:20px;font-weight:600;padding:6px 14px;border-radius:6px;">{{ c.id }}</div>
+    <div style="font-size:37px;font-weight:600;">{{ c.name }}</div>
+  </div>
+  <div style="font-size:19px;color:#5F6B7A;margin-top:7px;">{{ c.tag }}</div>
+  <div style="display:flex;align-items:center;gap:14px;margin-top:9px;">
+    <div style="flex:1;box-sizing:border-box;border:2px solid #BD0816;border-radius:6px;background:#FDF2F2;padding:6px 11px;font-size:14px;line-height:1.3;color:#7A0A12;">
+      <strong>No component here carries live AWS evidence.</strong> Every AWS path is <code style="font-family:'IBM Plex Mono',monospace;">AWS_REQUIRED</code> until the approved ephemeral deploy, smoke and cleanup workflow runs. Grey nodes marked PLANNED are absent from <code style="font-family:'IBM Plex Mono',monospace;">infra/lib/</code>.
+    </div>
+    <div style="font-family:'IBM Plex Mono',monospace;font-size:12px;color:#5F6B7A;line-height:1.45;white-space:nowrap;">Presents the component PRDs (L01–L16).<br>Normative AWS view:<br>docs/architecture/lineage-platform-target.md</div>
+  </div>
+  <div style="border:2px solid #232F3E;border-radius:4px;margin-top:20px;padding:14px 24px 18px;">
+    <div style="display:flex;align-items:center;gap:8px;"><div style="width:22px;height:22px;background:#232F3E;border-radius:4px;display:flex;align-items:center;justify-content:center;"><svg width="14" height="14" viewBox="0 0 24 24"><path d="M7,17 A4,4 0 0 1 7,9 A5.5,5.5 0 0 1 17.5,10 A3.8,3.8 0 0 1 17,17 Z" fill="#fff"></path></svg></div><span style="font-size:15px;font-weight:700;">AWS Cloud</span></div>
+    <div style="display:flex;align-items:flex-start;gap:10px;margin-top:14px;flex-wrap:wrap;justify-content:center;">
+      <sc-for list="{{ c.nodes }}" as="n" hint-placeholder-count="5">
+        <sc-if value="{{ n.notFirst }}" hint-placeholder-val="{{ false }}"><div style="height:64px;display:flex;align-items:center;"><svg width="34" height="12" viewBox="0 0 34 12"><line x1="0" y1="6" x2="25" y2="6" stroke="#232F3E" stroke-width="2"></line><path d="M25,1 L33,6 L25,11 Z" fill="#232F3E"></path></svg></div></sc-if>
+        <div style="width:178px;display:flex;flex-direction:column;align-items:center;gap:5px;text-align:center;">
+          <div style="width:64px;height:64px;border-radius:8px;display:flex;align-items:center;justify-content:center;background:{{ n.grad }};">
+            <sc-if value="{{ n.fTxt }}" hint-placeholder-val="{{ false }}"><span style="font-family:'IBM Plex Mono',monospace;font-size:18px;font-weight:700;color:#fff;">{{ n.txt }}</span></sc-if>
+            <sc-if value="{{ n.fCyl }}" hint-placeholder-val="{{ false }}"><svg width="32" height="32" viewBox="0 0 24 24"><ellipse cx="12" cy="6" rx="8" ry="3" fill="none" stroke="#fff" stroke-width="2"></ellipse><path d="M4,6 V18 C4,19.7 7.6,21 12,21 C16.4,21 20,19.7 20,18 V6" fill="none" stroke="#fff" stroke-width="2"></path></svg></sc-if>
+            <sc-if value="{{ n.fQueue }}" hint-placeholder-val="{{ false }}"><svg width="30" height="30" viewBox="0 0 24 24"><line x1="4" y1="7" x2="20" y2="7" stroke="#fff" stroke-width="2.5"></line><line x1="4" y1="12" x2="20" y2="12" stroke="#fff" stroke-width="2.5"></line><line x1="4" y1="17" x2="14" y2="17" stroke="#fff" stroke-width="2.5"></line></svg></sc-if>
+            <sc-if value="{{ n.fStep }}" hint-placeholder-val="{{ false }}"><svg width="32" height="32" viewBox="0 0 24 24"><rect x="4" y="3" width="8" height="7" rx="1.5" fill="none" stroke="#fff" stroke-width="2"></rect><rect x="12" y="14" width="8" height="7" rx="1.5" fill="none" stroke="#fff" stroke-width="2"></rect><path d="M8,10 V17 H12" fill="none" stroke="#fff" stroke-width="2"></path></svg></sc-if>
+            <sc-if value="{{ n.fSpokes }}" hint-placeholder-val="{{ false }}"><svg width="32" height="32" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4" fill="none" stroke="#fff" stroke-width="2"></circle><line x1="12" y1="2" x2="12" y2="7" stroke="#fff" stroke-width="2"></line><line x1="12" y1="17" x2="12" y2="22" stroke="#fff" stroke-width="2"></line><line x1="2" y1="12" x2="7" y2="12" stroke="#fff" stroke-width="2"></line><line x1="17" y1="12" x2="22" y2="12" stroke="#fff" stroke-width="2"></line></svg></sc-if>
+            <sc-if value="{{ n.fBox }}" hint-placeholder-val="{{ false }}"><svg width="32" height="32" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2" fill="none" stroke="#fff" stroke-width="2"></rect><rect x="8" y="8" width="8" height="8" fill="none" stroke="#fff" stroke-width="2"></rect></svg></sc-if>
+            <sc-if value="{{ n.fGraph }}" hint-placeholder-val="{{ false }}"><svg width="32" height="32" viewBox="0 0 24 24"><circle cx="6" cy="6" r="3" fill="none" stroke="#fff" stroke-width="2"></circle><circle cx="18" cy="9" r="3" fill="none" stroke="#fff" stroke-width="2"></circle><circle cx="10" cy="18" r="3" fill="none" stroke="#fff" stroke-width="2"></circle><line x1="8.5" y1="7" x2="15.2" y2="8.5" stroke="#fff" stroke-width="2"></line><line x1="7.5" y1="8.5" x2="9" y2="15.2" stroke="#fff" stroke-width="2"></line></svg></sc-if>
+            <sc-if value="{{ n.fPerson }}" hint-placeholder-val="{{ false }}"><svg width="30" height="30" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4" fill="none" stroke="#fff" stroke-width="2"></circle><path d="M4,21 C4,16.5 7.5,14 12,14 C16.5,14 20,16.5 20,21" fill="none" stroke="#fff" stroke-width="2"></path></svg></sc-if>
+            <sc-if value="{{ n.fLock }}" hint-placeholder-val="{{ false }}"><svg width="30" height="30" viewBox="0 0 24 24"><rect x="5" y="10" width="14" height="10" rx="2" fill="none" stroke="#fff" stroke-width="2"></rect><path d="M8,10 V7 C8,4.8 9.8,3 12,3 C14.2,3 16,4.8 16,7 V10" fill="none" stroke="#fff" stroke-width="2"></path></svg></sc-if>
+            <sc-if value="{{ n.fChev }}" hint-placeholder-val="{{ false }}"><svg width="30" height="30" viewBox="0 0 24 24"><path d="M5,4 L11,12 L5,20 M11,4 L17,12 L11,20" fill="none" stroke="#fff" stroke-width="2"></path></svg></sc-if>
+            <sc-if value="{{ n.fSearch }}" hint-placeholder-val="{{ false }}"><svg width="30" height="30" viewBox="0 0 24 24"><circle cx="10" cy="10" r="6" fill="none" stroke="#fff" stroke-width="2"></circle><line x1="14.5" y1="14.5" x2="21" y2="21" stroke="#fff" stroke-width="2.5"></line></svg></sc-if>
+            <sc-if value="{{ n.fKey }}" hint-placeholder-val="{{ false }}"><svg width="30" height="30" viewBox="0 0 24 24"><circle cx="8" cy="8" r="4" fill="none" stroke="#fff" stroke-width="2"></circle><path d="M11,11 L20,20 M17,17 L20,14" fill="none" stroke="#fff" stroke-width="2"></path></svg></sc-if>
+            <sc-if value="{{ n.fGauge }}" hint-placeholder-val="{{ false }}"><svg width="30" height="30" viewBox="0 0 24 24"><circle cx="12" cy="13" r="8" fill="none" stroke="#fff" stroke-width="2"></circle><line x1="12" y1="13" x2="16" y2="9" stroke="#fff" stroke-width="2"></line></svg></sc-if>
+            <sc-if value="{{ n.fList }}" hint-placeholder-val="{{ false }}"><svg width="30" height="30" viewBox="0 0 24 24"><line x1="4" y1="6" x2="20" y2="6" stroke="#fff" stroke-width="2"></line><line x1="4" y1="12" x2="20" y2="12" stroke="#fff" stroke-width="2"></line><line x1="4" y1="18" x2="14" y2="18" stroke="#fff" stroke-width="2"></line></svg></sc-if>
+            <sc-if value="{{ n.fPlay }}" hint-placeholder-val="{{ false }}"><svg width="30" height="30" viewBox="0 0 24 24"><path d="M6,4 L18,12 L6,20 Z" fill="none" stroke="#fff" stroke-width="2"></path></svg></sc-if>
+          </div>
+          <div style="font-size:16px;font-weight:600;line-height:1.2;">{{ n.name }}</div>
+          <div style="font-size:13px;color:#5F6B7A;line-height:1.25;">{{ n.note }}</div>
+        </div>
+      </sc-for>
+    </div>
+    <sc-if value="{{ showState }}" hint-placeholder-val="{{ true }}">
+      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:12px;border-top:1px dashed #B9C2CC;padding-top:12px;">
+        <span style="font-family:'IBM Plex Mono',monospace;font-size:14px;font-weight:600;color:#5F6B7A;letter-spacing:1px;">DURABLE STATE</span>
+        <sc-for list="{{ c.state }}" as="s" hint-placeholder-count="3"><span style="font-family:'IBM Plex Mono',monospace;font-size:14px;background:#F2F4F6;border:1.5px solid #B9C2CC;border-radius:6px;padding:3px 10px;">{{ s }}</span></sc-for>
+      </div>
+    </sc-if>
+  </div>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:40px;margin-top:20px;flex:1;min-height:0;">
+    <div>
+      <div style="font-size:19px;font-weight:700;">Key behaviors</div>
+      <div style="display:flex;flex-direction:column;gap:9px;margin-top:10px;">
+        <sc-for list="{{ c.behaviors }}" as="b" hint-placeholder-count="4"><div style="display:flex;gap:10px;align-items:flex-start;"><div style="flex-shrink:0;width:9px;height:9px;background:#232F3E;margin-top:7px;"></div><div style="font-size:16px;line-height:1.4;">{{ b }}</div></div></sc-for>
+      </div>
+    </div>
+    <sc-if value="{{ showFailures }}" hint-placeholder-val="{{ true }}">
+      <div>
+        <div style="font-size:19px;font-weight:700;">Failure semantics &amp; resiliency</div>
+        <div style="display:flex;flex-direction:column;gap:10px;margin-top:10px;">
+          <sc-for list="{{ c.failures }}" as="f" hint-placeholder-count="4"><div style="display:flex;flex-direction:column;gap:2px;"><span style="font-family:'IBM Plex Mono',monospace;font-size:14px;font-weight:600;color:#BD0816;">{{ f.c }}</span><span style="font-size:16px;line-height:1.35;">{{ f.t }}</span></div></sc-for>
+        </div>
+      </div>
+    </sc-if>
+  </div>
+  <div style="font-family:'IBM Plex Mono',monospace;font-size:16px;color:#5F6B7A;border-top:2px solid #232F3E;padding-top:10px;margin-top:14px;"><span style="color:#A86A00;font-weight:600;">TARGET SLO · unproven in AWS —</span> {{ c.slo }}</div>
+</section>
+</sc-for>
+</x-import>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{
+  &quot;showFailures&quot;: {&quot;editor&quot;: &quot;boolean&quot;, &quot;default&quot;: true, &quot;tsType&quot;: &quot;boolean&quot;, &quot;section&quot;: &quot;Content&quot;},
+  &quot;showDurableState&quot;: {&quot;editor&quot;: &quot;boolean&quot;, &quot;default&quot;: true, &quot;tsType&quot;: &quot;boolean&quot;, &quot;section&quot;: &quot;Content&quot;}
+}">
+class Component extends DCLogic {
+  renderVals() {
+    const G = {pink:"linear-gradient(135deg,#B0084D,#FF4F8B)",orange:"linear-gradient(135deg,#C8511B,#FF9900)",green:"linear-gradient(135deg,#1B660F,#6CAE3E)",blue:"linear-gradient(135deg,#2E27AD,#527FFF)",purple:"linear-gradient(135deg,#4D27A8,#A166FF)",teal:"linear-gradient(135deg,#055F4E,#56C0A7)",red:"linear-gradient(135deg,#BD0816,#FF5252)",gray:"#545B64",dark:"#232F3E"};
+    const N = (grad, glyph, name, note, txt) => ({grad: G[grad], glyph, name, note, txt: txt || ""});
+    const raw = [
+      {id:"L01", name:"URN grammar & resolver library", tag:"Deterministic identity: one grammar, one pinned catalog snapshot per run — quarantine over guessing, always.",
+        nodes:[N("gray","List","Enterprise catalog","hourly snapshot export"),N("pink","Spokes","Amazon EventBridge","hourly schedule trigger"),N("orange","Txt","AWS Lambda","pull · contract check · pin","λ"),N("green","Cyl","Amazon S3","catalog-snapshots/ · content-addressed"),N("blue","Cyl","Amazon DynamoDB","alias / normalized-name index"),N("dark","Txt","resolve() library","embedded in L04 / L05 / L06 / L07","URN")],
+        state:["S3 catalog-snapshots/{snapshotId}.json","S3 quarantine/{date}/{id}.json","DynamoDB alias index (kind, value, snapshotId)"],
+        behaviors:["Grammar urn:ldp:{env}:{platform}:{system}:{dataset}#{element}; env is inside identity — prod and staging never compare equal, sameAs is derived.","Nine-step normalization in normative order: decode → case-fold → default schema → config substitution → shard collapse → temp elision → view mapping → catalog match → vocabulary check.","Resolution at intake under one pinned snapshot per run; every result records (resolverVersion, snapshotId).","Golden corpus is CI-gating: any output diff requires approval + a determinant bump."],
+        failures:[{c:"UNKNOWN_DATASET",t:"quarantine + catalog-gap report; never a guessed URN"},{c:"AMBIGUOUS",t:"2+ equal-precedence matches → quarantine with all candidates; human alias decision"},{c:"SNAPSHOT_STALE",t:"serve last-good; age alarm at 3 h; intake never blocks on a catalog outage"},{c:"SNAPSHOT_CONTRACT_FAILED",t:"refuse snapshot, retain last-good, alarm — never silent"}],
+        slo:"resolve ≤ 5 ms p95 · 1,000-item batch ≤ 300 ms · URN join rate ≥ 80% (launch gate R1)"},
+      {id:"L02", name:"Event intake & priority queues", tag:"The durable front door: authenticate every producer, dedupe, normalize to one envelope, absorb spikes in queues.",
+        nodes:[N("gray","List","Producers","GitHub · Jenkins · TAS · schedules"),N("pink","Txt","Amazon API Gateway","webhook endpoints · TLS only","API"),N("orange","Txt","AWS Lambda","verify signature · normalize envelope","λ"),N("blue","Cyl","Amazon DynamoDB","dedupe — eventId, TTL 14 d"),N("pink","Spokes","Amazon EventBridge","rules · archive + replay"),N("pink","Queue","Amazon SQS ×3 + DLQs","interactive · events · bulk")],
+        state:["DynamoDB dedupe (PK eventId, TTL 14d)","EventBridge archive (normalized events)","S3 quarantine/","producer registry — versioned"],
+        behaviors:["RECEIVED → AUTHENTICATED → DEDUPED → NORMALIZED → ROUTED; any failure → QUARANTINED(reason) — never a silent drop.","Lane policy: pr.updated → interactive (never starved, paging alarm); push + deploy → events; baseline / backfill / nightly / LLM batch → bulk.","Missing immutable identity (no digest, no sha) → quarantine — never an empty dedupe key.","Archive replay reproduces zero duplicate effects (downstream idempotency, L07)."],
+        failures:[{c:"BAD_SIGNATURE",t:"quarantine + sanitized security telemetry; never retried"},{c:"DUPLICATE",t:"expected: acknowledge + drop + metric"},{c:"MISSING_IDENTITY",t:"quarantine with provider payload ref"},{c:"LANE_UNAVAILABLE",t:"bounded retry; DLQ + redrive runbook on exhaustion; depth alarmed"}],
+        slo:"intake ack ≤ 500 ms p95 @ 100/s sustained · 10,000-event burst absorbed with zero loss"},
+      {id:"L03", name:"Workflow orchestration & scheduling", tag:"Four Step Functions workflows plus a promotion λ turn queued envelopes into visible, bounded, redrivable runs.",
+        nodes:[N("pink","Queue","Amazon SQS lanes","from L02"),N("pink","Step","AWS Step Functions","Incremental · Baseline · PRGate · Nightly"),N("orange","Box","Engine task submissions","L04 / L05 / L06 — S3 refs only"),N("blue","Cyl","Amazon DynamoDB","run_ledger · determinants"),N("orange","Txt","AWS Lambda","deploy promotion — pointer contract","λ")],
+        state:["DynamoDB run_ledger (PK repo, SK runId; stage history)","DynamoDB determinants (PK scopeUrn)","artifacts in S3 via L08 — never in workflow state"],
+        behaviors:["Determinant-bounded scoping: a one-file push re-derives only its edges; a determinant change (ruleset / prompt / resolver / snapshot / config) re-queues exactly the affected scopes.","Every dequeued envelope maps to exactly one run or a recorded no-impact decision.","Redrive resumes from the failed stage idempotently — completed stages never re-run; no manual \"run now\" path exists.","PRGate is read-only: parsers + cache only, never the LLM gateway; bulk-lane per-system quotas prevent starvation."],
+        failures:[{c:"CLASSIFICATION_UNKNOWN",t:"baseline blocks critical completion; surfaced for review"},{c:"ENGINE_TASK_FAILED",t:"stage retry with backoff; DLQ + redrive on exhaustion"},{c:"DETERMINANT_SCOPE_EMPTY",t:"record no-impact decision; no run started"},{c:"POINTER_SWAP_CONFLICT",t:"promotion aborts; re-verify digest; alert on repeat"}],
+        slo:"push → proposal ≤ 30 min p95 (excluding review) · 10,000-repo baseline within the planned window"},
+      {id:"L04", name:"Static code analysis engine", tag:"A repository at an exact digest becomes exact, provable edges plus explicit residue. Deterministic — it never guesses.",
+        nodes:[N("pink","Step","Task spec","repo · digest · scope · resolver pin"),N("gray","Lock","SCM checkout","per-run read-only creds · destroyed on exit"),N("orange","Box","AWS Fargate","tree-sitter AST + rule packs"),N("dark","Txt","Parser suite","sqlglot · dbt · OpenAPI/proto","</>"),N("teal","Txt","L01 resolver","resolve at intake · quarantine on miss","URN"),N("green","Cyl","Amazon S3","evidence/sca/{repo}/{digest}/")],
+        state:["stateless task — nothing survives the run","S3 ScaEvidenceFile: edges · residue · datasetsSeen · stats"],
+        behaviors:["CHECKOUT → DETECT/ROUTE → PARSE → AST-WALK → CONFIG-RESOLVE → RESOLVE(URN) → EMIT; every stage appends stats, failures carry the stage name.","Rule packs, closed registry: Python (fixture pack) and Java / Spring Data JPA with the PostgreSQL schema profile. Kotlin, JS/TS and Go are PLANNED. Manifest-driven routing; no-grammar types listed for LLM Tier-2, never silently skipped.","Config resolution is all-or-residue; residue carries file, span, reason code + nearby facts — the LLM context handoff.","Determinism replay in CI: identical inputs → byte-identical evidence; a diff is a release blocker."],
+        failures:[{c:"CLONE_FAILED",t:"retry with backoff; credential re-issue; DLQ on exhaustion"},{c:"PACK_CRASH",t:"isolate the pack, continue others, flag partial evidence"},{c:"RESOLVER_QUARANTINE",t:"assertion quarantined, run continues; gap report emitted"},{c:"WORKSPACE_TIMEOUT",t:"bounded kill; evidence marked PARTIAL — never silently complete"}],
+        slo:"median repo ≤ 10 min on the standard task size · 1 task per (repo, digest) · parser-exact edges qualify for auto-publish"},
+      {id:"L05", name:"LLM inference gateway", tag:"Answers only what SCA could not, with SCA's own facts as context; nothing unvalidated ever reaches the merge.",
+        nodes:[N("gray","List","Tiered intake","T1 residue · T2 no-grammar · T3 sample"),N("orange","Txt","AWS Lambda","chunk ≤ 8k tokens · assemble context","λ"),N("blue","Cyl","Amazon DynamoDB","llm_cache · budget ledger"),N("gray","Txt","Amazon Bedrock","PLANNED · NOT_CONFIGURED — via enterprise gateway only","AI"),N("red","Lock","Guardrail chain","schema → citation → URN → budget"),N("green","Cyl","Amazon S3","responses · rejects · rollout records")],
+        state:["DynamoDB llm_cache (cacheKey → responseRef, hitCount, staleFlag)","S3 evidence/llm/{cacheKey}.json · llm-rejects/{date}/","prompt templates + output schemas versioned in-repo"],
+        behaviors:["Cache key = (chunk digest, promptVersion, modelId); a hit serves without a model call, shared across all workflows.","Guardrails in order — schema validate, citation exists in digest, URN resolves via L01, budget check; first failure stops the chain and persists a reject.","unresolvable[] is a first-class answer, not an error — it feeds the runtime watch list.","Prompt/model bump = staged re-derivation of a bounded % of stale keys per day; old entries served until replaced — never fleet-wide invalidation."],
+        failures:[{c:"SCHEMA / CITATION / URN_REJECT",t:"persist reject with failedGuardrail; surfaced in review; never merged"},{c:"BUDGET_EXCEEDED",t:"defer to next window; alarm at threshold; zero overspend days"},{c:"GATEWAY_UNAVAILABLE",t:"skip-with-record — Incremental completes; edges arrive later via re-merge"}],
+        slo:"T1 round-trip ≤ 30 s p95 incl. guardrails · cache hit ≥ 90% (gate R5) · LLM-only never gates a PR, never auto-publishes"},
+      {id:"L06", name:"Runtime observation plane", tag:"Watches instrumented integration-test runs: names, operations, counts, schema fingerprints — never values. Production is hard-denied, twice.",
+        nodes:[N("gray","Play","CI test runs","emitters: OTel · SDK · Spark · Dask"),N("red","Key","Session API","signed JWT · scoped (repo, env) · TTL"),N("orange","Txt","Validator λ","sig/TTL → env ≠ prod → resolver → shape","λ"),N("purple","Chev","Amazon Kinesis","partition key = dataset URN"),N("gray","Chev","Amazon Data Firehose","PLANNED · NOT_CONFIGURED — batch delivery"),N("green","Cyl","Amazon S3","evidence/runtime/{session}/{urn}/")],
+        state:["DynamoDB sessions (grant, TTL, publicKey, revoked)","S3 observations + session drain manifests"],
+        behaviors:["Session lifecycle GRANT → READY → OBSERVING → DRAIN → CLOSED; only COMPLETE sessions corroborate at full weight — INCOMPLETE never promotes.","Metadata-only enforced by a closed schema: any extra field rejects; fingerprints hash (field names, types, order) — never values.","Only the SDK and Spark may assert element lists; OTel and Dask are dataset-level; unmappable spans drop with a metric — never a guess.","Corroboration lifts bands (LLM-only → MEDIUM on seeded runs); absence never demotes an edge."],
+        failures:[{c:"NO_SESSION / EXPIRED / BAD_SIG",t:"reject + security telemetry; never retried"},{c:"PROD_TARGET",t:"reject + sev-2 alert — denied at IAM and again at the validator"},{c:"UNMAPPABLE_SPAN",t:"drop with metric; coverage report reflects it"},{c:"STREAM_THROTTLE",t:"emitter buffer + retry; drain manifest reconciles counts"}],
+        slo:"peak test bursts with zero accepted-event loss · emitter overhead ≤ 5% wall time · weekly hard-deny probe pages on success"},
+      {id:"L07", name:"Consolidation, URN merge & confidence", tag:"Unions three engines' assertions by URN triple, computes agreement-based confidence, never destroys information, never writes the graph.",
+        nodes:[N("green","Cyl","Amazon S3","evidence in — schema-checked"),N("gray","List","Catalog schemas","containment checks"),N("orange","Txt","Merge stage","LLD §5 algorithm — idempotent","λ"),N("blue","Cyl","Amazon DynamoDB","edge_ledger (edgeKey, version) + GSIs"),N("pink","Queue","Review routing","CONFLICTING · LLM-only → L09")],
+        state:["DynamoDB edge_ledger (PK edgeKey, SK version; GSIs to#type, status, system)","rebuildable by replaying S3 evidence — drilled"],
+        behaviors:["edgeKey = hash(sorted from[], to, type); provenance is append-only, idempotent by provenanceId, commutative across engine ordering (CI proofs).","Bands: LLM-only LOWEST · one mechanism SINGLE · +LLM MEDIUM · SCA+runtime HIGH · 3-of-3 HIGHEST; corroboration NONE | DATASET | ELEMENT is separate and never changes the band.","Contradiction: two exact/probable transforms whose normalized forms differ → CONFLICTING → review queue, provenance intact — never averaged.","Decay n=3 silent cycles → STALE (never deleted); rename = tombstone + SAME_AS; the parser-exact auto-publish stamp is computed here."],
+        failures:[{c:"UNKNOWN_EVIDENCE_VERSION",t:"reject file; producer contract broken; alarm"},{c:"LEDGER_CONDITIONAL_FAIL",t:"retry with a fresh read (optimistic concurrency)"},{c:"CONTAINMENT_SCHEMA_MISSING",t:"no boost; metric; catalog gap report"},{c:"REBUILD_DIVERGENCE",t:"replay-drill mismatch is a release blocker"}],
+        slo:"merge ≤ 60 s p95 per incremental scope · 10k repos × daily runs without hot partitions"},
+      {id:"L08", name:"Immutable evidence store & cache", tag:"The truth layer: immutable, encrypted, content-organized storage — everything else on the platform is rebuildable from here.",
+        nodes:[N("dark","Txt","Client library","the only sanctioned write path","SDK"),N("green","Cyl","Amazon S3 ldp-truth","Object Lock · checksummed kinds"),N("red","Key","AWS KMS","key policy per storage class"),N("blue","Cyl","Amazon DynamoDB","SCA + LLM cache indexes"),N("green","Cyl","Replica Region","CRR for truth classes"),N("orange","Txt","Integrity sweeps","daily sampling · quarterly full","λ")],
+        state:["S3 ldp-truth: evidence · proposals · approvals · manifests (Object Lock)","quarantine/ + llm-rejects/ — lifecycle expiry","DynamoDB cache indexes"],
+        behaviors:["Write path: validate kind → checksum → conditional put (no overwrite) → index; unknown prefixes rejected by the client library.","SCA cache: (repo, digest, rulesetVersion) served without re-analysis; LLM cache honors staged invalidation — stale flag, not delete.","Manifests enumerate everything needed to rebuild projections and the edge ledger from S3 alone (quarterly drill).","Deny-delete SCPs on truth prefixes; reviewer evidence reads are access-logged and audited."],
+        failures:[{c:"OVERWRITE_ATTEMPT",t:"denied + alarmed; a producer bug by definition"},{c:"CHECKSUM_MISMATCH",t:"serve refused; replica consulted; incident opened"},{c:"LOCK_POLICY_DRIFT",t:"config-rule alarm; change audit"}],
+        slo:"ref read ≤ 100 ms p95 · RPO 15 min / RTO 4 h for truth classes · zero in-place overwrites"},
+      {id:"L09", name:"Proposal, human review & auto-publish", tag:"The human gate and its economics: immutable lifecycle, corrections as new versions, sampled-audit auto-publish for parser-exact edges.",
+        nodes:[N("blue","Cyl","Consolidated edges","with auto-publishable stamps"),N("dark","List","Policy engine","parser-exact → AUTO · 5%/week audit"),N("pink","Person","Reviewers","routed by system ownership (TAS)"),N("blue","Cyl","Amazon DynamoDB","lifecycle state · queue indexes"),N("green","Cyl","Amazon S3","proposals · approvals · calibration")],
+        state:["S3 proposals/{system}/{id}/v{n}.json · approvals/ · calibration/","DynamoDB queues by (system, state, age)"],
+        behaviors:["DRAFT → IN_REVIEW → (APPROVED | REJECTED | SUPERSEDED) → FINALIZED — server-enforced, every transition audited with actor + correlation.","Corrections never mutate: edge v+1 + proposal v+1, bidirectionally linked; rejected and superseded history retained forever.","Auto-publish audit disagreement ≥ 2% (rolling 4 weeks) → the class narrows automatically with an audited policy event — policy, not manual intervention.","Every decision writes a calibration-corpus record: label, rationale, evidence refs, band at decision time."],
+        failures:[{c:"STALE_BASE_VERSION",t:"proposal rebased against the new active version; reviewer notified"},{c:"CONCURRENT_DECISION",t:"conditional write loses → actor sees fresh state; no double-apply"},{c:"AUDIT_BREACH",t:"automatic narrowing + governance notification"},{c:"UNOWNED_SYSTEM",t:"escalation queue + catalog gap report"}],
+        slo:"proposal detail ≤ 2 s p95 · review queue depth below reviewer capacity (gate R3) · audit disagreement < 2%"},
+      {id:"L10", name:"Fenced publication & graph projections", tag:"An approved manifest becomes a new immutable namespace, then one atomic pointer swap. Fenced, single-writer, rebuildable.",
+        nodes:[N("green","Cyl","Amazon S3","manifests/{env}/{version}.json — Object Lock"),N("blue","Cyl","Amazon DynamoDB","publish_lock (fencing) · pointers"),N("blue","Graph","Amazon Neptune","stage into inactive namespace"),N("dark","List","Verify","counts + checksums vs manifest"),N("blue","Graph","Active pointer","one conditional transaction"),N("gray","Search","Amazon OpenSearch","PLANNED · NOT_CONFIGURED — P1 projection")],
+        state:["DynamoDB publish_lock + pointers","Neptune namespaces: STAGING → ACTIVE → PRIOR → EXPIRED"],
+        behaviors:["Reserve-and-fence: conditional lock with a monotonic token; an expired worker cannot win (property-tested).","The pointer advances iff (reservation, token, expected prior version) all match in one DynamoDB transaction; failure discards staging.","Never writes into an active namespace — stage-then-swap only; rollback re-points to a prior namespace as a new audited event, never a data rewrite.","The rebuild tool reconstructs any namespace from manifests alone; divergence is a defect."],
+        failures:[{c:"FENCE_LOST",t:"worker aborts silently; staging discarded; redrive restages"},{c:"VERIFY_MISMATCH",t:"no swap; manifest-vs-staging diff attached; defect"},{c:"POINTER_CONFLICT",t:"expected-prior mismatch → rebase via L09; no force"},{c:"PROJECTION_LOSS",t:"rebuild from manifests; watermark exposes staleness meanwhile"}],
+        slo:"stage → swap ≤ 5 min median · 95% of approvals queryable ≤ 60 s · zero split-brain under contention (chaos-drilled)"},
+      {id:"L11", name:"Query APIs, review UI & PR gate", tag:"Where trust is experienced: every rendered edge carries band + provenance; BLOCK is only ever produced from the band.",
+        nodes:[N("gray","Person","Users + CI","reviewers · engineers · PR checks"),N("red","Person","Amazon Cognito","OIDC SSO · domain RBAC"),N("pink","Txt","Amazon API Gateway","lineage · impact · edge detail","API"),N("orange","Txt","AWS Lambda","query services — read models only","λ"),N("blue","Graph","Amazon Neptune","via active pointer · version pinning"),N("gray","List","GitHub check","verdict: pass · warn · block")],
+        state:["stateless — read models from L03 / L07 / L09 / L10","dashboard definitions versioned in-repo"],
+        behaviors:["GET /lineage/{urn} up/down, depth ≤ 5, env-scoped; impact severity is band-gated — BLOCK only from HIGH/HIGHEST; LLM-only (LOWEST) can never BLOCK.","Review SPA: proposal diff (added / removed / band-changed), corrections, quarantine triage with alias-decision handoff to L01.","Projection lag is always exposed (watermark banner); no bare edges — band + mechanisms + evidence links on every render.","Bounded synchronous traversal for interactive + PR-gate use, plus full-closure async impact jobs with webhook + UI notification."],
+        failures:[{c:"PROJECTION_LAG",t:"response carries the watermark; UI banners staleness"},{c:"DEPTH_EXCEEDED",t:"400 with guidance; never partial-silent"},{c:"UNAUTHORIZED_DOMAIN",t:"403 + audit; no existence leak of unauthorized systems"},{c:"UPSTREAM_TIMEOUT",t:"degraded read with retry hint; PR gate falls to WARN — never a silent PASS"}],
+        slo:"one-hop ≤ 2 s p95 · proposal view ≤ 2 s p95 · SPA initial load ≤ 3 s p95"},
+      {id:"L12", name:"Security, observability, operations & DR", tag:"Cross-cutting controls: least privilege everywhere, production hard-deny proven weekly, correlation on every hop, drilled recovery.",
+        nodes:[N("red","Person","AWS IAM","role-per-stage · SCPs · deny-delete"),N("red","Key","AWS KMS","per storage class"),N("red","Lock","Secrets Manager","HMACs · session keys · rotation"),N("gray","List","AWS CloudTrail","PLANNED · NOT_CONFIGURED — org trail"),N("pink","Gauge","CloudWatch + X-Ray","gates R1–R5 · alarms → runbooks"),N("green","Cyl","DR replication","truth classes cross-Region")],
+        state:["policies + dashboards + runbooks as code (versioned)","drill evidence in S3 · CloudTrail org trail (PLANNED)"],
+        behaviors:["Production deny implemented twice (IAM condition + validator) and probed weekly by a live attack — a passing attack pages as sev-2.","Correlation contract on every event, log, evidence file, proposal and publication: correlationId, runId, repo, digest, env, system…; CI lints adoption.","Zero standing credentials: per-run SCM creds, time-boxed runtime sessions, role-scoped service access; break-glass expires and audits.","Drill calendar: weekly prod-deny probe + publish-lock chaos; quarterly full DR — restore + projection rebuild + pointer verify, evidence retained."],
+        failures:[{c:"PROD_INJECTION_SUCCEEDED",t:"sev-2 page; freeze runtime ingestion; incident review"},{c:"POLICY_DRIFT",t:"auto-revert where safe; alarm + audit"},{c:"REPLICATION_LAG",t:"alarm at RPO/2; escalate at RPO"},{c:"DRILL_FAILURE",t:"launch-gate blocking until remediated"}],
+        slo:"RPO 15 min / RTO 4 h demonstrated in drills · 100% alarm→runbook coverage · zero standing credentials"},
+      {id:"L13", name:"Repository classification & eligibility", tag:"Decides what each repository is before anything costly runs: class, baseline treatment, on-change treatment. UNKNOWN is never silent.",
+        nodes:[N("gray","List","7 evidence sources","catalog · TAS · CI/CD · manifests · SBOM · deploy assoc · heuristics"),N("orange","Txt","Precedence engine","first decisive level wins","λ"),N("dark","List","Policy file","versioned · preview mode, zero side effects"),N("blue","Cyl","Amazon DynamoDB","effective registry (repoOrPath)"),N("green","Cyl","Amazon S3","decision history — immutable"),N("pink","Queue","UNKNOWN queue","review via L11")],
+        state:["S3 decision history","DynamoDB effective registry + class / review-state indexes","policy files versioned in-repo"],
+        behaviors:["9-class taxonomy: APPLICATION_RUNTIME · DATA_PIPELINE · CONTRACT_SCHEMA_SOURCE · SHARED_LIBRARY · INFRASTRUCTURE · DOCUMENTATION · TEST_AUTOMATION · MIXED_MONOREPO · UNKNOWN.","Evidence evaluated strictly in precedence order; conflicts within a level → UNKNOWN + review queue; an LLM can propose but never exclude.","MIXED_MONOREPO produces per-path decisions; changed-path routing exposed to L03 scheduling and L04 path scoping.","Overrides expire (default 90 d) with owner notification; decisions are immutable history — a new decision supersedes, never edits."],
+        failures:[{c:"EVIDENCE_CONFLICT",t:"UNKNOWN + review queue, evidence attached"},{c:"SOURCE_UNAVAILABLE",t:"decide only if a higher level is already decisive; else defer"},{c:"POLICY_REGRESSION",t:"preview diff gate blocks the policy release"}],
+        slo:"classify 10,000 repos within the baseline planning window · decision replay is deterministic per policy version"}
+    ];
+    const comps = raw.map(c => ({...c, label: c.id + " · " + c.name, nodes: c.nodes.map((n, i) => { const o = {...n, notFirst: i > 0}; o["f" + n.glyph] = true; return o; })}));
+    return {comps, showFailures: this.props.showFailures ?? true, showState: this.props.showDurableState ?? true};
+  }
+}
+</script>
+</body>
+</html>
