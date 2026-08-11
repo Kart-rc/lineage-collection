@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from contextlib import asynccontextmanager
 from typing import Any
 
@@ -10,6 +11,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from lineage_api.api_models import (
+    CollectionRequest,
     CorrectionRequest,
     DeploymentOutcomeRequest,
     ImpactRequest,
@@ -17,6 +19,7 @@ from lineage_api.api_models import (
     PushRequest,
     ReviewRequest,
 )
+from lineage_api.application.collections import CollectionError, CollectionService
 from lineage_api.application.workflows.deployment import DeploymentEvent
 from lineage_api.application.workflows.pr_gate import PRGateChange, PRGateRequest
 from lineage_api.config import Settings
@@ -34,6 +37,7 @@ CONFLICT_CODES = {
     "STALE_BASE_VERSION",
 }
 UNPROCESSABLE_CODES = {"DEPTH_EXCEEDED", "INVALID_DIRECTION", "UNKNOWN_CHANGE_TYPE"}
+_CORRELATION_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:-]{0,127}")
 
 
 def _status_for(error: DomainError) -> int:
@@ -73,6 +77,19 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     async def domain_error_handler(_: Request, error: DomainError) -> JSONResponse:
         return JSONResponse(error.as_dict(), status_code=_status_for(error))
 
+    @application.exception_handler(CollectionError)
+    async def collection_error_handler(
+        request: Request, error: CollectionError
+    ) -> JSONResponse:
+        return JSONResponse(
+            {
+                "code": error.code,
+                "message": str(error),
+                "correlationId": _correlation_id(request),
+            },
+            status_code=error.status_code,
+        )
+
     @application.exception_handler(RequestValidationError)
     async def validation_error_handler(
         request: Request, error: RequestValidationError
@@ -99,6 +116,21 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @application.post("/api/demo/reset")
     def reset_demo_state(request: Request) -> dict[str, Any]:
         return _services(request).reset()
+
+    @application.post("/api/collections", status_code=202)
+    def submit_collection(
+        body: CollectionRequest, request: Request, response: Response
+    ) -> dict[str, Any]:
+        submission = _collections(request).submit(
+            body.as_submission(), correlation_id=_correlation_id(request)
+        )
+        response.status_code = submission.status_code
+        response.headers["Location"] = submission.location
+        return dict(submission.document)
+
+    @application.get("/api/collections/{command_id}")
+    def collection_status(command_id: str, request: Request) -> dict[str, Any]:
+        return dict(_collections(request).status(command_id))
 
     @application.post("/api/events/push")
     def push_event(body: PushRequest, request: Request, response: Response) -> dict[str, Any]:
@@ -313,6 +345,22 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
 def _services(request: Request) -> AppServices:
     return request.app.state.services
+
+
+def _collections(request: Request) -> CollectionService:
+    collections = _services(request).collections
+    if collections is None:  # pragma: no cover - the composition root always wires this
+        raise CollectionError(
+            503, "COLLECTION_UNAVAILABLE", "collection submission is not available"
+        )
+    return collections
+
+
+def _correlation_id(request: Request) -> str:
+    value = request.headers.get("x-correlation-id")
+    if isinstance(value, str) and _CORRELATION_ID.fullmatch(value):
+        return value
+    return "collection-request"
 
 
 app = create_app()

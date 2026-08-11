@@ -172,7 +172,32 @@ traffic and requires explicit opt-in under section 7.
 
 ### G3 — Expose durable collection submit and status APIs
 
-**Status:** `READY` after G2
+**Status:** `IN_PROGRESS` — local and contract surfaces complete; AWS submit deferred to G6
+
+Delivered on branch `feat/remaining-goals`:
+
+- `apps/api/src/lineage_api/application/collections.py` — one environment-neutral
+  `parse_collection_submission` plus `CollectionService` and a `CollectionStore` port. FastAPI, the
+  neutral `ProductApiService`, and the AWS entry point all validate through it, so no surface can
+  accept a request another would reject.
+- schema v9 `repository_collections` plus `infrastructure/sqlite_collections.py` — the durable
+  status projection keyed by durable command, the local analogue of the DynamoDB ledger item.
+- `POST /api/collections` returns `202` with `Location` for accepted, duplicate, and reused
+  submissions; `GET /api/collections/{commandId}` returns the same stable document, including a
+  `terminal` flag so a client polls only while the command is non-terminal.
+- Typed FastAPI models forbid unknown fields and mutable revisions; `LOCAL_CHECKOUT` is refused with
+  `LOCAL_SOURCE_DISABLED` unless the development policy is explicitly enabled; responses carry
+  stable codes and correlation IDs and never contain checkout paths, credentials, raw Git output, or
+  stack traces.
+- `AwsProductQueryProjection.get_collection` reads the ledger projection consistently.
+
+**Remaining before `COMPLETE`:** `AwsProductQueryProjection.submit_collection` fails closed with
+`501 COLLECTION_SUBMIT_NOT_CONFIGURED`. In AWS, repository acquisition runs as a Fargate stage, so an
+honest submit enqueues a durable command and returns a non-terminal `QUEUED` status. That acquisition
+stage is G6 work; synthesizing a local-shaped synchronous submit would be the AWS-only semantic fork
+that section 5 forbids. The refusal is asserted by a test and never touches AWS.
+
+The original requirement follows.
 
 Add the product contract that turns repository submission into a durable, queryable collection
 resource.

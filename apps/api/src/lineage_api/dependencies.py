@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
 
+from lineage_api.application.collections import CollectionService
 from lineage_api.application.outbox import OutboxDispatcher
 from lineage_api.application.repository_acquisition import (
     GitRepositoryRequest,
@@ -36,6 +37,7 @@ from lineage_api.db import Database
 from lineage_api.domain.errors import DomainError
 from lineage_api.infrastructure.local_broker import LocalLaneBroker, SQLiteOutbox
 from lineage_api.infrastructure.local_git_source import LocalGitRepositorySource
+from lineage_api.infrastructure.sqlite_collections import SQLiteCollectionStore
 from lineage_api.infrastructure.remote_git_source import RemoteGitRepositorySource
 from lineage_api.infrastructure.sqlite_deployment import (
     HmacDeploymentAuthenticator,
@@ -85,6 +87,7 @@ class AppServices:
     pr_gate: PRGateWorkflow
     deployment: DeploymentWorkflow
     observability: MetricsSnapshotPort
+    collections: CollectionService | None = None
 
     def reset(self) -> dict[str, Any]:
         if self.settings.object_directory.exists():
@@ -284,6 +287,14 @@ def build_services(
         deployment=deployment,
         observability=observability,
     )
+    if repository_snapshot is None:
+        # Only the outermost composition exposes the submit/status surface; nested
+        # pinned-snapshot builds exist solely to execute one durable command.
+        services.collections = CollectionService(
+            acquisition=build_repository_acquisition_service(settings),
+            store=SQLiteCollectionStore(database),
+            allow_local_sources=settings.allow_local_repository_sources,
+        )
     services.ensure_seeded()
     return services
 

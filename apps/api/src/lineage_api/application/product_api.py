@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import re
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Protocol
 from urllib.parse import unquote
 
@@ -36,6 +36,7 @@ _IDENTIFIER = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:@/+=,-]*$")
 class ProductApiResult:
     status_code: int
     document: Mapping[str, object]
+    headers: Mapping[str, str] = field(default_factory=dict)
 
 
 class ProductApiError(ValueError):
@@ -74,6 +75,8 @@ class ProductApiService:
                 "correlationId", correlation_id, MAX_IDENTIFIER_LENGTH
             ),
         }
+        status_code = 200
+        headers: dict[str, str] = {}
 
         if method == "GET" and path == "/api/overview":
             _keys(query, {"environment"}, "query")
@@ -176,12 +179,28 @@ class ProductApiService:
         elif method == "POST" and path == "/api/runtime/admin/kill-switch":
             _keys(query, set(), "query")
             document = self._kill_switch(_required_body(body), **common)
+        elif method == "POST" and path == "/api/collections":
+            _keys(query, set(), "query")
+            document = self._port.submit_collection(
+                body=_required_body(body), **common
+            )
+            # Accepted, duplicate, and reused submissions are indistinguishable to the
+            # caller: all three return 202 with the same durable status resource.
+            status_code = 202
+            headers["location"] = _status_url(document)
+        elif method == "GET" and (
+            value := _route(path, r"/api/collections/([^/]+)")
+        ):
+            _keys(query, set(), "query")
+            document = self._port.get_collection(
+                command_id=_resource_identifier("commandId", value), **common
+            )
         else:
             raise ProductApiError(404, "NOT_FOUND", "route is not available")
 
         if not isinstance(document, Mapping):
             raise RuntimeError("product API port returned a non-document")
-        return ProductApiResult(200, document)
+        return ProductApiResult(status_code, document, headers)
 
     def _review(
         self,
@@ -282,6 +301,19 @@ class ProductApiService:
             rationale=_body_text(body, "rationale", MAX_TEXT_LENGTH),
             **common,
         )
+
+
+def _status_url(document: object) -> str:
+    if not isinstance(document, Mapping):
+        raise RuntimeError("product API port returned a non-document")
+    status_url = document.get("statusUrl")
+    if (
+        not isinstance(status_url, str)
+        or not status_url.startswith("/api/collections/")
+        or len(status_url) > MAX_IDENTIFIER_LENGTH
+    ):
+        raise RuntimeError("collection submission returned no status resource")
+    return status_url
 
 
 def _required_body(body: Mapping[str, object] | None) -> Mapping[str, object]:

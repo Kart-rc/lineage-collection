@@ -16,6 +16,39 @@ class PushRequest(ApiModel):
     signature: str
 
 
+class CollectionRequest(ApiModel):
+    """Typed mirror of the environment-neutral collection submission contract.
+
+    Field-level validation lives in ``lineage_api.application.collections`` so FastAPI,
+    the neutral product API, and the AWS entry point cannot drift; this model exists to
+    reject unknown fields and obvious shape errors before the request reaches it.
+    """
+
+    sourceType: Literal["LOCAL_CHECKOUT", "GIT"]
+    origin: str = Field(min_length=1, max_length=2_048)
+    repository: str = Field(min_length=1, max_length=128)
+    revision: str = Field(min_length=40, max_length=40, pattern=r"^[0-9a-f]{40}$")
+    environment: str = Field(min_length=1, max_length=128)
+    platform: str = Field(min_length=1, max_length=128)
+    system: str = Field(min_length=1, max_length=128)
+    analyzerPack: str = Field(min_length=1, max_length=128)
+    ruleset: str = Field(min_length=1, max_length=128)
+    schemaProfile: str = Field(min_length=1, max_length=128)
+    checkoutPath: str | None = Field(default=None, min_length=1, max_length=4_096)
+
+    @model_validator(mode="after")
+    def validate_source_mode(self) -> "CollectionRequest":
+        if self.sourceType == "GIT" and self.checkoutPath is not None:
+            raise ValueError("checkoutPath is not allowed for GIT sources")
+        if self.sourceType == "LOCAL_CHECKOUT" and self.checkoutPath is None:
+            raise ValueError("checkoutPath is required for LOCAL_CHECKOUT sources")
+        return self
+
+    def as_submission(self) -> dict[str, Any]:
+        document = self.model_dump(exclude_none=True)
+        return document
+
+
 class ReviewRequest(ApiModel):
     version: int = Field(ge=1)
     actor: str = Field(min_length=1)

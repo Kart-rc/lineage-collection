@@ -4,7 +4,7 @@ import sqlite3
 from dataclasses import dataclass
 
 
-LATEST_SCHEMA_VERSION = 8
+LATEST_SCHEMA_VERSION = 9
 
 
 @dataclass(frozen=True, slots=True)
@@ -369,6 +369,25 @@ CREATE INDEX IF NOT EXISTS idx_runtime_kill_switch_active
 """
 
 
+REPOSITORY_COLLECTION_SQL = """
+CREATE TABLE IF NOT EXISTS repository_collections (
+    command_id TEXT PRIMARY KEY,
+    origin TEXT NOT NULL,
+    repository TEXT NOT NULL,
+    revision TEXT NOT NULL,
+    environment TEXT NOT NULL,
+    system TEXT NOT NULL,
+    source_type TEXT NOT NULL,
+    command_status TEXT NOT NULL,
+    terminal INTEGER NOT NULL CHECK(terminal IN (0, 1)),
+    document_json TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_repository_collections_scope
+    ON repository_collections(repository, revision, environment, system);
+"""
+
+
 MIGRATIONS = (
     Migration(2, DURABLE_CONTROL_SQL),
     Migration(3, LOCAL_LANE_BROKER_SQL),
@@ -377,6 +396,7 @@ MIGRATIONS = (
     Migration(6, RUNTIME_SQL),
     Migration(7, RESUMABLE_PUBLICATION_SQL),
     Migration(8, RUNTIME_POLICY_SQL),
+    Migration(9, REPOSITORY_COLLECTION_SQL),
 )
 
 

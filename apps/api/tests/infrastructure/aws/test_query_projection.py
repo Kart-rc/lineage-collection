@@ -543,3 +543,84 @@ def test_product_service_defaults_the_queue_to_in_review() -> None:
     assert request["ExpressionAttributeValues"][":state"] == {
         "S": "PROPOSAL_STATE#IN_REVIEW"
     }
+
+
+def _collection_item(command_id: str = "cmd-1") -> dict[str, Any]:
+    return {
+        "pk": {"S": f"COLLECTION#{command_id}"},
+        "sk": {"S": "STATUS"},
+        "document": {
+            "S": json.dumps(
+                {
+                    "commandId": command_id,
+                    "collectionId": command_id,
+                    "statusUrl": f"/api/collections/{command_id}",
+                    "commandStatus": "SUCCEEDED",
+                    "terminal": True,
+                    "sourceType": "GIT",
+                    "origin": "https://github.com/acme/demo",
+                    "revision": "a" * 40,
+                    "runtimeStatus": "NOT_PROVIDED",
+                }
+            )
+        },
+    }
+
+
+def test_collection_status_reads_the_ledger_projection_consistently() -> None:
+    client = Client(get_item=[{"Item": _collection_item()}])
+
+    document = _port(client).get_collection(
+        command_id="cmd-1", principal="reader", correlation_id="corr-api"
+    )
+
+    assert document["commandId"] == "cmd-1"
+    assert document["terminal"] is True
+    assert document["runtimeStatus"] == "NOT_PROVIDED"
+    name, request = client.calls[0]
+    assert name == "get_item"
+    assert request["TableName"] == "ledger"
+    assert request["Key"] == {"pk": {"S": "COLLECTION#cmd-1"}, "sk": {"S": "STATUS"}}
+    assert request["ConsistentRead"] is True
+
+
+def test_collection_status_of_an_unknown_command_is_a_stable_not_found() -> None:
+    client = Client(get_item=[{}])
+
+    with pytest.raises(ProductApiError) as caught:
+        _port(client).get_collection(
+            command_id="cmd-missing", principal="reader", correlation_id="corr-api"
+        )
+
+    assert caught.value.status_code == 404
+    assert caught.value.code == "COLLECTION_NOT_FOUND"
+
+
+def test_collection_status_is_reachable_through_the_neutral_product_route() -> None:
+    client = Client(get_item=[{"Item": _collection_item("cmd-7")}])
+
+    response = ProductApiService(_port(client)).handle(
+        method="GET",
+        path="/api/collections/cmd-7",
+        query={},
+        body=None,
+        principal="reader",
+        correlation_id="corr-api",
+    )
+
+    assert response.status_code == 200
+    assert response.document["commandId"] == "cmd-7"
+    assert response.headers == {}
+
+
+def test_collection_submit_fails_closed_until_the_acquisition_stage_exists() -> None:
+    client = Client()
+
+    with pytest.raises(ProductApiError) as caught:
+        _port(client).submit_collection(
+            body={"sourceType": "GIT"}, principal="writer", correlation_id="corr-api"
+        )
+
+    assert caught.value.status_code == 501
+    assert caught.value.code == "COLLECTION_SUBMIT_NOT_CONFIGURED"
+    assert client.calls == [], "a refused submit must not touch AWS"
