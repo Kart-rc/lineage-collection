@@ -25,7 +25,12 @@ from lineage_api.services.analyzer_registry import (
 )
 from lineage_api.services.composition import compose_repository_documents
 from lineage_api.services.impact_simulation import simulate_impact
-from lineage_api.services.liveness import derive_liveness
+from lineage_api.application.runtime_stage import (
+    catalog_element_resolver,
+    run_runtime_stage,
+)
+from lineage_api.services.resolver import ResolveContext
+from lineage_api.services.runtime_verification import StaticEdge
 from lineage_api.services.resolver import Resolver
 from lineage_api.services.sca import ScaAnalyzer
 
@@ -204,25 +209,62 @@ def main() -> int:
         )
     print(f"\n  datasets touched: {len(report.datasets)}   max hops: {report.max_hops}")
 
-    _rule("4. CONFIDENCE AS THE PRODUCT DISPLAYS IT")
-    confidence = project_confidence("SINGLE", [{"mechanism": "SCA"}])
-    print(
-        f"  every edge above: band={confidence.display_band} "
-        f"({confidence.percent}%)  signals={list(confidence.signals)}  "
-        f"lastObserved={confidence.last_observed}"
+    _rule("4. RUNTIME VERIFICATION STAGE (payments-pipeline)")
+    pipeline_source = (FIXTURES / "payments-pipeline" / "pipeline.py").read_text()
+    static_edges = tuple(
+        StaticEdge(
+            str(edge["from"][0]), str(edge["to"]), "DERIVES", str(edge.get("transform", ""))
+        )
+        for edge in py_document["edges"]
     )
-    print("  reason: runtime is not yet on the collection path, so no edge is VERIFIED.")
-    liveness = derive_liveness("edge-example", 0, None, session_complete=False)
+    stage = run_runtime_stage(
+        module_path="pipeline.py",
+        module_source=pipeline_source,
+        static_edges=static_edges,
+        resolve=catalog_element_resolver(
+            resolver,
+            ResolveContext(
+                env="staging",
+                platform="snowflake",
+                system="payments",
+                repo="payments-pipeline",
+                digest="a" * 40,
+                config={},
+                snapshot_id=resolver.snapshot_id,
+            ),
+        ),
+        observed_at="2026-08-12T10:00:00Z",
+        allow_execution=True,
+    )
+    print(f"  runtimeStatus = {stage.verdict}")
     print(
-        f"  liveness: band={liveness.band}  observations={liveness.observations}  "
-        f"sessionComplete={liveness.session_complete}"
+        f"  corroborated={stage.corroborated}  staticOnly={stage.static_only}  "
+        f"runtimeOnly={stage.runtime_only}"
+    )
+    print(f"  entry points executed: {list(stage.executed)}")
+    for item in stage.liveness:
+        target = item.edge_key.split("->")[-1].split(":")[-1]
+        print(
+            f"    liveness {item.band:10s} observations={item.observations}  {target}"
+        )
+
+    _rule("5. CONFIDENCE AS THE PRODUCT DISPLAYS IT")
+    runtime_backed = project_confidence(
+        "HIGH", [{"mechanism": "SCA"}, *stage.observations]
+    )
+    static_only_conf = project_confidence("SINGLE", [{"mechanism": "SCA"}])
+    print(
+        f"  runtime-corroborated edges: band={runtime_backed.display_band} "
+        f"({runtime_backed.percent}%)  signals={list(runtime_backed.signals)}  "
+        f"lastObserved={runtime_backed.last_observed}"
     )
     print(
-        "  the model exists and is honest: with no complete session, UNOBSERVED is"
-        " recorded\n  but may_demote() refuses to act on it."
+        f"  static-only edges:          band={static_only_conf.display_band} "
+        f"({static_only_conf.percent}%)  signals={list(static_only_conf.signals)}  "
+        f"lastObserved={static_only_conf.last_observed}"
     )
 
-    _rule("5. SCORECARD AGAINST THE PROTOTYPE")
+    _rule("6. SCORECARD AGAINST THE PROTOTYPE")
     element_level = all("#" in str(edge["to"]) for edge in graph.edges) and bool(graph.edges)
     has_transforms = all(str(edge.get("transform", "")) for edge in graph.edges)
     rows = [
@@ -231,10 +273,10 @@ def main() -> int:
         ("cross-repository composition", bool(graph.shared_datasets)),
         ("traversable blast radius with severity", report.max_hops >= 2),
         ("confidence band on every edge", True),
-        ("multi-signal confidence (runtime observed)", confidence.last_observed is not None),
+        ("multi-signal confidence (runtime observed)", runtime_backed.display_band == "VERIFIED"),
+        ("runtime verification on the collection path", stage.verdict == "CORROBORATED"),
+        ("liveness populated by real observations", any(i.observations > 0 for i in stage.liveness)),
         ("service-to-service interactions plane", False),
-        ("liveness model (HOT..UNOBSERVED)", True),
-        ("liveness populated by real observations", False),
     ]
     for label, ok in rows:
         print(f"  [{'x' if ok else ' '}] {label}")
