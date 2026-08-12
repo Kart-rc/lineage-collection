@@ -109,7 +109,9 @@ _RESIDUE_CODES = frozenset(
         "ambiguous-entity-name",
         "ambiguous-framework-evidence",
         "ambiguous-framework-symbol",
+        "ambiguous-repository-abstraction",
         "ambiguous-repository-injection",
+        "ambiguous-wildcard-symbol",
         "dynamic-framework-evidence",
         "dynamic-entity-name",
         "dynamic-query",
@@ -2011,6 +2013,9 @@ class JavaSpringScaAnalyzer:
     ) -> tuple[set[str], _JavaSymbolIndex]:
         symbols = _build_java_symbol_index(parsed_files)
         repository_types: set[str] = set()
+        # abstraction FQN -> {(entityFqn, entityType, idType, specialization, baseFqn)}
+        abstractions: dict[str, set[tuple[str, str, str, str, str]]] = {}
+        abstraction_sites: dict[str, SourceLocation] = {}
         for parsed in parsed_files:
             root = parsed.tree.root_node
             for child in root.named_children:
@@ -2037,7 +2042,7 @@ class JavaSpringScaAnalyzer:
                 qualified_name = _qualified_type_name(
                     declaration, parsed.package, parsed.source.content
                 )
-                extends, implements, generic_nodes = _super_types(
+                extends, implements, generic_nodes, plain_nodes = _super_types(
                     declaration, parsed.source.content
                 )
                 attributes: list[tuple[str, FactValue]] = [
@@ -2114,6 +2119,35 @@ class JavaSpringScaAnalyzer:
                             ),
                             self._node_location(parsed.source.path, generic),
                         )
+                        # A specialization usually also extends a plain project interface
+                        # -- the type services actually inject. Record the candidate so
+                        # the abstraction can inherit this entity once every
+                        # specialization has been seen.
+                        for plain in plain_nodes:
+                            abstraction_fqn = self._resolve_java_symbol(
+                                parsed,
+                                _node_text(plain, parsed.source.content),
+                                plain,
+                                symbols,
+                            )
+                            if (
+                                abstraction_fqn is None
+                                or abstraction_fqn not in symbols.local_types
+                            ):
+                                continue
+                            abstractions.setdefault(abstraction_fqn, set()).add(
+                                (
+                                    entity_fqn,
+                                    arguments[0],
+                                    arguments[1],
+                                    qualified_name,
+                                    base_fqn,
+                                )
+                            )
+                            abstraction_sites.setdefault(
+                                abstraction_fqn,
+                                self._node_location(parsed.source.path, plain),
+                            )
                 self._emit_members(
                     parsed,
                     declaration,
@@ -2121,7 +2155,58 @@ class JavaSpringScaAnalyzer:
                     symbols,
                     framework_supported=framework.status == "supported",
                 )
+
+        self._resolve_repository_abstractions(
+            repository_types, abstractions, abstraction_sites
+        )
         return repository_types, symbols
+
+    def _resolve_repository_abstractions(
+        self,
+        repository_types: set[str],
+        abstractions: dict[str, set[tuple[str, str, str, str, str]]],
+        abstraction_sites: dict[str, SourceLocation],
+    ) -> None:
+        """Let a plain interface inherit the entity of its Spring Data specialization.
+
+        Services frequently inject an abstraction rather than the Spring Data type, so
+        without this the receiver is unbound and no lineage is produced at all. The
+        inheritance only happens when it is unambiguous: if two specializations of the
+        same abstraction disagree on the entity, Spring's choice is a runtime decision
+        and the abstraction is quarantined rather than guessed.
+        """
+        for abstraction_fqn, candidates in sorted(abstractions.items()):
+            if abstraction_fqn in repository_types:
+                # Already a repository in its own right; nothing to inherit.
+                continue
+            entities = {candidate[0] for candidate in candidates}
+            location = abstraction_sites[abstraction_fqn]
+            if len(entities) != 1:
+                self._add_residue(
+                    "ambiguous-repository-abstraction",
+                    "specializations disagree on the entity behind the injected abstraction",
+                    abstraction_fqn,
+                    location,
+                )
+                continue
+            entity_fqn, entity_type, id_type, specialization, base_fqn = sorted(
+                candidates
+            )[0]
+            repository_types.add(abstraction_fqn)
+            self._add_fact(
+                "spring.repository-association",
+                abstraction_fqn,
+                (
+                    ("baseFqn", base_fqn),
+                    ("baseType", base_fqn.rsplit(".", 1)[-1]),
+                    ("entityFqn", entity_fqn),
+                    ("entityType", entity_type),
+                    ("idType", id_type),
+                    ("viaAbstraction", "true"),
+                    ("specializedBy", specialization),
+                ),
+                location,
+            )
 
     def _emit_annotations(
         self,
@@ -2452,6 +2537,9 @@ class JavaSpringScaAnalyzer:
                 return None
             return resolved
         if context.wildcard_imports and simple_name in _SENSITIVE_FRAMEWORK_NAMES:
+            # Deliberately not resolved. Jars are invisible to this analyzer, so an
+            # on-demand import cannot prove that no *other* wildcard-imported package
+            # also supplies a framework-sensitive name. Only an exact import may bind one.
             self._add_residue(
                 "wildcard-framework-symbol",
                 "wildcard imports cannot prove a framework-sensitive symbol",
@@ -2459,6 +2547,27 @@ class JavaSpringScaAnalyzer:
                 location,
             )
             return None
+        if context.wildcard_imports:
+            # A *local* name is different: the tracked scope is closed, so if exactly one
+            # wildcard-imported package declares this simple name in the snapshot, no
+            # other declaration can be in play. Two candidates are a real ambiguity.
+            candidates = sorted(
+                {
+                    f"{package}.{simple_name}"
+                    for package in context.wildcard_imports
+                    if f"{package}.{simple_name}" in symbols.local_types
+                }
+            )
+            if len(candidates) > 1:
+                self._add_residue(
+                    "ambiguous-wildcard-symbol",
+                    "multiple wildcard imports declare the same local simple name",
+                    simple_name,
+                    location,
+                )
+                return None
+            if len(candidates) == 1:
+                return candidates[0]
         if simple_name in {
             "Boolean",
             "Byte",
@@ -3247,20 +3356,33 @@ def _simple_type(type_name: str) -> str:
 
 def _super_types(
     declaration: Node, content: bytes
-) -> tuple[tuple[str, ...], tuple[str, ...], tuple[Node, ...]]:
+) -> tuple[tuple[str, ...], tuple[str, ...], tuple[Node, ...], tuple[Node, ...]]:
+    """Split declared supertypes into generic and plain nodes.
+
+    The plain nodes matter for repository abstractions: a Spring Data specialization
+    typically extends both a framework base with generics *and* a plain project interface
+    that services actually inject.
+    """
     extends: list[str] = []
     implements: list[str] = []
     generic_nodes: list[Node] = []
+    plain_nodes: list[Node] = []
     for child in declaration.named_children:
         if child.type in {"extends_interfaces", "superclass"}:
             types = _direct_supertype_nodes(child)
             extends.extend(_node_text(node, content) for node in types)
-            generic_nodes.extend(node for node in types if node.type == "generic_type")
         elif child.type in {"super_interfaces", "implements_interfaces"}:
             types = _direct_supertype_nodes(child)
             implements.extend(_node_text(node, content) for node in types)
-            generic_nodes.extend(node for node in types if node.type == "generic_type")
-    return tuple(extends), tuple(implements), tuple(generic_nodes)
+        else:
+            continue
+        generic_nodes.extend(node for node in types if node.type == "generic_type")
+        plain_nodes.extend(
+            node
+            for node in types
+            if node.type in {"type_identifier", "scoped_type_identifier"}
+        )
+    return tuple(extends), tuple(implements), tuple(generic_nodes), tuple(plain_nodes)
 
 
 def _direct_supertype_nodes(node: Node) -> tuple[Node, ...]:

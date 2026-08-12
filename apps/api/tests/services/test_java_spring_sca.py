@@ -2278,3 +2278,182 @@ interface OwnerRepository extends JpaRepository<Owner,Integer> {}""",
     bindings = _facts(analysis, "spring.repository-binding")
     assert any(fact.subject.endswith("#owners") for fact in bindings), bindings
     assert not any(fact.subject.endswith("#petRepository") for fact in bindings)
+
+
+ABSTRACTION_ENTITY = """package example;
+import jakarta.persistence.Entity; import jakarta.persistence.Table;
+@Entity @Table(name="pets") class Pet {}"""
+
+ABSTRACTION_INTERFACE = """package example;
+public interface PetRepository {
+    Pet findById(Integer id);
+    Pet save(Pet pet);
+}"""
+
+ABSTRACTION_SERVICE = """package example;
+class PetService {
+  private final PetRepository pets;
+  PetService(PetRepository pets) { this.pets = pets; }
+  Pet read(Integer id) { return pets.findById(id); }
+  Pet write(Pet pet) { return pets.save(pet); }
+}"""
+
+
+def _abstraction_sources(specializations: str) -> tuple[JavaSpringSource, ...]:
+    return (
+        _source("pom.xml", _maven_build()),
+        _source("src/example/Pet.java", ABSTRACTION_ENTITY),
+        _source("src/example/PetRepository.java", ABSTRACTION_INTERFACE),
+        _source("src/example/PetService.java", ABSTRACTION_SERVICE),
+        _source("src/example/Specializations.java", specializations),
+        _source(
+            "src/main/resources/db/postgres/schema.sql",
+            "create table pets (id integer primary key);",
+            dialect="postgres",
+        ),
+    )
+
+
+def test_a_repository_abstraction_is_followed_to_its_specialization() -> None:
+    """spring-petclinic-rest injects a plain interface, not the Spring Data type.
+
+    `SpringDataPetRepository extends PetRepository, Repository<Pet, Integer>` means the
+    injected `PetRepository` provably resolves to entity `Pet`, so a call through the
+    abstraction is real lineage rather than an unbound receiver.
+    """
+    specializations = """package example;
+import org.springframework.data.repository.Repository;
+public interface SpringDataPetRepository extends PetRepository, Repository<Pet, Integer> {}"""
+
+    result = JavaSpringScaAnalyzer().analyze(_abstraction_sources(specializations))
+
+    associations = {
+        fact.subject: fact.attribute("entityType")
+        for fact in _facts(result, "spring.repository-association")
+    }
+    assert associations.get("example.SpringDataPetRepository") == "Pet"
+    # The abstraction itself now carries the association, resolved through its
+    # specialization rather than declared directly.
+    assert associations.get("example.PetRepository") == "Pet"
+
+    bindings = [
+        fact.attribute("field") for fact in _facts(result, "spring.repository-binding")
+    ]
+    assert bindings == ["pets"]
+
+    invocations = [
+        (fact.attribute("receiver"), fact.attribute("method"))
+        for fact in _facts(result, "java.invocation")
+    ]
+    assert ("pets", "findById") in invocations
+    assert ("pets", "save") in invocations
+
+
+def test_an_abstraction_with_two_entities_is_quarantined_not_guessed() -> None:
+    specializations = """package example;
+import org.springframework.data.repository.Repository;
+interface Other {}
+public interface SpringDataPetRepository extends PetRepository, Repository<Pet, Integer> {}
+interface SecondPetRepository extends PetRepository, Repository<Other, Integer> {}"""
+
+    result = JavaSpringScaAnalyzer().analyze(_abstraction_sources(specializations))
+
+    associations = {
+        fact.subject for fact in _facts(result, "spring.repository-association")
+    }
+    assert "example.PetRepository" not in associations
+    assert "ambiguous-repository-abstraction" in {item.code for item in result.residue}
+    assert _facts(result, "spring.repository-binding") == ()
+
+
+def test_an_unspecialized_interface_never_becomes_a_repository() -> None:
+    specializations = "package example;\ninterface Unrelated {}"
+
+    result = JavaSpringScaAnalyzer().analyze(_abstraction_sources(specializations))
+
+    associations = {
+        fact.subject for fact in _facts(result, "spring.repository-association")
+    }
+    assert associations == set()
+    assert _facts(result, "spring.repository-binding") == ()
+
+
+def test_a_local_type_resolves_through_a_wildcard_import() -> None:
+    """A service that reaches its repository through `import ...repository.*;` is normal.
+
+    The tracked scope is closed, so exactly one local declaration of the simple name is
+    provable. This is what lets a real Spring service bind its injected repository.
+    """
+    service = """package example.service;
+import example.repo.*;
+import example.model.*;
+class OwnerService {
+  private final OwnerRepository owners;
+  OwnerService(OwnerRepository owners) { this.owners = owners; }
+  Owner read(Integer id) { return owners.findById(id).orElseThrow(); }
+}"""
+    sources = (
+        _source("pom.xml", _maven_build()),
+        _source(
+            "src/example/model/Owner.java",
+            "package example.model;\nimport jakarta.persistence.Entity;\n"
+            'import jakarta.persistence.Table;\n@Entity @Table(name="owners") public class Owner {}',
+        ),
+        _source(
+            "src/example/repo/OwnerRepository.java",
+            "package example.repo;\nimport org.springframework.data.jpa.repository.JpaRepository;\n"
+            "import example.model.Owner;\n"
+            "public interface OwnerRepository extends JpaRepository<Owner,Integer> {}",
+        ),
+        _source("src/example/service/OwnerService.java", service),
+        _source(
+            "src/main/resources/db/postgres/schema.sql",
+            "create table owners (id integer primary key);",
+            dialect="postgres",
+        ),
+    )
+
+    result = JavaSpringScaAnalyzer().analyze(sources)
+
+    assert [f.attribute("field") for f in _facts(result, "spring.repository-binding")] == [
+        "owners"
+    ]
+
+
+def test_a_framework_name_is_never_resolved_through_a_wildcard_import() -> None:
+    """Jars are invisible here, so an on-demand import cannot prove a framework symbol.
+
+    Another wildcard-imported package could supply `Entity` from a jar this analyzer
+    cannot see, so only an exact import may bind a framework-sensitive name.
+    """
+    java = (
+        "package example;\nimport jakarta.persistence.*;\n"
+        '@Entity @Table(name="owners") class Owner {}'
+    )
+
+    result = JavaSpringScaAnalyzer().analyze(
+        (_source("pom.xml", _maven_build()), _source("src/example/Owner.java", java))
+    )
+
+    assert _facts(result, "spring.entity-table") == ()
+    assert "wildcard-framework-symbol" in {entry.code for entry in result.residue}
+
+
+def test_two_wildcard_imports_declaring_the_same_local_name_are_quarantined() -> None:
+    service = """package example.service;
+import example.a.*;
+import example.b.*;
+class Service {
+  private final Thing thing;
+  Service(Thing thing) { this.thing = thing; }
+}"""
+    sources = (
+        _source("pom.xml", _maven_build()),
+        _source("src/example/a/Thing.java", "package example.a;\npublic interface Thing {}"),
+        _source("src/example/b/Thing.java", "package example.b;\npublic interface Thing {}"),
+        _source("src/example/service/Service.java", service),
+    )
+
+    result = JavaSpringScaAnalyzer().analyze(sources)
+
+    assert _facts(result, "spring.repository-binding") == ()
