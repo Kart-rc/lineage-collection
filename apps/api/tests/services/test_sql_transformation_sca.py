@@ -42,12 +42,44 @@ def test_create_table_as_select_takes_columns_from_projection_aliases() -> None:
     assert result.target_columns == ("customer_id", "total")
 
 
-def test_insert_without_a_column_list_is_residue() -> None:
+def test_insert_without_a_column_list_defers_the_column_order() -> None:
+    """The order is not in the statement, so classification leaves it empty."""
     result = classify_statement(
         _stmt("INSERT INTO a.b SELECT y FROM c.d"), "sql/x.sql", 7
     )
 
-    assert result == SqlResidue("implicit-target-columns", "sql/x.sql", 7, "a.b")
+    assert isinstance(result, SqlStatementTarget)
+    assert result.target_table == "a.b"
+    assert result.target_columns == ()
+
+
+def test_implicit_columns_are_residue_when_no_catalog_can_supply_the_order() -> None:
+    analysis = analyze_sql_sources(
+        (SqlTransformationSource("sql/x.sql", b"INSERT INTO a.b SELECT y FROM c.d;", "postgres"),)
+    )
+
+    assert analysis.shapes == ()
+    assert [item.code for item in analysis.residue] == ["implicit-target-columns"]
+
+
+def test_implicit_columns_resolve_positionally_from_the_declared_order() -> None:
+    analysis = analyze_sql_sources(
+        (SqlTransformationSource("sql/x.sql", b"INSERT INTO a.b SELECT y, z FROM c.d;", "postgres"),),
+        table_columns=lambda table: ("first", "second") if table == "a.b" else None,
+    )
+
+    assert [p.target_column for p in analysis.shapes[0].projections] == ["first", "second"]
+
+
+def test_an_arity_mismatch_against_the_declared_order_is_a_finding() -> None:
+    """Statement and catalog disagreeing is a finding, not something to guess through."""
+    analysis = analyze_sql_sources(
+        (SqlTransformationSource("sql/x.sql", b"INSERT INTO a.b SELECT y FROM c.d;", "postgres"),),
+        table_columns=lambda table: ("first", "second", "third"),
+    )
+
+    assert analysis.shapes == ()
+    assert [item.code for item in analysis.residue] == ["implicit-target-columns"]
 
 
 def test_more_than_one_source_table_is_residue() -> None:

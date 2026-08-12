@@ -8,6 +8,7 @@ statement itself: an unprovable shape becomes typed residue, not a guess.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Callable
 
 import hashlib
 
@@ -76,7 +77,11 @@ def classify_statement(
         if not all(target_columns):
             return SqlResidue("unnamed-projection", path, line, target_table)
     else:
-        return SqlResidue("implicit-target-columns", path, line, target_table)
+        # An INSERT without a column list maps positionally onto the table's columns.
+        # That order is not in the statement, so it is left empty here and resolved by
+        # the caller from the catalog — the authority on column order. If no catalog
+        # answer is available the caller turns this back into residue.
+        target_columns = ()
 
     return SqlStatementTarget(target_table, sources[0], target_columns)
 
@@ -155,6 +160,7 @@ def _statement_start_lines(text: str, dialect: str) -> list[int]:
 
 def analyze_sql_sources(
     sources: tuple[SqlTransformationSource, ...],
+    table_columns: "Callable[[str], tuple[str, ...] | None] | None" = None,
 ) -> SqlTransformationAnalysis:
     shapes: list[SqlStatementShape] = []
     residue: list[SqlResidue] = []
@@ -176,8 +182,31 @@ def analyze_sql_sources(
             if isinstance(classified, SqlResidue):
                 residue.append(classified)
                 continue
+            target_columns = classified.target_columns
+            if not target_columns:
+                # Positional INSERT: resolve the declared column order, and only accept
+                # it when the arity matches the projection. A mismatch means the
+                # statement and the catalog disagree, which is a finding, not a guess.
+                declared = (
+                    table_columns(classified.target_table)
+                    if table_columns is not None
+                    else None
+                )
+                projection_count = len(statement.expression.expressions)
+                if declared is None or len(declared) != projection_count:
+                    residue.append(
+                        SqlResidue(
+                            "implicit-target-columns",
+                            source.path,
+                            line,
+                            classified.target_table,
+                        )
+                    )
+                    continue
+                target_columns = declared
+
             projections, projection_residue = pair_projections(
-                classified.target_columns, statement.expression, source.path, line
+                target_columns, statement.expression, source.path, line
             )
             residue.extend(projection_residue)
             if not projections:

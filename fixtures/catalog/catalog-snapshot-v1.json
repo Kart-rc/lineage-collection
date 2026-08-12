@@ -7,6 +7,7 @@
       "staging"
     ],
     "platforms": [
+      "hive",
       "kafka",
       "postgres",
       "s3",
@@ -16,7 +17,8 @@
       "inventory",
       "lakehouse",
       "payments",
-      "petclinic"
+      "petclinic",
+      "warehouse"
     ]
   },
   "datasets": [
@@ -264,6 +266,48 @@
         {
           "name": "window_end",
           "type": "TIMESTAMP"
+        }
+      ]
+    },
+    {
+      "catalogRef": "catalog://warehouse/test.t1",
+      "env": "staging",
+      "platform": "hive",
+      "system": "warehouse",
+      "name": "test.t1",
+      "aliases": [
+        "t1"
+      ],
+      "kind": "DATASTORE",
+      "elements": [
+        {
+          "name": "a",
+          "type": "INT"
+        },
+        {
+          "name": "b",
+          "type": "STRING"
+        }
+      ]
+    },
+    {
+      "catalogRef": "catalog://warehouse/test.t2",
+      "env": "staging",
+      "platform": "hive",
+      "system": "warehouse",
+      "name": "test.t2",
+      "aliases": [
+        "t2"
+      ],
+      "kind": "DATASTORE",
+      "elements": [
+        {
+          "name": "a",
+          "type": "INT"
+        },
+        {
+          "name": "b",
+          "type": "STRING"
         }
       ]
     }

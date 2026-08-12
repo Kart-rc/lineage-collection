@@ -79,6 +79,10 @@ class _NormalizedName:
     # Set only for object-store values: the canonical `scheme://authority/path` lookup
     # key. Identity still comes from the matched catalog row, never from this string.
     locator_key: str = ""
+    # True when `system` was derived from a wire address (a bucket, a broker host:port)
+    # rather than known from context. Such an address is never an ownership system, so
+    # it must not be gated or matched on — the catalog row supplies the real owner.
+    system_from_wire: bool = False
 
 
 class Resolver:
@@ -113,7 +117,9 @@ class Resolver:
         # For an object-store value the derived host is a *bucket*, which is not an
         # ownership system and must never be gated as one — publication enforces
         # `system` as the ownership axis. The matched row supplies both.
-        system_known_before_match = not normalized.locator_key
+        system_known_before_match = not (
+            normalized.locator_key or normalized.system_from_wire
+        )
         if (
             context.env not in vocabulary["environments"]
             or normalized.platform not in vocabulary["platforms"]
@@ -146,7 +152,7 @@ class Resolver:
                 (),
                 {"normalizedValue": normalized.dataset},
             )
-        if normalized.locator_key and len(matches) == 1:
+        if (normalized.locator_key or normalized.system_from_wire) and len(matches) == 1:
             owner = str(matches[0]["system"])
             if owner not in vocabulary["systems"]:
                 return self._quarantine(
@@ -276,6 +282,9 @@ class Resolver:
             dataset=case_folded,
             sanitized_raw=sanitized_raw,
             rules=tuple(rules),
+            system_from_wire=(
+                raw.source == "RUNTIME" and system.lower() != context.system.lower()
+            ),
         )
 
     @staticmethod
@@ -315,6 +324,13 @@ class Resolver:
         if alias_matches:
             return alias_matches
 
+        if normalized.system_from_wire:
+            return [
+                dataset
+                for dataset in self._datasets
+                if str(dataset["name"]).lower() == normalized.dataset
+                and str(dataset["platform"]).lower() == normalized.platform
+            ]
         return [
             dataset
             for dataset in self._datasets

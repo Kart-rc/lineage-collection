@@ -369,12 +369,12 @@ class ConsolidationService:
             raise ValueError(
                 f"object-store observation requires a catalog resolver: {value}"
             )
-        if self._resolver is not None and is_object_store(scheme):
+        if self._resolver is not None:
             resolved = self._resolver.resolve(
                 RawName("dataset", value, "RUNTIME", ()),
                 ResolveContext(
                     env=environment,
-                    platform=canonical_scheme(scheme),
+                    platform=canonical_scheme(scheme) if is_object_store(scheme) else scheme,
                     system="",
                     repo="",
                     digest="",
@@ -384,7 +384,8 @@ class ConsolidationService:
             )
             if isinstance(resolved, ResolvedName):
                 return resolved.urn.dataset_urn
-            raise ValueError(f"unresolvable runtime dataset identifier: {value}")
+            if is_object_store(scheme):
+                raise ValueError(f"unresolvable runtime dataset identifier: {value}")
         return self._runtime_dataset_urn(value, environment)
 
     @staticmethod
