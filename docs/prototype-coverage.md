@@ -35,55 +35,74 @@ prototype labels remain useful: **Implemented**, **Fixture adapter**, **Interfac
 
 ## Product prototype alignment (2026-08-12)
 
-Measured by `scripts/verify_prototype_alignment.py`, which runs every cell across the
-fixture repositories and scores the composed result against `Throughline - Agentic`.
-Each scorecard row cites the prototype construct it matches, so the score is checkable
-against the document rather than taken on trust. Current state: **13 of 13 dimensions**.
+The expectation is **derived from the prototype document, not paraphrased**.
+`scripts/extract_prototype_expectation.py` parses the actual
+`Throughline - Agentic.dc.html` (242,743 bytes) and writes the vocabularies it models to
+`docs/architecture/prototype-expectation.json`:
 
-Six repositories, two estates:
+| Extracted from the document | Value |
+|---|---|
+| element field signature | `name, type, tag, up, down, xf` |
+| confidence bands | `verified ≥90, probable ≥65, inferred` |
+| confidence signals | `dask, llm, otel, spark, static` |
+| liveness bands | `HOT, WARM, COLD, DEAD?` |
+| severity bands | `break, origin, warn` |
+| interaction channels | `async, graphql, grpc, rest` |
+| dataset kinds | `cache, datastore, kafka, s3file, s3land, search` |
 
-| Repository | Cell | Status | Edges |
-|---|---|---|---|
-| `java-petclinic-postgres` | `java-spring-data-jpa-v1` | COMPLETE | 4 |
-| `petclinic-analytics-sql` | `sql-transformation-v1` | COMPLETE | 2 |
-| `warehouse-sql` | `sql-transformation-v1` | COMPLETE | 3 |
-| `risk-model-sql` | `sql-transformation-v1` | COMPLETE | 2 |
-| `payments-pipeline` | `python-fixture-v1` | COMPLETE | 3 |
-| `java-spring-corpus` | `java-spring-data-jpa-v1` | INTEGRATION_REQUIRED | 0 |
+`apps/api/tests/test_prototype_expectation.py` asserts the platform implements every
+term in that file, so a change to the prototype breaks the build rather than drifting
+silently. `scripts/verify_prototype_alignment.py` then scores the composed output:
+**18/18 dimensions on the purpose-built fixtures**, across six repositories in two
+estates (a Java service, three SQL/Python pipelines, and the H2 corpus that must keep
+failing closed).
 
-`java-petclinic-postgres` is the Petclinic-shaped repository the estate graph is built
-from: a postgres-profile schema whose table identities match the `@Table` mappings, so
-it resolves where the H2-compatibility corpus deliberately does not. Its `owners` table
-is written by the Java service and read by `petclinic-analytics-sql`, which is the
-producer/consumer seam the two repositories join on. The same repository also exposes
-four REST endpoints with typed request/response contracts, so it exercises both lineage
-planes.
+### The real upstream checkout produces zero edges
 
-`java-spring-corpus` is retained unchanged and still yields zero edges. That is the
-designed fail-closed outcome — an H2-profile schema is not trusted as the production
-schema, and an unqualified `@Table` is never guessed into `public` — and it is excluded
-from coverage rather than counted.
+This is the measurement that matters most, and it is not favourable.
+`scripts/measure_real_petclinic.py` runs the cell against an unmodified
+`spring-petclinic-microservices` checkout at `305a1f13e4f961001d4e6cb50a9db51dc3fc5967`:
 
-Findings the harness surfaces rather than hides:
+```
+8 modules, 164 production files, 0 edges — every module INTEGRATION_REQUIRED
+residue: missing-boot-evidence, missing-jpa-dependency, missing-jpa-version,
+         missing-profile-schema, unknown-framework, unsupported-sql,
+         wildcard-framework-symbol
+```
 
-- The Python and SQL cells disagree on one transform's text, because sqlglot renders
-  `DATE(x)` as `CAST(x AS DATE)` under some dialects. Transform text, and therefore edge
-  identity, is schema-profile dependent; the composition marks it `transformConflict`.
-- Liveness bands read `COLD` because the generated plan exercises each edge once. They
-  describe that run, not production traffic.
-- The bottom liveness band is `UNOBSERVED`, not the prototype's `DEAD?`: the evidence
-  only supports "this session did not witness it".
+Three distinct boundaries cause it, all previously declared out of scope for this cell:
 
-Explicitly **not** covered, stated so the score is not read as completeness: gRPC,
-GraphQL and async channels are in the contract vocabulary but have no extractor; OTel
-span enrichment to interactions is designed but not built; and the fixtures are small by
-construction, so this is not an estate-scale measurement.
+1. **Multi-module Maven.** The boot parent is declared in the aggregator `pom.xml`; the
+   `spring-boot-starter-data-jpa` dependency is in each module's own `pom.xml`. The cell
+   requires both as literals in one root build file, so neither the aggregator nor a
+   module satisfies it alone.
+2. **Wildcard framework imports.** `import jakarta.persistence.*;` means `@Entity` and
+   `@Table` cannot be bound to an approved exact FQN, so no table mapping is proven.
+3. **Unsupported SQL.** The MySQL `schema.sql` uses constructs outside the closed
+   ruleset.
+
+So the honest position: the platform matches the prototype's model **on fixtures built
+to resolve**, and does **not** yet analyse the real upstream Petclinic microservices at
+all. Closing that needs Maven module-graph resolution, on-demand import binding, and
+MySQL DDL coverage — three analyzer capabilities, not a configuration change.
+
+### Other limits
+
+- Liveness bands read `COLD` because the generated plan exercises each edge once; they
+  describe that run, not production traffic. The bottom band is `UNOBSERVED`, not the
+  prototype's `DEAD?`, because the evidence only supports "this session did not witness
+  it".
+- The Python and SQL cells disagree on one transform's text (sqlglot renders `DATE(x)` as
+  `CAST(x AS DATE)` under some dialects), so transform text — and therefore edge identity
+  — is schema-profile dependent. Composition marks it `transformConflict`.
+- OTel span enrichment to interactions is designed but not built; outbound extraction
+  covers `@FeignClient` only.
 
 New in this increment: `sql-transformation-v1`, `services/composition.py`,
 `services/impact_simulation.py`, `domain/product_confidence.py`, `services/liveness.py`,
 `application/runtime_stage.py`, `domain/interactions.py`,
-`services/java_interaction_sca.py`, and catalog-owned dataset kinds. Plans for every
-dimension are in `docs/superpowers/plans/`.
+`services/java_interaction_sca.py` (REST, GraphQL, gRPC, async channels), and
+catalog-owned dataset kinds. Plans for every dimension are in `docs/superpowers/plans/`.
 
 ## Tasks 17–21 delivery status (Tasks 17–20 implementation plus handoff)
 

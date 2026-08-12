@@ -30,6 +30,16 @@ _METHOD_ANNOTATIONS = {
     "PatchMapping": "PATCH",
 }
 _CONTROLLER_ANNOTATIONS = {"RestController", "Controller"}
+_GRAPHQL_ANNOTATIONS = {
+    "QueryMapping": "query",
+    "MutationMapping": "mutation",
+    "SubscriptionMapping": "subscription",
+}
+_ASYNC_ANNOTATIONS = {"KafkaListener": "topics", "RabbitListener": "queues"}
+_GRPC_ANNOTATION = "GrpcService"
+
+# The prototype models exactly these four channels; each must have an extractor.
+SUPPORTED_CHANNELS = frozenset({"REST", "GRPC", "GRAPHQL", "ASYNC_EVENT"})
 
 
 @dataclass(frozen=True, slots=True)
@@ -258,6 +268,51 @@ def analyze_java_interactions(
                     )
                 continue
 
+            if _GRPC_ANNOTATION in annotations:
+                for method in _method_declarations(body):
+                    inbound.append(
+                        InboundEndpoint(
+                            service=service,
+                            channel="GRPC",
+                            operation=(
+                                f"{type_name}/{_method_name(method, content)}"
+                            ),
+                            handler=f"{type_name}#{_method_name(method, content)}",
+                            request_fields=_parameters(method, content),
+                            response_fields=_return_field(method, content),
+                            path=path,
+                            line=method.start_point[0] + 1,
+                        )
+                    )
+                continue
+
+            graphql_or_async = _non_rest_methods(body, content)
+            if graphql_or_async:
+                for method, channel, operation in graphql_or_async:
+                    if operation is False:
+                        residue.append(
+                            InteractionResidue(
+                                "dynamic-topic",
+                                path,
+                                method.start_point[0] + 1,
+                                _method_name(method, content),
+                            )
+                        )
+                        continue
+                    inbound.append(
+                        InboundEndpoint(
+                            service=service,
+                            channel=channel,
+                            operation=str(operation),
+                            handler=f"{type_name}#{_method_name(method, content)}",
+                            request_fields=_parameters(method, content),
+                            response_fields=_return_field(method, content),
+                            path=path,
+                            line=method.start_point[0] + 1,
+                        )
+                    )
+                continue
+
             if not (_CONTROLLER_ANNOTATIONS & annotations.keys()):
                 continue
 
@@ -318,3 +373,33 @@ def _route_of(method: Node, content: bytes) -> tuple[str | None, str | bool]:
             continue
         return verb, _string_argument(annotation, content)
     return None, ""
+
+
+def _non_rest_methods(
+    body: Node, content: bytes
+) -> list[tuple[Node, str, str | bool]]:
+    """GraphQL mappings and async listeners declared on a class's methods.
+
+    Returned as (method, channel, operation), where `operation` is False when the
+    declaration is present but its name is not a literal — residue, never a guess.
+    """
+    found: list[tuple[Node, str, str | bool]] = []
+    for method in _method_declarations(body):
+        for annotation in _annotations(method):
+            name = _annotation_name(annotation, content)
+            operation_kind = _GRAPHQL_ANNOTATIONS.get(name)
+            if operation_kind is not None:
+                declared = _string_argument(annotation, content)
+                label = (
+                    _method_name(method, content)
+                    if declared in ("", False)
+                    else str(declared)
+                )
+                found.append((method, "GRAPHQL", f"{operation_kind} {label}"))
+                break
+            attribute = _ASYNC_ANNOTATIONS.get(name)
+            if attribute is not None:
+                topic = _named_argument(annotation, content, attribute)
+                found.append((method, "ASYNC_EVENT", topic))
+                break
+    return found

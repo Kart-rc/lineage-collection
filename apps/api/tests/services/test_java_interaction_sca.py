@@ -99,3 +99,107 @@ def test_classification_is_never_inferred_from_a_field_name() -> None:
 
 def test_analysis_is_deterministic() -> None:
     assert _analyze() == _analyze()
+
+
+# --- channels beyond REST -------------------------------------------------------------
+
+
+def test_spring_graphql_mappings_are_graphql_interactions() -> None:
+    analysis = analyze_java_interactions(
+        {
+            "G.java": (
+                "package example;\n"
+                "import org.springframework.graphql.data.method.annotation.QueryMapping;\n"
+                "import org.springframework.graphql.data.method.annotation.MutationMapping;\n"
+                "import org.springframework.stereotype.Controller;\n"
+                "@Controller\n"
+                "public class CustomerGraph {\n"
+                "  @QueryMapping\n"
+                "  public CustomerView customer(Integer id) { return null; }\n"
+                "  @MutationMapping\n"
+                "  public CustomerView updateCustomer(CustomerInput input) { return null; }\n"
+                "}\n"
+            )
+        },
+        service="customer-service",
+    )
+
+    assert [(i.channel, i.operation) for i in analysis.inbound] == [
+        ("GRAPHQL", "query customer"),
+        ("GRAPHQL", "mutation updateCustomer"),
+    ]
+
+
+def test_a_kafka_listener_is_an_async_event_interaction() -> None:
+    analysis = analyze_java_interactions(
+        {
+            "K.java": (
+                "package example;\n"
+                "import org.springframework.kafka.annotation.KafkaListener;\n"
+                "import org.springframework.stereotype.Component;\n"
+                "@Component\n"
+                "public class PaymentEvents {\n"
+                '  @KafkaListener(topics = "payment.completed")\n'
+                "  public void onPaymentCompleted(PaymentEvent event) { }\n"
+                "}\n"
+            )
+        },
+        service="orders-service",
+    )
+
+    endpoint = analysis.inbound[0]
+    assert endpoint.channel == "ASYNC_EVENT"
+    assert endpoint.operation == "payment.completed"
+    assert [(f.name, f.type) for f in endpoint.request_fields] == [
+        ("event", "PaymentEvent")
+    ]
+
+
+def test_a_grpc_service_method_is_a_grpc_interaction() -> None:
+    analysis = analyze_java_interactions(
+        {
+            "I.java": (
+                "package example;\n"
+                "import net.devh.boot.grpc.server.service.GrpcService;\n"
+                "@GrpcService\n"
+                "public class InventoryService {\n"
+                "  public ReserveReply reserve(ReserveRequest request) { return null; }\n"
+                "}\n"
+            )
+        },
+        service="inventory-service",
+    )
+
+    endpoint = analysis.inbound[0]
+    assert endpoint.channel == "GRPC"
+    assert endpoint.operation == "InventoryService/reserve"
+
+
+def test_a_kafka_topic_that_is_not_a_literal_is_residue() -> None:
+    analysis = analyze_java_interactions(
+        {
+            "K.java": (
+                "package example;\n"
+                "import org.springframework.kafka.annotation.KafkaListener;\n"
+                "import org.springframework.stereotype.Component;\n"
+                "@Component\n"
+                "public class E {\n"
+                "  @KafkaListener(topics = TOPIC)\n"
+                "  public void on(Event event) { }\n"
+                "}\n"
+            )
+        },
+        service="s",
+    )
+
+    assert analysis.inbound == ()
+    assert [r.code for r in analysis.residue] == ["dynamic-topic"]
+
+
+def test_every_prototype_channel_has_an_extractor() -> None:
+    """The prototype models four channels; all four must be reachable."""
+    from lineage_api.services.java_interaction_sca import SUPPORTED_CHANNELS
+
+    assert SUPPORTED_CHANNELS == frozenset(
+        {"REST", "GRPC", "GRAPHQL", "ASYNC_EVENT"}
+    )

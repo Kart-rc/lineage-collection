@@ -29,7 +29,10 @@ from lineage_api.services.analyzer_registry import (
 )
 from lineage_api.services.composition import compose_repository_documents
 from lineage_api.services.impact_simulation import simulate_impact
-from lineage_api.services.java_interaction_sca import analyze_java_interactions
+from lineage_api.services.java_interaction_sca import (
+    SUPPORTED_CHANNELS,
+    analyze_java_interactions,
+)
 from lineage_api.services.resolver import ResolveContext, Resolver
 from lineage_api.services.runtime_verification import StaticEdge
 from lineage_api.services.sca import ScaAnalyzer
@@ -91,7 +94,98 @@ JAVA_SELECTION = AnalyzerSelection(
 )
 
 
+# The prototype's vocabularies, mapped onto the platform's. Every prototype term must
+# have a platform term; an unmapped term is a gap, not a naming preference.
+_KIND_MAP = {
+    "datastore": "DATASTORE",
+    "kafka": "STREAM",
+    "s3land": "LAKE_LANDING",
+    "s3file": "LAKE_FILE",
+    "cache": "CACHE",
+    "search": "SEARCH",
+}
+_CHANNEL_MAP = {
+    "rest": "REST",
+    "grpc": "GRPC",
+    "graphql": "GRAPHQL",
+    "async": "ASYNC_EVENT",
+}
+_BAND_MAP = {"verified": "VERIFIED", "probable": "PROBABLE", "inferred": "INFERRED"}
+_LIVENESS_MAP = {"HOT": "HOT", "WARM": "WARM", "COLD": "COLD", "DEAD?": "UNOBSERVED"}
+_SEVERITY_MAP = {"origin": "SOURCE", "break": "BREAK", "warn": "WARN"}
+
+
+def _covered(prototype_terms, mapping, platform_vocabulary):
+    """Which prototype terms the platform actually implements."""
+    missing = [
+        term
+        for term in prototype_terms
+        if mapping.get(term) not in set(platform_vocabulary)
+    ]
+    return not missing, missing
+
+
 def main() -> int:
+    expectation_path = (
+        ROOT / "docs" / "architecture" / "prototype-expectation.json"
+    )
+    if not expectation_path.exists():
+        raise SystemExit(
+            "run scripts/extract_prototype_expectation.py first — the scorecard is "
+            "derived from the prototype document, not hardcoded"
+        )
+    import json
+
+    expectation = json.loads(expectation_path.read_text())
+
+    from lineage_api.domain.interactions import INTERACTION_CHANNELS
+    from lineage_api.domain.product_confidence import DISPLAY_BANDS
+    from lineage_api.services.liveness import LIVENESS_BANDS
+    from lineage_api.services.resolver import DATASET_KINDS
+
+    _rule(f"0. EXPECTATION DERIVED FROM {expectation['source']}")
+    print(f"  source: {expectation['sourceBytes']} bytes, parsed from its script block")
+    print(f"  element field signature: {expectation['elementFieldSignature']}")
+    print(f"  confidence bands:        {expectation['confidenceThresholds']}")
+    print(f"  confidence signals:      {expectation['confidenceSignals']}")
+    print(f"  liveness bands:          {expectation['livenessBands']}")
+    print(f"  severity bands:          {expectation['severityBands']}")
+    print(f"  interaction channels:    {expectation['interactionChannels']}")
+    print(f"  dataset kinds:           {expectation['datasetKinds']}")
+
+    vocabulary_checks = [
+        (
+            "dataset kinds",
+            *_covered(expectation["datasetKinds"], _KIND_MAP, DATASET_KINDS),
+        ),
+        (
+            "interaction channels",
+            *_covered(
+                expectation["interactionChannels"], _CHANNEL_MAP, INTERACTION_CHANNELS
+            ),
+        ),
+        (
+            "confidence bands",
+            *_covered(
+                list(expectation["confidenceThresholds"]), _BAND_MAP, DISPLAY_BANDS
+            ),
+        ),
+        (
+            "liveness bands",
+            *_covered(expectation["livenessBands"], _LIVENESS_MAP, LIVENESS_BANDS),
+        ),
+        (
+            "severity bands",
+            *_covered(
+                expectation["severityBands"], _SEVERITY_MAP, {"SOURCE", "BREAK", "WARN"}
+            ),
+        ),
+    ]
+    print("\n  vocabulary coverage:")
+    for label, ok, missing in vocabulary_checks:
+        detail = "" if ok else f"  MISSING: {missing}"
+        print(f"    [{'x' if ok else ' '}] {label}{detail}")
+
     resolver = Resolver.from_path(CATALOG)
     registry = AnalyzerRegistry.default(
         python_analyzer=ScaAnalyzer(resolver, "python-demo-v1"), sql_resolver=resolver
@@ -388,8 +482,19 @@ def main() -> int:
             "req[]/res[] typed fields",
             all(e.request_fields or e.response_fields for e in petclinic_api.inbound),
         ),
-        ("dataset system typing", "dtype datastore/kafka/cache/search", True),
     ]
+    rows.extend(
+        (f"prototype vocabulary: {label}", "extracted from the document", ok)
+        for label, ok, _ in vocabulary_checks
+    )
+    rows.append(
+        (
+            "every channel has an extractor",
+            "interactions() ch: rest/grpc/graphql/async",
+            SUPPORTED_CHANNELS
+            == {_CHANNEL_MAP[c] for c in expectation["interactionChannels"]},
+        )
+    )
     for label, citation, ok in rows:
         print(f"  [{'x' if ok else ' '}] {label:36s} <- {citation}")
     met = sum(1 for _, _, ok in rows if ok)
@@ -397,12 +502,14 @@ def main() -> int:
 
     _rule("NOT COVERED — stated so the score is not read as completeness")
     for line in (
-        "gRPC / GraphQL / async channels: in the contract vocabulary, no extractor yet.",
-        "OTel span enrichment to interactions: designed, not built.",
+        "OTel span enrichment to interactions: designed in the plan, not built.",
+        "Outbound extraction covers @FeignClient only; RestTemplate/WebClient call",
+        "  sites are not yet read.",
         "Liveness bands read COLD because the generated plan runs each edge once;",
         "  they describe this run, not production traffic.",
         "java-spring-corpus still yields zero edges by design (H2 compatibility).",
-        "Fixtures are small by construction; this is not an estate-scale measurement.",
+        "Fixtures are purpose-built to the Petclinic shape, not upstream checkouts;",
+        "  this is not an estate-scale measurement.",
     ):
         print(f"  - {line}")
     return 0
