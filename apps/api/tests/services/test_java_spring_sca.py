@@ -2543,3 +2543,145 @@ def test_an_explicit_column_absent_from_the_schema_is_quarantined() -> None:
         fact.attribute("field") == "lastName"
         for fact in _facts(result, "spring.entity-field")
     )
+
+
+# --- L3: which columns a repository method actually touches -----------------------------
+
+L3_SCHEMA = """create table owners (
+  id integer primary key,
+  first_name varchar(255),
+  last_name varchar(255),
+  city varchar(255)
+);"""
+
+L3_ENTITY = """package example;
+import jakarta.persistence.Column;
+import jakarta.persistence.Entity;
+import jakarta.persistence.Table;
+@Entity @Table(name="owners")
+class Owner {
+  private Integer id;
+  private String firstName;
+  @Column(name="last_name") private String lastName;
+  private String city;
+}"""
+
+L3_REPOSITORY = """package example;
+import java.util.List;
+import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+interface OwnerRepository extends JpaRepository<Owner,Integer> {
+    List<Owner> findByLastName(String lastName);
+    List<Owner> findByLastNameAndCity(String lastName, String city);
+    List<Owner> findByFirstNameStartingWith(String prefix);
+    long countByCity(String city);
+    @Query("SELECT o FROM Owner o WHERE o.city = ?1")
+    List<Owner> search(String city);
+    List<Owner> findByUnknownProperty(String value);
+}"""
+
+
+def _l3_sources() -> tuple[JavaSpringSource, ...]:
+    return (
+        _source("pom.xml", _maven_build()),
+        _source("src/example/Owner.java", L3_ENTITY),
+        _source("src/example/OwnerRepository.java", L3_REPOSITORY),
+        _source("src/main/resources/db/postgres/schema.sql", L3_SCHEMA, dialect="postgres"),
+    )
+
+
+def _elements(result) -> set[tuple[str, str, str]]:
+    return {
+        (
+            fact.attribute("method"),
+            fact.attribute("column"),
+            fact.attribute("derivation"),
+        )
+        for fact in _facts(result, "spring.query-element")
+    }
+
+
+def test_derived_query_methods_resolve_to_the_columns_they_filter_on() -> None:
+    elements = _elements(JavaSpringScaAnalyzer().analyze(_l3_sources()))
+
+    assert ("findByLastName", "last_name", "derived") in elements
+    # And / multiple predicates both land.
+    assert ("findByLastNameAndCity", "last_name", "derived") in elements
+    assert ("findByLastNameAndCity", "city", "derived") in elements
+    # A trailing keyword is stripped from the property.
+    assert ("findByFirstNameStartingWith", "first_name", "derived") in elements
+    # count* is still a read predicate.
+    assert ("countByCity", "city", "derived") in elements
+
+
+def test_jpql_bodies_resolve_to_the_columns_they_reference() -> None:
+    elements = _elements(JavaSpringScaAnalyzer().analyze(_l3_sources()))
+
+    assert ("search", "city", "jpql") in elements
+
+
+def test_an_unknown_property_never_invents_a_column() -> None:
+    result = JavaSpringScaAnalyzer().analyze(_l3_sources())
+    elements = _elements(result)
+
+    assert not any(method == "findByUnknownProperty" for method, _c, _d in elements)
+    assert "unresolved-query-property" in {item.code for item in result.residue}
+
+
+def test_query_elements_carry_the_table_so_an_element_urn_can_be_built() -> None:
+    facts = _facts(JavaSpringScaAnalyzer().analyze(_l3_sources()), "spring.query-element")
+
+    assert facts
+    for fact in facts:
+        assert fact.attribute("table") == "owners"
+        assert fact.attribute("role") in {"predicate", "projection"}
+
+
+def test_fields_inherited_from_a_mapped_superclass_become_elements() -> None:
+    """Petclinic keeps first_name / last_name on a @MappedSuperclass, not the entity.
+
+    Without following the extends chain the headline query `findByLastNameStartingWith`
+    resolves to nothing at all.
+    """
+    person = """package example;
+import jakarta.persistence.Column;
+import jakarta.persistence.MappedSuperclass;
+@MappedSuperclass
+class Person {
+  @Column(name="last_name") private String lastName;
+  private String firstName;
+}"""
+    owner = """package example;
+import jakarta.persistence.Entity;
+import jakarta.persistence.Table;
+@Entity @Table(name="owners")
+class Owner extends Person {
+  private String city;
+}"""
+    repository = """package example;
+import java.util.List;
+import org.springframework.data.jpa.repository.JpaRepository;
+interface OwnerRepository extends JpaRepository<Owner,Integer> {
+    List<Owner> findByLastNameStartingWith(String prefix);
+}"""
+    sources = (
+        _source("pom.xml", _maven_build()),
+        _source("src/example/Person.java", person),
+        _source("src/example/Owner.java", owner),
+        _source("src/example/OwnerRepository.java", repository),
+        _source("src/main/resources/db/postgres/schema.sql", L3_SCHEMA, dialect="postgres"),
+    )
+
+    result = JavaSpringScaAnalyzer().analyze(sources)
+
+    mapped = {
+        (fact.attribute("field"), fact.attribute("column"))
+        for fact in _facts(result, "spring.entity-field")
+        if fact.attribute("entity").endswith(".Owner")
+    }
+    assert ("lastName", "last_name") in mapped
+    assert ("firstName", "first_name") in mapped
+    assert ("city", "city") in mapped
+
+    elements = _elements(result)
+    assert ("findByLastNameStartingWith", "last_name", "derived") in elements

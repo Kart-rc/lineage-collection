@@ -141,6 +141,7 @@ _RESIDUE_CODES = frozenset(
         "unknown-framework",
         "unmapped-entity-column",
         "unresolved-framework-symbol",
+        "unresolved-query-property",
         "unresolved-repository-entity",
         "unresolved-table-mapping",
         "unsupported-boot-version",
@@ -574,6 +575,7 @@ class JavaSpringEvidenceCompiler:
                 "spring.query",
                 "spring.repository-association",
                 "spring.entity-field",
+                "spring.query-element",
                 "sql.column",
                 "sql.table",
             }
@@ -1486,6 +1488,7 @@ class JavaSpringScaAnalyzer:
             self._extract_repository_usage(parsed_java, repository_types, symbols)
             # Both passes have run, so entity fields can now be grounded in real columns.
             self._emit_entity_fields()
+            self._emit_query_elements()
 
         facts = tuple(sorted(self._facts, key=lambda item: item.identifier))
         residue = tuple(
@@ -2192,45 +2195,166 @@ class JavaSpringScaAnalyzer:
         if not entity_tables:
             return
 
+        # An entity commonly keeps its columns on a @MappedSuperclass, so a field
+        # declared on an ancestor belongs to the entity's table too. The chain is
+        # resolved by simple name against declared types; an ambiguous name is skipped
+        # rather than picked.
+        by_simple_name: dict[str, list[str]] = {}
+        supertypes: dict[str, tuple[str, ...]] = {}
+        for fact in self._facts:
+            if fact.kind != "java.type":
+                continue
+            by_simple_name.setdefault(fact.subject.rsplit(".", 1)[-1], []).append(
+                fact.subject
+            )
+            extends = dict(fact.attributes).get("extends")
+            if isinstance(extends, tuple):
+                supertypes[fact.subject] = tuple(
+                    str(item).split("<", 1)[0].strip() for item in extends
+                )
+
+        # A @MappedSuperclass is mapped into *each* inheriting entity's table, so one
+        # declaring class can legitimately belong to several entities: Person supplies
+        # last_name to both owners and vets. Each pairing is emitted independently.
+        owning_entities: dict[str, list[tuple[str, str]]] = {
+            entity: [(entity, table)] for entity, table in entity_tables.items()
+        }
+        for entity, table in sorted(entity_tables.items()):
+            frontier = [entity]
+            seen: set[str] = set()
+            while frontier:
+                current = frontier.pop()
+                for raw in supertypes.get(current, ()):
+                    candidates = by_simple_name.get(raw.rsplit(".", 1)[-1], [])
+                    if len(candidates) != 1:
+                        continue
+                    ancestor = candidates[0]
+                    if ancestor in entity_tables or ancestor in seen:
+                        continue
+                    seen.add(ancestor)
+                    owners = owning_entities.setdefault(ancestor, [])
+                    if (entity, table) not in owners:
+                        owners.append((entity, table))
+                    frontier.append(ancestor)
+
         for fact in list(self._facts):
             if fact.kind != "java.field" or "#" not in fact.subject:
                 continue
-            owner, field = fact.subject.rsplit("#", 1)
-            table = entity_tables.get(owner)
-            if table is None:
+            declaring, field = fact.subject.rsplit("#", 1)
+            for owner, table in owning_entities.get(declaring, ()):
+                available = columns.get(table, set())
+                attributes = dict(fact.attributes)
+                explicit = attributes.get("column")
+                if explicit is not None:
+                    if explicit not in available:
+                        # An explicit @Column naming a column the schema does not have is a
+                        # real contradiction, not a field to skip.
+                        self._add_residue(
+                            "unmapped-entity-column",
+                            "explicit @Column name is absent from the mapped table",
+                            f"{table}.{explicit}",
+                            fact.location,
+                        )
+                        continue
+                    column, mapping = explicit, "explicit"
+                else:
+                    candidate = _snake_case(field)
+                    if candidate not in available:
+                        continue
+                    column, mapping = candidate, "convention"
+                self._add_fact(
+                    "spring.entity-field",
+                    f"{owner}#{field}",
+                    (
+                        ("column", column),
+                        ("entity", owner),
+                        ("field", field),
+                        ("mapping", mapping),
+                        ("table", table),
+                    ),
+                    fact.location,
+                )
+
+    def _emit_query_elements(self) -> None:
+        """Resolve each repository method to the columns it actually touches.
+
+        Two provable sources: a derived query method name, and a literal JPQL body. Both
+        are resolved through the entity's proven field-to-column mappings, so a property
+        that does not correspond to a real column is quarantined rather than invented.
+        """
+        fields_by_entity: dict[str, dict[str, tuple[str, str]]] = {}
+        for fact in self._facts:
+            if fact.kind != "spring.entity-field":
                 continue
-            available = columns.get(table, set())
             attributes = dict(fact.attributes)
-            explicit = attributes.get("column")
-            if explicit is not None:
-                if explicit not in available:
-                    # An explicit @Column naming a column the schema does not have is a
-                    # real contradiction, not a field to skip.
+            fields_by_entity.setdefault(attributes["entity"], {})[attributes["field"]] = (
+                attributes["column"],
+                attributes["table"],
+            )
+        if not fields_by_entity:
+            return
+        entity_by_repository = {
+            fact.subject: dict(fact.attributes)["entityFqn"]
+            for fact in self._facts
+            if fact.kind == "spring.repository-association"
+        }
+        queries = {
+            fact.subject: dict(fact.attributes)["query"]
+            for fact in self._facts
+            if fact.kind == "spring.query"
+        }
+
+        for fact in list(self._facts):
+            if fact.kind != "java.method" or "#" not in fact.subject:
+                continue
+            repository, signature = fact.subject.rsplit("#", 1)
+            entity = entity_by_repository.get(repository)
+            if entity is None:
+                continue
+            fields = fields_by_entity.get(entity)
+            if not fields:
+                continue
+            method = signature.split("(", 1)[0]
+            query = queries.get(fact.subject)
+            if query is not None:
+                properties: tuple[str, ...] | None = _jpql_properties(query)
+                derivation = "jpql"
+            else:
+                properties = _derived_properties(method)
+                derivation = "derived"
+            if not properties:
+                continue
+            role = (
+                "projection"
+                if derivation == "jpql"
+                else "predicate"
+            )
+            for prop in properties:
+                mapped = fields.get(prop)
+                if mapped is None:
                     self._add_residue(
-                        "unmapped-entity-column",
-                        "explicit @Column name is absent from the mapped table",
-                        f"{table}.{explicit}",
+                        "unresolved-query-property",
+                        "query property does not map to a proven schema column",
+                        f"{method}:{prop}",
                         fact.location,
                     )
                     continue
-                column, mapping = explicit, "explicit"
-            else:
-                candidate = _snake_case(field)
-                if candidate not in available:
-                    continue
-                column, mapping = candidate, "convention"
-            self._add_fact(
-                "spring.entity-field",
-                f"{owner}#{field}",
-                (
-                    ("column", column),
-                    ("entity", owner),
-                    ("field", field),
-                    ("mapping", mapping),
-                    ("table", table),
-                ),
-                fact.location,
-            )
+                column, table = mapped
+                self._add_fact(
+                    "spring.query-element",
+                    f"{repository}#{method}:{column}",
+                    (
+                        ("column", column),
+                        ("derivation", derivation),
+                        ("entity", entity),
+                        ("method", method),
+                        ("property", prop),
+                        ("repository", repository),
+                        ("role", role),
+                        ("table", table),
+                    ),
+                    fact.location,
+                )
 
     def _resolve_repository_abstractions(
         self,
@@ -4189,3 +4313,61 @@ def _column_override(annotations: tuple["_AnnotationRecord", ...]) -> str | None
 def _snake_case(name: str) -> str:
     """JPA's default physical naming: camelCase becomes snake_case."""
     return re.sub(r"(?<=[a-z0-9])(?=[A-Z])", "_", name).lower()
+
+
+# Spring Data derived-query grammar, reduced to what can be proven without a parser.
+_DERIVED_SUBJECTS = (
+    "findBy", "readBy", "getBy", "queryBy", "searchBy", "streamBy",
+    "countBy", "existsBy", "deleteBy", "removeBy",
+)
+_DERIVED_WRITE_SUBJECTS = ("deleteBy", "removeBy")
+# Trailing operator keywords that qualify a property rather than name one.
+_DERIVED_KEYWORDS = (
+    "IsStartingWith", "IsEndingWith", "IsNotContaining", "IsContaining", "StartingWith",
+    "EndingWith", "Containing", "IgnoreCase", "NotContains", "GreaterThanEqual",
+    "LessThanEqual", "GreaterThan", "LessThan", "IsNotNull", "IsNull", "NotNull",
+    "IsBetween", "Between", "NotLike", "Like", "NotIn", "In", "IsTrue", "IsFalse",
+    "True", "False", "After", "Before", "Near", "Within", "Regex", "Not", "Is",
+    "Equals", "Contains", "Matches", "Exists",
+)
+
+
+def _derived_properties(method: str) -> tuple[str, ...] | None:
+    """Split a derived query method into the properties it constrains.
+
+    Returns None when the name is not a derived query at all, so a plain repository
+    method is never mistaken for one.
+    """
+    subject = next((item for item in _DERIVED_SUBJECTS if method.startswith(item)), None)
+    if subject is None:
+        return None
+    remainder = method[len(subject):]
+    if not remainder:
+        return ()
+    # OrderBy introduces sort properties, which are read too, so keep both halves.
+    remainder = remainder.replace("OrderBy", "And")
+    properties: list[str] = []
+    for part in re.split(r"And|Or", remainder):
+        if not part:
+            continue
+        for keyword in _DERIVED_KEYWORDS:
+            if part.endswith(keyword) and len(part) > len(keyword):
+                part = part[: -len(keyword)]
+                break
+        if part and part[0].isupper():
+            properties.append(part[0].lower() + part[1:])
+    return tuple(properties)
+
+
+def _jpql_properties(query: str, alias_hint: str | None = None) -> tuple[str, ...]:
+    """Property references in a JPQL body, as `alias.property` pairs.
+
+    Only dotted references are taken: a bare identifier could be an entity, an alias or a
+    keyword, and guessing between them is exactly what this analyzer must not do.
+    """
+    found: list[str] = []
+    for match in re.finditer(r"\b[A-Za-z_][A-Za-z0-9_]*\.([A-Za-z_][A-Za-z0-9_]*)", query):
+        name = match.group(1)
+        if name not in found:
+            found.append(name)
+    return tuple(found)
