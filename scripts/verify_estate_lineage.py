@@ -197,17 +197,55 @@ def main() -> int:
             print(f"            via [{via}]")
     print(f"\n  datasets touched={len(report.datasets)}  maxHops={report.max_hops}")
 
-    _rule("4. CONFIDENCE PER MECHANISM SET")
-    static_only = project_confidence("SINGLE", [{"mechanism": "SCA"}])
-    corroborated = project_confidence(
-        "HIGH",
-        [{"mechanism": "SCA"},
-         {"mechanism": "RUNTIME", "observedAt": "2026-08-12T10:00:00Z"}],
+    _rule("4. RUNTIME CORROBORATION OF THE SPARK HOP")
+    import json
+
+    from lineage_api.domain.confidence import derive_band
+    from lineage_api.services.consolidation import ConsolidationService
+
+    event = json.loads(
+        (ROOT / "fixtures" / "runtime" / "openlineage" / "spark-orders-curation.json").read_text()
     )
-    print(f"  static only          -> {static_only.display_band} ({static_only.percent}%) "
-          f"signals={list(static_only.signals)}")
-    print(f"  SCA + element RUNTIME -> {corroborated.display_band} ({corroborated.percent}%) "
-          f"signals={list(corroborated.signals)}")
+    service = ConsolidationService(database=None, resolver=resolver)  # type: ignore[arg-type]
+    sca_pairs = {
+        (str(edge["from"][0]), str(edge["to"]))
+        for edge in spark_document["edges"]
+        if "#" in str(edge["to"])
+    }
+    corroborated: set[tuple[str, str]] = set()
+    for output in event["outputs"]:
+        target = service._resolve_runtime_dataset(
+            f"{output['namespace']}/{output['name']}", "staging"
+        )
+        for target_field, mapping in output["facets"]["columnLineage"]["fields"].items():
+            for item in mapping["inputFields"]:
+                source = service._resolve_runtime_dataset(
+                    f"{item['namespace']}/{item['name']}", "staging"
+                )
+                pair = (f"{source}#{item['field']}", f"{target}#{target_field}")
+                if pair in sca_pairs:
+                    corroborated.add(pair)
+
+    print(f"  OpenLineage names the dataset by bucket   : s3://raw-lake/curated/orders")
+    print(f"  the analyzer names it by owning system    : "
+          f"{sorted(sca_pairs)[0][1].rsplit('#', 1)[0]}")
+    print(f"\n  element edges claimed by SCA   : {len(sca_pairs)}")
+    print(f"  element edges corroborated     : {len(corroborated)}")
+    for source, target in sorted(corroborated):
+        print(f"    VERIFIED  {source.split(':')[-1]:34s} -> {target.split(':')[-1]}")
+
+    static_only = project_confidence("SINGLE", [{"mechanism": "SCA"}])
+    band = derive_band({"SCA", "RUNTIME"})
+    verified = project_confidence(
+        band,
+        [{"mechanism": "SCA"},
+         {"mechanism": "RUNTIME", "observedAt": event["eventTime"]}],
+    )
+    print(f"\n  corroborated edges -> band={band} {verified.display_band} "
+          f"({verified.percent}%) signals={list(verified.signals)} "
+          f"lastObserved={verified.last_observed}")
+    print(f"  everything else    -> {static_only.display_band} "
+          f"({static_only.percent}%) signals={list(static_only.signals)}")
     print("\n  Kafka and landing hops are dataset-level by nature, so runtime can")
     print("  corroborate them but cannot raise their band: application/consolidation.py")
     print("  only counts a RUNTIME assertion at ELEMENT scope. Only the Spark column")
