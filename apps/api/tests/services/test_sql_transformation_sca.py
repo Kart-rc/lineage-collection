@@ -21,11 +21,11 @@ def test_insert_with_explicit_columns_is_classified() -> None:
         3,
     )
 
-    assert result == SqlStatementTarget(
-        target_table="analytics.daily_revenue",
-        source_table="raw.transactions",
-        target_columns=("customer_id", "gross_revenue"),
-    )
+    assert isinstance(result, SqlStatementTarget)
+    assert result.target_table == "analytics.daily_revenue"
+    assert result.source_table == "raw.transactions"
+    assert result.target_columns == ("customer_id", "gross_revenue")
+    assert result.sources == ("raw.transactions",)
 
 
 def test_create_table_as_select_takes_columns_from_projection_aliases() -> None:
@@ -82,11 +82,21 @@ def test_an_arity_mismatch_against_the_declared_order_is_a_finding() -> None:
     assert [item.code for item in analysis.residue] == ["implicit-target-columns"]
 
 
-def test_more_than_one_source_table_is_residue() -> None:
+def test_more_than_one_source_table_is_carried_not_refused() -> None:
+    """A join is resolvable when its columns are qualified, so classification keeps both."""
     result = classify_statement(
-        _stmt("INSERT INTO a.b (x) SELECT y FROM c.d JOIN e.f ON 1 = 1"),
+        _stmt("INSERT INTO a.b (x) SELECT d.y FROM c.d JOIN e.f ON 1 = 1"),
         "sql/x.sql",
         2,
+    )
+
+    assert isinstance(result, SqlStatementTarget)
+    assert result.sources == ("c.d", "e.f")
+
+
+def test_a_statement_with_no_source_table_is_residue() -> None:
+    result = classify_statement(
+        _stmt("INSERT INTO a.b (x) SELECT 1"), "sql/x.sql", 2
     )
 
     assert result == SqlResidue("ambiguous-source-table", "sql/x.sql", 2, "a.b")
@@ -381,3 +391,80 @@ def test_the_sql_fixture_matches_the_python_fixture_edge_set() -> None:
     assert {(e["from"], e["to"], e["type"]) for e in sql_expected["edges"]} == {
         (e["from"], e["to"], e["type"]) for e in python_expected["edges"]
     }
+
+
+# --- SELECT * expansion ----------------------------------------------------------------
+
+
+def test_select_star_expands_against_the_declared_source_columns() -> None:
+    """`SELECT *` is deterministic once the source columns are known — not a guess."""
+    analysis = analyze_sql_sources(
+        (SqlTransformationSource("q.sql", b"CREATE TABLE xxx AS SELECT * FROM t1;", "hive"),),
+        table_columns=lambda table: ("a", "b", "c") if table == "t1" else None,
+    )
+
+    assert analysis.residue == ()
+    projections = analysis.shapes[0].projections
+    assert [(p.target_column, p.source_columns) for p in projections] == [
+        ("a", ("a",)),
+        ("b", ("b",)),
+        ("c", ("c",)),
+    ]
+
+
+def test_select_star_without_known_source_columns_stays_residue() -> None:
+    analysis = analyze_sql_sources(
+        (SqlTransformationSource("q.sql", b"CREATE TABLE xxx AS SELECT * FROM t1;", "hive"),)
+    )
+
+    assert analysis.shapes == ()
+    assert [r.code for r in analysis.residue] == ["star-projection"]
+
+
+def test_star_expansion_uses_the_declared_order() -> None:
+    analysis = analyze_sql_sources(
+        (SqlTransformationSource("q.sql", b"INSERT INTO t2 SELECT * FROM t1;", "hive"),),
+        table_columns=lambda table: ("x", "y") if table in {"t1", "t2"} else None,
+    )
+
+    assert [p.target_column for p in analysis.shapes[0].projections] == ["x", "y"]
+
+
+# --- joins -----------------------------------------------------------------------------
+
+
+def test_a_join_resolves_each_column_to_the_source_its_alias_names() -> None:
+    """`SELECT a.id, b.name FROM t1 a JOIN t2 b` is unambiguous: the alias says which."""
+    analysis = analyze_sql_sources(
+        (
+            SqlTransformationSource(
+                "q.sql",
+                b"CREATE TABLE xxx AS SELECT a.id AS id, b.name AS name "
+                b"FROM t1 a JOIN t2 b ON a.id = b.id;",
+                "hive",
+            ),
+        )
+    )
+
+    assert analysis.residue == ()
+    shape = analysis.shapes[0]
+    assert {(p.target_column, p.source_columns) for p in shape.projections} == {
+        ("id", ("t1.id",)),
+        ("name", ("t2.name",)),
+    }
+
+
+def test_an_unqualified_column_in_a_join_is_ambiguous_and_refused() -> None:
+    """Without a qualifier the column could come from either side; that is not provable."""
+    analysis = analyze_sql_sources(
+        (
+            SqlTransformationSource(
+                "q.sql",
+                b"CREATE TABLE xxx AS SELECT id AS id FROM t1 a JOIN t2 b ON a.id = b.id;",
+                "hive",
+            ),
+        )
+    )
+
+    assert analysis.shapes == ()
+    assert "ambiguous-join-column" in {r.code for r in analysis.residue}

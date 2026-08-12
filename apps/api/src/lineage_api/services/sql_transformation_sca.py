@@ -39,6 +39,10 @@ class SqlStatementTarget:
     target_table: str
     source_table: str
     target_columns: tuple[str, ...]
+    # A join has several sources. The alias map is what makes each projected column
+    # attributable to exactly one of them; without it the column is not provable.
+    sources: tuple[str, ...] = ()
+    aliases: tuple[tuple[str, str], ...] = ()
 
 
 def _table_name(table: exp.Table) -> str:
@@ -66,9 +70,13 @@ def classify_statement(
     if not isinstance(select, exp.Select):
         return SqlResidue("unsupported-statement", path, line, target_table)
 
-    sources = sorted({_table_name(item) for item in select.find_all(exp.Table)})
-    if len(sources) != 1:
+    tables = list(select.find_all(exp.Table))
+    sources = sorted({_table_name(item) for item in tables})
+    if not sources:
         return SqlResidue("ambiguous-source-table", path, line, target_table)
+    aliases = tuple(
+        (item.alias, _table_name(item)) for item in tables if item.alias
+    ) + tuple((_table_name(item), _table_name(item)) for item in tables)
 
     if isinstance(node, exp.Schema):
         target_columns = tuple(column.name for column in node.expressions)
@@ -83,7 +91,9 @@ def classify_statement(
         # answer is available the caller turns this back into residue.
         target_columns = ()
 
-    return SqlStatementTarget(target_table, sources[0], target_columns)
+    return SqlStatementTarget(
+        target_table, sources[0], target_columns, tuple(sources), aliases
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -98,6 +108,8 @@ def pair_projections(
     select: exp.Select,
     path: str,
     line: int,
+    aliases: tuple[tuple[str, str], ...] = (),
+    multi_source: bool = False,
 ) -> tuple[tuple[SqlProjection, ...], tuple[SqlResidue, ...]]:
     if any(isinstance(item, exp.Star) for item in select.expressions):
         return (), (SqlResidue("star-projection", path, line, "*"),)
@@ -112,9 +124,28 @@ def pair_projections(
     residue: list[SqlResidue] = []
     for target_column, item in zip(target_columns, select.expressions):
         expression = item.this if isinstance(item, exp.Alias) else item
-        source_columns = tuple(
-            sorted({column.name for column in expression.find_all(exp.Column)})
-        )
+        if multi_source:
+            alias_map = dict(aliases)
+            qualified: list[str] = []
+            unqualified = False
+            for column in expression.find_all(exp.Column):
+                table = column.table
+                if not table or table not in alias_map:
+                    unqualified = True
+                    continue
+                qualified.append(f"{alias_map[table]}.{column.name}")
+            if unqualified:
+                # The column could come from either side of the join. Picking one would
+                # invent lineage, so the projection is refused.
+                residue.append(
+                    SqlResidue("ambiguous-join-column", path, line, target_column)
+                )
+                continue
+            source_columns = tuple(sorted(set(qualified)))
+        else:
+            source_columns = tuple(
+                sorted({column.name for column in expression.find_all(exp.Column)})
+            )
         if not source_columns:
             residue.append(SqlResidue("constant-projection", path, line, target_column))
             continue
@@ -182,6 +213,38 @@ def analyze_sql_sources(
             if isinstance(classified, SqlResidue):
                 residue.append(classified)
                 continue
+            select = statement.expression
+            star = len(select.expressions) == 1 and isinstance(
+                select.expressions[0], exp.Star
+            )
+            if star:
+                # `SELECT *` is deterministic once the source columns are declared: each
+                # source column maps to the same-named target column. Without a declared
+                # source it stays residue, because the column set is unknowable.
+                source_columns = (
+                    table_columns(classified.source_table)
+                    if table_columns is not None
+                    else None
+                )
+                if source_columns is None:
+                    residue.append(
+                        SqlResidue("star-projection", source.path, line, "*")
+                    )
+                    continue
+                shapes.append(
+                    SqlStatementShape(
+                        classified.target_table,
+                        classified.source_table,
+                        tuple(
+                            SqlProjection(column, (column,), column)
+                            for column in source_columns
+                        ),
+                        source.path,
+                        line,
+                    )
+                )
+                continue
+
             target_columns = classified.target_columns
             if not target_columns:
                 # Positional INSERT: resolve the declared column order, and only accept
@@ -206,7 +269,12 @@ def analyze_sql_sources(
                 target_columns = declared
 
             projections, projection_residue = pair_projections(
-                target_columns, statement.expression, source.path, line
+                target_columns,
+                statement.expression,
+                source.path,
+                line,
+                classified.aliases,
+                len(classified.sources) > 1,
             )
             residue.extend(projection_residue)
             if not projections:
@@ -258,6 +326,81 @@ def compile_derivation_edges(
     residue: list[SqlResidue] = []
 
     for shape in analysis.shapes:
+        # A join qualifies each column with its own table, so group by table and resolve
+        # each independently rather than assuming one source for the whole statement.
+        by_table: dict[str, set[str]] = {}
+        for projection in shape.projections:
+            for name in projection.source_columns:
+                table, _, column = name.rpartition(".")
+                by_table.setdefault(table or shape.source_table, set()).add(column)
+
+        multi = len(by_table) > 1 or set(by_table) != {shape.source_table}
+        if multi:
+            resolved_sources: dict[str, dict[str, str]] = {}
+            failed = False
+            for table, columns in sorted(by_table.items()):
+                result = _resolve_table(resolver, context, table, tuple(sorted(columns)))
+                if not isinstance(result, ResolvedName):
+                    code = (
+                        "unresolved-element"
+                        if getattr(result, "reason", "") == "UNKNOWN_ELEMENT"
+                        else "unresolved-dataset"
+                    )
+                    residue.append(SqlResidue(code, shape.path, shape.line, table))
+                    failed = True
+                    continue
+                resolved_sources[table] = {
+                    urn.element: str(urn) for urn in result.element_urns
+                }
+            if failed:
+                continue
+            target = _resolve_table(
+                resolver,
+                context,
+                shape.target_table,
+                tuple(sorted({item.target_column for item in shape.projections})),
+            )
+            if not isinstance(target, ResolvedName):
+                residue.append(
+                    SqlResidue(
+                        "unresolved-dataset", shape.path, shape.line, shape.target_table
+                    )
+                )
+                continue
+            target_urns = {urn.element: str(urn) for urn in target.element_urns}
+            for projection in shape.projections:
+                to_urn = target_urns[projection.target_column]
+                for name in projection.source_columns:
+                    table, _, column = name.rpartition(".")
+                    from_urn = resolved_sources[table or shape.source_table][column]
+                    identity = "|".join(
+                        (repo, digest, shape.path, str(shape.line), from_urn, to_urn,
+                         projection.transform, ruleset_version)
+                    )
+                    edges.append(
+                        ScaEdgeEvidence(
+                            provenance_id=(
+                                f"prov-{hashlib.sha256(identity.encode()).hexdigest()[:24]}"
+                            ),
+                            from_urn=from_urn,
+                            to_urn=to_urn,
+                            edge_type="DERIVES",
+                            transform=projection.transform,
+                            mechanism="SCA",
+                            exact=True,
+                            file=shape.path,
+                            line=shape.line,
+                            ast_path=f"statement[{shape.line}].{projection.target_column}",
+                            repo=repo,
+                            digest=digest,
+                            run_id=run_id,
+                            correlation_id=correlation_id,
+                            resolver_version=target.resolver_version,
+                            snapshot_id=target.snapshot_id,
+                        )
+                    )
+            continue
+
         source_elements = tuple(
             sorted({name for item in shape.projections for name in item.source_columns})
         )
