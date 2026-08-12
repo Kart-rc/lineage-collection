@@ -163,3 +163,42 @@ def test_a_single_repository_cannot_see_the_second_hop() -> None:
 
     assert f"{C}#lifetime_value" not in {item.urn for item in report.impacted}
     assert report.max_hops == 1
+
+
+# --- granularity seam ------------------------------------------------------------------
+
+
+def test_impact_crosses_from_a_dataset_to_its_own_elements() -> None:
+    """A dataset-level hop must reach the column-level hops that continue from it.
+
+    Real estates mix granularities: a landing job proves `topic -> prefix` with no column
+    detail, and the next job proves `prefix#col -> curated#col`. Without bridging, the
+    trace silently stops at the seam and reports a shorter blast radius than the truth.
+    """
+    graph = _graph(
+        [
+            (f"{A}#amount", f"{B}", "land"),
+            (f"{B}#amount", f"{C}#total", "SUM(amount)"),
+        ]
+    )
+
+    report = simulate_impact(graph, f"{A}#amount")
+
+    reached = {item.urn for item in report.impacted}
+    assert B in reached
+    assert f"{C}#total" in reached
+    assert report.max_hops == 2
+
+
+def test_an_element_does_not_leak_impact_to_unrelated_datasets() -> None:
+    """Bridging is dataset -> its own elements only, never element -> sibling element."""
+    graph = _graph(
+        [
+            (f"{A}#amount", f"{B}#gross_revenue", "SUM(amount)"),
+            (f"{B}#other_column", f"{C}#lifetime_value", "x"),
+        ]
+    )
+
+    report = simulate_impact(graph, f"{A}#amount")
+
+    assert f"{C}#lifetime_value" not in {item.urn for item in report.impacted}

@@ -14,7 +14,16 @@ from lineage_api.services.java_spring_sca import (
     JavaSpringScaAnalyzer,
     JavaSpringSource,
 )
-from lineage_api.services.resolver import ResolveContext, Resolver
+from lineage_api.services.resolver import (
+    RawName,
+    ResolveContext,
+    ResolvedName,
+    Resolver,
+)
+from lineage_api.services.kafka_binding_sca import (
+    is_stream_configuration,
+    read_stream_bindings,
+)
 from lineage_api.services.schema_migrations import (
     is_flyway_migration,
     is_liquibase_changelog,
@@ -190,6 +199,7 @@ class AnalyzerRegistry:
         cls,
         python_analyzer: ScaAnalyzer | None = None,
         sql_resolver: Resolver | None = None,
+        kafka_resolver: Resolver | None = None,
     ) -> "AnalyzerRegistry":
         python_handler = (
             _PythonAnalyzerAdapter(python_analyzer).analyze
@@ -199,6 +209,11 @@ class AnalyzerRegistry:
         sql_handler = (
             _SqlTransformationAnalyzerAdapter(sql_resolver).analyze
             if sql_resolver is not None
+            else None
+        )
+        kafka_handler = (
+            _KafkaBindingAnalyzerAdapter(kafka_resolver).analyze
+            if kafka_resolver is not None
             else None
         )
         return cls(
@@ -230,6 +245,24 @@ class AnalyzerRegistry:
                     "schema-resolver-v1",
                     "repository-scope-v1",
                     _JavaSpringAnalyzerAdapter().analyze,
+                ),
+                AnalyzerDefinition(
+                    "kafka-streams-v1",
+                    "kafka-binding-rules-v1",
+                    "git-checkout",
+                    "spring-cloud-stream",
+                    ("kafka",),
+                    (
+                        kafka_resolver.resolver_version
+                        if kafka_resolver is not None
+                        else "catalog-resolver-v1"
+                    ),
+                    (
+                        kafka_resolver.snapshot_id
+                        if kafka_resolver is not None
+                        else "catalog-snapshot-v1"
+                    ),
+                    kafka_handler,
                 ),
                 AnalyzerDefinition(
                     "sql-transformation-v1",
@@ -366,6 +399,13 @@ class AnalyzerRegistry:
                 for path in expected
                 if path not in set(selected) and path not in set(skipped)
             )
+        elif selection.analyzer_pack == "kafka-streams-v1":
+            # This cell reads configuration. Everything else in the repository is simply
+            # not its concern — "unsupported" would wrongly claim the repository is
+            # outside the cell's compatibility boundary.
+            selected = tuple(path for path in expected if is_stream_configuration(path))
+            skipped = tuple(path for path in expected if path not in set(selected))
+            unsupported = ()
         elif selection.analyzer_pack == "sql-transformation-v1":
             selected = tuple(
                 path
@@ -626,6 +666,125 @@ class _PythonAnalyzerAdapter:
             0,
             len(sca.residue),
             int(sca.stats.get("quarantinedCount", 0)),
+        )
+
+
+class _KafkaBindingAnalyzerAdapter:
+    """Turn Spring Cloud Stream bindings into topic dataset edges.
+
+    A binding proves which topic a function reads or writes, so the edge is dataset-level
+    by nature. Claiming element-level lineage from a binding would be a guess: the
+    configuration says nothing about fields.
+    """
+
+    def __init__(self, resolver: Resolver) -> None:
+        self._resolver = resolver
+
+    def analyze(
+        self,
+        snapshot: AnalyzerSnapshot,
+        schema_profile: str,
+        run_id: str,
+        correlation_id: str,
+    ) -> AnalyzerRunResult:
+        sources = {
+            path: snapshot.read_bytes(path).decode("utf-8", errors="replace")
+            for path in snapshot.paths
+            if is_stream_configuration(path)
+        }
+        analysis = read_stream_bindings(sources)
+        context = ResolveContext(
+            env=snapshot.environment,
+            platform="kafka",
+            system=snapshot.system,
+            repo=snapshot.repository,
+            digest=snapshot.revision,
+            config={},
+            snapshot_id=self._resolver.snapshot_id,
+        )
+
+        edges: list[dict[str, Any]] = []
+        residue = [
+            {
+                "code": item.code,
+                "location": {"path": item.path, "line": item.line},
+                "symbol": item.symbol,
+            }
+            for item in analysis.residue
+        ]
+        datasets: set[str] = set()
+
+        for binding in analysis.bindings:
+            resolved = self._resolver.resolve(
+                RawName("dataset", binding.topic, "SCA", ()), context
+            )
+            if not isinstance(resolved, ResolvedName):
+                residue.append(
+                    {
+                        "code": "unresolved-topic",
+                        "location": {"path": binding.path, "line": binding.line},
+                        "symbol": binding.topic,
+                    }
+                )
+                continue
+            topic_urn = str(resolved.urn)
+            service_urn = f"service://{snapshot.repository}/{binding.function}"
+            datasets.add(topic_urn)
+            from_urn, to_urn = (
+                (topic_urn, service_urn)
+                if binding.direction == "READS"
+                else (service_urn, topic_urn)
+            )
+            identity = "|".join(
+                (snapshot.repository, binding.path, str(binding.line), from_urn, to_urn)
+            )
+            edges.append(
+                {
+                    "provenanceId": f"prov-{hashlib.sha256(identity.encode()).hexdigest()[:24]}",
+                    "from": [from_urn],
+                    "to": to_urn,
+                    "edgeType": binding.direction,
+                    "transform": f"{binding.function} {binding.binding} -> {binding.topic}",
+                    "mechanism": "SCA",
+                    "exact": True,
+                    "file": binding.path,
+                    "line": binding.line,
+                }
+            )
+
+        status = "INTEGRATION_REQUIRED" if residue else "COMPLETE"
+        status_reasons = tuple(sorted({str(item["code"]) for item in residue}))
+        document = {
+            "schemaVersion": "1.0.0",
+            "repo": snapshot.repository,
+            "digest": snapshot.revision,
+            "runId": run_id,
+            "correlationId": correlation_id,
+            "rulesetVersion": snapshot.ruleset,
+            "resolverVersion": self._resolver.resolver_version,
+            "snapshotId": self._resolver.snapshot_id,
+            "status": status,
+            "statusReasons": list(status_reasons),
+            "edges": sorted(edges, key=lambda item: (item["to"], item["from"][0])),
+            "residue": residue,
+            "datasetsSeen": sorted(datasets),
+            "coverage": {"bindingsSeen": len(analysis.bindings)},
+            "stats": {
+                "filesAnalyzed": len(sources),
+                "edgesEmitted": len(edges),
+                "residueCount": len(residue),
+                "quarantinedCount": 0,
+            },
+        }
+        return AnalyzerRunResult(
+            document=document,
+            status=status,
+            status_reasons=status_reasons,
+            edge_count=len(edges),
+            read_count=sum(1 for e in edges if e["edgeType"] == "READS"),
+            write_count=sum(1 for e in edges if e["edgeType"] == "WRITES"),
+            residue_count=len(residue),
+            unresolved_count=0,
         )
 
 

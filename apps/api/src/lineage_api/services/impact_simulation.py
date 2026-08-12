@@ -63,10 +63,24 @@ def simulate_impact(graph: ComposedGraph, seed_element: str) -> ImpactReport:
     }
     queue: deque[str] = deque([seed_element])
 
+    # Real estates mix granularities: one job proves `topic -> prefix` with no column
+    # detail, and the next proves `prefix#col -> curated#col`. Reaching a dataset must
+    # therefore reach its own elements, or the trace stops silently at the seam and
+    # under-reports the blast radius. The bridge is one-way and dataset-scoped: an
+    # element never reaches a sibling element through its parent.
+    elements_of: dict[str, list[str]] = {}
+    for source in downstream:
+        if "#" in source:
+            elements_of.setdefault(_dataset_of(source), []).append(source)
+
     while queue:
         current = queue.popleft()
         current_record = seen[current]
-        for target, transform in sorted(downstream.get(current, ())):
+        outgoing = list(downstream.get(current, ()))
+        if "#" not in current:
+            for element in sorted(elements_of.get(current, ())):
+                outgoing.extend(downstream.get(element, ()))
+        for target, transform in sorted(outgoing):
             if target in seen:
                 continue
             hops = current_record.hops + 1
