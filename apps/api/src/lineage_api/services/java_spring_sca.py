@@ -17,6 +17,12 @@ from sqlglot.tokens import Token, TokenType
 from tree_sitter import Language, Node, Parser, Tree
 
 from lineage_api.domain.urns import LineageUrn
+from lineage_api.services.schema_migrations import (
+    MigrationSource,
+    is_flyway_migration,
+    order_migrations,
+    replay_migrations,
+)
 
 
 FactValue: TypeAlias = str | tuple[str, ...]
@@ -937,7 +943,10 @@ def _native_profile_tables(
         if (
             _optional_attribute(fact, "dialectMode") == "native"
             and _optional_attribute(fact, "dialect") == expected_dialect
-            and schema_profile in PurePosixPath(fact.location.path).parts
+            and (
+                schema_profile in PurePosixPath(fact.location.path).parts
+                or _optional_attribute(fact, "schemaSource") == "migration"
+            )
         )
     )
 
@@ -1432,6 +1441,7 @@ def _evidence_fact_attributes(
             "nameQuoted",
             "schema",
             "schemaQuoted",
+            "schemaSource",
         },
     }.get(fact.kind, set())
     return tuple(
@@ -1540,14 +1550,19 @@ class JavaSpringScaAnalyzer:
         parsed_java: list[_ParsedJava] = []
         sql_files_parsed = 0
 
+        migration_sources = tuple(
+            source for source in ordered if is_flyway_migration(source.path)
+        )
         for source in ordered:
             if source.path.endswith(".java"):
                 parsed = self._parse_java(source)
                 if parsed is not None:
                     parsed_java.append(parsed)
-            elif source.path.endswith(".sql"):
+            elif source.path.endswith(".sql") and source not in migration_sources:
                 if self._parse_sql(source):
                     sql_files_parsed += 1
+        if migration_sources:
+            sql_files_parsed += self._ingest_migrations(migration_sources)
 
         repository_types, symbols = self._extract_java_facts(parsed_java, framework)
         if framework.status == "supported":
@@ -1581,6 +1596,77 @@ class JavaSpringScaAnalyzer:
                 ast_nodes_indexed=self._ast_nodes_indexed,
             ),
         )
+
+    def _ingest_migrations(self, sources: tuple[JavaSpringSource, ...]) -> int:
+        """Replay ordered migrations and emit the same schema facts a schema.sql would.
+
+        The replay is the schema; emitting per-statement facts would report tables and
+        columns that later migrations removed. An incomplete replay emits nothing, so
+        resolution fails closed on `missing-schema-table` rather than binding an entity
+        to a schema the migrations do not actually produce.
+        """
+        migrations = tuple(
+            MigrationSource(
+                path=source.path,
+                content=source.content,
+                dialect=_SQLGLOT_DIALECTS[source.sql_dialect]
+                if source.sql_dialect
+                else "postgres",
+                order=(),
+            )
+            for source in sources
+        )
+        ordered, ordering_residue = order_migrations(migrations)
+        schema = replay_migrations(ordered)
+        by_path = {source.path: source for source in sources}
+
+        for entry in ordering_residue + schema.residue:
+            source = by_path.get(entry.path)
+            self._add_residue(
+                entry.code,
+                "migration schema replay could not model this input",
+                entry.symbol,
+                _whole_file_location(source, "sql_file")
+                if source is not None
+                else _scope_location(sources),
+            )
+
+        if not schema.complete:
+            return 0
+
+        dialect = migrations[0].dialect if migrations else "postgres"
+        for table in schema.tables:
+            source = by_path[table.path]
+            self._add_fact(
+                "sql.table",
+                table.name,
+                (
+                    ("catalog", ""),
+                    ("catalogQuoted", "false"),
+                    ("dialect", dialect),
+                    ("dialectMode", "native"),
+                    ("nameQuoted", "false"),
+                    ("schema", table.schema),
+                    ("schemaQuoted", "false"),
+                    ("schemaSource", "migration"),
+                ),
+                _whole_file_location(source, "table"),
+            )
+            for column in table.columns:
+                column_source = by_path[column.path]
+                self._add_fact(
+                    "sql.column",
+                    f"{table.name}.{column.name}",
+                    (
+                        ("column", column.name),
+                        ("dataType", column.data_type),
+                        ("dialect", dialect),
+                        ("primaryKey", "true" if column.primary_key else "false"),
+                        ("table", table.name),
+                    ),
+                    _whole_file_location(column_source, "table"),
+                )
+        return len(sources)
 
     def _bounded_sources(
         self, sources: Iterable[JavaSpringSource]
@@ -3249,6 +3335,7 @@ class JavaSpringScaAnalyzer:
                     ("nameQuoted", _sql_expression_quoted(table.this)),
                     ("schema", table.db),
                     ("schemaQuoted", _sql_expression_quoted(table.args.get("db"))),
+                    ("schemaSource", "profile-schema"),
                 ),
                 _sql_token_location(source.path, text, locations[0], "table"),
             )

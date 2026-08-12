@@ -15,6 +15,7 @@ from lineage_api.services.java_spring_sca import (
     JavaSpringSource,
 )
 from lineage_api.services.resolver import ResolveContext, Resolver
+from lineage_api.services.schema_migrations import is_flyway_migration
 from lineage_api.services.sca import ScaAnalyzer
 from lineage_api.services.sql_transformation_sca import (
     SqlTransformationSource,
@@ -729,11 +730,21 @@ class _JavaSpringAnalyzerAdapter:
         correlation_id: str,
     ) -> AnalyzerRunResult:
         sources = []
+        migration_paths = tuple(
+            path
+            for path in snapshot.paths
+            if _is_migration_for_profile(path, schema_profile)
+        )
         schema_candidates = tuple(
             path
             for path in snapshot.paths
             if _is_profile_schema_path(path, schema_profile)
         )
+        # An explicit profile schema is the more specific declaration and wins. When only
+        # migrations are present they are the schema source, and the single-file rule
+        # does not apply: a migration set is a sequence by construction.
+        if migration_paths and not schema_candidates:
+            schema_candidates = migration_paths
         # Distinct modules may each own a schema; the same path appearing twice is a
         # real ambiguity about which bytes are authoritative.
         schema_reason = (
@@ -925,7 +936,9 @@ def _java_source_disposition(path: str, schema_profile: str) -> str:
             return "selected"
         return "skipped" if _is_test_path(path) else "unsupported"
     if suffix == ".sql":
-        if _is_profile_schema_path(path, schema_profile):
+        if _is_profile_schema_path(path, schema_profile) or _is_migration_for_profile(
+            path, schema_profile
+        ):
             return "selected"
         return "skipped" if _is_policy_skipped_sql(path) else "unsupported"
     return "skipped"
@@ -934,6 +947,23 @@ def _java_source_disposition(path: str, schema_profile: str) -> str:
 def _is_test_path(path: str) -> bool:
     parts = tuple(part.lower() for part in PurePosixPath(path).parts)
     return "test" in parts or "tests" in parts or "fixtures" in parts
+
+
+_KNOWN_SCHEMA_PROFILES = frozenset({"h2", "mysql", "postgres"})
+
+
+def _is_migration_for_profile(path: str, schema_profile: str) -> bool:
+    """Whether a Flyway migration applies to the profile being analysed.
+
+    Flyway allows vendor-specific directories (`db/migration/<vendor>/`). Replaying
+    another vendor's migrations would produce a schema the target database never has,
+    so only migrations with no vendor directory, or this profile's own, are applied.
+    """
+    if not is_flyway_migration(path):
+        return False
+    parts = set(PurePosixPath(path).parts)
+    foreign = (_KNOWN_SCHEMA_PROFILES & parts) - {schema_profile}
+    return not foreign
 
 
 def _is_policy_skipped_sql(path: str) -> bool:
