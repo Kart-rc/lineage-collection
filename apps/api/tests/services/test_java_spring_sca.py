@@ -2239,3 +2239,42 @@ class OwnerService {
     assert "dynamic-entity-name" in {item.code for item in analysis.residue}
     assert evidence.edges == ()
     assert evidence.status == "INTEGRATION_REQUIRED"
+
+
+def test_constructor_injection_of_an_unresolvable_collaborator_does_not_crash() -> None:
+    """A constructor may inject a collaborator whose type the resolver cannot pin.
+
+    Reproduces a crash found by running the analyzer over spring-petclinic-rest, whose
+    ClinicServiceImpl injects `PetRepository` -- a plain interface reached through a
+    wildcard import. The field is not a tracked repository and the parameter type does
+    not resolve, so both lookups returned None, compared equal, and the binding then
+    indexed a field that was never present.
+    """
+    service = """package example;
+class OwnerService {
+  private final OwnerRepository owners;
+  private final PetRepository petRepository;
+  OwnerService(OwnerRepository owners, PetRepository petRepository) {
+    this.owners = owners;
+    this.petRepository = petRepository;
+  }
+  Owner read(Integer id) { return owners.findById(id).orElseThrow(); }
+  Owner write(Owner owner) { return owners.save(owner); }
+}"""
+    sources = _lineage_sources(
+        entity="""package example;
+import jakarta.persistence.Entity; import jakarta.persistence.Table;
+@Entity @Table(name="owners") class Owner {}""",
+        repository="""package example;
+import org.springframework.data.jpa.repository.JpaRepository;
+interface OwnerRepository extends JpaRepository<Owner,Integer> {}""",
+        service=service,
+    )
+
+    analysis = JavaSpringScaAnalyzer().analyze(sources)
+
+    # The tracked repository is still bound; the unresolvable collaborator is ignored
+    # rather than crashing the analyzer.
+    bindings = _facts(analysis, "spring.repository-binding")
+    assert any(fact.subject.endswith("#owners") for fact in bindings), bindings
+    assert not any(fact.subject.endswith("#petRepository") for fact in bindings)

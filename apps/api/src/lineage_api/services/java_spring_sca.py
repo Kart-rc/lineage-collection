@@ -3610,9 +3610,14 @@ def _constructor_binding(
         return None
     field_name = _node_text(field_node, content)
     parameter_name = _node_text(right, content)
-    if fields.get(field_name) != parameters.get(parameter_name):
+    # `fields` holds only tracked repository fields, and an unresolvable parameter type
+    # is None. Comparing the two `.get` results alone treats "both absent" as a match,
+    # so an injected collaborator that is neither tracked nor resolvable looked like a
+    # binding and then indexed a field that was never there.
+    field_type = fields.get(field_name)
+    if field_type is None or field_type != parameters.get(parameter_name):
         return None
-    return field_name, parameter_name, fields[field_name]
+    return field_name, parameter_name, field_type
 
 
 def _receiver_name(node: Node | None, content: bytes) -> tuple[str, bool] | None:
