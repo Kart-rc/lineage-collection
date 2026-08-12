@@ -106,6 +106,39 @@ Interactions on the real repository cover both directions, and the one outbound 
 built from a variable (`VisitsServiceClient`) is refused as `dynamic-endpoint` rather
 than guessed — the discipline holding on real code.
 
+### Schema sources
+
+The cell reads three schema sources, in this order of specificity:
+
+| Source | Path convention | Notes |
+|---|---|---|
+| Profile schema | `**/src/main/resources/db/<profile>/schema.sql` | Most specific; wins when present |
+| Flyway migrations | `**/db/migration/**/V<version>__*.sql` | Replayed in numeric version order |
+| Liquibase changelogs | `**/db/changelog/**/*.xml`, or any `*changelog*.xml` | Replayed in include then document order |
+
+Migrations are **replayed, not accumulated**: a set containing `DROP TABLE` cannot be
+reduced by appending facts without emitting a table that no longer exists. A statement
+or change the replay cannot model marks the whole schema incomplete and emits nothing,
+so resolution fails closed on `missing-schema-table` rather than binding an entity to a
+schema the migrations do not produce.
+
+Flyway specifics: `R__` repeatable migrations are excluded (they carry no position in
+the sequence); two migrations at the same version are `ambiguous-migration-version`
+rather than an arbitrary tie-break; vendor directories (`db/migration/mysql/`) apply
+only to their own profile.
+
+Liquibase specifics: `createTable`, `addColumn`, `dropColumn`, `dropTable` are modelled
+declaratively — no SQL dialect parsing is needed — and the `<sql>` escape hatch is
+replayed through the same statement applier Flyway uses, so both sources are
+semantically identical. `include` and `includeAll` are followed only to files present in
+scope; a missing include is `missing-changelog-include` and makes the replay incomplete.
+YAML and JSON changelogs are refused as `unsupported-changelog-format` rather than
+guessed at.
+
+Not modelled by either replay: `ALTER TABLE RENAME`, `ALTER COLUMN`, and Liquibase
+`renameColumn`/`renameTable`. These are fail-closed, but they are a real limit — renames
+are common in long-lived migration histories.
+
 ### Other limits
 
 - Liveness bands read `COLD` because the generated plan exercises each edge once; they

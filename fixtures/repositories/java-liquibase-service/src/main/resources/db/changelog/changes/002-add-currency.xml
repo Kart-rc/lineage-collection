@@ -1,0 +1,10 @@
+<databaseChangeLog xmlns="http://www.liquibase.org/xml/ns/dbchangelog">
+  <changeSet id="2" author="billing">
+    <addColumn tableName="invoices">
+      <column name="currency" type="char(3)"/>
+    </addColumn>
+  </changeSet>
+  <changeSet id="3" author="billing">
+    <dropColumn tableName="invoices" columnName="draft_note"/>
+  </changeSet>
+</databaseChangeLog>

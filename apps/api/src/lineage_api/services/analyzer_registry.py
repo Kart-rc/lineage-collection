@@ -15,7 +15,10 @@ from lineage_api.services.java_spring_sca import (
     JavaSpringSource,
 )
 from lineage_api.services.resolver import ResolveContext, Resolver
-from lineage_api.services.schema_migrations import is_flyway_migration
+from lineage_api.services.schema_migrations import (
+    is_flyway_migration,
+    is_liquibase_changelog,
+)
 from lineage_api.services.sca import ScaAnalyzer
 from lineage_api.services.sql_transformation_sca import (
     SqlTransformationSource,
@@ -734,6 +737,7 @@ class _JavaSpringAnalyzerAdapter:
             path
             for path in snapshot.paths
             if _is_migration_for_profile(path, schema_profile)
+            or (is_liquibase_changelog(path) and path.endswith(".xml"))
         )
         schema_candidates = tuple(
             path
@@ -763,20 +767,18 @@ class _JavaSpringAnalyzerAdapter:
                 PurePosixPath(path).parts
             ) != 1:
                 continue
-            if suffix not in {".java", ".sql"} and name not in {
-                "pom.xml",
-                "build.gradle",
-                "build.gradle.kts",
-            }:
+            if (
+                suffix not in {".java", ".sql"}
+                and name not in {"pom.xml", "build.gradle", "build.gradle.kts"}
+                and not is_liquibase_changelog(path)
+            ):
                 continue
-            if suffix == ".sql" and (
+            if (suffix == ".sql" or is_liquibase_changelog(path)) and (
                 schema_reason is not None or path not in schema_candidates
             ):
                 continue
             dialect = (
-                schema_profile
-                if suffix == ".sql"
-                else None
+                schema_profile if suffix == ".sql" or is_liquibase_changelog(path) else None
             )
             sources.append(JavaSpringSource(path, snapshot.read_bytes(path), dialect))
         analysis = JavaSpringScaAnalyzer().analyze(tuple(sources))
@@ -931,6 +933,8 @@ def _java_source_disposition(path: str, schema_profile: str) -> str:
     suffix = pure.suffix.lower()
     if name in {"pom.xml", "build.gradle", "build.gradle.kts"}:
         return "selected" if len(pure.parts) == 1 else "skipped"
+    if is_liquibase_changelog(path):
+        return "selected" if suffix == ".xml" else "skipped"
     if suffix == ".java":
         if _is_main_java_path(path):
             return "selected"

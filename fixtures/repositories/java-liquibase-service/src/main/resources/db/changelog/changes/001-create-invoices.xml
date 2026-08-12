@@ -1,0 +1,9 @@
+<databaseChangeLog xmlns="http://www.liquibase.org/xml/ns/dbchangelog">
+  <changeSet id="1" author="billing">
+    <createTable tableName="invoices">
+      <column name="id" type="int"><constraints primaryKey="true"/></column>
+      <column name="account_ref" type="varchar(64)"/>
+      <column name="draft_note" type="varchar(255)"/>
+    </createTable>
+  </changeSet>
+</databaseChangeLog>

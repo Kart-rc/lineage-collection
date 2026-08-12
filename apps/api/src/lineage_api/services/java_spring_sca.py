@@ -20,7 +20,9 @@ from lineage_api.domain.urns import LineageUrn
 from lineage_api.services.schema_migrations import (
     MigrationSource,
     is_flyway_migration,
+    is_liquibase_changelog,
     order_migrations,
+    replay_liquibase,
     replay_migrations,
 )
 
@@ -1551,7 +1553,9 @@ class JavaSpringScaAnalyzer:
         sql_files_parsed = 0
 
         migration_sources = tuple(
-            source for source in ordered if is_flyway_migration(source.path)
+            source
+            for source in ordered
+            if is_flyway_migration(source.path) or is_liquibase_changelog(source.path)
         )
         for source in ordered:
             if source.path.endswith(".java"):
@@ -1616,8 +1620,15 @@ class JavaSpringScaAnalyzer:
             )
             for source in sources
         )
-        ordered, ordering_residue = order_migrations(migrations)
-        schema = replay_migrations(ordered)
+        changelogs = tuple(
+            item for item in migrations if is_liquibase_changelog(item.path)
+        )
+        if changelogs:
+            ordering_residue = ()
+            schema = replay_liquibase(changelogs)
+        else:
+            ordered, ordering_residue = order_migrations(migrations)
+            schema = replay_migrations(ordered)
         by_path = {source.path: source for source in sources}
 
         for entry in ordering_residue + schema.residue:
@@ -1699,7 +1710,9 @@ class JavaSpringScaAnalyzer:
             total_bytes += len(source.content)
             if total_bytes > self._limits.max_total_bytes:
                 raise JavaSpringAnalysisError("source total byte limit exceeded")
-            if source.path.endswith(".sql"):
+            # A Liquibase changelog is a schema source too: its `<sql>` escape hatch is
+            # parsed with the profile's dialect, so it carries one legitimately.
+            if source.path.endswith(".sql") or is_liquibase_changelog(source.path):
                 if source.sql_dialect is not None and source.sql_dialect not in _SQLGLOT_DIALECTS:
                     raise JavaSpringAnalysisError("SQL dialect is not in the supported closed set")
             elif source.sql_dialect is not None:

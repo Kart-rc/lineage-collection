@@ -1,4 +1,4 @@
-"""Discover a schema from Flyway migrations.
+"""Discover a schema from Flyway migrations and Liquibase changelogs.
 
 Most production Spring estates define their schema as an ordered sequence of migrations
 rather than a single `schema.sql`. The schema is therefore the *result of replaying*
@@ -15,6 +15,8 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 from pathlib import PurePosixPath
+
+import xml.etree.ElementTree as ET
 
 import sqlglot
 from sqlglot import exp
@@ -154,6 +156,28 @@ def _columns_of(statement: exp.Create, path: str, index: int) -> list[SchemaColu
     return columns
 
 
+def apply_sql_text(
+    text: str,
+    dialect: str,
+    tables: dict[str, SchemaTable],
+    path: str,
+) -> list[MigrationResidue]:
+    """Apply every DDL statement in `text` to `tables`, returning what it could not model."""
+    try:
+        statements = sqlglot.parse(text, dialect=dialect)
+    except (ParseError, TokenError):
+        return [MigrationResidue("malformed-migration-sql", path, "")]
+
+    residue: list[MigrationResidue] = []
+    for index, statement in enumerate(statements):
+        if statement is None:
+            continue
+        entry = _apply_sql_statement(statement, tables, path, index)
+        if entry is not None:
+            residue.append(entry)
+    return residue
+
+
 def replay_migrations(sources: tuple[MigrationSource, ...]) -> MigratedSchema:
     tables: dict[str, SchemaTable] = {}
     residue: list[MigrationResidue] = []
@@ -161,90 +185,63 @@ def replay_migrations(sources: tuple[MigrationSource, ...]) -> MigratedSchema:
 
     for source in sources:
         text = source.content.decode("utf-8", errors="strict")
-        try:
-            statements = sqlglot.parse(text, dialect=source.dialect)
-        except (ParseError, TokenError):
-            residue.append(
-                MigrationResidue("malformed-migration-sql", source.path, "")
-            )
-            complete = False
-            continue
-
-        for index, statement in enumerate(statements):
-            if statement is None:
-                continue
-            if isinstance(statement, exp.Create):
-                kind = str(statement.args.get("kind", "")).upper()
-                if kind == "TABLE":
-                    node = statement.this
-                    table = node.this if isinstance(node, exp.Schema) else node
-                    if not isinstance(table, exp.Table):
-                        residue.append(
-                            MigrationResidue(
-                                "unmodelled-migration-statement", source.path, "CREATE"
-                            )
-                        )
-                        complete = False
-                        continue
-                    name, schema_name = _table_name(table)
-                    if name in tables and statement.args.get("exists"):
-                        continue
-                    tables[name] = SchemaTable(
-                        name=name,
-                        schema=schema_name,
-                        columns=tuple(_columns_of(statement, source.path, index)),
-                        path=source.path,
-                        statement_index=index,
-                    )
-                    continue
-                if kind in {"INDEX", "DATABASE", "SCHEMA", "VIEW"}:
-                    # Inventory-only: none of these change a table's identity or columns.
-                    continue
-                residue.append(
-                    MigrationResidue(
-                        "unmodelled-migration-statement", source.path, kind or "CREATE"
-                    )
-                )
-                complete = False
-                continue
-
-            if isinstance(statement, exp.Drop):
-                kind = str(statement.args.get("kind", "")).upper()
-                target = statement.this
-                if kind == "TABLE" and isinstance(target, exp.Table):
-                    tables.pop(target.name, None)
-                    continue
-                if kind in {"INDEX", "VIEW"}:
-                    continue
-                residue.append(
-                    MigrationResidue(
-                        "unmodelled-migration-statement", source.path, kind or "DROP"
-                    )
-                )
-                complete = False
-                continue
-
-            if isinstance(statement, exp.Alter):
-                handled, entry = _apply_alter(statement, tables, source.path, index)
-                if not handled:
-                    residue.append(entry)
-                    complete = False
-                continue
-
-            residue.append(
-                MigrationResidue(
-                    "unmodelled-migration-statement",
-                    source.path,
-                    type(statement).__name__.upper(),
-                )
-            )
+        entries = apply_sql_text(text, source.dialect, tables, source.path)
+        if entries:
+            residue.extend(entries)
             complete = False
 
     ordered_tables = tuple(sorted(tables.values(), key=lambda item: item.name))
     return MigratedSchema(
-        tables=ordered_tables,
-        residue=tuple(residue),
-        complete=complete,
+        tables=ordered_tables, residue=tuple(residue), complete=complete
+    )
+
+
+def _apply_sql_statement(
+    statement: exp.Expression,
+    tables: dict[str, SchemaTable],
+    path: str,
+    index: int,
+) -> MigrationResidue | None:
+    """Apply one DDL statement, returning residue only for what it cannot model."""
+    if isinstance(statement, exp.Create):
+        kind = str(statement.args.get("kind", "")).upper()
+        if kind == "TABLE":
+            node = statement.this
+            table = node.this if isinstance(node, exp.Schema) else node
+            if not isinstance(table, exp.Table):
+                return MigrationResidue("unmodelled-migration-statement", path, "CREATE")
+            name, schema_name = _table_name(table)
+            if name in tables and statement.args.get("exists"):
+                return None
+            tables[name] = SchemaTable(
+                name=name,
+                schema=schema_name,
+                columns=tuple(_columns_of(statement, path, index)),
+                path=path,
+                statement_index=index,
+            )
+            return None
+        if kind in {"INDEX", "DATABASE", "SCHEMA", "VIEW"}:
+            # Inventory-only: none of these change a table's identity or its columns.
+            return None
+        return MigrationResidue("unmodelled-migration-statement", path, kind or "CREATE")
+
+    if isinstance(statement, exp.Drop):
+        kind = str(statement.args.get("kind", "")).upper()
+        target = statement.this
+        if kind == "TABLE" and isinstance(target, exp.Table):
+            tables.pop(target.name, None)
+            return None
+        if kind in {"INDEX", "VIEW"}:
+            return None
+        return MigrationResidue("unmodelled-migration-statement", path, kind or "DROP")
+
+    if isinstance(statement, exp.Alter):
+        handled, entry = _apply_alter(statement, tables, path, index)
+        return None if handled else entry
+
+    return MigrationResidue(
+        "unmodelled-migration-statement", path, type(statement).__name__.upper()
     )
 
 
@@ -299,3 +296,198 @@ def _apply_alter(
 
     tables[table.name] = table
     return True, unmodelled
+
+
+# --------------------------------------------------------------------------------------
+# Liquibase changelogs
+#
+# Liquibase is declarative: `<createTable tableName="owners">` is unambiguous structured
+# data, so unlike Flyway it needs no SQL dialect parsing at all. Only the `<sql>` escape
+# hatch falls back to the shared statement applier, which keeps both sources semantically
+# identical.
+# --------------------------------------------------------------------------------------
+
+_CHANGELOG_SUFFIXES = frozenset({".yaml", ".yml", ".json"})
+
+
+def _local_name(tag: str) -> str:
+    return tag.rsplit("}", 1)[-1]
+
+
+def is_liquibase_changelog(path: str) -> bool:
+    pure = PurePosixPath(path)
+    if pure.suffix.lower() not in {".xml", *_CHANGELOG_SUFFIXES}:
+        return False
+    if "changelog" in pure.name.lower():
+        return True
+    return any("changelog" in part.lower() for part in pure.parts[:-1])
+
+
+def _changelog_includes(root: ET.Element) -> list[str]:
+    return [
+        element.attrib["file"]
+        for element in root
+        if _local_name(element.tag) == "include" and "file" in element.attrib
+    ]
+
+
+def _apply_change(
+    change: ET.Element,
+    tables: dict[str, SchemaTable],
+    path: str,
+    index: int,
+    dialect: str,
+) -> list[MigrationResidue]:
+    name = _local_name(change.tag)
+    table_name = change.attrib.get("tableName", "")
+
+    if name == "createTable" and table_name:
+        columns: list[SchemaColumn] = []
+        for column in change:
+            if _local_name(column.tag) != "column":
+                continue
+            constraints = next(
+                (c for c in column if _local_name(c.tag) == "constraints"), None
+            )
+            primary_key = (
+                constraints is not None
+                and constraints.attrib.get("primaryKey", "").lower() == "true"
+            )
+            columns.append(
+                SchemaColumn(
+                    name=column.attrib.get("name", ""),
+                    data_type=column.attrib.get("type", ""),
+                    primary_key=primary_key,
+                    path=path,
+                    statement_index=index,
+                )
+            )
+        tables[table_name] = SchemaTable(
+            name=table_name,
+            schema=change.attrib.get("schemaName", ""),
+            columns=tuple(columns),
+            path=path,
+            statement_index=index,
+        )
+        return []
+
+    if name == "addColumn" and table_name in tables:
+        table = tables[table_name]
+        added = tuple(
+            SchemaColumn(
+                name=column.attrib.get("name", ""),
+                data_type=column.attrib.get("type", ""),
+                primary_key=False,
+                path=path,
+                statement_index=index,
+            )
+            for column in change
+            if _local_name(column.tag) == "column"
+        )
+        tables[table_name] = SchemaTable(
+            table.name, table.schema, table.columns + added, table.path,
+            table.statement_index,
+        )
+        return []
+
+    if name == "dropColumn" and table_name in tables:
+        table = tables[table_name]
+        dropped = {change.attrib.get("columnName", "")} | {
+            column.attrib.get("name", "")
+            for column in change
+            if _local_name(column.tag) == "column"
+        }
+        tables[table_name] = SchemaTable(
+            table.name,
+            table.schema,
+            tuple(item for item in table.columns if item.name not in dropped),
+            table.path,
+            table.statement_index,
+        )
+        return []
+
+    if name == "dropTable" and table_name:
+        tables.pop(table_name, None)
+        return []
+
+    if name == "sql":
+        return apply_sql_text(change.text or "", dialect, tables, path)
+
+    if name in {"createIndex", "dropIndex", "comment", "rollback", "preConditions"}:
+        # Inventory-only or non-schema: none change a table's identity or columns.
+        return []
+
+    return [MigrationResidue("unmodelled-changelog-change", path, name)]
+
+
+def replay_liquibase(sources: tuple[MigrationSource, ...]) -> MigratedSchema:
+    by_path = {source.path: source for source in sources}
+    residue: list[MigrationResidue] = []
+    complete = True
+    parsed: dict[str, ET.Element] = {}
+
+    for source in sources:
+        if PurePosixPath(source.path).suffix.lower() in _CHANGELOG_SUFFIXES:
+            # Only the XML schema is closed enough to read without guessing at structure.
+            residue.append(
+                MigrationResidue(
+                    "unsupported-changelog-format",
+                    source.path,
+                    PurePosixPath(source.path).suffix,
+                )
+            )
+            complete = False
+            continue
+        try:
+            parsed[source.path] = ET.fromstring(
+                source.content.decode("utf-8", errors="strict")
+            )
+        except ET.ParseError:
+            residue.append(MigrationResidue("malformed-changelog", source.path, ""))
+            complete = False
+
+    included = {
+        target for root in parsed.values() for target in _changelog_includes(root)
+    }
+    roots = sorted(path for path in parsed if path not in included)
+
+    tables: dict[str, SchemaTable] = {}
+    visited: set[str] = set()
+
+    def walk(path: str) -> None:
+        nonlocal complete
+        if path in visited:
+            return
+        visited.add(path)
+        root = parsed.get(path)
+        if root is None:
+            residue.append(MigrationResidue("missing-changelog-include", path, path))
+            complete = False
+            return
+        dialect = by_path[path].dialect
+        for index, element in enumerate(root):
+            tag = _local_name(element.tag)
+            if tag == "include":
+                walk(element.attrib.get("file", ""))
+                continue
+            if tag == "includeAll":
+                prefix = element.attrib.get("path", "")
+                for candidate in sorted(p for p in parsed if p.startswith(prefix)):
+                    walk(candidate)
+                continue
+            if tag != "changeSet":
+                continue
+            for change in element:
+                entries = _apply_change(change, tables, path, index, dialect)
+                if entries:
+                    residue.extend(entries)
+                    complete = False
+
+    for root_path in roots:
+        walk(root_path)
+
+    return MigratedSchema(
+        tables=tuple(sorted(tables.values(), key=lambda item: item.name)),
+        residue=tuple(residue),
+        complete=complete,
+    )
