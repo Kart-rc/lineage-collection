@@ -26,6 +26,7 @@ _SUPPORTED_COORDINATES = {
 }
 _ENTITY_FQN = "jakarta.persistence.Entity"
 _TABLE_FQN = "jakarta.persistence.Table"
+_COLUMN_FQN = "jakarta.persistence.Column"
 _JPA_REPOSITORY_FQN = "org.springframework.data.jpa.repository.JpaRepository"
 _REPOSITORY_FQN = "org.springframework.data.repository.Repository"
 _QUERY_FQN = "org.springframework.data.jpa.repository.Query"
@@ -34,6 +35,7 @@ _APPROVED_FRAMEWORK_SYMBOLS = frozenset(
     {
         _ENTITY_FQN,
         _TABLE_FQN,
+        _COLUMN_FQN,
         _JPA_REPOSITORY_FQN,
         _REPOSITORY_FQN,
         _QUERY_FQN,
@@ -137,6 +139,7 @@ _RESIDUE_CODES = frozenset(
         "shadowed-repository-receiver",
         "unbound-repository-receiver",
         "unknown-framework",
+        "unmapped-entity-column",
         "unresolved-framework-symbol",
         "unresolved-repository-entity",
         "unresolved-table-mapping",
@@ -570,6 +573,8 @@ class JavaSpringEvidenceCompiler:
                 "spring.entity-table",
                 "spring.query",
                 "spring.repository-association",
+                "spring.entity-field",
+                "sql.column",
                 "sql.table",
             }
         }
@@ -1479,6 +1484,8 @@ class JavaSpringScaAnalyzer:
         repository_types, symbols = self._extract_java_facts(parsed_java, framework)
         if framework.status == "supported":
             self._extract_repository_usage(parsed_java, repository_types, symbols)
+            # Both passes have run, so entity fields can now be grounded in real columns.
+            self._emit_entity_fields()
 
         facts = tuple(sorted(self._facts, key=lambda item: item.identifier))
         residue = tuple(
@@ -2161,6 +2168,70 @@ class JavaSpringScaAnalyzer:
         )
         return repository_types, symbols
 
+    def _emit_entity_fields(self) -> None:
+        """Ground each entity field in a real schema column — the element level.
+
+        Runs after both the Java and SQL passes so the join can be proven rather than
+        assumed. A field only becomes an element when its column actually exists in the
+        table the entity maps to: `@Transient` fields, relations and computed members
+        simply have no column and are left out instead of invented.
+        """
+        columns: dict[str, set[str]] = {}
+        for fact in self._facts:
+            if fact.kind == "sql.column":
+                columns.setdefault(dict(fact.attributes)["table"], set()).add(
+                    dict(fact.attributes)["column"]
+                )
+        if not columns:
+            return
+        entity_tables = {
+            fact.subject: dict(fact.attributes)["table"]
+            for fact in self._facts
+            if fact.kind == "spring.entity-table"
+        }
+        if not entity_tables:
+            return
+
+        for fact in list(self._facts):
+            if fact.kind != "java.field" or "#" not in fact.subject:
+                continue
+            owner, field = fact.subject.rsplit("#", 1)
+            table = entity_tables.get(owner)
+            if table is None:
+                continue
+            available = columns.get(table, set())
+            attributes = dict(fact.attributes)
+            explicit = attributes.get("column")
+            if explicit is not None:
+                if explicit not in available:
+                    # An explicit @Column naming a column the schema does not have is a
+                    # real contradiction, not a field to skip.
+                    self._add_residue(
+                        "unmapped-entity-column",
+                        "explicit @Column name is absent from the mapped table",
+                        f"{table}.{explicit}",
+                        fact.location,
+                    )
+                    continue
+                column, mapping = explicit, "explicit"
+            else:
+                candidate = _snake_case(field)
+                if candidate not in available:
+                    continue
+                column, mapping = candidate, "convention"
+            self._add_fact(
+                "spring.entity-field",
+                f"{owner}#{field}",
+                (
+                    ("column", column),
+                    ("entity", owner),
+                    ("field", field),
+                    ("mapping", mapping),
+                    ("table", table),
+                ),
+                fact.location,
+            )
+
     def _resolve_repository_abstractions(
         self,
         repository_types: set[str],
@@ -2356,19 +2427,37 @@ class JavaSpringScaAnalyzer:
         for member in body.named_children:
             if member.type == "field_declaration":
                 field_type = member.child_by_field_name("type")
-                for declarator in (
+                declarators = [
                     child
                     for child in member.named_children
                     if child.type == "variable_declarator"
-                ):
-                    name_node = declarator.child_by_field_name("name")
-                    if name_node is None or field_type is None:
-                        continue
-                    name = _node_text(name_node, parsed.source.content)
+                    and child.child_by_field_name("name") is not None
+                ]
+                if field_type is None or not declarators:
+                    continue
+                names = [
+                    _node_text(
+                        declarator.child_by_field_name("name"), parsed.source.content
+                    )
+                    for declarator in declarators
+                ]
+                # Annotations belong to the declaration, so they are resolved once and
+                # attributed to its first declarator rather than emitted per name.
+                column_override = _column_override(
+                    self._emit_annotations(
+                        parsed, member, f"{owner}#{names[0]}", symbols
+                    )
+                )
+                for declarator, name in zip(declarators, names):
+                    attributes: list[tuple[str, FactValue]] = [
+                        ("type", _node_text(field_type, parsed.source.content))
+                    ]
+                    if column_override is not None:
+                        attributes.append(("column", column_override))
                     self._add_fact(
                         "java.field",
                         f"{owner}#{name}",
-                        (("type", _node_text(field_type, parsed.source.content)),),
+                        tuple(attributes),
                         self._node_location(parsed.source.path, declarator),
                     )
             elif member.type == "constructor_declaration":
@@ -2913,6 +3002,19 @@ class JavaSpringScaAnalyzer:
                 ),
                 _sql_token_location(source.path, text, locations[0], "table"),
             )
+            for column, data_type, primary_key in _created_columns(statement):
+                self._add_fact(
+                    "sql.column",
+                    f"{table.name}.{column}",
+                    (
+                        ("column", column),
+                        ("dataType", data_type),
+                        ("dialect", sqlglot_dialect),
+                        ("primaryKey", "true" if primary_key else "false"),
+                        ("table", table.name),
+                    ),
+                    _sql_token_location(source.path, text, locations[0], "table"),
+                )
         return complete
 
     def _add_fact(
@@ -3767,6 +3869,41 @@ def _created_table(statement: exp.Expression | None) -> exp.Table | None:
     return target if isinstance(target, exp.Table) else None
 
 
+def _created_columns(
+    statement: exp.Expression | None,
+) -> tuple[tuple[str, str, bool], ...]:
+    """Return (column, dataType, isPrimaryKey) for a proven CREATE TABLE.
+
+    Only literal column definitions count. A table whose shape comes from a query or a
+    LIKE clause has no provable element list, so it yields nothing rather than a guess.
+    """
+    if (
+        not isinstance(statement, exp.Create)
+        or str(statement.args.get("kind", "")).upper() != "TABLE"
+    ):
+        return ()
+    schema = statement.this
+    if not isinstance(schema, exp.Schema):
+        return ()
+    columns: list[tuple[str, str, bool]] = []
+    for definition in schema.expressions:
+        if not isinstance(definition, exp.ColumnDef):
+            continue
+        name = definition.this
+        if not isinstance(name, exp.Identifier) or not name.name:
+            continue
+        data_type = definition.args.get("kind")
+        primary_key = any(
+            isinstance(constraint, exp.ColumnConstraint)
+            and isinstance(constraint.kind, exp.PrimaryKeyColumnConstraint)
+            for constraint in definition.args.get("constraints") or ()
+        )
+        columns.append(
+            (name.name, data_type.sql().upper() if data_type is not None else "", primary_key)
+        )
+    return tuple(columns)
+
+
 def _sql_expression_quoted(expression: object) -> str:
     return (
         "true"
@@ -4030,3 +4167,25 @@ def _sql_token_location(
         ast_kind,
         f"sql.token[{token.start}:{token.end + 1}]/{ast_kind}",
     )
+
+
+def _column_override(annotations: tuple["_AnnotationRecord", ...]) -> str | None:
+    """The literal column name from an exact `@Column(name=...)`, if one is provable.
+
+    Only a resolved `jakarta.persistence.Column` carrying a bounded literal counts. A
+    dynamic or unresolvable annotation leaves the field to the naming convention rather
+    than inventing a column name.
+    """
+    for record in annotations:
+        if record.resolved_fqn != _COLUMN_FQN:
+            continue
+        name = dict(record.literal_values).get("name")
+        if isinstance(name, str) and _EVIDENCE_TABLE_IDENTIFIER.fullmatch(name):
+            return name
+        return None
+    return None
+
+
+def _snake_case(name: str) -> str:
+    """JPA's default physical naming: camelCase becomes snake_case."""
+    return re.sub(r"(?<=[a-z0-9])(?=[A-Z])", "_", name).lower()

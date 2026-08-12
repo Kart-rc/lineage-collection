@@ -2457,3 +2457,89 @@ class Service {
     result = JavaSpringScaAnalyzer().analyze(sources)
 
     assert _facts(result, "spring.repository-binding") == ()
+
+
+# --- element level: schema columns and entity field mappings ---------------------------
+
+ELEMENT_SCHEMA = """create table owners (
+  id integer primary key,
+  last_name varchar(255) not null,
+  telephone varchar(20)
+);"""
+
+ELEMENT_ENTITY = """package example;
+import jakarta.persistence.Column;
+import jakarta.persistence.Entity;
+import jakarta.persistence.Table;
+@Entity @Table(name="owners")
+class Owner {
+  private Integer id;
+  @Column(name = "last_name") private String lastName;
+  private String telephone;
+  private String notPersisted;
+}"""
+
+
+def _element_sources() -> tuple[JavaSpringSource, ...]:
+    return (
+        _source("pom.xml", _maven_build()),
+        _source("src/example/Owner.java", ELEMENT_ENTITY),
+        _source(
+            "src/example/OwnerRepository.java",
+            "package example;\nimport org.springframework.data.jpa.repository.JpaRepository;\n"
+            "interface OwnerRepository extends JpaRepository<Owner,Integer> {}",
+        ),
+        _source("src/main/resources/db/postgres/schema.sql", ELEMENT_SCHEMA, dialect="postgres"),
+    )
+
+
+def test_schema_columns_are_emitted_as_elements() -> None:
+    result = JavaSpringScaAnalyzer().analyze(_element_sources())
+
+    columns = {
+        (fact.attribute("table"), fact.attribute("column"))
+        for fact in _facts(result, "sql.column")
+    }
+    assert columns == {
+        ("owners", "id"),
+        ("owners", "last_name"),
+        ("owners", "telephone"),
+    }
+    primary = {
+        fact.attribute("column")
+        for fact in _facts(result, "sql.column")
+        if fact.attribute("primaryKey") == "true"
+    }
+    assert primary == {"id"}
+
+
+def test_entity_fields_map_to_columns_explicitly_or_by_convention() -> None:
+    result = JavaSpringScaAnalyzer().analyze(_element_sources())
+
+    mappings = {
+        (fact.attribute("field"), fact.attribute("column"), fact.attribute("mapping"))
+        for fact in _facts(result, "spring.entity-field")
+    }
+    assert ("lastName", "last_name", "explicit") in mappings
+    assert ("telephone", "telephone", "convention") in mappings
+    assert ("id", "id", "convention") in mappings
+    # A field with no matching column is not invented as an element.
+    assert not any(field == "notPersisted" for field, _c, _m in mappings)
+
+
+def test_an_explicit_column_absent_from_the_schema_is_quarantined() -> None:
+    entity = ELEMENT_ENTITY.replace('name = "last_name"', 'name = "surname"')
+    sources = tuple(
+        _source("src/example/Owner.java", entity)
+        if item.path == "src/example/Owner.java"
+        else item
+        for item in _element_sources()
+    )
+
+    result = JavaSpringScaAnalyzer().analyze(sources)
+
+    assert "unmapped-entity-column" in {item.code for item in result.residue}
+    assert not any(
+        fact.attribute("field") == "lastName"
+        for fact in _facts(result, "spring.entity-field")
+    )
