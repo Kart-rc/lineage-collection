@@ -15,3 +15,7 @@ cdk.out/
 output/
 data/
 source-materials/
+
+# Java fixture build output — pollutes analyzer fixture scope if left behind
+fixtures/repositories/**/target/
+fixtures/repositories/**/.gradle/

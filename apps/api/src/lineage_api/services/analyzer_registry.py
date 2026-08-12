@@ -14,8 +14,13 @@ from lineage_api.services.java_spring_sca import (
     JavaSpringScaAnalyzer,
     JavaSpringSource,
 )
-from lineage_api.services.resolver import ResolveContext
+from lineage_api.services.resolver import ResolveContext, Resolver
 from lineage_api.services.sca import ScaAnalyzer
+from lineage_api.services.sql_transformation_sca import (
+    SqlTransformationSource,
+    analyze_sql_sources,
+    compile_derivation_edges,
+)
 
 
 _MAX_SELECTION_TEXT = 128
@@ -177,10 +182,19 @@ class AnalyzerRegistry:
         self._definitions = tuple(sorted(definitions, key=lambda item: item.analyzer_pack))
 
     @classmethod
-    def default(cls, python_analyzer: ScaAnalyzer | None = None) -> "AnalyzerRegistry":
+    def default(
+        cls,
+        python_analyzer: ScaAnalyzer | None = None,
+        sql_resolver: Resolver | None = None,
+    ) -> "AnalyzerRegistry":
         python_handler = (
             _PythonAnalyzerAdapter(python_analyzer).analyze
             if python_analyzer is not None
+            else None
+        )
+        sql_handler = (
+            _SqlTransformationAnalyzerAdapter(sql_resolver).analyze
+            if sql_resolver is not None
             else None
         )
         return cls(
@@ -212,6 +226,24 @@ class AnalyzerRegistry:
                     "schema-resolver-v1",
                     "repository-scope-v1",
                     _JavaSpringAnalyzerAdapter().analyze,
+                ),
+                AnalyzerDefinition(
+                    "sql-transformation-v1",
+                    "sql-transformation-rules-v1",
+                    "git-checkout",
+                    "sql-transformation",
+                    ("postgres", "snowflake"),
+                    (
+                        sql_resolver.resolver_version
+                        if sql_resolver is not None
+                        else "catalog-resolver-v1"
+                    ),
+                    (
+                        sql_resolver.snapshot_id
+                        if sql_resolver is not None
+                        else "catalog-snapshot-v1"
+                    ),
+                    sql_handler,
                 ),
             )
         )
@@ -324,6 +356,24 @@ class AnalyzerRegistry:
                 if PurePosixPath(path).suffix == ".md"
                 or PurePosixPath(path).name
                 in {"expected-lineage.json", "repository-evidence.json"}
+            )
+            unsupported = tuple(
+                path
+                for path in expected
+                if path not in set(selected) and path not in set(skipped)
+            )
+        elif selection.analyzer_pack == "sql-transformation-v1":
+            selected = tuple(
+                path
+                for path in expected
+                if PurePosixPath(path).suffix == ".sql"
+                and PurePosixPath(path).parts[:1] == ("sql",)
+            )
+            skipped = tuple(
+                path
+                for path in expected
+                if PurePosixPath(path).suffix == ".md"
+                or PurePosixPath(path).name == "expected-lineage.json"
             )
             unsupported = tuple(
                 path
@@ -572,6 +622,101 @@ class _PythonAnalyzerAdapter:
             0,
             len(sca.residue),
             int(sca.stats.get("quarantinedCount", 0)),
+        )
+
+
+class _SqlTransformationAnalyzerAdapter:
+    def __init__(self, resolver: Resolver) -> None:
+        self._resolver = resolver
+
+    def analyze(
+        self,
+        snapshot: AnalyzerSnapshot,
+        schema_profile: str,
+        run_id: str,
+        correlation_id: str,
+    ) -> AnalyzerRunResult:
+        resolver = self._resolver
+        sources = tuple(
+            SqlTransformationSource(path, snapshot.read_bytes(path), schema_profile)
+            for path in snapshot.paths
+            if PurePosixPath(path).suffix == ".sql"
+        )
+        analysis = analyze_sql_sources(sources)
+        edges, resolution_residue = compile_derivation_edges(
+            analysis,
+            resolver,
+            ResolveContext(
+                env=snapshot.environment,
+                platform=schema_profile,
+                system=snapshot.system,
+                repo=snapshot.repository,
+                digest=snapshot.revision,
+                config={},
+                snapshot_id=resolver.snapshot_id,
+            ),
+            repo=snapshot.repository,
+            digest=snapshot.revision,
+            run_id=run_id,
+            correlation_id=correlation_id,
+            ruleset_version=snapshot.ruleset,
+        )
+        residue = analysis.residue + resolution_residue
+        status = "INTEGRATION_REQUIRED" if residue else "COMPLETE"
+        status_reasons = tuple(sorted({item.code for item in residue}))
+        document = {
+            "schemaVersion": "1.0.0",
+            "repo": snapshot.repository,
+            "digest": snapshot.revision,
+            "runId": run_id,
+            "correlationId": correlation_id,
+            "rulesetVersion": snapshot.ruleset,
+            "resolverVersion": resolver.resolver_version,
+            "snapshotId": resolver.snapshot_id,
+            "status": status,
+            "statusReasons": list(status_reasons),
+            "edges": [
+                {
+                    "provenanceId": edge.provenance_id,
+                    "from": [edge.from_urn],
+                    "to": edge.to_urn,
+                    "edgeType": edge.edge_type,
+                    "transform": edge.transform,
+                    "mechanism": edge.mechanism,
+                    "exact": edge.exact,
+                    "file": edge.file,
+                    "line": edge.line,
+                }
+                for edge in edges
+            ],
+            "residue": [
+                {
+                    "code": item.code,
+                    "location": {"path": item.path, "line": item.line},
+                    "symbol": item.symbol,
+                }
+                for item in residue
+            ],
+            "datasetsSeen": sorted(
+                {edge.to_urn.rsplit("#", 1)[0] for edge in edges}
+                | {edge.from_urn.rsplit("#", 1)[0] for edge in edges}
+            ),
+            "stats": {
+                "filesAnalyzed": analysis.files_analyzed,
+                "edgesEmitted": len(edges),
+                "residueCount": len(residue),
+                "quarantinedCount": 0,
+            },
+        }
+        return AnalyzerRunResult(
+            document=document,
+            status=status,
+            status_reasons=status_reasons,
+            edge_count=len(edges),
+            read_count=0,
+            write_count=0,
+            residue_count=len(residue),
+            unresolved_count=0,
         )
 
 
