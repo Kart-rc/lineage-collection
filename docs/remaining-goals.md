@@ -393,7 +393,7 @@ results exist.
 
 ### G7 — Close the pull-request review loop and merge to main
 
-**Status:** `IN_PROGRESS` — PR #3 merged; the review-findings follow-up remains
+**Status:** `IN_PROGRESS` — PR #3 is merged and its review threads are resolved; a review-findings follow-up PR is open and awaiting merge
 
 PR #3 was reviewed and merged into `main` as `ced8984` on 2026-08-11. `origin/main` contains the
 reviewed head, and the branch had incorporated the then-current `main` with no conflicts.
@@ -410,6 +410,17 @@ with evidence, replied to, and resolved:
 Gates run on the follow-up branch: full backend suite, web and infra suites, both builds,
 `make architecture-check`, `make workflow-check`, `make synth` (all 11 stacks) and
 `make acceptance-smoke`.
+
+A second review round on the follow-up PR raised three more threads, also handled:
+
+| Thread | Verdict | Outcome |
+|---|---|---|
+| Numeric-looking hosts diverge from the server (`127.1`, `0x7f.1`, `example.123`) | **Valid** | Real divergence: WHATWG `URL` rewrites the first two to `127.0.0.1` and throws on the third, while the server accepts all three. The validator now parses the raw authority instead of using `new URL`. |
+| Credential test case does not exercise the credential branch | **Incorrect** | The test does carry the full `https://user:token@…` URL; GitHub redacted it in the review UI. `new URL(...).username === "user"`, and the assertion passes on the credential message. |
+| G7 status line reads as truncated | Valid | Reworded. |
+
+Parity is now checked over a 33-case corpus run through both the Python authority and the
+TypeScript mirror, with identical verdicts on every case.
 
 Remaining before `COMPLETE`: merge the follow-up branch, then re-verify `origin/main`.
 
