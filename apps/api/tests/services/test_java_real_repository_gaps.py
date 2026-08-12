@@ -275,3 +275,124 @@ def test_each_module_may_own_its_profile_schema() -> None:
         "customers-service/src/main/resources/db/h2/schema.sql", "mysql"
     )
     assert not _is_profile_schema_path("db/mysql/schema.sql", "mysql")
+
+
+# --- E. @Query targeting another entity ------------------------------------------------
+
+_TWO_ENTITY_SOURCES = (
+    ("pom.xml", _MAVEN, None),
+    (
+        "src/main/resources/db/postgres/schema.sql",
+        "create table pets (id integer primary key);\n"
+        "create table types (id integer primary key);",
+        "postgres",
+    ),
+    (
+        "src/main/java/example/Pet.java",
+        "package example;\nimport jakarta.persistence.*;\n"
+        '@Entity @Table(name = "pets") class Pet {}\n',
+        None,
+    ),
+    (
+        "src/main/java/example/PetType.java",
+        "package example;\nimport jakarta.persistence.*;\n"
+        '@Entity @Table(name = "types") class PetType {}\n',
+        None,
+    ),
+)
+
+
+def _pet_repository(body: str):
+    return JavaSpringScaAnalyzer().analyze(
+        tuple(_source(*item) for item in _TWO_ENTITY_SOURCES)
+        + (
+            _source(
+                "src/main/java/example/PetRepository.java",
+                "package example;\n"
+                "import java.util.List;\n"
+                "import org.springframework.data.jpa.repository.JpaRepository;\n"
+                "import org.springframework.data.jpa.repository.Query;\n"
+                "public interface PetRepository extends JpaRepository<Pet, Integer> {\n"
+                f"{body}\n"
+                "}\n",
+            ),
+            _source(
+                "src/main/java/example/PetResource.java",
+                "package example;\n"
+                "import java.util.List;\n"
+                "class PetResource {\n"
+                "  private final PetRepository pets;\n"
+                "  PetResource(PetRepository pets) { this.pets = pets; }\n"
+                "  List<PetType> types() { return pets.findPetTypes(); }\n"
+                "}\n",
+            ),
+        )
+    )
+
+
+def _compile(result, profile: str = "postgres"):
+    context = spring_sca.JavaSpringEvidenceContext(
+        origin="https://github.com/example/x",
+        repository="x",
+        revision="1" * 40,
+        scope_digest="sha256:" + "2" * 64,
+        environment="staging",
+        platform=profile,
+        system="petclinic",
+        analyzer_pack="java-spring-data-jpa-v1",
+        ruleset_version="spring-data-rules-v1",
+        resolver_version="schema-resolver-v1",
+        schema_profile=profile,
+        scope_complete=True,
+    )
+    return spring_sca.JavaSpringEvidenceCompiler().compile(result, context)
+
+
+def test_a_query_naming_another_entity_resolves_to_that_entitys_table() -> None:
+    """`@Query("... FROM PetType ...")` on a Pet repository reads `types`, not `pets`."""
+    analysis = _pet_repository(
+        '  @Query("SELECT ptype FROM PetType ptype ORDER BY ptype.name")\n'
+        "  List<PetType> findPetTypes();"
+    )
+
+    evidence = _compile(analysis)
+
+    assert [edge.edge_type for edge in evidence.edges] == ["READS"]
+    assert evidence.edges[0].dataset_urn.endswith(":types")
+    assert "query-entity-conflict" not in evidence.status_reasons
+
+
+def test_jpql_without_a_select_clause_is_supported() -> None:
+    """`FROM X WHERE ...` is valid JPQL shorthand and reads X."""
+    analysis = _pet_repository(
+        '  @Query("FROM PetType ptype WHERE ptype.id = :typeId")\n'
+        "  List<PetType> findPetTypes();"
+    )
+
+    evidence = _compile(analysis)
+
+    assert [edge.edge_type for edge in evidence.edges] == ["READS"]
+    assert evidence.edges[0].dataset_urn.endswith(":types")
+    assert "unsupported-query" not in evidence.status_reasons
+
+
+def test_a_query_naming_an_entity_outside_the_scope_stays_a_conflict() -> None:
+    analysis = _pet_repository(
+        '  @Query("SELECT o FROM Nowhere o")\n  List<PetType> findPetTypes();'
+    )
+
+    evidence = _compile(analysis)
+
+    assert evidence.edges == ()
+    assert "query-entity-conflict" in evidence.status_reasons
+
+
+def test_a_schema_for_another_profile_is_skipped_not_unsupported() -> None:
+    """Shipping an HSQLDB dev schema must not make a repository unanalysable."""
+    from lineage_api.services.analyzer_registry import _is_policy_skipped_sql
+
+    assert _is_policy_skipped_sql("customers/src/main/resources/db/hsqldb/schema.sql")
+    assert _is_policy_skipped_sql("src/main/resources/db/h2/schema.sql")
+    assert _is_policy_skipped_sql("src/main/resources/db/oracle/schema.sql")
+    # Not a profile schema at all: still unsupported, so nothing is silently ignored.
+    assert not _is_policy_skipped_sql("src/main/resources/migrations/V1__init.sql")

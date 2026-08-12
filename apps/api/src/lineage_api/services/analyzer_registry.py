@@ -958,10 +958,14 @@ def _is_policy_skipped_sql(path: str) -> bool:
         for part in parts
     ):
         return True
+    # Any `db/<profile>/schema.sql` is a profile schema. The one matching the requested
+    # profile is selected earlier; the rest belong to other profiles the repository also
+    # ships (HSQLDB for local dev is ubiquitous) and are skipped, not unsupported. A
+    # hardcoded profile list here would make a real repository unanalysable for shipping
+    # a dialect this cell does not read.
     return (
         len(parts) >= 3
         and parts[-3] == "db"
-        and parts[-2] in {"h2", "mysql", "postgres"}
         and parts[-1] == "schema.sql"
     )
 

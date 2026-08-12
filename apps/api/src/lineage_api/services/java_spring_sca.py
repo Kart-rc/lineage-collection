@@ -520,6 +520,10 @@ class _Operation:
     label: str
     rationale: str
     query: SyntaxFact | None = None
+    # A @Query may legitimately target an entity other than the one its repository is
+    # declared over — Petclinic's PetRepository reads PetType. The edge then belongs to
+    # that entity's table, which is more precise than refusing it as a conflict.
+    entity_override: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -742,6 +746,54 @@ class JavaSpringEvidenceCompiler:
                 )
                 status_reasons.add(code)
                 continue
+
+            if operation.entity_override is not None:
+                override = next(
+                    (
+                        candidate
+                        for _subject, candidate in entities.values
+                        if candidate.attribute("entityName") == operation.entity_override
+                    ),
+                    None,
+                )
+                override_identity = (
+                    _mapping_table_identity(override, context.schema_profile)
+                    if override is not None
+                    else None
+                )
+                override_tables = (
+                    tuple(
+                        item
+                        for item in tables
+                        if (
+                            (
+                                candidate := _sql_fact_table_identity(
+                                    item, context.schema_profile
+                                )
+                            )
+                            is not None
+                            and override_identity is not None
+                            and override_identity.matches(candidate)
+                        )
+                    )
+                    if override_identity is not None
+                    else ()
+                )
+                if len(override_tables) != 1:
+                    unresolved += 1
+                    residue.append(
+                        JavaSpringCompilationResidue(
+                            "query-entity-conflict",
+                            invocation.location,
+                            (invocation.identifier, repository.identifier),
+                        )
+                    )
+                    status_reasons.add("query-entity-conflict")
+                    continue
+                entity = override
+                table = override_tables[0]
+                table_identity = override_identity
+                table_name = override_identity.rendered
 
             service_urn = f"service://{context.repository}/{owner_and_method}"
             dataset_urn = str(
@@ -1054,8 +1106,13 @@ def _resolve_operation(
             else isinstance(target, str)
             and target == entity.attribute("entityName")
         )
+        override: str | None = None
         if not target_matches:
-            return None, "query-table-conflict" if language == "SQL" else "query-entity-conflict"
+            if language == "SQL" or not isinstance(target, str):
+                return None, "query-table-conflict"
+            # Only an entity actually declared in this scope may redirect the edge; an
+            # unknown name is still a conflict, never a guessed table.
+            override = target
         edge_type = "READS" if operation == "SELECT" else "WRITES"
         return (
             _Operation(
@@ -1063,6 +1120,7 @@ def _resolve_operation(
                 f" [{language} {operation}]",
                 f"explicit @Query parsed as {language} {operation}",
                 query,
+                override,
             ),
             None,
         )
@@ -1214,12 +1272,13 @@ def _jpql_query_operation(
     if isinstance(expression, exp.Select):
         projection = expression.expressions
         source = expression.args.get("from")
-        if (
-            len(projection) != 1
-            or not isinstance(projection[0], exp.Column)
-            or not isinstance(source, exp.From)
-            or source.this is not table
-        ):
+        if not isinstance(source, exp.From) or source.this is not table:
+            return None
+        # `FROM X WHERE ...` is valid JPQL shorthand for selecting X; sqlglot renders the
+        # absent projection as a star. Spring Data uses this form in real repositories.
+        if len(projection) == 1 and isinstance(projection[0], exp.Star):
+            return "SELECT", table
+        if len(projection) != 1 or not isinstance(projection[0], exp.Column):
             return None
         return "SELECT", table
     if isinstance(expression, exp.Update):
