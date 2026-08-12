@@ -125,3 +125,73 @@ def test_two_real_sql_repositories_compose_through_a_shared_dataset() -> None:
 
     assert graph.shared_datasets == (B,)
     assert len(graph.edges) == warehouse.edge_count + risk.edge_count
+
+
+# --- edge merging: one edge, many producers -------------------------------------------
+
+
+def test_the_same_edge_from_two_repositories_merges_into_one() -> None:
+    one = _document("warehouse-sql", [(f"{A}#amount", f"{B}#gross_revenue")])
+    two = _document("payments-pipeline", [(f"{A}#amount", f"{B}#gross_revenue")])
+
+    graph = compose_repository_documents((one, two))
+
+    assert len(graph.edges) == 1
+    assert graph.edges[0]["contributedBy"] == ["payments-pipeline", "warehouse-sql"]
+
+
+def test_a_merged_edge_keeps_both_provenance_ids() -> None:
+    one = _document("warehouse-sql", [(f"{A}#amount", f"{B}#gross_revenue")])
+    two = _document("payments-pipeline", [(f"{A}#amount", f"{B}#gross_revenue")])
+
+    graph = compose_repository_documents((one, two))
+
+    assert sorted(graph.edges[0]["provenanceIds"]) == [
+        "prov-payments-pipeline-0",
+        "prov-warehouse-sql-0",
+    ]
+
+
+def test_conflicting_transforms_on_a_merged_edge_are_flagged() -> None:
+    one = {
+        "repo": "a",
+        "edges": [
+            {
+                "from": [f"{A}#occurred_at"],
+                "to": f"{B}#revenue_date",
+                "edgeType": "DERIVES",
+                "transform": "DATE(occurred_at)",
+                "provenanceId": "p1",
+            }
+        ],
+    }
+    two = {
+        "repo": "b",
+        "edges": [
+            {
+                "from": [f"{A}#occurred_at"],
+                "to": f"{B}#revenue_date",
+                "edgeType": "DERIVES",
+                "transform": "CAST(occurred_at AS DATE)",
+                "provenanceId": "p2",
+            }
+        ],
+    }
+
+    graph = compose_repository_documents((one, two))
+
+    assert len(graph.edges) == 1
+    assert graph.edges[0]["transformConflict"] is True
+    assert sorted(graph.edges[0]["transforms"]) == [
+        "CAST(occurred_at AS DATE)",
+        "DATE(occurred_at)",
+    ]
+
+
+def test_an_unmerged_edge_reports_no_conflict() -> None:
+    graph = compose_repository_documents(
+        (_document("a", [(f"{A}#amount", f"{B}#gross_revenue")]),)
+    )
+
+    assert graph.edges[0]["transformConflict"] is False
+    assert graph.edges[0]["contributedBy"] == ["a"]

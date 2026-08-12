@@ -33,6 +33,36 @@ prototype labels remain useful: **Implemented**, **Fixture adapter**, **Interfac
 | L15 NFR and resiliency | Implemented local harness | `LOCAL_PASS`; scale/availability/DR `AWS_REQUIRED` | Named failpoints, replay equivalence, publication crash matrix, lane fairness smoke, truthful resilience UI and content-addressed acceptance evidence | 12-hour Baseline, sustained/burst, error-budget, cost, multi-AZ failure and RPO/RTO drills |
 | L16 delivery plan | Implemented through Task 21 | Tasks 17–21 `LOCAL_PASS`/`SYNTH_PASS`; Task 22 pending | Build-ready B01–B16 PRDs, deployable packages, executable AWS workflow spine, acceptance harness and operator/diagram handoff | Task 22 PR/review loop and all external evidence above |
 
+## Product prototype alignment (2026-08-12)
+
+Measured by `scripts/verify_prototype_alignment.py`, which runs every cell across the
+fixture repositories and scores the composed result against the `Throughline - Agentic`
+product prototype. Current state: **5 of 8 dimensions met**.
+
+| Dimension | State |
+|---|---|
+| Element-level (column to column) edges | Met — `sql-transformation-v1` and `python-fixture-v1` |
+| Transform expression on every edge | Met |
+| Cross-repository composition | Met — 2 shared datasets across 3 repositories |
+| Traversable blast radius with severity | Met — 2 hops, `SOURCE`/`BREAK`/`WARN` |
+| Confidence band on every edge | Met — `VERIFIED`/`PROBABLE`/`INFERRED` projection |
+| Multi-signal confidence (runtime observed) | Not met — runtime is not on the collection path |
+| Service-to-service interactions plane | Not met — needs its own contract |
+| Liveness / frequency | Not met — depends on runtime |
+
+New cells and services: `sql-transformation-v1` (column-level `DERIVES` from
+`INSERT INTO ... SELECT`, `CREATE TABLE AS SELECT`, `CREATE VIEW`, fail-closed on
+nine typed residue codes), `services/composition.py` (cross-repository join with
+explicit seams and edge merging), `services/impact_simulation.py`,
+`domain/product_confidence.py`, and catalog-owned dataset kinds.
+
+Two findings the harness surfaces rather than hides: the Java corpus still yields zero
+edges under its designed fail-closed rules, and the Python and SQL cells disagree on one
+transform's text because sqlglot renders `DATE(x)` as `CAST(x AS DATE)` under some
+dialects — so transform text, and therefore edge identity, is schema-profile dependent.
+
+Plans for the three unmet dimensions are in `docs/superpowers/plans/`.
+
 ## Tasks 17–21 delivery status (Tasks 17–20 implementation plus handoff)
 
 | Task | Result | Commit |

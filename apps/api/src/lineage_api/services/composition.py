@@ -28,10 +28,18 @@ def _dataset_of(urn: str) -> str:
     return urn.rsplit("#", 1)[0]
 
 
+def _edge_key(edge: dict) -> tuple[str, str, str]:
+    sources = ",".join(sorted(str(item) for item in edge.get("from", ())))
+    return (sources, str(edge["to"]), str(edge.get("edgeType", "")))
+
+
 def compose_repository_documents(documents: tuple[dict, ...]) -> ComposedGraph:
-    edges: list[dict] = []
     datasets_by_repo: dict[str, set[str]] = {}
     edges_by_repo: dict[str, int] = {}
+    # One logical edge may be asserted by several repositories. Merging them here is
+    # what turns "the same fact found twice" into "one fact with two witnesses" —
+    # the shape the product needs to blend signals rather than double-count them.
+    merged: dict[tuple[str, str, str], dict] = {}
 
     for document in documents:
         repo = str(document.get("repo", ""))
@@ -42,7 +50,39 @@ def compose_repository_documents(documents: tuple[dict, ...]) -> ComposedGraph:
             datasets.add(_dataset_of(str(edge["to"])))
             for source in edge.get("from", ()):
                 datasets.add(_dataset_of(str(source)))
-        edges.extend(document_edges)
+
+            key = _edge_key(edge)
+            record = merged.get(key)
+            if record is None:
+                record = {
+                    **edge,
+                    "contributedBy": set(),
+                    "provenanceIds": set(),
+                    "transforms": set(),
+                }
+                merged[key] = record
+            record["contributedBy"].add(repo)
+            if edge.get("provenanceId"):
+                record["provenanceIds"].add(str(edge["provenanceId"]))
+            if edge.get("transform") is not None:
+                record["transforms"].add(str(edge["transform"]))
+
+    edges: list[dict] = []
+    for record in merged.values():
+        transforms = sorted(record["transforms"])
+        edges.append(
+            {
+                **{
+                    key: value
+                    for key, value in record.items()
+                    if key not in {"contributedBy", "provenanceIds", "transforms"}
+                },
+                "contributedBy": sorted(record["contributedBy"]),
+                "provenanceIds": sorted(record["provenanceIds"]),
+                "transforms": transforms,
+                "transformConflict": len(transforms) > 1,
+            }
+        )
 
     contributions = tuple(
         RepositoryContribution(
