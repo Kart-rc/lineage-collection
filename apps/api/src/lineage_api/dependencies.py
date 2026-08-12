@@ -197,7 +197,7 @@ def build_services(
         analyzer_registry=analyzer_registry,
         snapshot_provider=snapshot_provider,
         store=store,
-        consolidation=ConsolidationService(database),
+        consolidation=ConsolidationService(database, resolver=resolver),
         review=review,
         publisher=publisher,
         runtime=runtime,

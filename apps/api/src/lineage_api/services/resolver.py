@@ -76,6 +76,9 @@ class _NormalizedName:
     dataset: str
     sanitized_raw: RawName
     rules: tuple[str, ...]
+    # Set only for object-store values: the canonical `scheme://authority/path` lookup
+    # key. Identity still comes from the matched catalog row, never from this string.
+    locator_key: str = ""
 
 
 class Resolver:
@@ -107,10 +110,17 @@ class Resolver:
             return normalized
 
         vocabulary = self._catalog["vocabulary"]
+        # For an object-store value the derived host is a *bucket*, which is not an
+        # ownership system and must never be gated as one — publication enforces
+        # `system` as the ownership axis. The matched row supplies both.
+        system_known_before_match = not normalized.locator_key
         if (
             context.env not in vocabulary["environments"]
             or normalized.platform not in vocabulary["platforms"]
-            or normalized.system not in vocabulary["systems"]
+            or (
+                system_known_before_match
+                and normalized.system not in vocabulary["systems"]
+            )
         ):
             return self._quarantine(
                 normalized.sanitized_raw,
@@ -127,10 +137,24 @@ class Resolver:
         if not matches:
             return self._quarantine(
                 normalized.sanitized_raw,
-                "UNKNOWN_DATASET",
+                # A governed-looking object path that matches no declared locator is a
+                # distinct finding from an unknown relational name: it names a real
+                # store, and the actionable fix is a catalog entry.
+                "OBJECT_STORE_UNGOVERNED_PREFIX"
+                if normalized.locator_key
+                else "UNKNOWN_DATASET",
                 (),
                 {"normalizedValue": normalized.dataset},
             )
+        if normalized.locator_key and len(matches) == 1:
+            owner = str(matches[0]["system"])
+            if owner not in vocabulary["systems"]:
+                return self._quarantine(
+                    normalized.sanitized_raw,
+                    "VOCAB_VIOLATION",
+                    (),
+                    {"platform": normalized.platform, "system": owner},
+                )
         if len(matches) > 1:
             candidates = tuple(sorted(str(dataset["catalogRef"]) for dataset in matches))
             return self._quarantine(
@@ -214,12 +238,25 @@ class Resolver:
         if decoded_value.startswith("catalog://"):
             dataset_value = decoded_value
         elif is_object_store(platform):
-            # An object key is hierarchical: two prefixes ending in the same segment are
-            # different datasets, so the last-segment rule below would merge them. Hive
-            # partitions are slices of one table, not datasets, so they are stripped.
-            platform = canonical_scheme(platform)
-            dataset_value = canonical_object_key(decoded_value)
-            rules.append("object-store-key")
+            # A key is hierarchical and case-sensitive, so neither the last-segment rule
+            # nor case-folding below may run on it. The authority is retained so the same
+            # key in two buckets cannot collide. Identity comes from the catalog row that
+            # declares a matching locator; this only builds the key used to find it.
+            if "#" in raw.value:
+                # Truncating at a fragment would resolve silently to the wrong dataset.
+                return self._quarantine(
+                    sanitized_raw, "OBJECT_STORE_KEY_UNREPRESENTABLE", (), {}
+                )
+            authority = (parsed.hostname or "").lower()
+            key_path = canonical_object_key(decoded_value)
+            return _NormalizedName(
+                platform=canonical_scheme(platform),
+                system=context.system,
+                dataset=key_path,
+                sanitized_raw=sanitized_raw,
+                rules=(*rules, "object-store-locator"),
+                locator_key=f"{canonical_scheme(platform)}://{authority}/{key_path}",
+            )
         else:
             dataset_value = decoded_value.strip("/")
             if "/" in dataset_value:
@@ -241,7 +278,26 @@ class Resolver:
             rules=tuple(rules),
         )
 
+    @staticmethod
+    def _locator_matches(key: str, locator: str) -> bool:
+        return key == locator or key.startswith(f"{locator}/")
+
     def _catalog_matches(self, normalized: _NormalizedName) -> list[dict[str, Any]]:
+        if normalized.locator_key:
+            # Longest declared prefix wins. This subsumes partition stripping: anything
+            # below a declared table (dt=…, part files, _delta_log) is a residual, not a
+            # dataset of its own.
+            scored = [
+                (len(str(dataset["locator"])), dataset)
+                for dataset in self._datasets
+                if dataset.get("locator")
+                and self._locator_matches(normalized.locator_key, str(dataset["locator"]))
+            ]
+            if not scored:
+                return []
+            longest = max(length for length, _ in scored)
+            return [dataset for length, dataset in scored if length == longest]
+
         exact_catalog = [
             dataset
             for dataset in self._datasets

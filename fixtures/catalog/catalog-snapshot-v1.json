@@ -7,11 +7,13 @@
       "staging"
     ],
     "platforms": [
+      "kafka",
       "postgres",
       "s3",
       "snowflake"
     ],
     "systems": [
+      "inventory",
       "lakehouse",
       "payments",
       "petclinic"
@@ -188,7 +190,8 @@
           "name": "occurred_at",
           "type": "TIMESTAMP"
         }
-      ]
+      ],
+      "locator": "s3://raw-lake/raw/events/orders"
     },
     {
       "catalogRef": "catalog://lakehouse/curated-orders",
@@ -215,7 +218,66 @@
           "name": "order_date",
           "type": "DATE"
         }
+      ],
+      "locator": "s3://raw-lake/curated/orders"
+    },
+    {
+      "catalogRef": "catalog://inventory/inventory-update-events",
+      "env": "staging",
+      "platform": "kafka",
+      "system": "inventory",
+      "name": "inventory-update-events",
+      "aliases": [],
+      "kind": "STREAM",
+      "elements": [
+        {
+          "name": "sku",
+          "type": "STRING"
+        },
+        {
+          "name": "quantity",
+          "type": "INT"
+        },
+        {
+          "name": "occurred_at",
+          "type": "TIMESTAMP"
+        }
+      ]
+    },
+    {
+      "catalogRef": "catalog://inventory/inventory-count-events",
+      "env": "staging",
+      "platform": "kafka",
+      "system": "inventory",
+      "name": "inventory-count-events",
+      "aliases": [],
+      "kind": "STREAM",
+      "elements": [
+        {
+          "name": "sku",
+          "type": "STRING"
+        },
+        {
+          "name": "count",
+          "type": "INT"
+        },
+        {
+          "name": "window_end",
+          "type": "TIMESTAMP"
+        }
       ]
     }
-  ]
+  ],
+  "objectStores": {
+    "schemeAliases": {
+      "s3": "s3",
+      "s3a": "s3",
+      "s3n": "s3",
+      "gs": "gs",
+      "gcs": "gs",
+      "abfs": "abfs",
+      "abfss": "abfs"
+    },
+    "maxLocatorDepth": 8
+  }
 }
