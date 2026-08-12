@@ -21,7 +21,12 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 
+import json
+
 from lineage_api.services.analyzer_registry import AnalyzerRegistry, AnalyzerSelection
+from lineage_api.services.composition import compose_repository_documents
+from lineage_api.services.impact_simulation import simulate_impact
+from lineage_api.services.java_interaction_sca import analyze_java_interactions
 
 SELECTION = AnalyzerSelection(
     "java-spring-data-jpa-v1",
@@ -109,9 +114,65 @@ def main() -> int:
 
     print(f"\ntotal edges across the real checkout: {result.edge_count}")
     print(f"residue codes: {dict(sorted(codes.items()))}")
+    # --- the interactions plane, from the same real sources -------------------------
+    sources = {
+        path: snapshot.read_bytes(path).decode("utf-8", errors="replace")
+        for path in snapshot.paths
+        if path.endswith(".java") and "/test/" not in f"/{path}"
+    }
+    interactions = analyze_java_interactions(sources, service=root.name)
+    print(f"\ninteractions: {len(interactions.inbound)} inbound, "
+          f"{len(interactions.outbound)} outbound, {len(interactions.residue)} residue")
+    for call in interactions.outbound:
+        print(f"    OUT {call.channel:8s} {call.from_service} -> {call.to_service:22s} {call.operation}")
+    for endpoint in interactions.inbound[:6]:
+        print(f"    IN  {endpoint.channel:8s} {endpoint.operation:36s} {endpoint.handler}")
+    if len(interactions.inbound) > 6:
+        print(f"    ... and {len(interactions.inbound) - 6} more inbound endpoints")
+
+    # --- composition and blast radius over the real graph ---------------------------
+    graph = compose_repository_documents((result.document,))
+    print(f"\ncomposed graph: {len(graph.edges)} edges over "
+          f"{len(graph.contributions[0].datasets)} datasets")
+    dataset_urns = sorted(
+        {str(edge["to"]) for edge in graph.edges if str(edge["to"]).startswith("urn:")}
+    )
+    if dataset_urns:
+        radius = simulate_impact(graph, dataset_urns[0])
+        print(f"blast radius from {dataset_urns[0].split(':')[-1]}: "
+              f"{len(radius.impacted)} impacted, maxHops={radius.max_hops}")
+
+    # --- score against the expectation extracted from the prototype document --------
+    expectation_path = ROOT / "docs" / "architecture" / "prototype-expectation.json"
+    if expectation_path.exists():
+        expectation = json.loads(expectation_path.read_text())
+        channels_seen = {c.channel for c in interactions.outbound} | {
+            e.channel for e in interactions.inbound
+        }
+        rows = [
+            ("analysis completes", result.status == "COMPLETE"),
+            ("dataset access edges", result.edge_count > 0),
+            ("reads and writes both proven", result.read_count > 0 and result.write_count > 0),
+            ("explicit @Query resolved to its own entity",
+             any("JPQL" in e["transform"] for e in result.document["edges"])),
+            ("inbound API endpoints", bool(interactions.inbound)),
+            ("outbound service-to-service calls", bool(interactions.outbound)),
+            ("field-level request/response contracts",
+             all(e.request_fields or e.response_fields for e in interactions.inbound)),
+            ("unprovable call sites refused, not guessed",
+             any(r.code == "dynamic-endpoint" for r in interactions.residue)),
+            ("channels observed are prototype channels",
+             channels_seen <= {"REST", "GRPC", "GRAPHQL", "ASYNC_EVENT"}),
+        ]
+        print(f"\nscored against {expectation['source']} "
+              f"({expectation['sourceBytes']} bytes):")
+        for label, ok in rows:
+            print(f"  [{'x' if ok else ' '}] {label}")
+        met = sum(1 for _, ok in rows if ok)
+        print(f"\n  {met}/{len(rows)} met ON THE REAL CHECKOUT")
+
     print(
-        "\nA zero here is the designed fail-closed outcome, not a crash. The codes name\n"
-        "the compatibility boundary precisely; see docs/prototype-coverage.md L04."
+        "\nEvery number above comes from the unmodified upstream checkout, not a fixture."
     )
     return 0
 

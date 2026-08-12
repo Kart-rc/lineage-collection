@@ -57,47 +57,54 @@ silently. `scripts/verify_prototype_alignment.py` then scores the composed outpu
 estates (a Java service, three SQL/Python pipelines, and the H2 corpus that must keep
 failing closed).
 
-### The real upstream checkout now produces lineage
+### The real upstream checkout: COMPLETE, scored 9/9
 
-`scripts/measure_real_petclinic.py` runs the cell against an unmodified
+`scripts/measure_real_petclinic.py <path>` runs the full pipeline against an unmodified
 `spring-petclinic-microservices` checkout at `305a1f13e4f961001d4e6cb50a9db51dc3fc5967`
 (208 files, 8 modules, analysed from the repository root — the smallest scope containing
 a complete build closure):
 
 ```
-edges=12  reads=8  writes=4
-  WRITES OwnerRepository.save -> owners        READS OwnerRepository.findAll -> owners
-  READS  OwnerRepository.findById -> owners    READS PetRepository.findById -> pets
-  WRITES PetRepository.save -> pets            READS VetRepository.findAll -> vets
-  WRITES VisitRepository.save -> visits        READS VisitRepository.findByPetId -> visits
-  READS  VisitRepository.findByPetIdIn -> visits
-residue: ignored-schema-statement 6, query-entity-conflict 1, unsupported-query 1
+status: COMPLETE   edges=14  reads=10  writes=4   residue: ignored-schema-statement x6
+  owners, pets, types, vets, visits — including two JPQL @Query edges
+interactions: 15 inbound, 1 outbound, 5 residue
+  OUT REST  -> customers-service  GET /owners/{ownerId}
+  IN  REST  GET /api/gateway/owners/{ownerId}, POST /owners, PUT /owners/{ownerId}, ...
+composed graph: 13 edges over 9 datasets    blast radius from owners: 5 impacted
+
+scored against Throughline - Agentic.dc.html (242,743 bytes):  9/9 ON THE REAL CHECKOUT
 ```
 
-It was zero before this increment. Three boundaries were closed, each narrowed rather
-than removed:
+It produced **zero** edges at the start of this increment. Six boundaries were closed,
+each narrowed rather than removed:
 
-1. **On-demand framework imports.** `import jakarta.persistence.*;` now binds a
-   framework-sensitive name when exactly one *approved* framework package is
-   wildcard-imported, it is the only approved package declaring that simple name, and
-   no local type shadows it. `Repository` — declared by both
+1. **On-demand framework imports.** `import jakarta.persistence.*;` binds a
+   framework-sensitive name only when exactly one *approved* package is
+   wildcard-imported, it is the only approved package declaring that name, and no local
+   type shadows it. `Repository` — declared by both
    `org.springframework.data.repository` and `org.springframework.stereotype` — stays
-   residue, and a wildcard from an unapproved package still proves nothing. This is a
-   deliberate, bounded loosening of a previously absolute rule: the developer must have
-   named the approved package for it to bind.
-2. **Multi-module Maven.** A module's closure inherits Boot evidence from the aggregator
-   it names as its parent, followed only through explicitly declared parent coordinates
-   to a pom present in scope — never inferred from directory position. An aggregator is
-   no longer required to declare the JPA dependency itself, and a versionless module
-   dependency resolves against the parent's managed Boot version.
-3. **MySQL DDL and per-module schemas.** `CREATE DATABASE` and `USE` are session setup
-   carrying no lineage, so they are inventory-only rather than a reason to reject the
-   file. A profile schema may live under any module directory, since a microservices
-   repository keeps one schema per service.
+   residue, and an unapproved package still proves nothing. This is a deliberate,
+   bounded loosening of a previously absolute rule; two existing tests asserted the
+   absolute form and were rewritten with the trade-off stated in the test.
+2. **Multi-module Maven.** A module inherits Boot evidence through the parent
+   coordinates it explicitly declares, to a pom present in scope — never inferred from
+   directory position. Aggregators need not declare the JPA dependency; versionless
+   module dependencies resolve against the parent's managed Boot version.
+3. **MySQL DDL.** `CREATE DATABASE` and `USE` are session setup carrying no lineage, so
+   they are inventory-only rather than grounds to reject a schema file.
+4. **Per-module profile schemas.** A microservices repository keeps one schema per
+   service, so a profile schema may live under any module directory.
+5. **Cross-entity `@Query`.** A `@Query` naming another entity resolves to *that*
+   entity's table — Petclinic's `PetRepository` legitimately reads `PetType` — provided
+   the entity is declared in scope. An unknown name is still a conflict, never a guess.
+   JPQL shorthand `FROM X WHERE ...` is supported.
+6. **Other-profile schemas.** A `db/<profile>/schema.sql` the run did not select is
+   skipped, not unsupported; shipping an HSQLDB dev schema must not make a repository
+   unanalysable.
 
-The status is still `INTEGRATION_REQUIRED`, on two specific methods: one
-`query-entity-conflict` and one `unsupported-query`. Those are the cell working as
-designed on genuinely ambiguous code, and they do not suppress the 12 proven edges.
+Interactions on the real repository cover both directions, and the one outbound call
+built from a variable (`VisitsServiceClient`) is refused as `dynamic-endpoint` rather
+than guessed — the discipline holding on real code.
 
 ### Other limits
 

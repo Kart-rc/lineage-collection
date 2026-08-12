@@ -37,6 +37,24 @@ _GRAPHQL_ANNOTATIONS = {
 }
 _ASYNC_ANNOTATIONS = {"KafkaListener": "topics", "RabbitListener": "queues"}
 _GRPC_ANNOTATION = "GrpcService"
+# RestTemplate exposes the verb in the method name; WebClient exposes it as a builder
+# step before `.uri(...)`.
+_REST_TEMPLATE_VERBS = {
+    "getForObject": "GET",
+    "getForEntity": "GET",
+    "postForObject": "POST",
+    "postForEntity": "POST",
+    "put": "PUT",
+    "delete": "DELETE",
+    "exchange": "EXCHANGE",
+}
+_WEB_CLIENT_VERBS = {
+    "get": "GET",
+    "post": "POST",
+    "put": "PUT",
+    "delete": "DELETE",
+    "patch": "PATCH",
+}
 
 # The prototype models exactly these four channels; each must have an extractor.
 SUPPORTED_CHANNELS = frozenset({"REST", "GRPC", "GRAPHQL", "ASYNC_EVENT"})
@@ -359,6 +377,12 @@ def analyze_java_interactions(
                     )
                 )
 
+        for call, residue_entry in _http_client_calls(root, content, path, service):
+            if residue_entry is not None:
+                residue.append(residue_entry)
+            else:
+                outbound.append(call)
+
     return InteractionAnalysis(
         inbound=tuple(sorted(inbound, key=lambda item: (item.path, item.line))),
         outbound=tuple(sorted(outbound, key=lambda item: (item.path, item.line))),
@@ -403,3 +427,91 @@ def _non_rest_methods(
                 found.append((method, "ASYNC_EVENT", topic))
                 break
     return found
+
+
+def _walk(node: Node):
+    yield node
+    for child in node.children:
+        yield from _walk(child)
+
+
+def _invocation_name(node: Node, content: bytes) -> str:
+    field = node.child_by_field_name("name")
+    return _text(field, content) if field is not None else ""
+
+
+def _split_service_url(url: str) -> tuple[str, str] | None:
+    """`http://customers-service/owners/{id}` -> ("customers-service", "/owners/{id}")."""
+    for scheme in ("http://", "https://"):
+        if url.startswith(scheme):
+            remainder = url[len(scheme) :]
+            host, separator, path = remainder.partition("/")
+            if not host:
+                return None
+            route = f"/{path}" if separator else "/"
+            return host, route.split("?", 1)[0]
+    return None
+
+
+def _http_client_calls(root: Node, content: bytes, path: str, service: str):
+    """Outbound REST calls whose target and route are provable from a literal URL.
+
+    A URL assembled from a variable is `dynamic-endpoint` residue: the target service
+    cannot be proven without executing the code, and guessing it would invent an edge.
+    """
+    for node in _walk(root):
+        if node.type != "method_invocation":
+            continue
+        name = _invocation_name(node, content)
+        verb = _REST_TEMPLATE_VERBS.get(name)
+        is_web_client_uri = name == "uri"
+        if verb is None and not is_web_client_uri:
+            continue
+
+        arguments = node.child_by_field_name("arguments")
+        first = next(
+            (c for c in arguments.children if c.type not in {"(", ")", ","}),
+            None,
+        ) if arguments is not None else None
+        if first is None:
+            continue
+        if first.type != "string_literal":
+            yield None, InteractionResidue(
+                "dynamic-endpoint", path, node.start_point[0] + 1, name
+            )
+            continue
+
+        target = _split_service_url(_text(first, content).strip('"'))
+        if target is None:
+            yield None, InteractionResidue(
+                "unresolved-service", path, node.start_point[0] + 1, name
+            )
+            continue
+
+        if is_web_client_uri:
+            receiver = node.child_by_field_name("object")
+            verb = None
+            while receiver is not None and receiver.type == "method_invocation":
+                verb = _WEB_CLIENT_VERBS.get(_invocation_name(receiver, content))
+                if verb is not None:
+                    break
+                receiver = receiver.child_by_field_name("object")
+            if verb is None:
+                yield None, InteractionResidue(
+                    "unresolved-service", path, node.start_point[0] + 1, name
+                )
+                continue
+
+        host, route = target
+        yield (
+            OutboundCall(
+                from_service=service,
+                to_service=host,
+                channel="REST",
+                operation=f"{verb} {route}",
+                handler=name,
+                path=path,
+                line=node.start_point[0] + 1,
+            ),
+            None,
+        )

@@ -203,3 +203,77 @@ def test_every_prototype_channel_has_an_extractor() -> None:
     assert SUPPORTED_CHANNELS == frozenset(
         {"REST", "GRPC", "GRAPHQL", "ASYNC_EVENT"}
     )
+
+
+# --- outbound WebClient / RestTemplate call sites --------------------------------------
+
+
+def test_a_webclient_call_with_a_literal_uri_names_its_target_service() -> None:
+    analysis = analyze_java_interactions(
+        {
+            "C.java": (
+                "package example;\n"
+                "import org.springframework.web.reactive.function.client.WebClient;\n"
+                "public class CustomersServiceClient {\n"
+                "  private final WebClient.Builder webClientBuilder;\n"
+                "  public Object getOwner(int ownerId) {\n"
+                "    return webClientBuilder.build().get()\n"
+                '      .uri("http://customers-service/owners/{ownerId}", ownerId)\n'
+                "      .retrieve().bodyToMono(Object.class);\n"
+                "  }\n"
+                "}\n"
+            )
+        },
+        service="api-gateway",
+    )
+
+    call = analysis.outbound[0]
+    assert call.from_service == "api-gateway"
+    assert call.to_service == "customers-service"
+    assert call.channel == "REST"
+    assert call.operation == "GET /owners/{ownerId}"
+
+
+def test_a_resttemplate_call_with_a_literal_uri_resolves() -> None:
+    analysis = analyze_java_interactions(
+        {
+            "R.java": (
+                "package example;\n"
+                "import org.springframework.web.client.RestTemplate;\n"
+                "public class VetClient {\n"
+                "  private final RestTemplate restTemplate = new RestTemplate();\n"
+                "  public Object vets() {\n"
+                '    return restTemplate.getForObject("http://vets-service/vets", Object.class);\n'
+                "  }\n"
+                "}\n"
+            )
+        },
+        service="api-gateway",
+    )
+
+    call = analysis.outbound[0]
+    assert call.to_service == "vets-service"
+    assert call.operation == "GET /vets"
+
+
+def test_a_uri_built_from_a_variable_is_residue() -> None:
+    analysis = analyze_java_interactions(
+        {
+            "V.java": (
+                "package example;\n"
+                "import org.springframework.web.reactive.function.client.WebClient;\n"
+                "public class VisitsServiceClient {\n"
+                "  private final String hostname = \"http://visits-service/\";\n"
+                "  public Object visits(Object petIds) {\n"
+                "    return webClientBuilder.build().get()\n"
+                '      .uri(hostname + "pets/visits?petId={petId}", petIds)\n'
+                "      .retrieve();\n"
+                "  }\n"
+                "}\n"
+            )
+        },
+        service="api-gateway",
+    )
+
+    assert analysis.outbound == ()
+    assert "dynamic-endpoint" in {item.code for item in analysis.residue}
