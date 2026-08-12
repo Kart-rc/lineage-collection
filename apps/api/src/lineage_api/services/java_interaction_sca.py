@@ -263,6 +263,16 @@ def analyze_java_interactions(
                     verb, route = _route_of(method, content)
                     if verb is None:
                         continue
+                    if verb == "AMBIGUOUS":
+                        residue.append(
+                            InteractionResidue(
+                                "ambiguous-http-method",
+                                path,
+                                method.start_point[0] + 1,
+                                _method_name(method, content),
+                            )
+                        )
+                        continue
                     if route is False:
                         residue.append(
                             InteractionResidue(
@@ -354,6 +364,16 @@ def analyze_java_interactions(
                 verb, route = _route_of(method, content)
                 if verb is None:
                     continue
+                if verb == "AMBIGUOUS":
+                    residue.append(
+                        InteractionResidue(
+                            "ambiguous-http-method",
+                            path,
+                            method.start_point[0] + 1,
+                            _method_name(method, content),
+                        )
+                    )
+                    continue
                 if route is False:
                     residue.append(
                         InteractionResidue(
@@ -392,11 +412,49 @@ def analyze_java_interactions(
 
 def _route_of(method: Node, content: bytes) -> tuple[str | None, str | bool]:
     for annotation in _annotations(method):
-        verb = _METHOD_ANNOTATIONS.get(_annotation_name(annotation, content))
-        if verb is None:
+        name = _annotation_name(annotation, content)
+        verb = _METHOD_ANNOTATIONS.get(name)
+        if verb is not None:
+            route = _string_argument(annotation, content)
+            if route is False:
+                # A named `path =`/`value =` attribute is still literal; only a
+                # non-literal one is dynamic.
+                route = _named_argument(annotation, content, "path")
+                if route is False:
+                    route = _named_argument(annotation, content, "value")
+            return verb, route
+        if name != "RequestMapping":
             continue
-        return verb, _string_argument(annotation, content)
+        # Older Spring code writes the verb as an attribute rather than in the
+        # annotation name: `@RequestMapping(path = "/x", method = RequestMethod.GET)`.
+        verb = _request_method_verb(annotation, content)
+        if verb is None:
+            # No explicit verb means the mapping answers every method. Choosing one
+            # would be a guess, so this is reported rather than resolved.
+            return "AMBIGUOUS", ""
+        route = _named_argument(annotation, content, "path")
+        if route is False:
+            route = _named_argument(annotation, content, "value")
+        if route is False:
+            route = _string_argument(annotation, content)
+        return verb, "" if route is False else route
     return None, ""
+
+
+def _request_method_verb(annotation: Node, content: bytes) -> str | None:
+    """The verb named by a `method = RequestMethod.GET` attribute, when literal."""
+    arguments = next(
+        (c for c in annotation.children if c.type == "annotation_argument_list"), None
+    )
+    if arguments is None:
+        return None
+    for pair in (c for c in arguments.children if c.type == "element_value_pair"):
+        if _text(pair.children[0], content) != "method":
+            continue
+        rendered = _text(pair.children[-1], content)
+        verb = rendered.rsplit(".", 1)[-1].strip()
+        return verb if verb in set(_METHOD_ANNOTATIONS.values()) else None
+    return None
 
 
 def _non_rest_methods(

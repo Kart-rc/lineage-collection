@@ -277,3 +277,59 @@ def test_a_uri_built_from_a_variable_is_residue() -> None:
 
     assert analysis.outbound == ()
     assert "dynamic-endpoint" in {item.code for item in analysis.residue}
+
+
+# --- shapes found in real repositories -------------------------------------------------
+
+
+def test_method_level_request_mapping_with_an_explicit_method_is_an_endpoint() -> None:
+    """FTGO and older Spring code write `@RequestMapping(method = RequestMethod.GET)`."""
+    analysis = analyze_java_interactions(
+        {
+            "O.java": (
+                "package example;\n"
+                "import org.springframework.web.bind.annotation.RequestMapping;\n"
+                "import org.springframework.web.bind.annotation.RequestMethod;\n"
+                "import org.springframework.web.bind.annotation.RestController;\n"
+                "@RestController\n"
+                '@RequestMapping(path = "/orders")\n'
+                "public class OrderHistoryController {\n"
+                "  @RequestMapping(method = RequestMethod.GET)\n"
+                "  public GetOrdersResponse getOrders(String consumerId) { return null; }\n"
+                '  @RequestMapping(path = "/{orderId}", method = RequestMethod.GET)\n'
+                "  public GetOrderResponse getOrder(String orderId) { return null; }\n"
+                '  @RequestMapping(value = "/search", method = RequestMethod.POST)\n'
+                "  public GetOrdersResponse search(SearchRequest request) { return null; }\n"
+                "}\n"
+            )
+        },
+        service="order-history-service",
+    )
+
+    assert [(e.channel, e.operation) for e in analysis.inbound] == [
+        ("REST", "GET /orders"),
+        ("REST", "GET /orders/{orderId}"),
+        ("REST", "POST /orders/search"),
+    ]
+
+
+def test_a_request_mapping_without_a_method_defaults_to_all_verbs_and_is_residue() -> None:
+    """Without an explicit verb the mapping answers every method; picking one would guess."""
+    analysis = analyze_java_interactions(
+        {
+            "A.java": (
+                "package example;\n"
+                "import org.springframework.web.bind.annotation.RequestMapping;\n"
+                "import org.springframework.web.bind.annotation.RestController;\n"
+                "@RestController\n"
+                "public class A {\n"
+                '  @RequestMapping("/x")\n'
+                "  public String any() { return null; }\n"
+                "}\n"
+            )
+        },
+        service="s",
+    )
+
+    assert analysis.inbound == ()
+    assert "ambiguous-http-method" in {r.code for r in analysis.residue}

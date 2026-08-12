@@ -206,3 +206,66 @@ def test_direction_is_derived_from_the_documented_convention(name, expected) -> 
     )
 
     assert analysis.bindings[0].direction == expected
+
+
+# --- raw Kafka Streams topology API ----------------------------------------------------
+
+
+def test_the_raw_streams_topology_api_names_its_topics() -> None:
+    """confluentinc/kafka-streams-examples uses the builder API, not Spring config."""
+    from lineage_api.services.kafka_binding_sca import read_streams_topology
+
+    analysis = read_streams_topology(
+        {
+            "WordCount.java": (
+                "package io.confluent.examples.streams;\n"
+                "import org.apache.kafka.streams.StreamsBuilder;\n"
+                "public class WordCountLambdaExample {\n"
+                "  static void createStream(StreamsBuilder builder) {\n"
+                '    final KStream<String, String> input = builder.stream("my-input-topic");\n'
+                "    input.flatMapValues(v -> Arrays.asList(v.split(\" \")))\n"
+                '         .to("my-output-topic", Produced.with(Serdes.String(), Serdes.Long()));\n'
+                "  }\n"
+                "}\n"
+            )
+        }
+    )
+
+    assert [(b.direction, b.topic) for b in analysis.bindings] == [
+        ("READS", "my-input-topic"),
+        ("WRITES", "my-output-topic"),
+    ]
+
+
+def test_a_ktable_source_is_also_a_read() -> None:
+    from lineage_api.services.kafka_binding_sca import read_streams_topology
+
+    analysis = read_streams_topology(
+        {"T.java": 'import org.apache.kafka.streams.StreamsBuilder;\nclass T { void f(StreamsBuilder b) { b.table("UserRegions"); } }'}
+    )
+
+    assert [(b.direction, b.topic) for b in analysis.bindings] == [
+        ("READS", "UserRegions")
+    ]
+
+
+def test_a_topology_topic_built_from_a_variable_is_residue() -> None:
+    from lineage_api.services.kafka_binding_sca import read_streams_topology
+
+    analysis = read_streams_topology(
+        {"T.java": "import org.apache.kafka.streams.StreamsBuilder;\nclass T { void f(StreamsBuilder b, String t) { b.stream(t); } }"}
+    )
+
+    assert analysis.bindings == ()
+    assert [r.code for r in analysis.residue] == ["dynamic-destination"]
+
+
+def test_an_unrelated_to_call_is_not_a_topic() -> None:
+    """`.to(...)` on something that is not a stream must not invent a topic."""
+    from lineage_api.services.kafka_binding_sca import read_streams_topology
+
+    analysis = read_streams_topology(
+        {"T.java": 'class T { void f() { collect.to("not-a-topic"); } }'}
+    )
+
+    assert analysis.bindings == ()

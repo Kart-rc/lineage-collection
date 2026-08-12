@@ -19,6 +19,9 @@ import re
 from dataclasses import dataclass
 from pathlib import PurePosixPath
 
+import tree_sitter_java
+from tree_sitter import Language, Node, Parser
+
 _BINDINGS_PREFIX = "spring.cloud.stream.bindings."
 _FUNCTIONAL = re.compile(r"^(?P<function>[A-Za-z_][A-Za-z0-9_]*)-(?P<direction>in|out)-\d+$")
 _LEGACY = {"input": "READS", "output": "WRITES"}
@@ -163,4 +166,98 @@ def is_stream_configuration(path: str) -> bool:
     name = PurePosixPath(path).name
     return name.startswith("application") and name.endswith(
         (".yml", ".yaml", ".properties")
+    )
+
+
+# --------------------------------------------------------------------------------------
+# Raw Kafka Streams topology API
+#
+# Not every processor uses Spring Cloud Stream. confluentinc/kafka-streams-examples names
+# its topics directly in the builder API — `builder.stream("t")` and `.to("t")` — so a
+# config-only reader finds nothing there. Both forms answer the same question, so both
+# produce the same StreamBinding.
+# --------------------------------------------------------------------------------------
+
+_PARSER = Parser(Language(tree_sitter_java.language()))
+_TOPOLOGY_SOURCES = {"stream": "READS", "table": "READS", "globalTable": "READS"}
+_TOPOLOGY_SINKS = {"to": "WRITES"}
+# `.to(...)` and `.stream(...)` are common method names. Rather than guess from the
+# receiver expression — which breaks the moment a chain is split across variables — the
+# file must import the Kafka Streams API at all. A file that does not is not a topology,
+# so no topic can be invented from it.
+_STREAMS_IMPORT = "org.apache.kafka.streams"
+
+
+def _walk(node: Node):
+    yield node
+    for child in node.children:
+        yield from _walk(child)
+
+
+def _node_text(node: Node, content: bytes) -> str:
+    return content[node.start_byte : node.end_byte].decode("utf-8", errors="replace")
+
+
+def _call_name(node: Node, content: bytes) -> str:
+    field = node.child_by_field_name("name")
+    return _node_text(field, content) if field is not None else ""
+
+
+def _enclosing_method(node: Node, content: bytes) -> str:
+    current = node.parent
+    while current is not None:
+        if current.type == "method_declaration":
+            name = current.child_by_field_name("name")
+            return _node_text(name, content) if name is not None else ""
+        current = current.parent
+    return ""
+
+
+def read_streams_topology(sources: dict[str, str]) -> BindingAnalysis:
+    bindings: list[StreamBinding] = []
+    residue: list[BindingResidue] = []
+
+    for path in sorted(sources):
+        text = sources[path]
+        if _STREAMS_IMPORT not in text:
+            continue
+        content = text.encode()
+        root = _PARSER.parse(content).root_node
+        for node in _walk(root):
+            if node.type != "method_invocation":
+                continue
+            called = _call_name(node, content)
+            direction = _TOPOLOGY_SOURCES.get(called) or _TOPOLOGY_SINKS.get(called)
+            if direction is None:
+                continue
+
+            arguments = node.child_by_field_name("arguments")
+            first = (
+                next((c for c in arguments.children if c.type not in {"(", ")", ","}), None)
+                if arguments is not None
+                else None
+            )
+            line = node.start_point[0] + 1
+            if first is None:
+                continue
+            if first.type != "string_literal":
+                residue.append(
+                    BindingResidue("dynamic-destination", path, line, called)
+                )
+                continue
+
+            bindings.append(
+                StreamBinding(
+                    binding=called,
+                    function=_enclosing_method(node, content),
+                    direction=direction,
+                    topic=_node_text(first, content).strip('"'),
+                    path=path,
+                    line=line,
+                )
+            )
+
+    return BindingAnalysis(
+        bindings=tuple(sorted(bindings, key=lambda i: (i.path, i.line, i.binding))),
+        residue=tuple(sorted(residue, key=lambda i: (i.path, i.line, i.code))),
     )
