@@ -91,3 +91,36 @@ def test_a_non_runtime_timestamp_is_not_treated_as_an_observation() -> None:
 def test_an_unknown_band_is_rejected_rather_than_defaulted() -> None:
     with pytest.raises(ValueError, match="confidence band"):
         project_confidence("SOMETHING", [_sca()])
+
+
+# --- the ceiling is a property of the model, not of the implementation -----------------
+
+
+def test_no_combination_of_sca_and_runtime_can_reach_highest() -> None:
+    """HIGHEST is *defined* as all three mechanisms agreeing.
+
+    Asking for HIGHEST from SCA and runtime alone is a category error rather than a
+    coverage shortfall: the band names a three-way agreement, so two mechanisms cannot
+    express it however many edges they corroborate. This test enumerates every subset of
+    {SCA, RUNTIME} so the claim is proven rather than asserted in prose.
+    """
+    from itertools import chain, combinations
+
+    from lineage_api.domain.confidence import derive_band
+
+    available = {"SCA", "RUNTIME"}
+    subsets = chain.from_iterable(
+        combinations(sorted(available), size) for size in range(1, len(available) + 1)
+    )
+
+    bands = {derive_band(set(subset)) for subset in subsets}
+
+    assert bands == {"SINGLE", "HIGH"}
+    assert "HIGHEST" not in bands
+
+
+def test_highest_requires_exactly_the_third_mechanism() -> None:
+    from lineage_api.domain.confidence import derive_band
+
+    assert derive_band({"SCA", "RUNTIME"}) == "HIGH"
+    assert derive_band({"SCA", "RUNTIME", "LLM"}) == "HIGHEST"

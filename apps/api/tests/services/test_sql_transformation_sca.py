@@ -468,3 +468,48 @@ def test_an_unqualified_column_in_a_join_is_ambiguous_and_refused() -> None:
 
     assert analysis.shapes == ()
     assert "ambiguous-join-column" in {r.code for r in analysis.residue}
+
+
+# --- UNION -----------------------------------------------------------------------------
+
+
+def test_a_union_contributes_every_branch_to_the_same_target_columns() -> None:
+    """Each branch feeds the same target positionally, so the target fans in."""
+    analysis = analyze_sql_sources(
+        (
+            SqlTransformationSource(
+                "q.sql",
+                b"CREATE TABLE xxx AS SELECT a, b FROM t1 UNION ALL SELECT a, c FROM t2;",
+                "hive",
+            ),
+        )
+    )
+
+    assert analysis.residue == ()
+    pairs = {
+        (shape.source_table, projection.target_column, projection.source_columns)
+        for shape in analysis.shapes
+        for projection in shape.projections
+    }
+    assert pairs == {
+        ("t1", "a", ("a",)),
+        ("t1", "b", ("b",)),
+        ("t2", "a", ("a",)),
+        ("t2", "b", ("c",)),
+    }
+
+
+def test_a_union_branch_with_a_constant_is_residue_not_an_invented_edge() -> None:
+    analysis = analyze_sql_sources(
+        (
+            SqlTransformationSource(
+                "q.sql",
+                b"CREATE TABLE xxx AS SELECT a, 'lit' AS s FROM t1 "
+                b"UNION ALL SELECT a, 'lit2' AS s FROM t2;",
+                "hive",
+            ),
+        )
+    )
+
+    assert "constant-projection" in {r.code for r in analysis.residue}
+    assert all(p.target_column != "s" for s in analysis.shapes for p in s.projections)

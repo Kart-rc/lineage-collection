@@ -45,6 +45,17 @@ class SqlStatementTarget:
     aliases: tuple[tuple[str, str], ...] = ()
 
 
+def _union_branches(union: exp.Union) -> list[exp.Select]:
+    """Flatten a possibly-nested UNION into its SELECT branches, in written order."""
+    branches: list[exp.Select] = []
+    for side in (union.this, union.expression):
+        if isinstance(side, exp.Union):
+            branches.extend(_union_branches(side))
+        elif isinstance(side, exp.Select):
+            branches.append(side)
+    return branches
+
+
 def _table_name(table: exp.Table) -> str:
     return f"{table.db}.{table.name}" if table.db else table.name
 
@@ -67,6 +78,10 @@ def classify_statement(
     target_table = _table_name(target_table_node)
 
     select = statement.expression
+    if isinstance(select, exp.Union):
+        # Every branch writes the same target, so the target column names come from the
+        # first branch and each branch is classified against them separately.
+        select = _union_branches(select)[0]
     if not isinstance(select, exp.Select):
         return SqlResidue("unsupported-statement", path, line, target_table)
 
@@ -213,6 +228,44 @@ def analyze_sql_sources(
             if isinstance(classified, SqlResidue):
                 residue.append(classified)
                 continue
+            branches = (
+                _union_branches(statement.expression)
+                if isinstance(statement.expression, exp.Union)
+                else [statement.expression]
+            )
+            if len(branches) > 1:
+                for branch in branches:
+                    branch_target = classify_statement(statement, source.path, line)
+                    if isinstance(branch_target, SqlResidue):
+                        residue.append(branch_target)
+                        break
+                    branch_sources = sorted(
+                        {_table_name(item) for item in branch.find_all(exp.Table)}
+                    )
+                    if len(branch_sources) != 1:
+                        residue.append(
+                            SqlResidue(
+                                "ambiguous-source-table", source.path, line,
+                                branch_target.target_table,
+                            )
+                        )
+                        continue
+                    projections, branch_residue = pair_projections(
+                        branch_target.target_columns, branch, source.path, line
+                    )
+                    residue.extend(branch_residue)
+                    if projections:
+                        shapes.append(
+                            SqlStatementShape(
+                                branch_target.target_table,
+                                branch_sources[0],
+                                projections,
+                                source.path,
+                                line,
+                            )
+                        )
+                continue
+
             select = statement.expression
             star = len(select.expressions) == 1 and isinstance(
                 select.expressions[0], exp.Star
