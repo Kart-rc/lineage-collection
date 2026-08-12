@@ -1,9 +1,20 @@
-"""Collect lineage from a real repository and score it against both mechanisms.
+"""Collect lineage from a real repository and score it on SCA and runtime alone.
 
 `OpenLineage/OpenLineage` ships integration fixtures that carry both halves of the
 evidence for one operation: the literal SQL the engine ran, and the columnLineage facet
-the engine emitted while running it. That is a genuine SCA + RUNTIME pair from upstream
-code — not a fixture written to agree with itself.
+it emitted while running. The SCA claim is derived by parsing that SQL; the runtime claim
+is read from the facet. Neither was written to agree with the other.
+
+Each fixture is treated as its own catalog snapshot, because these tables are reused with
+different shapes across scenarios — `test.t1` appears with nine distinct schemas and
+`test.xxx` with sixteen. A single merged catalog would let a statement resolve against
+columns that do not exist in that scenario, so the schema facets of the event under
+analysis are the snapshot for that event and nothing else.
+
+One honesty note carried into the output: for an INSERT with an explicit column list, or
+a CTAS with aliases, the SCA claim is fully independent of the event. For a *positional*
+INSERT the target column order is not in the statement, so it comes from the same event
+that supplies the runtime facet — shared context, flagged per row.
 
 Run: uv run --project apps/api python scripts/verify_real_repo_confidence.py <estate-root>
 """
@@ -19,7 +30,6 @@ ROOT = Path(__file__).resolve().parents[1]
 from lineage_api.domain.confidence import derive_band
 from lineage_api.domain.product_confidence import project_confidence
 from lineage_api.services.consolidation import ConsolidationService
-from lineage_api.services.llm_gateway import LlmGateway, RecordedTransport
 from lineage_api.services.resolver import (
     RawName,
     ResolveContext,
@@ -32,14 +42,42 @@ from lineage_api.services.sql_transformation_sca import (
     compile_derivation_edges,
 )
 
-CATALOG = ROOT / "fixtures" / "catalog" / "catalog-snapshot-v1.json"
-RELATIVE = Path(
-    "OpenLineage/integration/hive/hive-openlineage-hook/integrations/container"
-)
+RELATIVE = Path("OpenLineage/integration/hive/hive-openlineage-hook/integrations/container")
+ENV, PLATFORM, SYSTEM = "staging", "hive", "warehouse"
 
 
 def _rule(title: str) -> None:
     print(f"\n{'=' * 78}\n{title}\n{'=' * 78}")
+
+
+def _catalog_for(event: dict) -> dict:
+    """A snapshot built from the schema facets this event declares — and only this one."""
+    datasets = []
+    seen: set[str] = set()
+    for side in ("inputs", "outputs"):
+        for dataset in event.get(side) or []:
+            name = str(dataset["name"])
+            fields = dataset.get("facets", {}).get("schema", {}).get("fields", [])
+            if name in seen or not fields:
+                continue
+            seen.add(name)
+            datasets.append(
+                {
+                    "catalogRef": f"catalog://{SYSTEM}/{name}",
+                    "env": ENV, "platform": PLATFORM, "system": SYSTEM,
+                    "name": name, "aliases": [name.split(".", 1)[-1]], "kind": "DATASTORE",
+                    "elements": [
+                        {"name": str(f["name"]), "type": str(f.get("type", ""))}
+                        for f in fields
+                    ],
+                }
+            )
+    return {
+        "schemaVersion": "1.0.0", "snapshotId": "openlineage-event-v1",
+        "resolverVersion": "1.0.0",
+        "vocabulary": {"environments": [ENV], "platforms": [PLATFORM], "systems": [SYSTEM]},
+        "datasets": datasets,
+    }
 
 
 def main() -> int:
@@ -49,30 +87,15 @@ def main() -> int:
     if not directory.is_dir():
         raise SystemExit(f"OpenLineage checkout not found at {directory}")
 
-    resolver = Resolver.from_path(CATALOG)
-    catalog = json.loads(CATALOG.read_text())
-    context = ResolveContext(
-        env="staging", platform="hive", system="warehouse", repo="OpenLineage",
-        digest="9" * 40, config={}, snapshot_id=resolver.snapshot_id,
-    )
-    service = ConsolidationService(database=None, resolver=resolver)  # type: ignore[arg-type]
-
-    def declared_columns(table: str) -> tuple[str, ...] | None:
-        result = resolver.resolve(RawName("dataset", table, "SCA", ()), context)
-        if not isinstance(result, ResolvedName):
-            return None
-        for dataset in catalog["datasets"]:
-            if str(dataset["catalogRef"]) == str(result.catalog_ref):
-                return tuple(str(e["name"]) for e in dataset.get("elements", []))
-        return None
-
     events = sorted(
-        path for path in directory.glob("cll*.json")
-        if "columnLineage" in path.read_text()
+        path for path in directory.glob("cll*.json") if "columnLineage" in path.read_text()
     )
-    _rule(f"REAL EVENTS WITH BOTH HALVES OF THE EVIDENCE  ({len(events)} candidates)")
+    _rule(f"REAL EVENTS CARRYING BOTH SQL AND COLUMN LINEAGE  ({len(events)})")
 
-    scored = 0
+    verified = unscored = 0
+    residue_tally: dict[str, int] = {}
+    shared_context = 0
+
     for path in events:
         event = json.loads(path.read_text())
         query = event.get("job", {}).get("facets", {}).get("sql", {}).get("query")
@@ -80,11 +103,31 @@ def main() -> int:
         if not query or not outputs or "columnLineage" not in outputs[0].get("facets", {}):
             continue
 
+        resolver = Resolver(_catalog_for(event))
+        context = ResolveContext(
+            env=ENV, platform=PLATFORM, system=SYSTEM, repo="OpenLineage",
+            digest="9" * 40, config={}, snapshot_id=resolver.snapshot_id,
+        )
+        service = ConsolidationService(database=None, resolver=resolver)  # type: ignore[arg-type]
+        catalog = _catalog_for(event)
+
+        def declared_columns(table: str) -> tuple[str, ...] | None:
+            result = resolver.resolve(RawName("dataset", table, "SCA", ()), context)
+            if not isinstance(result, ResolvedName):
+                return None
+            for dataset in catalog["datasets"]:
+                if str(dataset["catalogRef"]) == str(result.catalog_ref):
+                    return tuple(str(e["name"]) for e in dataset["elements"])
+            return None
+
+        positional = "insert into" in " ".join(query.split()).lower() and "(" not in (
+            " ".join(query.split()).lower().split("select", 1)[0]
+        )
         analysis = analyze_sql_sources(
             (SqlTransformationSource("query.sql", query.encode(), "hive"),),
             table_columns=declared_columns,
         )
-        edges, residue = compile_derivation_edges(
+        edges, compile_residue = compile_derivation_edges(
             analysis, resolver, context, repo="OpenLineage", digest="9" * 40,
             run_id="run", correlation_id="corr",
             ruleset_version="sql-transformation-rules-v1",
@@ -95,70 +138,57 @@ def main() -> int:
         try:
             for output in outputs:
                 target = service._resolve_runtime_dataset(
-                    f"{output['namespace']}/{output['name']}", "staging"
+                    f"{output['namespace']}/{output['name']}", ENV
                 )
                 for field, mapping in output["facets"]["columnLineage"]["fields"].items():
                     for item in mapping["inputFields"]:
                         source = service._resolve_runtime_dataset(
-                            f"{item['namespace']}/{item['name']}", "staging"
+                            f"{item['namespace']}/{item['name']}", ENV
                         )
                         runtime.add((f"{source}#{item['field']}", f"{target}#{field}"))
         except ValueError:
             runtime = set()
 
-        # Third mechanism. The response is recorded — no live gateway is configured —
-        # but every proposal still has to clear the guardrail chain to count.
-        llm_result = LlmGateway(
-            resolver=resolver,
-            transport=RecordedTransport({"any": [
-                {"fromUrn": f, "toUrn": t_, "transform": "concurs",
-                 "citation": query.split()[-1]}
-                for f, t_ in sorted(sca)
-            ]}),
-            model_id="recorded-response-v1",
-        ).propose(
-            chunk=query,
-            known_urns=tuple({u.rsplit("#", 1)[0] for pair in sca for u in pair}),
-        )
-        llm = {(p_.from_urn, p_.to_urn) for p_ in llm_result.accepted}
-
         corroborated = sca & runtime
-        if not sca and not corroborated:
-            print(f"\n  {path.name}")
-            print(f"    query   : {' '.join(query.split())[:64]}")
-            print(f"    SCA     : 0 edges   residue="
-                  f"{sorted({r.code for r in analysis.residue} | {r.code for r in residue}) or '[]'}")
+        codes = sorted({r.code for r in analysis.residue} | {r.code for r in compile_residue})
+        for code in codes:
+            residue_tally[code] = residue_tally.get(code, 0) + 1
+
+        if not sca:
+            unscored += 1
+            print(f"\n  [ ] {path.name}")
+            print(f"      {' '.join(query.split())[:66]}")
+            print(f"      SCA 0 edges   residue={codes or '[]'}")
             continue
 
-        scored += 1
-        agreed = corroborated & llm
-        mechanisms = {"SCA"}
-        provenance: list[dict] = [{"mechanism": "SCA"}]
-        if corroborated:
-            mechanisms.add("RUNTIME")
-            provenance.append({"mechanism": "RUNTIME", "observedAt": "2026-08-12T10:00:00Z"})
-        if agreed:
-            mechanisms.add("LLM")
-            provenance.append({"mechanism": "LLM"})
+        mechanisms = {"SCA"} | ({"RUNTIME"} if corroborated else set())
+        provenance = [{"mechanism": "SCA"}] + (
+            [{"mechanism": "RUNTIME", "observedAt": "2026-08-12T10:00:00Z"}]
+            if corroborated else []
+        )
         band = derive_band(mechanisms)
         confidence = project_confidence(band, provenance)
-        print(f"\n  {path.name}")
-        print(f"    query        : {' '.join(query.split())[:64]}")
-        print(f"    SCA edges    : {len(sca)}      runtime edges : {len(runtime)}")
-        print(f"    corroborated : {len(corroborated)}   llm agreed : {len(llm)}"
-              f"   llm rejects : {[r.code for r in llm_result.rejects] or '[]'}")
-        for source, target in sorted(corroborated):
-            print(f"        {source.split(':')[-1]:24s} -> {target.split(':')[-1]}")
-        print(f"    band={band}  {confidence.display_band} ({confidence.percent}%)  "
-              f"signals={list(confidence.signals)}")
+        if band == "HIGH":
+            verified += 1
+        if positional:
+            shared_context += 1
 
-    _rule("CEILING")
-    print(f"  {scored} event(s) collected with static edges from real upstream SQL.")
-    print("  Highest band reached : HIGHEST (96%)  [SCA + LLM + element RUNTIME]")
-    print("\n  The LLM response is RECORDED, not a live model call — no gateway is")
-    print("  configured here. What is real is the guardrail chain: every proposal had to")
-    print("  cite text present in the query and name URNs already in scope, so a")
-    print("  hallucinated dataset could not have raised the band.")
+        print(f"\n  [x] {path.name}{'   (positional INSERT — column order shared)' if positional else ''}")
+        print(f"      {' '.join(query.split())[:66]}")
+        print(f"      SCA {len(sca)}   runtime {len(runtime)}   corroborated {len(corroborated)}"
+              f"   -> {band} {confidence.display_band} ({confidence.percent}%)"
+              f" signals={list(confidence.signals)}")
+        for source, target in sorted(corroborated):
+            print(f"          {source.split(':')[-1]:26s} -> {target.split(':')[-1]}")
+
+    _rule("SUMMARY — SCA AND RUNTIME ONLY")
+    print(f"  events with both halves of the evidence : {verified + unscored}")
+    print(f"  reached HIGH / VERIFIED (92%)           : {verified}")
+    print(f"  no static edge produced                 : {unscored}")
+    print(f"  of the scored, relying on shared column order : {shared_context}")
+    print(f"\n  residue blocking the rest: {dict(sorted(residue_tally.items()))}")
+    print("\n  HIGH is the ceiling for SCA + runtime by construction: HIGHEST additionally")
+    print("  requires an LLM assertion, which is excluded here.")
     return 0
 
 
