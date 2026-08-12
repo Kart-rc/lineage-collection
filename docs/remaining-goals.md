@@ -422,6 +422,12 @@ A second review round on the follow-up PR raised three more threads, also handle
 Parity is now checked over a 33-case corpus run through both the Python authority and the
 TypeScript mirror, with identical verdicts on every case.
 
+One unresolved observation, recorded rather than dismissed: a single run of the infra suite under
+heavy concurrent load reported `2 failed | 28 passed`. It has not reproduced in ten subsequent runs
+— sequential, two suites concurrently, alongside a `cdk synth`, and under a full backend run — and
+the failing test names were lost because the capturing command filtered its own output. Treat the
+infra suite as green but not proven flake-free; if it recurs, capture the full output first.
+
 Remaining before `COMPLETE`: merge the follow-up branch, then re-verify `origin/main`.
 
 Draft PR #2 exists and is merge-clean, but it is not a completion signal. The branch must first
