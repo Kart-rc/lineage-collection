@@ -5,6 +5,7 @@ import type {
   CollectionSourceType,
   RepositoryCollectionRequest,
 } from "../../api/types";
+import { repositoryOriginProblem } from "../../api/repositoryOrigin";
 import { readRuntimeConfig } from "../../config/runtime";
 
 
@@ -54,9 +55,10 @@ function validate(values: FormValues, allowLocalCheckout: boolean): string | nul
   if (!EXACT_REVISION.test(values.revision)) {
     return "Revision must be an exact lowercase 40-character commit.";
   }
-  if (values.sourceType === "GIT" && !/^https:\/\/\S+$/.test(values.origin)) {
-    return "Git origin must be a canonical HTTPS repository URL.";
-  }
+  // Mirror the server's canonical-origin rules so the form cannot accept an origin
+  // the API would refuse with INVALID_REQUEST.
+  const originProblem = repositoryOriginProblem(values.origin.trim(), values.repository.trim());
+  if (originProblem) return originProblem;
   if (values.sourceType === "LOCAL_CHECKOUT" && !values.checkoutPath.trim()) {
     return "A development checkout path is required for local collection.";
   }

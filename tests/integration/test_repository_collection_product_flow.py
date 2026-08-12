@@ -119,7 +119,10 @@ def _database_digest(settings: Settings) -> str:
         digest = hashlib.sha256()
         for table in tables:
             digest.update(table.encode())
-            for row in connection.execute(f"SELECT * FROM {table}"):  # noqa: S608
+            # Identifiers come from sqlite_master, but quote them anyway so the digest
+            # survives reserved words and embedded quotes.
+            quoted = '"' + table.replace('"', '""') + '"'
+            for row in connection.execute(f"SELECT * FROM {quoted}"):  # noqa: S608
                 digest.update(repr(tuple(row)).encode())
     return digest.hexdigest()
 
