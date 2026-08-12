@@ -30,6 +30,7 @@ from lineage_api.application.runtime_stage import (
     run_runtime_stage,
 )
 from lineage_api.services.resolver import ResolveContext
+from lineage_api.services.java_interaction_sca import analyze_java_interactions
 from lineage_api.services.runtime_verification import StaticEdge
 from lineage_api.services.resolver import Resolver
 from lineage_api.services.sca import ScaAnalyzer
@@ -264,7 +265,36 @@ def main() -> int:
         f"lastObserved={static_only_conf.last_observed}"
     )
 
-    _rule("6. SCORECARD AGAINST THE PROTOTYPE")
+    _rule("6. SERVICE INTERACTIONS PLANE (java-services-corpus)")
+    services_root = FIXTURES / "java-services-corpus"
+    interactions = analyze_java_interactions(
+        {
+            item.relative_to(services_root).as_posix(): item.read_text()
+            for item in sorted(services_root.rglob("*.java"))
+        },
+        service="orders-service",
+    )
+    print("  inbound endpoints (what this service exposes):")
+    for endpoint in interactions.inbound:
+        request = ",".join(f"{f.name}:{f.type}" for f in endpoint.request_fields)
+        response = ",".join(f"{f.name}:{f.type}" for f in endpoint.response_fields)
+        print(
+            f"    {endpoint.channel:8s} {endpoint.operation:22s} {endpoint.handler:30s}"
+        )
+        print(f"      req=[{request}]  res=[{response}]")
+    print("  outbound calls (what it calls):")
+    for call in interactions.outbound:
+        print(
+            f"    {call.channel:8s} {call.from_service} -> {call.to_service:18s} "
+            f"{call.operation:22s} {call.handler}"
+        )
+    print(f"  residue: {[(r.code, r.symbol) for r in interactions.residue]}")
+    print(
+        "  note: no interaction carries a field VALUE — the metadata-only boundary"
+        " holds here\n  exactly as it does for dataset lineage."
+    )
+
+    _rule("7. SCORECARD AGAINST THE PROTOTYPE")
     element_level = all("#" in str(edge["to"]) for edge in graph.edges) and bool(graph.edges)
     has_transforms = all(str(edge.get("transform", "")) for edge in graph.edges)
     rows = [
@@ -276,7 +306,14 @@ def main() -> int:
         ("multi-signal confidence (runtime observed)", runtime_backed.display_band == "VERIFIED"),
         ("runtime verification on the collection path", stage.verdict == "CORROBORATED"),
         ("liveness populated by real observations", any(i.observations > 0 for i in stage.liveness)),
-        ("service-to-service interactions plane", False),
+        (
+            "service-to-service interactions plane",
+            bool(interactions.inbound) and bool(interactions.outbound),
+        ),
+        (
+            "field-level API contracts on interactions",
+            all(e.request_fields or e.response_fields for e in interactions.inbound),
+        ),
     ]
     for label, ok in rows:
         print(f"  [{'x' if ok else ' '}] {label}")

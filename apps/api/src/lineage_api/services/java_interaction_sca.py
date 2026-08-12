@@ -1,0 +1,320 @@
+"""Static extraction of the service interactions plane from Java sources.
+
+Inbound: what a service exposes — Spring MVC mapping annotations on a `@RestController`
+or `@Controller`, with the class-level `@RequestMapping` prefix composed in.
+
+Outbound: what a service calls — declarative `@FeignClient` interfaces, whose `name`
+attribute states the target service directly.
+
+Every route and every target must be a **string literal**. A mapping built from a
+constant or an expression is residue, never a guessed route: the same discipline the
+dataset cells apply to table names.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+
+import tree_sitter_java
+from tree_sitter import Language, Node, Parser
+
+from lineage_api.domain.interactions import InteractionField
+
+_PARSER = Parser(Language(tree_sitter_java.language()))
+
+_METHOD_ANNOTATIONS = {
+    "GetMapping": "GET",
+    "PostMapping": "POST",
+    "PutMapping": "PUT",
+    "DeleteMapping": "DELETE",
+    "PatchMapping": "PATCH",
+}
+_CONTROLLER_ANNOTATIONS = {"RestController", "Controller"}
+
+
+@dataclass(frozen=True, slots=True)
+class InboundEndpoint:
+    service: str
+    channel: str
+    operation: str
+    handler: str
+    request_fields: tuple[InteractionField, ...]
+    response_fields: tuple[InteractionField, ...]
+    path: str
+    line: int
+
+
+@dataclass(frozen=True, slots=True)
+class OutboundCall:
+    from_service: str
+    to_service: str
+    channel: str
+    operation: str
+    handler: str
+    path: str
+    line: int
+
+
+@dataclass(frozen=True, slots=True)
+class InteractionResidue:
+    code: str
+    path: str
+    line: int
+    symbol: str
+
+
+@dataclass(frozen=True, slots=True)
+class InteractionAnalysis:
+    inbound: tuple[InboundEndpoint, ...]
+    outbound: tuple[OutboundCall, ...]
+    residue: tuple[InteractionResidue, ...]
+
+
+def _text(node: Node, content: bytes) -> str:
+    return content[node.start_byte : node.end_byte].decode("utf-8", errors="replace")
+
+
+def _annotations(declaration: Node) -> list[Node]:
+    modifiers = next(
+        (child for child in declaration.children if child.type == "modifiers"), None
+    )
+    if modifiers is None:
+        return []
+    return [
+        child
+        for child in modifiers.children
+        if child.type in {"annotation", "marker_annotation"}
+    ]
+
+
+def _annotation_name(annotation: Node, content: bytes) -> str:
+    for child in annotation.children:
+        if child.type in {"identifier", "scoped_identifier"}:
+            return _text(child, content).rsplit(".", 1)[-1]
+    return ""
+
+
+def _string_argument(annotation: Node, content: bytes) -> str | bool:
+    """The single literal argument, `False` when present but not a literal."""
+    arguments = next(
+        (c for c in annotation.children if c.type == "annotation_argument_list"), None
+    )
+    if arguments is None:
+        return ""
+    literals = [c for c in arguments.children if c.type == "string_literal"]
+    if literals:
+        return _text(literals[0], content).strip('"')
+    pairs = [c for c in arguments.children if c.type == "element_value_pair"]
+    for pair in pairs:
+        value = pair.children[-1]
+        if value.type == "string_literal":
+            return _text(value, content).strip('"')
+        return False
+    if any(c.type not in {"(", ")"} for c in arguments.children):
+        return False
+    return ""
+
+
+def _named_argument(annotation: Node, content: bytes, name: str) -> str | bool:
+    arguments = next(
+        (c for c in annotation.children if c.type == "annotation_argument_list"), None
+    )
+    if arguments is None:
+        return False
+    for pair in (c for c in arguments.children if c.type == "element_value_pair"):
+        key = _text(pair.children[0], content)
+        value = pair.children[-1]
+        if key != name:
+            continue
+        if value.type == "string_literal":
+            return _text(value, content).strip('"')
+        return False
+    literals = [c for c in arguments.children if c.type == "string_literal"]
+    if literals:
+        return _text(literals[0], content).strip('"')
+    return False
+
+
+def _join_route(prefix: str, suffix: str) -> str:
+    combined = f"{prefix.rstrip('/')}/{suffix.lstrip('/')}" if suffix else prefix
+    return combined if combined.startswith("/") else f"/{combined}"
+
+
+def _parameters(declaration: Node, content: bytes) -> tuple[InteractionField, ...]:
+    parameters = next(
+        (c for c in declaration.children if c.type == "formal_parameters"), None
+    )
+    if parameters is None:
+        return ()
+    fields: list[InteractionField] = []
+    for parameter in (
+        c for c in parameters.children if c.type == "formal_parameter"
+    ):
+        named = [c for c in parameter.children if c.type not in {",", "(", ")"}]
+        if len(named) < 2:
+            continue
+        fields.append(
+            InteractionField(
+                name=_text(named[-1], content), type=_text(named[-2], content)
+            )
+        )
+    return tuple(fields)
+
+
+def _return_field(declaration: Node, content: bytes) -> tuple[InteractionField, ...]:
+    for child in declaration.children:
+        if child.type in {"type_identifier", "generic_type", "void_type"}:
+            declared = _text(child, content)
+            if declared == "void":
+                return ()
+            return (InteractionField(name="body", type=declared),)
+    return ()
+
+
+def _method_declarations(body: Node) -> list[Node]:
+    return [child for child in body.children if child.type == "method_declaration"]
+
+
+def _method_name(declaration: Node, content: bytes) -> str:
+    for child in declaration.children:
+        if child.type == "identifier":
+            return _text(child, content)
+    return ""
+
+
+def analyze_java_interactions(
+    sources: dict[str, str], *, service: str
+) -> InteractionAnalysis:
+    inbound: list[InboundEndpoint] = []
+    outbound: list[OutboundCall] = []
+    residue: list[InteractionResidue] = []
+
+    for path in sorted(sources):
+        content = sources[path].encode()
+        root = _PARSER.parse(content).root_node
+        for declaration in root.children:
+            if declaration.type not in {"class_declaration", "interface_declaration"}:
+                continue
+            annotations = {
+                _annotation_name(item, content): item
+                for item in _annotations(declaration)
+            }
+            body = next(
+                (
+                    c
+                    for c in declaration.children
+                    if c.type in {"class_body", "interface_body"}
+                ),
+                None,
+            )
+            if body is None:
+                continue
+            type_name = next(
+                (
+                    _text(c, content)
+                    for c in declaration.children
+                    if c.type == "identifier"
+                ),
+                "",
+            )
+
+            feign = annotations.get("FeignClient")
+            if feign is not None:
+                target = _named_argument(feign, content, "name")
+                if target is False or not target:
+                    residue.append(
+                        InteractionResidue(
+                            "unresolved-service",
+                            path,
+                            feign.start_point[0] + 1,
+                            type_name,
+                        )
+                    )
+                    continue
+                for method in _method_declarations(body):
+                    verb, route = _route_of(method, content)
+                    if verb is None:
+                        continue
+                    if route is False:
+                        residue.append(
+                            InteractionResidue(
+                                "dynamic-route",
+                                path,
+                                method.start_point[0] + 1,
+                                _method_name(method, content),
+                            )
+                        )
+                        continue
+                    outbound.append(
+                        OutboundCall(
+                            from_service=service,
+                            to_service=str(target),
+                            channel="REST",
+                            operation=f"{verb} {_join_route('', str(route))}",
+                            handler=f"{type_name}#{_method_name(method, content)}",
+                            path=path,
+                            line=method.start_point[0] + 1,
+                        )
+                    )
+                continue
+
+            if not (_CONTROLLER_ANNOTATIONS & annotations.keys()):
+                continue
+
+            prefix_annotation = annotations.get("RequestMapping")
+            prefix = ""
+            if prefix_annotation is not None:
+                raw = _string_argument(prefix_annotation, content)
+                if raw is False:
+                    residue.append(
+                        InteractionResidue(
+                            "dynamic-route",
+                            path,
+                            prefix_annotation.start_point[0] + 1,
+                            type_name,
+                        )
+                    )
+                    continue
+                prefix = str(raw)
+
+            for method in _method_declarations(body):
+                verb, route = _route_of(method, content)
+                if verb is None:
+                    continue
+                if route is False:
+                    residue.append(
+                        InteractionResidue(
+                            "dynamic-route",
+                            path,
+                            method.start_point[0] + 1,
+                            _method_name(method, content),
+                        )
+                    )
+                    continue
+                inbound.append(
+                    InboundEndpoint(
+                        service=service,
+                        channel="REST",
+                        operation=f"{verb} {_join_route(prefix, str(route))}",
+                        handler=f"{type_name}#{_method_name(method, content)}",
+                        request_fields=_parameters(method, content),
+                        response_fields=_return_field(method, content),
+                        path=path,
+                        line=method.start_point[0] + 1,
+                    )
+                )
+
+    return InteractionAnalysis(
+        inbound=tuple(sorted(inbound, key=lambda item: (item.path, item.line))),
+        outbound=tuple(sorted(outbound, key=lambda item: (item.path, item.line))),
+        residue=tuple(sorted(residue, key=lambda item: (item.path, item.line))),
+    )
+
+
+def _route_of(method: Node, content: bytes) -> tuple[str | None, str | bool]:
+    for annotation in _annotations(method):
+        verb = _METHOD_ANNOTATIONS.get(_annotation_name(annotation, content))
+        if verb is None:
+            continue
+        return verb, _string_argument(annotation, content)
+    return None, ""
