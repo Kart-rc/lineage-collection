@@ -12,6 +12,12 @@ from lineage_api.domain.urns import LineageUrn
 
 CONFIG_PATTERN = re.compile(r"\$\{(?P<key>[A-Za-z_][A-Za-z0-9_]*)\}")
 
+# The product model groups and colours lineage by the kind of system a dataset lives in.
+# Kind is catalog-owned: it is declared, never inferred from a name or a platform.
+DATASET_KINDS = frozenset(
+    {"DATASTORE", "STREAM", "LAKE_LANDING", "LAKE_FILE", "CACHE", "SEARCH", "UNKNOWN"}
+)
+
 
 @dataclass(frozen=True, slots=True)
 class RawName:
@@ -41,6 +47,7 @@ class ResolvedName:
     rules_applied: tuple[str, ...]
     resolver_version: str
     snapshot_id: str
+    kind: str = "UNKNOWN"
 
 
 @dataclass(frozen=True, slots=True)
@@ -72,6 +79,10 @@ class Resolver:
         self.snapshot_id = str(catalog["snapshotId"])
         self.resolver_version = str(catalog["resolverVersion"])
         self._datasets = tuple(catalog["datasets"])
+        for dataset in self._datasets:
+            kind = dataset.get("kind", "UNKNOWN")
+            if kind not in DATASET_KINDS:
+                raise ValueError(f"unrecognised dataset kind: {kind!r}")
 
     @classmethod
     def from_path(cls, path: Path) -> "Resolver":
@@ -149,6 +160,7 @@ class Resolver:
             rules_applied=(*normalized.rules, "catalog-match"),
             resolver_version=self.resolver_version,
             snapshot_id=self.snapshot_id,
+            kind=str(dataset.get("kind", "UNKNOWN")),
         )
 
     def resolve_batch(

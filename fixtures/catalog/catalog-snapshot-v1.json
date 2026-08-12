@@ -3,9 +3,15 @@
   "snapshotId": "catalog-demo-v1",
   "resolverVersion": "1.0.0",
   "vocabulary": {
-    "environments": ["staging"],
-    "platforms": ["snowflake"],
-    "systems": ["payments"]
+    "environments": [
+      "staging"
+    ],
+    "platforms": [
+      "snowflake"
+    ],
+    "systems": [
+      "payments"
+    ]
   },
   "datasets": [
     {
@@ -14,13 +20,29 @@
       "platform": "snowflake",
       "system": "payments",
       "name": "raw.transactions",
-      "aliases": ["snowflake://payments/raw.transactions", "RAW.TRANSACTIONS"],
+      "aliases": [
+        "snowflake://payments/raw.transactions",
+        "RAW.TRANSACTIONS"
+      ],
       "elements": [
-        {"name": "transaction_id", "type": "STRING"},
-        {"name": "customer_id", "type": "STRING"},
-        {"name": "amount", "type": "DECIMAL"},
-        {"name": "occurred_at", "type": "TIMESTAMP"}
-      ]
+        {
+          "name": "transaction_id",
+          "type": "STRING"
+        },
+        {
+          "name": "customer_id",
+          "type": "STRING"
+        },
+        {
+          "name": "amount",
+          "type": "DECIMAL"
+        },
+        {
+          "name": "occurred_at",
+          "type": "TIMESTAMP"
+        }
+      ],
+      "kind": "DATASTORE"
     },
     {
       "catalogRef": "catalog://payments/analytics.daily_revenue",
@@ -28,12 +50,24 @@
       "platform": "snowflake",
       "system": "payments",
       "name": "analytics.daily_revenue",
-      "aliases": ["DAILY_REVENUE"],
+      "aliases": [
+        "DAILY_REVENUE"
+      ],
       "elements": [
-        {"name": "revenue_date", "type": "DATE"},
-        {"name": "customer_id", "type": "STRING"},
-        {"name": "gross_revenue", "type": "DECIMAL"}
-      ]
+        {
+          "name": "revenue_date",
+          "type": "DATE"
+        },
+        {
+          "name": "customer_id",
+          "type": "STRING"
+        },
+        {
+          "name": "gross_revenue",
+          "type": "DECIMAL"
+        }
+      ],
+      "kind": "LAKE_FILE"
     },
     {
       "catalogRef": "catalog://payments/risk.customer_features",
@@ -43,9 +77,16 @@
       "name": "risk.customer_features",
       "aliases": [],
       "elements": [
-        {"name": "customer_id", "type": "STRING"},
-        {"name": "lifetime_value", "type": "DECIMAL"}
-      ]
+        {
+          "name": "customer_id",
+          "type": "STRING"
+        },
+        {
+          "name": "lifetime_value",
+          "type": "DECIMAL"
+        }
+      ],
+      "kind": "LAKE_FILE"
     }
   ]
 }
