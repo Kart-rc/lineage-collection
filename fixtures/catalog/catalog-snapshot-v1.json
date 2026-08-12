@@ -7,10 +7,12 @@
       "staging"
     ],
     "platforms": [
+      "postgres",
       "snowflake"
     ],
     "systems": [
-      "payments"
+      "payments",
+      "petclinic"
     ]
   },
   "datasets": [
@@ -87,6 +89,77 @@
         }
       ],
       "kind": "LAKE_FILE"
+    },
+    {
+      "catalogRef": "catalog://petclinic/owners",
+      "env": "staging",
+      "platform": "postgres",
+      "system": "petclinic",
+      "name": "owners",
+      "aliases": [
+        "OWNERS"
+      ],
+      "kind": "DATASTORE",
+      "elements": [
+        {
+          "name": "id",
+          "type": "INTEGER"
+        },
+        {
+          "name": "last_name",
+          "type": "STRING"
+        },
+        {
+          "name": "city",
+          "type": "STRING"
+        }
+      ]
+    },
+    {
+      "catalogRef": "catalog://petclinic/visits",
+      "env": "staging",
+      "platform": "postgres",
+      "system": "petclinic",
+      "name": "visits",
+      "aliases": [],
+      "kind": "DATASTORE",
+      "elements": [
+        {
+          "name": "id",
+          "type": "INTEGER"
+        },
+        {
+          "name": "owner_id",
+          "type": "INTEGER"
+        },
+        {
+          "name": "visit_date",
+          "type": "DATE"
+        }
+      ]
+    },
+    {
+      "catalogRef": "catalog://petclinic/analytics.owner_ltv",
+      "env": "staging",
+      "platform": "postgres",
+      "system": "petclinic",
+      "name": "analytics.owner_ltv",
+      "aliases": [],
+      "kind": "LAKE_FILE",
+      "elements": [
+        {
+          "name": "owner_id",
+          "type": "INTEGER"
+        },
+        {
+          "name": "home_city",
+          "type": "STRING"
+        },
+        {
+          "name": "visit_count",
+          "type": "INTEGER"
+        }
+      ]
     }
   ]
 }

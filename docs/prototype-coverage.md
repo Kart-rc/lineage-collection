@@ -36,46 +36,54 @@ prototype labels remain useful: **Implemented**, **Fixture adapter**, **Interfac
 ## Product prototype alignment (2026-08-12)
 
 Measured by `scripts/verify_prototype_alignment.py`, which runs every cell across the
-fixture repositories and scores the composed result against the `Throughline - Agentic`
-product prototype. Current state: **10 of 10 dimensions met**.
+fixture repositories and scores the composed result against `Throughline - Agentic`.
+Each scorecard row cites the prototype construct it matches, so the score is checkable
+against the document rather than taken on trust. Current state: **13 of 13 dimensions**.
 
-| Dimension | Evidence |
-|---|---|
-| Element-level (column to column) edges | 5 distinct edges across 3 repositories |
-| Transform expression on every edge | `SUM(amount)`, `DATE(occurred_at)`, … |
-| Cross-repository composition | 2 shared datasets; edges merged with their witnesses |
-| Traversable blast radius with severity | 2 hops, `SOURCE`/`BREAK`/`WARN`, path transforms retained |
-| Confidence band on every edge | `VERIFIED`/`PROBABLE`/`INFERRED` projection |
-| Multi-signal confidence | runtime-corroborated edges reach `VERIFIED` (92%, RUNTIME+SCA) |
-| Runtime verification on the collection path | `runtimeStatus = CORROBORATED`, 3/3 corroborated |
-| Liveness populated by real observations | `COLD` bands with real counts; `UNOBSERVED` only after a complete session |
-| Service-to-service interactions plane | 2 inbound endpoints, 1 outbound Feign call, 1 typed residue |
-| Field-level API contracts | typed request/response fields, never a value |
+Six repositories, two estates:
 
-New in this increment: `sql-transformation-v1` (column-level `DERIVES` from
-`INSERT INTO ... SELECT`, `CREATE TABLE AS SELECT`, `CREATE VIEW`, fail-closed on nine
-typed residue codes); `services/composition.py` (cross-repository join with explicit
-seams and edge merging); `services/impact_simulation.py`; `domain/product_confidence.py`;
-`services/liveness.py`; `application/runtime_stage.py`; `domain/interactions.py` and
-`services/java_interaction_sca.py`; catalog-owned dataset kinds.
+| Repository | Cell | Status | Edges |
+|---|---|---|---|
+| `java-petclinic-postgres` | `java-spring-data-jpa-v1` | COMPLETE | 4 |
+| `petclinic-analytics-sql` | `sql-transformation-v1` | COMPLETE | 2 |
+| `warehouse-sql` | `sql-transformation-v1` | COMPLETE | 3 |
+| `risk-model-sql` | `sql-transformation-v1` | COMPLETE | 2 |
+| `payments-pipeline` | `python-fixture-v1` | COMPLETE | 3 |
+| `java-spring-corpus` | `java-spring-data-jpa-v1` | INTEGRATION_REQUIRED | 0 |
 
-Two findings the harness surfaces rather than hides:
+`java-petclinic-postgres` is the Petclinic-shaped repository the estate graph is built
+from: a postgres-profile schema whose table identities match the `@Table` mappings, so
+it resolves where the H2-compatibility corpus deliberately does not. Its `owners` table
+is written by the Java service and read by `petclinic-analytics-sql`, which is the
+producer/consumer seam the two repositories join on. The same repository also exposes
+four REST endpoints with typed request/response contracts, so it exercises both lineage
+planes.
 
-- The `java-spring-corpus` fixture still yields **zero** edges under its designed
-  fail-closed rules (`missing-schema-table`, `dynamic-query`). That is unchanged and
-  deliberate — an H2-profile schema is not trusted as the production schema, and an
-  unqualified `@Table` is never guessed into the `public` schema.
+`java-spring-corpus` is retained unchanged and still yields zero edges. That is the
+designed fail-closed outcome — an H2-profile schema is not trusted as the production
+schema, and an unqualified `@Table` is never guessed into `public` — and it is excluded
+from coverage rather than counted.
+
+Findings the harness surfaces rather than hides:
+
 - The Python and SQL cells disagree on one transform's text, because sqlglot renders
   `DATE(x)` as `CAST(x AS DATE)` under some dialects. Transform text, and therefore edge
-  identity, is schema-profile dependent. The composition marks it `transformConflict`
-  instead of silently choosing one.
+  identity, is schema-profile dependent; the composition marks it `transformConflict`.
+- Liveness bands read `COLD` because the generated plan exercises each edge once. They
+  describe that run, not production traffic.
+- The bottom liveness band is `UNOBSERVED`, not the prototype's `DEAD?`: the evidence
+  only supports "this session did not witness it".
 
-Two limits worth stating plainly: liveness bands read `COLD` because the generated plan
-exercises each edge once — the band reflects this run, not production traffic; and the
-bottom band is named `UNOBSERVED`, not the prototype's `DEAD?`, because the evidence only
-supports "this session did not witness it".
+Explicitly **not** covered, stated so the score is not read as completeness: gRPC,
+GraphQL and async channels are in the contract vocabulary but have no extractor; OTel
+span enrichment to interactions is designed but not built; and the fixtures are small by
+construction, so this is not an estate-scale measurement.
 
-Plans for every dimension are in `docs/superpowers/plans/`.
+New in this increment: `sql-transformation-v1`, `services/composition.py`,
+`services/impact_simulation.py`, `domain/product_confidence.py`, `services/liveness.py`,
+`application/runtime_stage.py`, `domain/interactions.py`,
+`services/java_interaction_sca.py`, and catalog-owned dataset kinds. Plans for every
+dimension are in `docs/superpowers/plans/`.
 
 ## Tasks 17–21 delivery status (Tasks 17–20 implementation plus handoff)
 
