@@ -510,7 +510,7 @@ interface Queries {{ @Query({secret}) Object find(); }}
             "shadowed-framework-symbol",
         ),
         (
-            "import jakarta.persistence.*;",
+            "import com.vendor.orm.*;",
             "@Entity class Owner {}",
             "wildcard-framework-symbol",
         ),
@@ -2420,14 +2420,38 @@ class OwnerService {
     ]
 
 
-def test_a_framework_name_is_never_resolved_through_a_wildcard_import() -> None:
-    """Jars are invisible here, so an on-demand import cannot prove a framework symbol.
+def test_a_wildcard_binds_a_framework_name_only_from_one_approved_package() -> None:
+    """Narrowed from "never": an on-demand import is provable inside the closed set.
 
-    Another wildcard-imported package could supply `Entity` from a jar this analyzer
-    cannot see, so only an exact import may bind a framework-sensitive name.
+    The rule was previously that only an exact import may bind a framework-sensitive
+    name, because another wildcard-imported package might supply `Entity` from a jar
+    this analyzer cannot see. That is now narrowed rather than dropped: a wildcard binds
+    only when exactly one *approved* framework package is wildcard-imported here, it is
+    the only approved package declaring that simple name, and no local type shadows it.
+    Real Spring code writes `import jakarta.persistence.*;`, and refusing it meant the
+    upstream Petclinic microservices produced no lineage at all.
+
+    The residual risk is deliberate and bounded: the developer must have named the
+    approved package in the import for it to bind.
     """
     java = (
         "package example;\nimport jakarta.persistence.*;\n"
+        '@Entity @Table(name="owners") class Owner {}'
+    )
+
+    result = JavaSpringScaAnalyzer().analyze(
+        (_source("pom.xml", _maven_build()), _source("src/example/Owner.java", java))
+    )
+
+    assert [f.attribute("table") for f in _facts(result, "spring.entity-table")] == [
+        "owners"
+    ]
+    assert "wildcard-framework-symbol" not in {entry.code for entry in result.residue}
+
+
+def test_a_wildcard_from_an_unapproved_package_still_proves_nothing() -> None:
+    java = (
+        "package example;\nimport com.vendor.orm.*;\n"
         '@Entity @Table(name="owners") class Owner {}'
     )
 

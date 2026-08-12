@@ -57,34 +57,47 @@ silently. `scripts/verify_prototype_alignment.py` then scores the composed outpu
 estates (a Java service, three SQL/Python pipelines, and the H2 corpus that must keep
 failing closed).
 
-### The real upstream checkout produces zero edges
+### The real upstream checkout now produces lineage
 
-This is the measurement that matters most, and it is not favourable.
 `scripts/measure_real_petclinic.py` runs the cell against an unmodified
-`spring-petclinic-microservices` checkout at `305a1f13e4f961001d4e6cb50a9db51dc3fc5967`:
+`spring-petclinic-microservices` checkout at `305a1f13e4f961001d4e6cb50a9db51dc3fc5967`
+(208 files, 8 modules, analysed from the repository root — the smallest scope containing
+a complete build closure):
 
 ```
-8 modules, 164 production files, 0 edges — every module INTEGRATION_REQUIRED
-residue: missing-boot-evidence, missing-jpa-dependency, missing-jpa-version,
-         missing-profile-schema, unknown-framework, unsupported-sql,
-         wildcard-framework-symbol
+edges=12  reads=8  writes=4
+  WRITES OwnerRepository.save -> owners        READS OwnerRepository.findAll -> owners
+  READS  OwnerRepository.findById -> owners    READS PetRepository.findById -> pets
+  WRITES PetRepository.save -> pets            READS VetRepository.findAll -> vets
+  WRITES VisitRepository.save -> visits        READS VisitRepository.findByPetId -> visits
+  READS  VisitRepository.findByPetIdIn -> visits
+residue: ignored-schema-statement 6, query-entity-conflict 1, unsupported-query 1
 ```
 
-Three distinct boundaries cause it, all previously declared out of scope for this cell:
+It was zero before this increment. Three boundaries were closed, each narrowed rather
+than removed:
 
-1. **Multi-module Maven.** The boot parent is declared in the aggregator `pom.xml`; the
-   `spring-boot-starter-data-jpa` dependency is in each module's own `pom.xml`. The cell
-   requires both as literals in one root build file, so neither the aggregator nor a
-   module satisfies it alone.
-2. **Wildcard framework imports.** `import jakarta.persistence.*;` means `@Entity` and
-   `@Table` cannot be bound to an approved exact FQN, so no table mapping is proven.
-3. **Unsupported SQL.** The MySQL `schema.sql` uses constructs outside the closed
-   ruleset.
+1. **On-demand framework imports.** `import jakarta.persistence.*;` now binds a
+   framework-sensitive name when exactly one *approved* framework package is
+   wildcard-imported, it is the only approved package declaring that simple name, and
+   no local type shadows it. `Repository` — declared by both
+   `org.springframework.data.repository` and `org.springframework.stereotype` — stays
+   residue, and a wildcard from an unapproved package still proves nothing. This is a
+   deliberate, bounded loosening of a previously absolute rule: the developer must have
+   named the approved package for it to bind.
+2. **Multi-module Maven.** A module's closure inherits Boot evidence from the aggregator
+   it names as its parent, followed only through explicitly declared parent coordinates
+   to a pom present in scope — never inferred from directory position. An aggregator is
+   no longer required to declare the JPA dependency itself, and a versionless module
+   dependency resolves against the parent's managed Boot version.
+3. **MySQL DDL and per-module schemas.** `CREATE DATABASE` and `USE` are session setup
+   carrying no lineage, so they are inventory-only rather than a reason to reject the
+   file. A profile schema may live under any module directory, since a microservices
+   repository keeps one schema per service.
 
-So the honest position: the platform matches the prototype's model **on fixtures built
-to resolve**, and does **not** yet analyse the real upstream Petclinic microservices at
-all. Closing that needs Maven module-graph resolution, on-demand import binding, and
-MySQL DDL coverage — three analyzer capabilities, not a configuration change.
+The status is still `INTEGRATION_REQUIRED`, on two specific methods: one
+`query-entity-conflict` and one `unsupported-query`. Those are the cell working as
+designed on genuinely ambiguous code, and they do not suppress the 12 proven edges.
 
 ### Other limits
 

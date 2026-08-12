@@ -734,11 +734,13 @@ class _JavaSpringAnalyzerAdapter:
             for path in snapshot.paths
             if _is_profile_schema_path(path, schema_profile)
         )
+        # Distinct modules may each own a schema; the same path appearing twice is a
+        # real ambiguity about which bytes are authoritative.
         schema_reason = (
             "missing-profile-schema"
             if not schema_candidates
             else "ambiguous-profile-schema"
-            if len(schema_candidates) > 1
+            if len(schema_candidates) != len(set(schema_candidates))
             else None
         )
         for path in snapshot.paths:
@@ -895,8 +897,14 @@ def canonical_source_metadata(
 
 
 def _is_profile_schema_path(path: str, schema_profile: str) -> bool:
+    """A profile schema at the repository root *or* under any module directory.
+
+    A multi-module repository keeps one schema per service, so anchoring this to the
+    root would make every microservices checkout unanalysable. The trailing five
+    segments are still exact — the profile directory and file name are not guessed.
+    """
     parts = PurePosixPath(path).parts
-    return parts == (
+    return parts[-6:] == (
         "src",
         "main",
         "resources",

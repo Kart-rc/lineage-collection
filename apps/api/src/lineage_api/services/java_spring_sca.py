@@ -5,7 +5,7 @@ import json
 import re
 import xml.etree.ElementTree as ET
 from bisect import bisect_right
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import PurePosixPath
 from typing import Iterable, TypeAlias
 
@@ -1421,6 +1421,13 @@ class _BuildClosure:
     jpa: tuple[_BuildEvidence, ...]
     relevant: bool
     invalid: bool
+    # A multi-module Maven build splits its evidence: the aggregator declares the Boot
+    # parent, each module declares the JPA dependency. These three fields are what let
+    # the two halves be rejoined through the parent coordinates the module itself
+    # states, without inferring anything from directory layout.
+    coordinates: tuple[str, str] | None = None
+    parent_coordinates: tuple[str, str] | None = None
+    aggregator: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -1576,11 +1583,14 @@ class JavaSpringScaAnalyzer:
                 closures.append(_BuildClosure(source.path, (), (), True, True))
                 continue
             if PurePosixPath(source.path).name == "pom.xml":
-                closure = self._maven_framework_evidence(source, text)
+                closure = self._maven_framework_evidence(
+                    source, text, _declared_parent_boot_versions(source, text, sources)
+                )
             else:
                 closure = self._gradle_framework_evidence(source, text)
             closures.append(closure)
 
+        closures = _inherit_parent_build_evidence(closures)
         relevant = [closure for closure in closures if closure.relevant]
         if not relevant:
             location = (
@@ -1607,7 +1617,7 @@ class JavaSpringScaAnalyzer:
                     closure.path,
                     _whole_file_location(source, "build_file"),
                 )
-            if not closure.jpa:
+            if not closure.jpa and not closure.aggregator:
                 incomplete = True
                 self._add_residue(
                     "missing-jpa-dependency",
@@ -1683,7 +1693,10 @@ class JavaSpringScaAnalyzer:
         )
 
     def _maven_framework_evidence(
-        self, source: JavaSpringSource, text: str
+        self,
+        source: JavaSpringSource,
+        text: str,
+        inherited_boot: frozenset[str] = frozenset(),
     ) -> _BuildClosure:
         if "<!DOCTYPE" in text.upper() or "<!ENTITY" in text.upper():
             self._add_residue(
@@ -1708,7 +1721,21 @@ class JavaSpringScaAnalyzer:
         jpa: list[_BuildEvidence] = []
         relevant = False
         invalid = False
+        own_values = _xml_values(root)
         parent = _xml_direct_child(root, "parent")
+        parent_values = _xml_values(parent) if parent is not None else {}
+        own_group = own_values.get("groupId") or parent_values.get("groupId", "")
+        coordinates = (
+            (own_group, own_values["artifactId"])
+            if own_values.get("artifactId")
+            else None
+        )
+        parent_coordinates = (
+            (parent_values.get("groupId", ""), parent_values["artifactId"])
+            if parent_values.get("artifactId")
+            else None
+        )
+        aggregator = _xml_direct_child(root, "modules") is not None
         if parent is not None:
             values = _xml_values(parent)
             if (
@@ -1786,7 +1813,9 @@ class JavaSpringScaAnalyzer:
                 continue
             inherited = False
             if not version:
-                boot_versions = {item.version for item in boot}
+                # A module's versionless JPA dependency is managed by the Boot BOM its
+                # aggregator declares, so the parent's version counts here too.
+                boot_versions = {item.version for item in boot} or set(inherited_boot)
                 if len(boot_versions) == 1:
                     version = next(iter(boot_versions))
                     inherited = True
@@ -1813,7 +1842,14 @@ class JavaSpringScaAnalyzer:
                 _BuildEvidence(source.path, "data-jpa", group, artifact, version, inherited)
             )
         return _BuildClosure(
-            source.path, tuple(boot), tuple(jpa), relevant, invalid
+            source.path,
+            tuple(boot),
+            tuple(jpa),
+            relevant or aggregator,
+            invalid,
+            coordinates,
+            parent_coordinates,
+            aggregator,
         )
 
     def _gradle_framework_evidence(
@@ -2750,9 +2786,27 @@ class JavaSpringScaAnalyzer:
                 return None
             return resolved
         if context.wildcard_imports and simple_name in _SENSITIVE_FRAMEWORK_NAMES:
-            # Deliberately not resolved. Jars are invisible to this analyzer, so an
-            # on-demand import cannot prove that no *other* wildcard-imported package
-            # also supplies a framework-sensitive name. Only an exact import may bind one.
+            # An on-demand import can still be provable *within the closed approved set*:
+            # if exactly one approved framework package is wildcard-imported here and it
+            # is the only approved package declaring this simple name, no other approved
+            # symbol can be in play. Two such packages — `Repository` is declared by both
+            # `org.springframework.data.repository` and `org.springframework.stereotype`
+            # — remain a real ambiguity, and a package outside the approved set proves
+            # nothing at all. This is what lets an unmodified `import jakarta.persistence.*`
+            # resolve without widening the approved set itself.
+            approved = sorted(
+                fqn
+                for fqn in _APPROVED_FRAMEWORK_SYMBOLS
+                if fqn.rsplit(".", 1)[-1] == simple_name
+                and fqn.rsplit(".", 1)[0] in context.wildcard_imports
+            )
+            shadowing = [
+                f"{package}.{simple_name}"
+                for package in context.wildcard_imports
+                if f"{package}.{simple_name}" in symbols.local_types
+            ]
+            if len(approved) == 1 and not shadowing:
+                return approved[0]
             self._add_residue(
                 "wildcard-framework-symbol",
                 "wildcard imports cannot prove a framework-sensitive symbol",
@@ -3022,6 +3076,19 @@ class JavaSpringScaAnalyzer:
 
         complete = True
         for statement_tokens in _sql_statement_tokens(tokens):
+            if _is_session_statement_tokens(statement_tokens):
+                # `CREATE DATABASE` and `USE` set up a session; they declare no table and
+                # carry no lineage, so they are inventory-only rather than a reason to
+                # reject the file. Real MySQL schema dumps open with both.
+                self._add_residue(
+                    "ignored-schema-statement",
+                    "session statements declare no table and carry no lineage",
+                    statement_tokens[0].text,
+                    _sql_token_location(
+                        source.path, text, statement_tokens[0], "sql_statement"
+                    ),
+                )
+                continue
             if not _is_create_table_tokens(statement_tokens):
                 is_index = _is_create_index_tokens(statement_tokens)
                 valid_index = is_index and _valid_create_index_statement(
@@ -3194,6 +3261,93 @@ class JavaSpringScaAnalyzer:
         self._residue.append(
             AnalysisResidue(code, f"diagnostic:{code}", safe_symbol, location)
         )
+
+
+def _maven_identity(text: str) -> tuple[tuple[str, str] | None, tuple[str, str] | None, str]:
+    """(own coordinates, parent coordinates, boot-parent version) for one pom, cheaply."""
+    try:
+        root = ET.fromstring(text)
+    except ET.ParseError:
+        return None, None, ""
+    own = _xml_values(root)
+    parent_node = _xml_direct_child(root, "parent")
+    parent = _xml_values(parent_node) if parent_node is not None else {}
+    own_group = own.get("groupId") or parent.get("groupId", "")
+    coordinates = (
+        (own_group, own["artifactId"]) if own.get("artifactId") else None
+    )
+    parent_coordinates = (
+        (parent.get("groupId", ""), parent["artifactId"])
+        if parent.get("artifactId")
+        else None
+    )
+    boot_version = (
+        parent.get("version", "")
+        if parent.get("groupId") == "org.springframework.boot"
+        and parent.get("artifactId") == "spring-boot-starter-parent"
+        else ""
+    )
+    return coordinates, parent_coordinates, boot_version
+
+
+def _declared_parent_boot_versions(
+    source: JavaSpringSource,
+    text: str,
+    sources: tuple[JavaSpringSource, ...],
+) -> frozenset[str]:
+    """Boot versions reachable through the parent this pom explicitly declares."""
+    _, parent_coordinates, _ = _maven_identity(text)
+    if parent_coordinates is None:
+        return frozenset()
+    versions: set[str] = set()
+    for candidate in sources:
+        if candidate.path == source.path:
+            continue
+        if PurePosixPath(candidate.path).name != "pom.xml":
+            continue
+        try:
+            candidate_text = candidate.content.decode("utf-8", errors="strict")
+        except UnicodeDecodeError:
+            continue
+        coordinates, _, boot_version = _maven_identity(candidate_text)
+        if coordinates == parent_coordinates and boot_version:
+            versions.add(boot_version)
+    return frozenset(versions)
+
+
+def _inherit_parent_build_evidence(
+    closures: list[_BuildClosure],
+) -> list[_BuildClosure]:
+    """Let a module inherit Boot evidence from the aggregator it names as its parent.
+
+    Maven multi-module builds put the Boot parent in the aggregator and the Spring Data
+    JPA dependency in each module, so neither file carries a complete closure alone.
+    The link is followed only through the parent coordinates the module explicitly
+    declares and only to a pom present in the analysed scope — never inferred from
+    directory position, and never from a pom the snapshot does not contain.
+    """
+    by_coordinates = {
+        closure.coordinates: closure
+        for closure in closures
+        if closure.coordinates is not None
+    }
+    rejoined: list[_BuildClosure] = []
+    for closure in closures:
+        if closure.boot or closure.parent_coordinates is None:
+            rejoined.append(closure)
+            continue
+        parent = by_coordinates.get(closure.parent_coordinates)
+        if parent is None or not parent.boot:
+            rejoined.append(closure)
+            continue
+        inherited = tuple(
+            _BuildEvidence(
+                closure.path, item.kind, item.group, item.artifact, item.version, True
+            )
+            for item in parent.boot
+        )
+        rejoined.append(replace(closure, boot=inherited, relevant=True))
+    return rejoined
 
 
 def _validate_source_path(path: str) -> None:
@@ -4049,6 +4203,19 @@ def _sql_statement_tokens(tokens: list[Token]) -> tuple[tuple[Token, ...], ...]:
     if start < len(tokens):
         statements.append(tuple(tokens[start:]))
     return tuple(statements)
+
+
+def _is_session_statement_tokens(tokens: tuple[Token, ...]) -> bool:
+    """`USE db`, `CREATE DATABASE`, `CREATE SCHEMA` — session setup, not schema."""
+    if not tokens:
+        return False
+    if tokens[0].token_type == TokenType.USE:
+        return True
+    return (
+        len(tokens) >= 2
+        and tokens[0].token_type == TokenType.CREATE
+        and tokens[1].token_type in {TokenType.DATABASE, TokenType.SCHEMA}
+    )
 
 
 def _is_create_table_tokens(tokens: tuple[Token, ...]) -> bool:

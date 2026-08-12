@@ -32,7 +32,14 @@ SELECTION = AnalyzerSelection(
 )
 
 
-class _ModuleSnapshot:
+class _RepositorySnapshot:
+    """The whole multi-module repository, which is the unit the cell must analyse.
+
+    Analysing a module in isolation cannot work: its pom names a parent that is not in
+    scope, so the Boot evidence is unreachable. The repository root is the smallest
+    scope that contains a complete build closure.
+    """
+
     environment = "staging"
     platform = "mysql"
     system = "petclinic"
@@ -41,15 +48,17 @@ class _ModuleSnapshot:
     scope_digest = "sha256:" + "3" * 64
     origin = "https://github.com/spring-petclinic/spring-petclinic-microservices"
 
-    def __init__(self, root: Path, module: str, revision: str) -> None:
-        self.repository = module
+    def __init__(self, root: Path, revision: str) -> None:
+        self.repository = root.name
         self.revision = revision
-        self._root = root / module
+        self._root = root
         self.paths = tuple(
             sorted(
-                item.relative_to(self._root).as_posix()
-                for item in self._root.rglob("*")
+                item.relative_to(root).as_posix()
+                for item in root.rglob("*")
                 if item.is_file()
+                and ".git/" not in item.relative_to(root).as_posix()
+                and "/target/" not in f"/{item.relative_to(root).as_posix()}"
             )
         )
 
@@ -78,41 +87,28 @@ def main() -> int:
         raise SystemExit(f"not a directory: {root}")
 
     revision = _revision(root)
-    modules = sorted(
-        item.name
-        for item in root.iterdir()
-        if item.is_dir() and (item / "src" / "main" / "java").is_dir()
-    )
+    snapshot = _RepositorySnapshot(root, revision)
 
     print(f"repository: {root.name}")
     print(f"revision:   {revision}")
-    print(f"modules with production Java: {len(modules)}\n")
+    print(f"files in scope: {len(snapshot.paths)}\n")
 
     registry = AnalyzerRegistry.default()
-    total_edges = 0
-    all_codes: set[str] = set()
+    result = registry.analyze(snapshot, SELECTION, "run-real", "corr-real")
 
-    for module in modules:
-        snapshot = _ModuleSnapshot(root, module, revision)
-        try:
-            result = registry.analyze(snapshot, SELECTION, f"run-{module}", "corr")
-        except Exception as error:  # noqa: BLE001 - a measurement, not a pipeline
-            print(f"  {module:44s} ERROR {type(error).__name__}: {error}")
-            continue
-        codes = sorted({item["code"] for item in result.document["residue"]})
-        all_codes.update(codes)
-        total_edges += result.edge_count
-        print(
-            f"  {module:44s} {result.status:22s} files={len(snapshot.paths):3d} "
-            f"edges={result.edge_count}"
-        )
-        for edge in result.document["edges"]:
-            print(f"      {edge['edgeType']:7s} {edge['transform']}")
-        if codes:
-            print(f"      residue: {', '.join(codes)}")
+    print(f"  status: {result.status}")
+    print(
+        f"  edges={result.edge_count} reads={result.read_count} "
+        f"writes={result.write_count} residue={result.residue_count}"
+    )
+    for edge in result.document["edges"]:
+        print(f"    {edge['edgeType']:7s} {edge['transform']}")
+    codes: dict[str, int] = {}
+    for item in result.document["residue"]:
+        codes[item["code"]] = codes.get(item["code"], 0) + 1
 
-    print(f"\ntotal edges across the real checkout: {total_edges}")
-    print(f"distinct residue codes: {sorted(all_codes)}")
+    print(f"\ntotal edges across the real checkout: {result.edge_count}")
+    print(f"residue codes: {dict(sorted(codes.items()))}")
     print(
         "\nA zero here is the designed fail-closed outcome, not a crash. The codes name\n"
         "the compatibility boundary precisely; see docs/prototype-coverage.md L04."
