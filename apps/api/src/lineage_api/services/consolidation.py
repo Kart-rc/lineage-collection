@@ -11,6 +11,11 @@ from lineage_api.application.consolidation import (
 )
 from lineage_api.db import Database
 from lineage_api.domain.evidence import EvidenceRef, ScaEdgeEvidence
+from lineage_api.domain.object_store import (
+    canonical_object_key,
+    canonical_scheme,
+    is_object_store,
+)
 from lineage_api.domain.urns import LineageUrn
 
 
@@ -331,6 +336,11 @@ class ConsolidationService:
         if "/" not in remainder:
             raise ValueError(f"invalid runtime dataset identifier: {value}")
         system, dataset = remainder.split("/", 1)
+        if is_object_store(platform):
+            # Must agree with the analyzer by construction, not by coincidence: an edge
+            # and its own observation are matched by exact URN equality downstream.
+            dataset = canonical_object_key(dataset)
+            platform = canonical_scheme(platform)
         return LineageUrn(environment, platform, system, dataset).dataset_urn
 
     @staticmethod

@@ -8,9 +8,11 @@
     ],
     "platforms": [
       "postgres",
+      "s3",
       "snowflake"
     ],
     "systems": [
+      "lakehouse",
       "payments",
       "petclinic"
     ]
@@ -158,6 +160,60 @@
         {
           "name": "visit_count",
           "type": "INTEGER"
+        }
+      ]
+    },
+    {
+      "catalogRef": "catalog://lakehouse/raw-events-orders",
+      "env": "staging",
+      "platform": "s3",
+      "system": "lakehouse",
+      "name": "raw/events/orders",
+      "aliases": [],
+      "kind": "LAKE_LANDING",
+      "elements": [
+        {
+          "name": "order_id",
+          "type": "STRING"
+        },
+        {
+          "name": "customer_id",
+          "type": "STRING"
+        },
+        {
+          "name": "amount",
+          "type": "DECIMAL"
+        },
+        {
+          "name": "occurred_at",
+          "type": "TIMESTAMP"
+        }
+      ]
+    },
+    {
+      "catalogRef": "catalog://lakehouse/curated-orders",
+      "env": "staging",
+      "platform": "s3",
+      "system": "lakehouse",
+      "name": "curated/orders",
+      "aliases": [],
+      "kind": "LAKE_FILE",
+      "elements": [
+        {
+          "name": "order_id",
+          "type": "STRING"
+        },
+        {
+          "name": "customer_id",
+          "type": "STRING"
+        },
+        {
+          "name": "order_total",
+          "type": "DECIMAL"
+        },
+        {
+          "name": "order_date",
+          "type": "DATE"
         }
       ]
     }

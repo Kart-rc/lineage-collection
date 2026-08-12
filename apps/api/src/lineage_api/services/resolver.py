@@ -7,6 +7,11 @@ from pathlib import Path
 from typing import Any, Literal
 from urllib.parse import unquote, urlsplit
 
+from lineage_api.domain.object_store import (
+    canonical_object_key,
+    canonical_scheme,
+    is_object_store,
+)
 from lineage_api.domain.urns import LineageUrn
 
 
@@ -208,6 +213,13 @@ class Resolver:
 
         if decoded_value.startswith("catalog://"):
             dataset_value = decoded_value
+        elif is_object_store(platform):
+            # An object key is hierarchical: two prefixes ending in the same segment are
+            # different datasets, so the last-segment rule below would merge them. Hive
+            # partitions are slices of one table, not datasets, so they are stripped.
+            platform = canonical_scheme(platform)
+            dataset_value = canonical_object_key(decoded_value)
+            rules.append("object-store-key")
         else:
             dataset_value = decoded_value.strip("/")
             if "/" in dataset_value:
