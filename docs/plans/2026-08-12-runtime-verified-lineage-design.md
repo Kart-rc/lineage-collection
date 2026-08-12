@@ -3,8 +3,8 @@
 | Field | Value |
 |---|---|
 | Status | Slice implemented; orchestration wiring outstanding |
-| Implements | `apps/api/src/lineage_api/services/runtime_verification.py` |
-| Evidence | `apps/api/tests/services/test_runtime_verification.py` (14 tests) |
+| Implements | `services/runtime_verification.py` (Python), `services/java_runtime_verification.py` (Java) |
+| Evidence | 14 Python tests + 17 Java tests, one of which compiles and runs on a real JVM |
 
 ## 1. The idea
 
@@ -100,11 +100,47 @@ This slice is a library, not yet a stage. To complete the loop in the product fl
 3. **Consolidation join** — feed accepted observations to `merge_runtime_observation` so the
    confidence band lifts from `SINGLE` to `HIGH` where SCA and runtime agree, and surface
    the verdict in the collection status document alongside `runtimeStatus`.
-4. **Language reach** — the current instrumentation binds Python dataset primitives. The
-   Java/Spring cell would need the equivalent seam (an agent or a test-scoped repository
-   proxy), which is why the observation contract is mechanism-tagged rather than
-   language-specific.
+4. **Language reach beyond Python and Java** — both seams now exist (below). Further cells
+   would need their own, which is why the observation contract is mechanism-tagged rather
+   than language-specific.
 
 Until those land, `runtimeStatus` stays `NOT_PROVIDED` in the product flow and this module
 is exercised only by its own tests. That is the honest status: the loop is proven to work,
 but it is not yet on the collection path.
+
+## 6. The Java seam
+
+Python worked because the analyzed module declares dataset primitives it never defines, so
+binding them *is* the instrumentation. Java is compiled and has no such hole, so
+`services/java_runtime_verification.py` uses a different seam: a **test-scoped recording
+proxy** implementing the repository interface, which is how Spring Data is stubbed in a test
+anyway and needs no Spring on the classpath at run time.
+
+```
+entity @Table              ──► table name
+repository interface       ──► java.lang.reflect.Proxy ──► (method, table, operation)
+service constructor        ──► injected proxy ──► generated harness calls each public method
+```
+
+To compile the production sources in isolation the generator also emits **stub declarations**
+for the framework types they import (`jakarta.persistence.Entity`/`Table`,
+`JpaRepository`/`Query`). That is part of generating the harness, not a modification of the
+repository: the production sources are compiled byte-for-byte as committed.
+
+Proven on a real JVM (Temurin 21) against `fixtures/repositories/java-spring-corpus`:
+
+```
+OBSERVED  OwnerRepository.findById() -> owners [READ]
+OBSERVED  OwnerRepository.save()     -> owners [WRITE]
+verdict: CORROBORATED   static-only: 0   runtime-only: 0
+```
+
+Two rules carry over unchanged. Runtime never invents an edge — an observation with no
+static counterpart is runtime-only. And a method whose name matches no known Spring Data
+prefix is classified `UNKNOWN` and can never corroborate anything, rather than being guessed
+into a READ or a WRITE.
+
+The JVM test is guarded by a probe that actually runs `javac -version`, because macOS ships a
+stub `/usr/bin/javac` with no JDK behind it — checking the binary exists is not enough. Point
+`LINEAGE_JAVA_HOME` at a JDK to run it; without one the test skips and the other sixteen still
+cover generation and verification.
