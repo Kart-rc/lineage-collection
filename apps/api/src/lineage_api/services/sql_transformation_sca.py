@@ -45,6 +45,52 @@ class SqlStatementTarget:
     aliases: tuple[tuple[str, str], ...] = ()
 
 
+def _cte_provenance(
+    statement: exp.Expression,
+) -> tuple[dict[str, dict[str, tuple[str, ...]]], tuple[str, ...]]:
+    """Map each CTE's output columns to the real tables they come from.
+
+    A CTE names a query, not a dataset, so an edge that stopped at the CTE would name
+    something that does not exist downstream. Each CTE's projections are resolved to
+    qualified `table.column` sources, and the set of real tables it touches is returned
+    alongside so the outer statement can be attributed correctly.
+    """
+    # sqlglot attaches the WITH clause to the inner SELECT of a CTAS, not to the CREATE.
+    with_clause = statement.args.get("with")
+    if with_clause is None and isinstance(statement.expression, exp.Select):
+        with_clause = statement.expression.args.get("with")
+    if with_clause is None:
+        return {}, ()
+
+    provenance: dict[str, dict[str, tuple[str, ...]]] = {}
+    tables: list[str] = []
+    for cte in with_clause.expressions:
+        inner = cte.this
+        if not isinstance(inner, exp.Select):
+            continue
+        inner_tables = list(inner.find_all(exp.Table))
+        alias_map = {item.alias: _table_name(item) for item in inner_tables if item.alias}
+        alias_map.update({_table_name(item): _table_name(item) for item in inner_tables})
+        tables.extend(_table_name(item) for item in inner_tables)
+
+        columns: dict[str, tuple[str, ...]] = {}
+        for projection in inner.expressions:
+            name = projection.alias_or_name
+            expression = projection.this if isinstance(projection, exp.Alias) else projection
+            sources = []
+            for column in expression.find_all(exp.Column):
+                table = alias_map.get(column.table) or (
+                    _table_name(inner_tables[0]) if len(inner_tables) == 1 else None
+                )
+                if table is None:
+                    continue
+                sources.append(f"{table}.{column.name}")
+            if name and sources:
+                columns[name] = tuple(sorted(set(sources)))
+        provenance[cte.alias] = columns
+    return provenance, tuple(sorted(set(tables)))
+
+
 def _union_branches(union: exp.Union) -> list[exp.Select]:
     """Flatten a possibly-nested UNION into its SELECT branches, in written order."""
     branches: list[exp.Select] = []
@@ -292,6 +338,61 @@ def analyze_sql_sources(
                             SqlProjection(column, (column,), column)
                             for column in source_columns
                         ),
+                        source.path,
+                        line,
+                    )
+                )
+                continue
+
+            cte_map, cte_tables = _cte_provenance(statement)
+            # What the *outer* query selects from decides whether this is a CTE read;
+            # the CTE's own inner tables also appear in a whole-tree table scan.
+            outer_from = select.args.get("from")
+            outer_source = (
+                _table_name(outer_from.this)
+                if outer_from is not None and isinstance(outer_from.this, exp.Table)
+                else ""
+            )
+            if cte_map and outer_source in cte_map:
+                mapping = cte_map[outer_source]
+                outer_columns = (
+                    classified.target_columns
+                    or tuple(item.alias_or_name for item in select.expressions)
+                )
+                projections: list[SqlProjection] = []
+                unresolved = False
+                for index, item in enumerate(select.expressions):
+                    expression = item.this if isinstance(item, exp.Alias) else item
+                    referenced = [c.name for c in expression.find_all(exp.Column)]
+                    resolved: list[str] = []
+                    for name in referenced:
+                        if name not in mapping:
+                            residue.append(
+                                SqlResidue(
+                                    "unresolved-cte-column", source.path, line, name
+                                )
+                            )
+                            unresolved = True
+                            break
+                        resolved.extend(mapping[name])
+                    if unresolved:
+                        break
+                    if not resolved or index >= len(outer_columns):
+                        continue
+                    projections.append(
+                        SqlProjection(
+                            outer_columns[index],
+                            tuple(sorted(set(resolved))),
+                            expression.sql(),
+                        )
+                    )
+                if unresolved or not projections:
+                    continue
+                shapes.append(
+                    SqlStatementShape(
+                        classified.target_table,
+                        cte_tables[0] if len(cte_tables) == 1 else "",
+                        tuple(projections),
                         source.path,
                         line,
                     )

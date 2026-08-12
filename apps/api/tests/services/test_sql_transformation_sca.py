@@ -513,3 +513,67 @@ def test_a_union_branch_with_a_constant_is_residue_not_an_invented_edge() -> Non
 
     assert "constant-projection" in {r.code for r in analysis.residue}
     assert all(p.target_column != "s" for s in analysis.shapes for p in s.projections)
+
+
+# --- common table expressions ----------------------------------------------------------
+
+
+def test_a_cte_resolves_columns_through_to_the_underlying_tables() -> None:
+    """A CTE is a name for a query, not a dataset — lineage must reach past it."""
+    analysis = analyze_sql_sources(
+        (
+            SqlTransformationSource(
+                "q.sql",
+                b"CREATE TABLE xxx AS WITH c AS ( SELECT b.name AS name, a.id AS id "
+                b"FROM t1 a JOIN t2 b ON a.id = b.id ) SELECT id, name FROM c;",
+                "hive",
+            ),
+        )
+    )
+
+    assert analysis.residue == ()
+    pairs = {
+        (p.target_column, p.source_columns)
+        for shape in analysis.shapes
+        for p in shape.projections
+    }
+    assert pairs == {("id", ("t1.id",)), ("name", ("t2.name",))}
+
+
+def test_a_cte_column_the_expression_never_defines_is_refused() -> None:
+    analysis = analyze_sql_sources(
+        (
+            SqlTransformationSource(
+                "q.sql",
+                b"CREATE TABLE xxx AS WITH c AS ( SELECT a AS a FROM t1 ) "
+                b"SELECT nosuch FROM c;",
+                "hive",
+            ),
+        )
+    )
+
+    assert analysis.shapes == ()
+    assert "unresolved-cte-column" in {r.code for r in analysis.residue}
+
+
+def test_a_single_source_cte_still_resolves() -> None:
+    analysis = analyze_sql_sources(
+        (
+            SqlTransformationSource(
+                "q.sql",
+                b"CREATE TABLE xxx AS WITH tmp AS ( SELECT a AS a, b AS b FROM t1 ) "
+                b"SELECT a, b FROM tmp;",
+                "hive",
+            ),
+        )
+    )
+
+    assert analysis.residue == ()
+    shape = analysis.shapes[0]
+    assert shape.source_table == "t1"
+    # A CTE always qualifies its sources, single-source or not, so edge compilation
+    # resolves each column against the table it actually came from.
+    assert {(p.target_column, p.source_columns) for p in shape.projections} == {
+        ("a", ("t1.a",)),
+        ("b", ("t1.b",)),
+    }
