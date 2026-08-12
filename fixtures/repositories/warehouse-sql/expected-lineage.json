@@ -1,0 +1,24 @@
+{
+  "schemaVersion": "1.0.0",
+  "repo": "warehouse-sql",
+  "edges": [
+    {
+      "from": "urn:ldp:staging:snowflake:payments:raw.transactions#customer_id",
+      "to": "urn:ldp:staging:snowflake:payments:analytics.daily_revenue#customer_id",
+      "type": "DERIVES",
+      "transform": "customer_id"
+    },
+    {
+      "from": "urn:ldp:staging:snowflake:payments:raw.transactions#amount",
+      "to": "urn:ldp:staging:snowflake:payments:analytics.daily_revenue#gross_revenue",
+      "type": "DERIVES",
+      "transform": "SUM(amount)"
+    },
+    {
+      "from": "urn:ldp:staging:snowflake:payments:raw.transactions#occurred_at",
+      "to": "urn:ldp:staging:snowflake:payments:analytics.daily_revenue#revenue_date",
+      "type": "DERIVES",
+      "transform": "DATE(occurred_at)"
+    }
+  ]
+}

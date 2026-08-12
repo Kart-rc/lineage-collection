@@ -186,3 +186,166 @@ def test_shapes_and_residue_are_deterministically_ordered() -> None:
         ("sql/z.sql", 2),
     ]
     assert first.shapes == second.shapes
+
+
+# --- Task 4: resolution and DERIVES edges ---------------------------------------------
+
+from pathlib import Path  # noqa: E402
+
+from lineage_api.services.resolver import ResolveContext, Resolver  # noqa: E402
+from lineage_api.services.sql_transformation_sca import (  # noqa: E402
+    compile_derivation_edges,
+)
+
+CATALOG = (
+    Path(__file__).resolve().parents[4] / "fixtures" / "catalog" / "catalog-snapshot-v1.json"
+)
+
+
+def _resolver() -> Resolver:
+    return Resolver.from_path(CATALOG)
+
+
+def _context() -> ResolveContext:
+    return ResolveContext(
+        env="staging",
+        platform="snowflake",
+        system="payments",
+        repo="warehouse-sql",
+        digest="d" * 40,
+        config={},
+        snapshot_id="catalog-demo-v1",
+    )
+
+
+def _compile(text: str):
+    analysis = analyze_sql_sources((_source(text, "sql/rev.sql"),))
+    return compile_derivation_edges(
+        analysis,
+        _resolver(),
+        _context(),
+        repo="warehouse-sql",
+        digest="d" * 40,
+        run_id="run-1",
+        correlation_id="corr-1",
+        ruleset_version="sql-transformation-rules-v1",
+    )
+
+
+def test_a_derivation_edge_carries_element_urns_and_the_transform() -> None:
+    edges, residue = _compile(
+        "INSERT INTO analytics.daily_revenue (gross_revenue) "
+        "SELECT SUM(amount) FROM raw.transactions;"
+    )
+
+    assert residue == ()
+    assert len(edges) == 1
+    assert edges[0].from_urn == (
+        "urn:ldp:staging:snowflake:payments:raw.transactions#amount"
+    )
+    assert edges[0].to_urn == (
+        "urn:ldp:staging:snowflake:payments:analytics.daily_revenue#gross_revenue"
+    )
+    assert edges[0].edge_type == "DERIVES"
+    assert edges[0].transform == "SUM(amount)"
+    assert edges[0].mechanism == "SCA"
+
+
+def test_a_projection_over_two_columns_emits_one_edge_per_source_column() -> None:
+    edges, _ = _compile(
+        "INSERT INTO analytics.daily_revenue (gross_revenue) "
+        "SELECT amount + customer_id FROM raw.transactions;"
+    )
+
+    assert sorted(edge.from_urn.rsplit("#", 1)[-1] for edge in edges) == [
+        "amount",
+        "customer_id",
+    ]
+    assert {edge.to_urn.rsplit("#", 1)[-1] for edge in edges} == {"gross_revenue"}
+
+
+def test_an_unknown_table_is_residue_and_emits_nothing() -> None:
+    edges, residue = _compile(
+        "INSERT INTO analytics.daily_revenue (gross_revenue) SELECT amount FROM raw.nope;"
+    )
+
+    assert edges == ()
+    assert [item.code for item in residue] == ["unresolved-dataset"]
+
+
+def test_a_column_absent_from_the_catalog_is_residue() -> None:
+    edges, residue = _compile(
+        "INSERT INTO analytics.daily_revenue (gross_revenue) "
+        "SELECT no_such_column FROM raw.transactions;"
+    )
+
+    assert edges == ()
+    assert [item.code for item in residue] == ["unresolved-element"]
+
+
+def test_edges_are_deterministically_ordered() -> None:
+    edges, _ = _compile(
+        "INSERT INTO analytics.daily_revenue (revenue_date, customer_id) "
+        "SELECT occurred_at, customer_id FROM raw.transactions;"
+    )
+
+    assert [edge.to_urn for edge in edges] == sorted(edge.to_urn for edge in edges)
+
+
+# --- Task 5: fixture parity with the Python cell --------------------------------------
+
+import json  # noqa: E402
+
+FIXTURE = (
+    Path(__file__).resolve().parents[4] / "fixtures" / "repositories" / "warehouse-sql"
+)
+
+
+def test_the_sql_fixture_reproduces_the_python_fixture_lineage() -> None:
+    sql_path = FIXTURE / "sql" / "daily_revenue.sql"
+    analysis = analyze_sql_sources(
+        (
+            SqlTransformationSource(
+                "sql/daily_revenue.sql", sql_path.read_bytes(), "postgres"
+            ),
+        )
+    )
+    edges, residue = compile_derivation_edges(
+        analysis,
+        _resolver(),
+        _context(),
+        repo="warehouse-sql",
+        digest="d" * 40,
+        run_id="run-1",
+        correlation_id="corr-1",
+        ruleset_version="sql-transformation-rules-v1",
+    )
+
+    assert residue == ()
+    expected = json.loads((FIXTURE / "expected-lineage.json").read_text())
+    assert [
+        {
+            "from": edge.from_urn,
+            "to": edge.to_urn,
+            "type": edge.edge_type,
+            "transform": edge.transform,
+        }
+        for edge in edges
+    ] == expected["edges"]
+
+
+def test_the_sql_fixture_matches_the_python_fixture_edge_set() -> None:
+    python_expected = json.loads(
+        (
+            Path(__file__).resolve().parents[4]
+            / "fixtures"
+            / "repositories"
+            / "payments-pipeline"
+            / "expected-lineage.json"
+        ).read_text()
+    )
+    sql_expected = json.loads((FIXTURE / "expected-lineage.json").read_text())
+
+    assert {(e["from"], e["to"], e["type"]) for e in sql_expected["edges"]} == {
+        (e["from"], e["to"], e["type"]) for e in python_expected["edges"]
+    }

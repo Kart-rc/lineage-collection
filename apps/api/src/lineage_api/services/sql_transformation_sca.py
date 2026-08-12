@@ -9,10 +9,20 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+import hashlib
+
 import sqlglot
 from sqlglot import exp
 from sqlglot.errors import ParseError, TokenError
 from sqlglot.tokens import TokenType
+
+from lineage_api.domain.evidence import ScaEdgeEvidence
+from lineage_api.services.resolver import (
+    RawName,
+    ResolveContext,
+    ResolvedName,
+    Resolver,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -187,3 +197,109 @@ def analyze_sql_sources(
         residue=tuple(sorted(residue, key=lambda item: (item.path, item.line, item.code))),
         files_analyzed=len(sources),
     )
+
+
+def _resolve_table(
+    resolver: Resolver,
+    context: ResolveContext,
+    table: str,
+    elements: tuple[str, ...],
+):
+    """Resolve a table with the exact elements the statement touches.
+
+    The resolver validates elements against the catalog and quarantines the whole
+    dataset when one is unknown, so the quarantine reason — not a per-column check
+    afterwards — is what distinguishes a missing table from a missing column.
+    """
+    return resolver.resolve(RawName("dataset", table, "SCA", elements), context)
+
+
+def compile_derivation_edges(
+    analysis: SqlTransformationAnalysis,
+    resolver: Resolver,
+    context: ResolveContext,
+    *,
+    repo: str,
+    digest: str,
+    run_id: str,
+    correlation_id: str,
+    ruleset_version: str,
+) -> tuple[tuple[ScaEdgeEvidence, ...], tuple[SqlResidue, ...]]:
+    edges: list[ScaEdgeEvidence] = []
+    residue: list[SqlResidue] = []
+
+    for shape in analysis.shapes:
+        source_elements = tuple(
+            sorted({name for item in shape.projections for name in item.source_columns})
+        )
+        target_elements = tuple(
+            sorted({item.target_column for item in shape.projections})
+        )
+        source = _resolve_table(resolver, context, shape.source_table, source_elements)
+        target = _resolve_table(resolver, context, shape.target_table, target_elements)
+
+        unresolved = False
+        for result, table in ((source, shape.source_table), (target, shape.target_table)):
+            if isinstance(result, ResolvedName):
+                continue
+            unresolved = True
+            code = (
+                "unresolved-element"
+                if getattr(result, "reason", "") == "UNKNOWN_ELEMENT"
+                else "unresolved-dataset"
+            )
+            residue.append(SqlResidue(code, shape.path, shape.line, table))
+        if unresolved:
+            continue
+
+        # Every requested element has a URN here: the resolver would have quarantined
+        # the dataset otherwise, so no per-column existence check is reachable.
+        source_urns = {urn.element: str(urn) for urn in source.element_urns}
+        target_urns = {urn.element: str(urn) for urn in target.element_urns}
+
+        for projection in shape.projections:
+            to_urn = target_urns[projection.target_column]
+            for source_column in projection.source_columns:
+                from_urn = source_urns[source_column]
+                identity = "|".join(
+                    (
+                        repo,
+                        digest,
+                        shape.path,
+                        str(shape.line),
+                        from_urn,
+                        to_urn,
+                        projection.transform,
+                        ruleset_version,
+                    )
+                )
+                edges.append(
+                    ScaEdgeEvidence(
+                        provenance_id=(
+                            f"prov-{hashlib.sha256(identity.encode()).hexdigest()[:24]}"
+                        ),
+                        from_urn=from_urn,
+                        to_urn=to_urn,
+                        edge_type="DERIVES",
+                        transform=projection.transform,
+                        mechanism="SCA",
+                        exact=True,
+                        file=shape.path,
+                        line=shape.line,
+                        ast_path=f"statement[{shape.line}].{projection.target_column}",
+                        repo=repo,
+                        digest=digest,
+                        run_id=run_id,
+                        correlation_id=correlation_id,
+                        resolver_version=target.resolver_version,
+                        snapshot_id=target.snapshot_id,
+                    )
+                )
+
+    ordered_edges = tuple(
+        sorted(edges, key=lambda edge: (edge.to_urn, edge.from_urn, edge.transform))
+    )
+    ordered_residue = tuple(
+        sorted(residue, key=lambda item: (item.path, item.line, item.code, item.symbol))
+    )
+    return ordered_edges, ordered_residue
