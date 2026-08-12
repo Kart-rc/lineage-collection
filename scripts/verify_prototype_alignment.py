@@ -25,6 +25,7 @@ from lineage_api.services.analyzer_registry import (
 )
 from lineage_api.services.composition import compose_repository_documents
 from lineage_api.services.impact_simulation import simulate_impact
+from lineage_api.services.liveness import derive_liveness
 from lineage_api.services.resolver import Resolver
 from lineage_api.services.sca import ScaAnalyzer
 
@@ -211,6 +212,15 @@ def main() -> int:
         f"lastObserved={confidence.last_observed}"
     )
     print("  reason: runtime is not yet on the collection path, so no edge is VERIFIED.")
+    liveness = derive_liveness("edge-example", 0, None, session_complete=False)
+    print(
+        f"  liveness: band={liveness.band}  observations={liveness.observations}  "
+        f"sessionComplete={liveness.session_complete}"
+    )
+    print(
+        "  the model exists and is honest: with no complete session, UNOBSERVED is"
+        " recorded\n  but may_demote() refuses to act on it."
+    )
 
     _rule("5. SCORECARD AGAINST THE PROTOTYPE")
     element_level = all("#" in str(edge["to"]) for edge in graph.edges) and bool(graph.edges)
@@ -223,7 +233,8 @@ def main() -> int:
         ("confidence band on every edge", True),
         ("multi-signal confidence (runtime observed)", confidence.last_observed is not None),
         ("service-to-service interactions plane", False),
-        ("liveness / frequency (HOT..UNOBSERVED)", False),
+        ("liveness model (HOT..UNOBSERVED)", True),
+        ("liveness populated by real observations", False),
     ]
     for label, ok in rows:
         print(f"  [{'x' if ok else ' '}] {label}")
