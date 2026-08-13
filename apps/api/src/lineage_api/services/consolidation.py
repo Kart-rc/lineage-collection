@@ -259,7 +259,32 @@ class ConsolidationService:
         )
         candidates = self._latest_edges()
         matched: list[ConsolidatedEdge] = []
-        if granularity == "ELEMENT":
+        endpoint = observation.get("endpoint")
+        if granularity == "ELEMENT" and isinstance(endpoint, str) and endpoint:
+            # A service-anchored edge: one side is the element (the dataset column the
+            # runtime observation names via sourceDatasets/sourceFields, mirrored into
+            # targetDataset/targetField by `_parse_sdk`), the other is a service
+            # endpoint identity carried verbatim on the wire. The endpoint is NEVER
+            # parsed as a `LineageUrn` -- it is matched by exact string equality only,
+            # on whichever orientation (READS: element in `from`, endpoint in `to`;
+            # WRITES: reversed) the candidate edge actually has.
+            source_fields = tuple(str(value) for value in observation.get("sourceFields", []))
+            if len(source_fields) != 1 or len(source_datasets) != 1:
+                return []
+            expected_element = str(
+                LineageUrn.parse(source_datasets[0]).with_element(source_fields[0])
+            )
+            edge_type = observation.get("edgeType")
+            candidates = [
+                edge
+                for edge in candidates
+                if edge.edge_type == edge_type
+                and (
+                    (tuple(edge.from_urns) == (expected_element,) and edge.to_urn == endpoint)
+                    or (tuple(edge.from_urns) == (endpoint,) and edge.to_urn == expected_element)
+                )
+            ]
+        elif granularity == "ELEMENT":
             source_fields = tuple(str(value) for value in observation.get("sourceFields", []))
             target_field = observation.get("targetField")
             if len(source_fields) != len(source_datasets) or not isinstance(target_field, str):

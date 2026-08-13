@@ -42,7 +42,7 @@ from lineage_api.application.repository_sources import (
 from lineage_api.config import Settings
 from lineage_api.dependencies import build_services
 from lineage_api.domain.product_confidence import project_confidence
-from lineage_api.domain.urns import LineageUrn
+from lineage_api.domain.urns import is_element_scoped_dataset_urn
 
 ORIGIN = "https://github.com/spring-petclinic/spring-petclinic-microservices"
 REPOSITORY = "spring-petclinic-microservices"
@@ -174,17 +174,6 @@ def main() -> int:
         ]
         print(f"consolidated edges: {len(edges)}")
 
-        def _is_element_scoped_dataset_urn(value: str) -> bool:
-            # A raw '#' substring is not proof of element scope: the Java analyzer's
-            # `to`/`from` can be a `service://repo/Owner#findAll` endpoint URN, whose '#'
-            # separates method from type, not dataset from column.
-            if "#" not in value:
-                return False
-            try:
-                return LineageUrn.parse(value).element is not None
-            except ValueError:
-                return False
-
         def _edge_is_element_scoped(edge: dict) -> bool:
             # Since Task 6b, an element-scoped Java edge can carry its dataset#column
             # side on EITHER end: READS orientation puts it in `from` (the dataset side
@@ -193,8 +182,8 @@ def main() -> int:
             # READ -- which is exactly the orientation petclinic's own reachable HIGH
             # candidate (`VisitRepository.findByPetId` -> `visits#pet_id`) uses.
             from_urns = edge["from"] if isinstance(edge["from"], (list, tuple)) else [edge["from"]]
-            return _is_element_scoped_dataset_urn(str(edge["to"])) or any(
-                _is_element_scoped_dataset_urn(str(urn)) for urn in from_urns
+            return is_element_scoped_dataset_urn(str(edge["to"])) or any(
+                is_element_scoped_dataset_urn(str(urn)) for urn in from_urns
             )
 
         element_scoped = [e for e in edges if _edge_is_element_scoped(e)]
@@ -230,15 +219,21 @@ def main() -> int:
                     print(f"    {edge['from']} -> {edge['to']}")
             else:
                 print(
-                    "ELEMENT EDGES EXIST, RUNTIME CORROBORATION DOES NOT (yet): "
-                    f"{len(element_scoped)} element-scoped SCA edge(s) are on the graph "
-                    "(Task 6b), so the honest wall moved from 'no element evidence at "
-                    "all' to 'element evidence exists but the Java runtime stage never "
-                    "runs for it' -- `_execute_runtime_session`'s selection, "
-                    "`_edge_parts`, session-plane emission, and consolidation's merge "
-                    "still only understand a dataset-to-dataset shape, not a "
-                    "dataset-element-to-service one. That wiring is Task 6c. Element-"
-                    "scoped edges:"
+                    "ELEMENT EDGES EXIST AND ARE NOW SELECTED, BUT CORROBORATION STILL "
+                    f"DOES NOT LAND: {len(element_scoped)} element-scoped SCA edge(s) are "
+                    "on the graph (Task 6b), and as of Task 6c `_execute_runtime_session`'s "
+                    "Java selection, `_edge_parts`, session-plane emission (`endpoint` "
+                    "payload form), and consolidation's merge all understand the "
+                    "dataset-element-to-service shape and no longer skip these edges before "
+                    "the Java runtime stage runs. The wall that remains is the harness's "
+                    "own compile scope: it currently compiles every '.java' path in the "
+                    "whole multi-module checkout (including unrelated services' Spring Boot "
+                    "entry points, which need dependencies not on this harness's "
+                    "classpath), so the real run fails with a javac error rather than ever "
+                    "reaching field-witnessing. Narrowing java_paths to entity/repository/ "
+                    "injection-site files before generating the harness is Task 6d's job. "
+                    f"runtimeStatus={summary['runtimeStatus']} "
+                    f"runtimeReasons={summary['runtimeReasons']}. Element-scoped edges:"
                 )
                 for edge in sorted(element_scoped, key=lambda e: e["edgeKey"]):
                     print(f"    {edge['from']} -> {edge['to']}")

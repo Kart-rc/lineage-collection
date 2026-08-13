@@ -455,14 +455,44 @@ class RuntimeLineageService:
             "artifactDigest",
             "source",
             "target",
+            "endpoint",
             "edgeType",
             "transform",
             "observedAt",
         }
         self._assert_allowed(payload, allowed, correlation_id)
+        has_target = "target" in payload
+        has_endpoint = "endpoint" in payload
+        if has_target == has_endpoint:
+            raise DomainError(
+                "RUNTIME_SHAPE_INVALID",
+                "Runtime SDK payload must carry exactly one of target or endpoint",
+                correlation_id,
+            )
         source = self._object(payload, "source", correlation_id)
-        target = self._object(payload, "target", correlation_id)
         self._assert_allowed(source, {"dataset", "field"}, correlation_id)
+        if has_endpoint:
+            # A service-anchored edge (e.g. a Java repository call resolved to a
+            # `service://repo/Type#method` endpoint) has no dataset element on the
+            # other side. Mirror the source into targetDataset/targetField so the
+            # session's per-dataset sequence/idempotency logic stays untouched, and
+            # carry the endpoint's own identity separately for the consolidation merge
+            # -- it is never parsed as a dataset URN.
+            endpoint = self._object(payload, "endpoint", correlation_id)
+            self._assert_allowed(endpoint, {"service"}, correlation_id)
+            return {
+                "granularity": "ELEMENT",
+                "sourceDatasets": [str(source["dataset"])],
+                "targetDataset": str(source["dataset"]),
+                "sourceFields": [str(source["field"])],
+                "targetField": str(source["field"]),
+                "endpoint": str(endpoint["service"]),
+                "edgeType": str(payload["edgeType"]),
+                "transform": str(payload["transform"]),
+                "exact": True,
+                "observedAt": str(payload["observedAt"]),
+            }
+        target = self._object(payload, "target", correlation_id)
         self._assert_allowed(target, {"dataset", "field"}, correlation_id)
         return {
             "granularity": "ELEMENT",

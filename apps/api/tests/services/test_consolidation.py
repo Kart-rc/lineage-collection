@@ -217,3 +217,236 @@ def test_complete_dataset_runtime_observation_corroborates_without_raising_band(
     assert merged[0].corroboration == "DATASET"
     assert merged[0].band == "SINGLE"
     assert service.version_count(static.edge_key) == 2
+
+
+# --- Task 6c: `merge_runtime_observation` endpoint branch. A service-anchored Java
+# element edge names one end with a `service://repo/Type#method` endpoint URN rather
+# than another dataset element. Corroborating it means exact string equality on the
+# service side and a catalog-resolved URN on the dataset side -- never `LineageUrn.parse`
+# on the service URN itself.
+
+VISITS_ELEMENT_URN = "urn:ldp:staging:mysql:petclinic:visits#pet_id"
+OWNERS_ELEMENT_URN = "urn:ldp:staging:mysql:petclinic:owners#first_name"
+VISIT_SERVICE_URN = (
+    "service://spring-petclinic-microservices/"
+    "org.springframework.samples.petclinic.visits.web.VisitResource#read"
+)
+OWNER_SERVICE_URN = (
+    "service://spring-petclinic-microservices/"
+    "org.springframework.samples.petclinic.owners.web.OwnerResource#update"
+)
+
+
+def _sca_assertion(provenance_id: str, *, from_urns: tuple[str, ...], to_urn: str, edge_type: str):
+    _, mechanism_assertion = _consolidation_types()
+    return mechanism_assertion(
+        provenance_id=provenance_id,
+        from_urns=from_urns,
+        to_urn=to_urn,
+        edge_type=edge_type,
+        transform=None,
+        mechanism="SCA",
+        exact=True,
+        evidence_ref={
+            "schemaVersion": "1.0.0",
+            "kind": "sca",
+            "key": provenance_id,
+            "checksum": "b" * 64,
+        },
+        repo="spring-petclinic-microservices",
+        run_id="run-java-001",
+        correlation_id="corr-java-001",
+    )
+
+
+def _endpoint_manifest(session_id: str = "runtime-session-endpoint"):
+    return {
+        "sessionId": session_id,
+        "outcome": "COMPLETE",
+        "observationChecksum": "sha256:runtime-endpoint",
+    }
+
+
+def test_endpoint_observation_corroborates_a_reads_orientation_edge(tmp_path: Path) -> None:
+    service = _service(tmp_path)
+    static = service.merge(
+        _sca_assertion(
+            "prov-sca-reads",
+            from_urns=(VISITS_ELEMENT_URN,),
+            to_urn=VISIT_SERVICE_URN,
+            edge_type="READS",
+        )
+    )
+    observation = {
+        "observationId": "runtime-endpoint-reads-1",
+        "granularity": "ELEMENT",
+        "sourceDatasets": ["mysql://petclinic/visits"],
+        "targetDataset": "mysql://petclinic/visits",
+        "sourceFields": ["pet_id"],
+        "targetField": "pet_id",
+        "endpoint": VISIT_SERVICE_URN,
+        "edgeType": "READS",
+        "exact": True,
+    }
+
+    merged = service.merge_runtime_observation(
+        observation,
+        _endpoint_manifest(),
+        environment="staging",
+        repo="spring-petclinic-microservices",
+        correlation_id="corr-runtime-endpoint-reads",
+    )
+
+    assert len(merged) == 1
+    assert merged[0].edge_key == static.edge_key
+    assert merged[0].corroboration == "ELEMENT"
+    assert merged[0].band == "HIGH"
+    assert {p.mechanism for p in merged[0].provenance} == {"SCA", "RUNTIME"}
+
+
+def test_endpoint_observation_corroborates_a_writes_orientation_edge(tmp_path: Path) -> None:
+    service = _service(tmp_path)
+    static = service.merge(
+        _sca_assertion(
+            "prov-sca-writes",
+            from_urns=(OWNER_SERVICE_URN,),
+            to_urn=OWNERS_ELEMENT_URN,
+            edge_type="WRITES",
+        )
+    )
+    observation = {
+        "observationId": "runtime-endpoint-writes-1",
+        "granularity": "ELEMENT",
+        "sourceDatasets": ["mysql://petclinic/owners"],
+        "targetDataset": "mysql://petclinic/owners",
+        "sourceFields": ["first_name"],
+        "targetField": "first_name",
+        "endpoint": OWNER_SERVICE_URN,
+        "edgeType": "WRITES",
+        "exact": True,
+    }
+
+    merged = service.merge_runtime_observation(
+        observation,
+        _endpoint_manifest("runtime-session-endpoint-writes"),
+        environment="staging",
+        repo="spring-petclinic-microservices",
+        correlation_id="corr-runtime-endpoint-writes",
+    )
+
+    assert len(merged) == 1
+    assert merged[0].edge_key == static.edge_key
+    assert merged[0].corroboration == "ELEMENT"
+    assert merged[0].band == "HIGH"
+
+
+def test_endpoint_observation_never_corroborates_a_different_service(tmp_path: Path) -> None:
+    service = _service(tmp_path)
+    service.merge(
+        _sca_assertion(
+            "prov-sca-reads-2",
+            from_urns=(VISITS_ELEMENT_URN,),
+            to_urn=VISIT_SERVICE_URN,
+            edge_type="READS",
+        )
+    )
+    observation = {
+        "observationId": "runtime-endpoint-reads-mismatch",
+        "granularity": "ELEMENT",
+        "sourceDatasets": ["mysql://petclinic/visits"],
+        "targetDataset": "mysql://petclinic/visits",
+        "sourceFields": ["pet_id"],
+        "targetField": "pet_id",
+        # A same-shaped but different service URN must never match by fuzzy or partial
+        # comparison -- only exact string equality.
+        "endpoint": VISIT_SERVICE_URN + "AllByOwnerId",
+        "edgeType": "READS",
+        "exact": True,
+    }
+
+    merged = service.merge_runtime_observation(
+        observation,
+        _endpoint_manifest(),
+        environment="staging",
+        repo="spring-petclinic-microservices",
+        correlation_id="corr-runtime-endpoint-mismatch",
+    )
+
+    assert merged == []
+
+
+def test_endpoint_observation_never_corroborates_the_wrong_orientation(tmp_path: Path) -> None:
+    # The SCA edge is WRITES-shaped (service -> owners#first_name); an observation whose
+    # endpoint/element pairing matches the READS orientation instead must not corroborate
+    # it -- orientation is part of the claim, not incidental.
+    service = _service(tmp_path)
+    service.merge(
+        _sca_assertion(
+            "prov-sca-writes-2",
+            from_urns=(OWNER_SERVICE_URN,),
+            to_urn=OWNERS_ELEMENT_URN,
+            edge_type="WRITES",
+        )
+    )
+    observation = {
+        "observationId": "runtime-endpoint-writes-mismatch",
+        "granularity": "ELEMENT",
+        "sourceDatasets": ["mysql://petclinic/owners"],
+        "targetDataset": "mysql://petclinic/owners",
+        "sourceFields": ["first_name"],
+        "targetField": "first_name",
+        "endpoint": OWNER_SERVICE_URN,
+        "edgeType": "READS",
+        "exact": True,
+    }
+
+    merged = service.merge_runtime_observation(
+        observation,
+        _endpoint_manifest(),
+        environment="staging",
+        repo="spring-petclinic-microservices",
+        correlation_id="corr-runtime-endpoint-writes-mismatch",
+    )
+
+    assert merged == []
+
+
+def test_endpoint_observation_replay_is_idempotent(tmp_path: Path) -> None:
+    service = _service(tmp_path)
+    service.merge(
+        _sca_assertion(
+            "prov-sca-reads-3",
+            from_urns=(VISITS_ELEMENT_URN,),
+            to_urn=VISIT_SERVICE_URN,
+            edge_type="READS",
+        )
+    )
+    observation = {
+        "observationId": "runtime-endpoint-reads-replay",
+        "granularity": "ELEMENT",
+        "sourceDatasets": ["mysql://petclinic/visits"],
+        "targetDataset": "mysql://petclinic/visits",
+        "sourceFields": ["pet_id"],
+        "targetField": "pet_id",
+        "endpoint": VISIT_SERVICE_URN,
+        "edgeType": "READS",
+        "exact": True,
+    }
+    manifest = _endpoint_manifest("runtime-session-endpoint-replay")
+
+    first = service.merge_runtime_observation(
+        observation,
+        manifest,
+        environment="staging",
+        repo="spring-petclinic-microservices",
+        correlation_id="corr-runtime-endpoint-replay",
+    )
+    replay = service.merge_runtime_observation(
+        observation,
+        manifest,
+        environment="staging",
+        repo="spring-petclinic-microservices",
+        correlation_id="corr-runtime-endpoint-replay",
+    )
+
+    assert replay == first

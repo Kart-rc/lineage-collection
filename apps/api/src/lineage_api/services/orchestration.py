@@ -1049,39 +1049,48 @@ class OrchestrationService:
             catalog_element_resolver,
             run_runtime_stage,
         )
-        from lineage_api.domain.urns import LineageUrn
+        from lineage_api.domain.urns import LineageUrn, is_element_scoped_dataset_urn
         from lineage_api.services.resolver import ResolveContext
         from lineage_api.services.runtime_verification import StaticEdge
 
-        def _is_element_scoped_dataset_urn(value: str) -> bool:
-            # A raw '#' substring is not proof of element scope: a Java analyzer's `to`
-            # can be a `service://repo/Owner#findAll` endpoint URN, whose '#' separates
-            # method from type, not dataset from column. Only a `urn:ldp:` dataset URN
-            # with a real `.element` is element scope.
-            if "#" not in value:
-                return False
-            try:
-                return LineageUrn.parse(value).element is not None
-            except ValueError:
-                return False
+        def _from_urns(edge: dict[str, Any]) -> list[str]:
+            value = edge.get("from") or []
+            items = value if isinstance(value, (list, tuple)) else [value]
+            return [str(item) for item in items]
 
-        edges = [
+        # Python selection is unchanged: only edges whose `to` is itself an
+        # element-scoped ldp dataset URN are eligible -- the Python DERIVES pipeline
+        # never anchors an edge to a service endpoint. Java selection is wider: since
+        # element-ground Java SCA edges, a Java element edge's dataset#column side can
+        # land on EITHER end (READS: element in `from`, service endpoint in `to`;
+        # WRITES: reversed), so a Java edge is eligible when EITHER endpoint parses as
+        # an element-scoped ldp dataset URN.
+        python_edges = [
             edge
             for edge in sca["sca"]["edges"]
-            if _is_element_scoped_dataset_urn(str(edge.get("to", ""))) and edge.get("from")
+            if is_element_scoped_dataset_urn(str(edge.get("to", ""))) and edge.get("from")
         ]
-        if not edges:
+        java_edges = [
+            edge
+            for edge in sca["sca"]["edges"]
+            if edge.get("from")
+            and (
+                is_element_scoped_dataset_urn(str(edge.get("to", "")))
+                or any(is_element_scoped_dataset_urn(urn) for urn in _from_urns(edge))
+            )
+        ]
+        if not python_edges and not java_edges:
             return None, ["execution-failed"]
         snapshot = self._snapshot_provider.resolve(envelope)
         read = lambda path: snapshot.read_bytes(path).decode()
         python_paths = [p for p in snapshot.paths if p.endswith(".py")]
         java_paths = [p for p in snapshot.paths if p.endswith(".java")]
         observed_at = self._clock()
-        envelope_platform = LineageUrn.parse(str(edges[0]["to"])).platform
         observations: list[dict] = []
         verdicts: list[str] = []
         reasons: list[str] = []
-        if python_paths and self._resolver is not None:
+        if python_paths and self._resolver is not None and python_edges:
+            envelope_platform = LineageUrn.parse(str(python_edges[0]["to"])).platform
             try:
                 stage = run_runtime_stage(
                     module_path=python_paths[0],
@@ -1093,7 +1102,7 @@ class OrchestrationService:
                             str(e["edgeType"]),
                             str(e.get("transform", "")),
                         )
-                        for e in edges
+                        for e in python_edges
                     ),
                     resolve=catalog_element_resolver(
                         self._resolver,
@@ -1114,7 +1123,7 @@ class OrchestrationService:
                 verdicts.append(stage.verdict)
             except Exception:
                 reasons.append("execution-failed")
-        if java_paths:
+        if java_paths and java_edges:
             java_home = java_home_or_none()
             if java_home is None:
                 reasons.append("jvm-unavailable")
@@ -1122,7 +1131,7 @@ class OrchestrationService:
                 try:
                     stage = run_java_runtime_stage(
                         sources={p: read(p) for p in java_paths},
-                        static_edges=edges,
+                        static_edges=java_edges,
                         observed_at=observed_at,
                         java_home=java_home,
                     )

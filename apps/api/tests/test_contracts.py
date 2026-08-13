@@ -158,6 +158,34 @@ def test_runtime_contracts_are_metadata_only_strict_and_completeness_explicit() 
     assert registry.validate("runtime-session-manifest", {**manifest, "unknown": True})
 
 
+def test_runtime_observation_contract_accepts_the_additive_optional_endpoint_field() -> None:
+    # Task 6c: a service-anchored element edge's normalized observation mirrors the
+    # source dataset/field into targetDataset/targetField and additionally carries
+    # `endpoint` (the service URN) -- purely additive, so every existing observation
+    # (without `endpoint`) still validates unchanged.
+    registry = _contract_registry_type()(CONTRACTS_DIR)
+    observation = {
+        "schemaVersion": "1.0.0",
+        "observationId": "runtime-observation-endpoint-1",
+        "sessionId": "runtime-session-1",
+        "sequence": 1,
+        "artifactDigest": "sha256:artifact-v1",
+        "mechanism": "SDK",
+        "granularity": "ELEMENT",
+        "sourceDatasets": ["mysql://petclinic/visits"],
+        "targetDataset": "mysql://petclinic/visits",
+        "sourceFields": ["pet_id"],
+        "targetField": "pet_id",
+        "endpoint": "service://spring-petclinic-microservices/"
+        "org.springframework.samples.petclinic.visits.web.VisitResource#read",
+        "edgeType": "READS",
+        "exact": True,
+        "observedAt": "2026-08-12T12:00:00Z",
+    }
+
+    assert registry.validate("runtime-observation", observation) == []
+
+
 def test_runtime_production_control_contracts_are_closed_and_loss_explicit() -> None:
     registry = _contract_registry_type()(CONTRACTS_DIR)
     profile = {

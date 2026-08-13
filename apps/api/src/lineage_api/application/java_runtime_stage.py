@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Mapping, Sequence
 
 from lineage_api.application.runtime_stage import RuntimeStageResult
+from lineage_api.domain.urns import is_element_scoped_dataset_urn
 from lineage_api.services.java_runtime_verification import (
     JavaObservation,
     generate_harness,
@@ -29,12 +30,35 @@ def _column_matches(field: str, column: str) -> bool:
     return lowered == column.lower() or lowered == column.lower().replace("_", "")
 
 
-def _edge_parts(edge: dict) -> tuple[str, str, str]:
-    to_urn = str(edge["to"])
-    dataset_part, _, element = to_urn.rpartition("#")
+def _element_urn_parts(urn_text: str) -> tuple[str, str]:
+    dataset_part, _, element = urn_text.rpartition("#")
     table = dataset_part.rsplit(":", 1)[1]
-    operation = "WRITE" if edge["edgeType"] in {"WRITE", "DERIVES"} else "READ"
-    return table, element, operation
+    return table, element
+
+
+def _from_urns(edge: dict) -> list[str]:
+    value = edge["from"]
+    items = value if isinstance(value, (list, tuple)) else [value]
+    return [str(item) for item in items]
+
+
+def _edge_parts(edge: dict) -> tuple[str, str, str]:
+    """Locate the edge's element-scoped `dataset#column` side and derive an operation.
+
+    Since element-ground Java SCA edges, the element side can land on EITHER end: a
+    Java analyzer's READS edge puts it in `from` (the dataset is read into the service
+    endpoint named by `to`); a WRITES edge puts it in `to` (the service endpoint named
+    by `from` writes into the dataset). `to` is checked first — a `service://repo/
+    Type#method` endpoint URN's own '#' never parses as an element-scoped ldp URN
+    (`is_element_scoped_dataset_urn` guards that), so this never confuses the two.
+    """
+    to_urn = str(edge["to"])
+    if is_element_scoped_dataset_urn(to_urn):
+        table, element = _element_urn_parts(to_urn)
+        return table, element, "WRITE"
+    from_urn = _from_urns(edge)[0]
+    table, element = _element_urn_parts(from_urn)
+    return table, element, "READ"
 
 
 def match_edges(
@@ -42,10 +66,18 @@ def match_edges(
 ) -> tuple[list[dict], list[dict]]:
     matched: list[dict] = []
     unmatched: list[dict] = []
-    # Dataset-scope edges (no "#" in `to`) are not claims this element seam can judge —
-    # it only ever witnesses table+field pairs — so they are neither corroborated nor
-    # static_only; they are simply excluded from the verdict this stage computes.
-    element_edges = [edge for edge in static_edges if "#" in str(edge["to"])]
+    # Dataset-scope edges (neither end an element-scoped ldp URN) are not claims this
+    # element seam can judge — it only ever witnesses table+field pairs — so they are
+    # neither corroborated nor static_only; they are simply excluded from the verdict
+    # this stage computes. A `service://repo/Type#method` endpoint's own '#' never
+    # counts as element scope either, so a Java READ edge's `to` never false-positives
+    # here.
+    element_edges = [
+        edge
+        for edge in static_edges
+        if is_element_scoped_dataset_urn(str(edge["to"]))
+        or any(is_element_scoped_dataset_urn(urn) for urn in _from_urns(edge))
+    ]
     for edge in element_edges:
         table, element, operation = _edge_parts(edge)
         witnessed = any(

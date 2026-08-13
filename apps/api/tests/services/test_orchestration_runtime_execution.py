@@ -208,3 +208,167 @@ def test_partial_seam_failure_keeps_verdict_when_the_other_seam_completes_a_sess
         ).fetchone()
     assert row is not None
     assert row["outcome"] == "COMPLETE"
+
+
+# --- Task 6c: `_execute_runtime_session`'s Java edge selection accepts an
+# element-scoped `urn:ldp:` URN on EITHER end (READS: element in `from`, service
+# endpoint in `to`; WRITES: reversed); the Python selection stays `to`-only, unchanged.
+
+READS_EDGE = {
+    "from": ["urn:ldp:staging:mysql:petclinic:visits#pet_id"],
+    "to": "service://spring-petclinic-microservices/"
+    "org.springframework.samples.petclinic.visits.web.VisitResource#read",
+    "edgeType": "READS",
+}
+WRITES_EDGE = {
+    "from": [
+        "service://spring-petclinic-microservices/"
+        "org.springframework.samples.petclinic.owners.web.OwnerResource#update"
+    ],
+    "to": "urn:ldp:staging:mysql:petclinic:owners#first_name",
+    "edgeType": "WRITES",
+}
+DATASET_SCOPE_EDGE = {
+    "from": ["urn:ldp:staging:mysql:petclinic:vets"],
+    "to": "service://spring-petclinic-microservices/"
+    "org.springframework.samples.petclinic.vets.web.VetResource#list",
+    "edgeType": "READS",
+}
+PYTHON_EDGE = {
+    "from": ["urn:ldp:staging:snowflake:payments:raw.transactions#amount"],
+    "to": "urn:ldp:staging:snowflake:payments:analytics.daily_revenue#gross_revenue",
+    "edgeType": "DERIVES",
+    "transform": "SUM(amount)",
+}
+
+
+class _StubSnapshot:
+    """Duck-types the pieces of `RepositorySnapshot` `_execute_runtime_session` reads:
+    `.paths` (to decide which stage(s) are eligible to run) and `.read_bytes` (source
+    text). Real compilation is never reached -- `run_java_runtime_stage` is monkeypatched
+    below purely to capture what `static_edges` selection handed it."""
+
+    def __init__(self, paths: tuple[str, ...]) -> None:
+        self.paths = paths
+
+    def read_bytes(self, path: str) -> bytes:
+        return b"// stub source, never actually parsed or compiled\n"
+
+
+class _StubSnapshotProvider:
+    def __init__(self, snapshot: _StubSnapshot) -> None:
+        self._snapshot = snapshot
+
+    def resolve(self, envelope):
+        return self._snapshot
+
+
+def _sca(edges: list[dict]) -> dict:
+    return {"sca": {"edges": edges}}
+
+
+def test_java_selection_accepts_an_element_scoped_urn_on_either_end(
+    tmp_path, monkeypatch
+) -> None:
+    from lineage_api.dependencies import build_services
+
+    services = build_services(_settings(tmp_path))
+    services.reset()
+    services.orchestration._snapshot_provider = _StubSnapshotProvider(
+        _StubSnapshot(paths=("Repo.java",))
+    )
+
+    import lineage_api.application.java_runtime_stage as java_runtime_stage
+
+    captured: dict[str, object] = {}
+
+    def _fake_java_stage(*, sources, static_edges, observed_at, java_home):
+        captured["static_edges"] = list(static_edges)
+        from lineage_api.application.runtime_stage import RuntimeStageResult
+
+        return RuntimeStageResult(
+            verdict="NOT_PROVIDED",
+            corroborated=0,
+            static_only=0,
+            runtime_only=0,
+            observations=(),
+            liveness=(),
+            executed=(),
+        )
+
+    monkeypatch.setattr(java_runtime_stage, "java_home_or_none", lambda: "/fake/java-home")
+    monkeypatch.setattr(java_runtime_stage, "run_java_runtime_stage", _fake_java_stage)
+
+    envelope = {
+        "env": "staging",
+        "system": "petclinic",
+        "repo": "spring-petclinic-microservices",
+        "digest": "demo-digest-java-selection",
+        "eventId": "delivery-java-selection",
+    }
+    verification, reasons = services.orchestration._execute_runtime_session(
+        envelope, _sca([READS_EDGE, WRITES_EDGE, DATASET_SCOPE_EDGE])
+    )
+
+    # Both orientations were selected and handed to the Java stage; the dataset-scoped
+    # edge (neither end an element-scoped ldp URN) was not.
+    selected = captured["static_edges"]
+    assert READS_EDGE in selected
+    assert WRITES_EDGE in selected
+    assert DATASET_SCOPE_EDGE not in selected
+    # No observations from the stub stage -> execution-failed, but the point already
+    # proven above is that selection reached the stage with the right edges.
+    assert verification is None
+    assert reasons == ["execution-failed"]
+
+
+def test_python_selection_stays_to_only_and_is_unaffected_by_java_widening(
+    tmp_path, monkeypatch
+) -> None:
+    from lineage_api.dependencies import build_services
+
+    services = build_services(_settings(tmp_path))
+    services.reset()
+    services.orchestration._snapshot_provider = _StubSnapshotProvider(
+        _StubSnapshot(paths=("pipeline.py",))
+    )
+    assert services.orchestration._resolver is not None
+
+    import lineage_api.application.runtime_stage as runtime_stage
+
+    captured: dict[str, object] = {}
+    original = runtime_stage.run_runtime_stage
+
+    def _capturing_python_stage(*, static_edges, **kwargs):
+        captured["static_edges"] = list(static_edges)
+        return original(static_edges=static_edges, **kwargs)
+
+    monkeypatch.setattr(
+        "lineage_api.application.runtime_stage.run_runtime_stage", _capturing_python_stage
+    )
+
+    envelope = {
+        "env": "staging",
+        "system": "payments",
+        "repo": "payments-pipeline",
+        "digest": "demo-digest-python-selection",
+        "eventId": "delivery-python-selection",
+    }
+    services.orchestration._execute_runtime_session(
+        envelope, _sca([READS_EDGE, WRITES_EDGE, PYTHON_EDGE])
+    )
+
+    # The Python selection is the exact same test as before 6c: eligible purely by
+    # whether `to` parses as an element-scoped ldp URN, regardless of what `from` looks
+    # like. `READS_EDGE`'s `to` is a service endpoint (not element-scoped) so it is
+    # excluded; `WRITES_EDGE`'s `to` happens to be an element-scoped ldp URN (a Java
+    # WRITES edge always anchors its dataset side on `to`) so it is included exactly as
+    # it always would have been -- 6c widened the JAVA selection to also look at `from`,
+    # it did not narrow or change what `to`-only already accepted.
+    selected = [
+        (edge.from_urn, edge.to_urn, edge.edge_type) for edge in captured["static_edges"]
+    ]
+    assert (PYTHON_EDGE["from"][0], PYTHON_EDGE["to"], PYTHON_EDGE["edgeType"]) in selected
+    assert (WRITES_EDGE["from"][0], WRITES_EDGE["to"], WRITES_EDGE["edgeType"]) in selected
+    assert (READS_EDGE["from"][0], READS_EDGE["to"], READS_EDGE["edgeType"]) not in selected
+    assert len(selected) == 2

@@ -23,21 +23,29 @@ matches the redirected candidate's `types` table -- an honest mismatch, not elem
 per Task 6b's own boundary against ever scoping a candidate by a fact that does not
 describe it).
 
-That still isn't enough to reach band HIGH here, because
-`OrchestrationService._execute_runtime_session`'s Java edge selection only checks whether
-an edge's `to` carries a real `.element` (Task 6's fix for the `service://...#method`
-false-positive crash). `VisitRepository.findByPetId(In)`'s new element edge is a READS
-edge, so its element lives on `from`, not `to` -- the selection still does not pick it up,
-the Java runtime stage is still never invoked, runtime execution still fails closed with
-`execution-failed`, and every consolidated edge still stays at band SINGLE. Widening that
-selection to either end (and everything downstream of it: `_edge_parts`, session-plane
-emission, `merge_runtime_observation`) is Task 6c's job, not this one's.
+Task 6c (see `task-6c-report.md`) widened `OrchestrationService._execute_runtime_session`'s
+Java edge selection to accept an element-scoped `urn:ldp:` URN on EITHER end (not just
+`to`), extended `java_runtime_stage._edge_parts`/`match_edges` for both orientations,
+added the `endpoint` SDK payload form (`application/runtime_emission.py`, `services/
+runtime.py:_parse_sdk`) so a service-anchored element edge can be observed at all, and
+added the matching `merge_runtime_observation` endpoint branch (exact string equality on
+the service side, catalog-resolved URN on the dataset side, never `LineageUrn.parse` on
+the service URN). `VisitRepository.findByPetId(In)`'s element edge is now genuinely
+selected and handed to the Java runtime stage -- but band HIGH still is not reached here,
+because the stage's harness compiles every `.java` path in the whole multi-module
+checkout (including unrelated services' Spring Boot entry points, which need dependencies
+the harness's classpath does not have), so the real run fails with a `javac` error before
+it ever gets to witness a field. Runtime execution therefore still fails closed with
+`execution-failed`, and every consolidated edge still stays at band SINGLE -- for a
+different, more advanced reason than before 6c. Narrowing the harness's compile scope to
+entity/repository/injection-site files is Task 6d's job, not this one's.
 
-This test now locks the Task 6b state: at least one element-scoped SCA edge is on the
-consolidated graph (proving the wiring happened), while band HIGH and the runtime status
-stay exactly what they were before 6b (proving the runtime seam genuinely still needs 6c,
-not that 6b silently already finished it). Any future change that alters either half
-without being a deliberate, reviewed step of 6c should fail this test.
+This test now locks the Task 6c state: at least one element-scoped SCA edge is on the
+consolidated graph (Task 6b), the selection/wiring genuinely reaches the Java runtime
+stage for it (Task 6c), and band HIGH and the runtime status stay exactly what they were
+before 6c -- because the harness compile-scope wall, not the selection wall, is what now
+stands between this checkout and HIGH. Any future change that alters this state without
+being a deliberate, reviewed step of 6d should fail this test.
 
 One real bug *was* found and fixed by the Task 6 iteration, and is covered here too:
 before the fix, `_execute_runtime_session` treated any `#` in an edge's `to` as proof of
@@ -69,7 +77,7 @@ from lineage_api.application.repository_sources import (
 )
 from lineage_api.config import Settings
 from lineage_api.dependencies import build_services
-from lineage_api.domain.urns import LineageUrn
+from lineage_api.domain.urns import LineageUrn, is_element_scoped_dataset_urn
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[4]
@@ -159,24 +167,13 @@ def _descriptor(snapshot: RepositorySnapshot) -> RepositoryCollectionDescriptor:
     )
 
 
-def _is_element_scoped_dataset_urn(value: str) -> bool:
-    if "#" not in value:
-        return False
-    try:
-        return LineageUrn.parse(value).element is not None
-    except ValueError:
-        return False
-
-
 def _is_element_scoped_edge(edge: dict) -> bool:
     # Since Task 6b, a Java element edge's `.element` can land on EITHER end: READS
     # orientation puts it on `from` (the dataset reads into the service), WRITES puts it
-    # on `to`. `VisitRepository.findByPetId(In)` -> `visits#pet_id` is a READS edge, so
-    # checking `to` alone (as `_execute_runtime_session`'s current selection still does --
-    # that widening is Task 6c) would miss it entirely.
+    # on `to`.
     from_urns = edge["from"] if isinstance(edge["from"], (list, tuple)) else [edge["from"]]
-    return _is_element_scoped_dataset_urn(str(edge["to"])) or any(
-        _is_element_scoped_dataset_urn(str(urn)) for urn in from_urns
+    return is_element_scoped_dataset_urn(str(edge["to"])) or any(
+        is_element_scoped_dataset_urn(str(urn)) for urn in from_urns
     )
 
 
@@ -223,11 +220,12 @@ def test_petclinic_collects_through_the_product_path_with_element_edges_but_stil
             for edge in element_scoped
         )
 
-        # Still a wall (see module docstring and task-6b-report.md): `_execute_runtime_
-        # session`'s selection only checks `to`, and the one element edge this checkout
-        # produces is a READS edge (element on `from`), so the Java runtime stage is
-        # still never invoked and no edge can reach HIGH yet. Widening the selection to
-        # either end is Task 6c's job.
+        # Still a wall, but a different one now (see module docstring and
+        # task-6c-report.md): the selection genuinely reaches the Java runtime stage for
+        # this READS edge (element on `from`) since Task 6c, but the harness's own compile
+        # scope (every `.java` path in the whole multi-module checkout) fails to build, so
+        # the stage never gets to witness a field. No edge reaches HIGH yet. Narrowing the
+        # harness's compile scope is Task 6d's job.
         assert high == []
         assert summary["runtimeStatus"] == "NOT_PROVIDED"
         assert summary["runtimeReasons"] == ["execution-failed"]
