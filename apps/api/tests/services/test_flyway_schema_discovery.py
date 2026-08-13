@@ -54,9 +54,10 @@ def test_a_flyway_only_repository_completes() -> None:
 def test_edges_resolve_against_the_migrated_table() -> None:
     result = _analyze()
 
-    assert result.edge_count == 2
+    assert result.edge_count == 3
     assert sorted(result.document["datasetsSeen"]) == [
-        "urn:ldp:staging:postgres:shop:customers"
+        "urn:ldp:staging:postgres:shop:customers",
+        "urn:ldp:staging:postgres:shop:customers#city",
     ]
 
 

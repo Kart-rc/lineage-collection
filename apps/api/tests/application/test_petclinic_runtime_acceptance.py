@@ -1,41 +1,51 @@
 """Petclinic proof — the real, unmodified upstream Spring Petclinic checkout through the
 *product* collection path: `repository_collection.collect(descriptor, runtime_execution=True)`.
 
-This freezes the result of the Task 6 iteration loop (see
-`.superpowers/sdd/2026-08-12-runtime-collection-product-path/task-6-report.md`), which is
-a documented structural finding, not the band-HIGH proof the task set out to reach:
+This freezes the result of the Task 6 / Task 6b iteration loop (see
+`.superpowers/sdd/2026-08-12-runtime-collection-product-path/task-6-report.md` and
+`task-6b-report.md`), which is a documented structural finding, not the band-HIGH proof
+the overall goal set out to reach:
 
-The `java-spring-data-jpa-v1` analyzer (`services/java_spring_sca.py`) compiles every
-Spring Data repository call into a **dataset-scoped** edge — `service://repo/Type#method`
-on one end, the bare `urn:ldp:...:table` dataset URN on the other — never a
-`urn:ldp:...:table#column` element-scoped URN. That is true for every repository in this
-checkout (`OwnerRepository`, `PetRepository`, `VetRepository`, `VisitRepository`): all of
-petclinic's real endpoints are `findAll` / `findById` / `save`-style whole-entity CRUD,
-never a query that a proof rule grounds down to individual columns.
+Task 6 found that the `java-spring-data-jpa-v1` analyzer (`services/java_spring_sca.py`)
+compiled every Spring Data repository call into a **dataset-scoped** edge only —
+`service://repo/Type#method` on one end, the bare `urn:ldp:...:table` dataset URN on the
+other — never a `urn:ldp:...:table#column` element-scoped URN, even though the residue-
+guarded `spring.query-element` facts (real, proven per-column evidence) already existed
+and were simply discarded before edge construction.
 
-`OrchestrationService._execute_runtime_session` only ever hands the Java runtime stage
-edges whose `to` is a genuine `urn:ldp:` dataset URN carrying a `.element` — by design, the
-Java runtime harness (`java_runtime_stage.match_edges`) only ever witnesses table+field
-pairs, so a dataset-scoped edge is not a claim it can corroborate. With no element-scoped
-SCA edge to hand it, the Java runtime stage is never invoked at all: runtime execution
-fails closed with `execution-failed`, and every consolidated edge stays at band SINGLE.
+Task 6b wired those facts into the edges: `VisitRepository.findByPetId`/`findByPetIdIn`
+(both a same-entity derived predicate on `visits.pet_id`) now additionally emit an
+element-scoped edge, alongside the existing bare dataset edge. `PetRepository`'s two
+`@Query` methods remain unwired by design (`findPetTypeById`/`findPetTypes` project onto
+`PetType`/`types`, a different entity than `PetRepository`'s own declared `Pet`/`pets`; the
+query-element fact for them still resolves against `Pet`'s fields, so its table never
+matches the redirected candidate's `types` table -- an honest mismatch, not element-scoped,
+per Task 6b's own boundary against ever scoping a candidate by a fact that does not
+describe it).
 
-Reaching band HIGH here would require the SCA analyzer itself to ground repository calls
-down to individual columns (real, proven work in `_emit_query_elements`/
-`spring.query-element`, computed today but never wired into the edges it emits) — a
-change to the SCA *cell* squarely out of this task's scope, and the task's own boundary
-is explicit: report this as a structural wall with evidence rather than invent an element
-edge to force a match. This test locks that honest, fail-closed behaviour precisely so
-that any future change which starts producing element-scoped Java SCA edges is caught
-here and must be a deliberate, reviewed decision, not a silent regression.
+That still isn't enough to reach band HIGH here, because
+`OrchestrationService._execute_runtime_session`'s Java edge selection only checks whether
+an edge's `to` carries a real `.element` (Task 6's fix for the `service://...#method`
+false-positive crash). `VisitRepository.findByPetId(In)`'s new element edge is a READS
+edge, so its element lives on `from`, not `to` -- the selection still does not pick it up,
+the Java runtime stage is still never invoked, runtime execution still fails closed with
+`execution-failed`, and every consolidated edge still stays at band SINGLE. Widening that
+selection to either end (and everything downstream of it: `_edge_parts`, session-plane
+emission, `merge_runtime_observation`) is Task 6c's job, not this one's.
 
-One real bug *was* found and fixed by this iteration, and is covered here too: before the
-fix, `_execute_runtime_session` treated any `#` in an edge's `to` as proof of element
-scope. A Java READ edge's `to` is `service://repo/Type#method` — the `#` separates method
-from type, not dataset from column — so `LineageUrn.parse` raised and the whole collection
-failed with `PIPELINE_FAILED` instead of failing closed. `test_collection_runtime_acceptance.py`
-carries the minimal regression for that fix; this test proves it holds at full
-whole-repository scale on the real checkout too.
+This test now locks the Task 6b state: at least one element-scoped SCA edge is on the
+consolidated graph (proving the wiring happened), while band HIGH and the runtime status
+stay exactly what they were before 6b (proving the runtime seam genuinely still needs 6c,
+not that 6b silently already finished it). Any future change that alters either half
+without being a deliberate, reviewed step of 6c should fail this test.
+
+One real bug *was* found and fixed by the Task 6 iteration, and is covered here too:
+before the fix, `_execute_runtime_session` treated any `#` in an edge's `to` as proof of
+element scope. A Java READ edge's `to` is `service://repo/Type#method` — the `#`
+separates method from type, not dataset from column — so `LineageUrn.parse` raised and the
+whole collection failed with `PIPELINE_FAILED` instead of failing closed.
+`test_collection_runtime_acceptance.py` carries the minimal regression for that fix; this
+test proves it holds at full whole-repository scale on the real checkout too.
 """
 
 from __future__ import annotations
@@ -158,7 +168,19 @@ def _is_element_scoped_dataset_urn(value: str) -> bool:
         return False
 
 
-def test_petclinic_collects_through_the_product_path_and_fails_closed_on_the_sca_element_gap() -> None:
+def _is_element_scoped_edge(edge: dict) -> bool:
+    # Since Task 6b, a Java element edge's `.element` can land on EITHER end: READS
+    # orientation puts it on `from` (the dataset reads into the service), WRITES puts it
+    # on `to`. `VisitRepository.findByPetId(In)` -> `visits#pet_id` is a READS edge, so
+    # checking `to` alone (as `_execute_runtime_session`'s current selection still does --
+    # that widening is Task 6c) would miss it entirely.
+    from_urns = edge["from"] if isinstance(edge["from"], (list, tuple)) else [edge["from"]]
+    return _is_element_scoped_dataset_urn(str(edge["to"])) or any(
+        _is_element_scoped_dataset_urn(str(urn)) for urn in from_urns
+    )
+
+
+def test_petclinic_collects_through_the_product_path_with_element_edges_but_still_no_runtime_corroboration() -> None:
     revision = _revision()
     snapshot = _snapshot(revision)
     descriptor = _descriptor(snapshot)
@@ -187,14 +209,25 @@ def test_petclinic_collects_through_the_product_path_and_fails_closed_on_the_sca
         ]
         assert edges
 
-        element_scoped = [e for e in edges if _is_element_scoped_dataset_urn(str(e["to"]))]
+        element_scoped = [e for e in edges if _is_element_scoped_edge(e)]
         high = [e for e in edges if e["band"] == "HIGH"]
 
-        # Structural wall (see module docstring and task-6-report.md): every edge this
-        # real checkout's repositories produce is dataset-scoped, so the Java runtime
-        # stage is never invoked and no edge can reach HIGH without inventing an
-        # element edge, which the task boundary forbids.
-        assert element_scoped == []
+        # Task 6b wired `spring.query-element` facts into the edges: at least
+        # `VisitRepository.findByPetId(In)` -> `visits#pet_id` is now on the graph.
+        assert element_scoped, "expected at least one element-scoped SCA edge (Task 6b)"
+        assert any(
+            LineageUrn.parse(
+                str(edge["from"][0] if isinstance(edge["from"], (list, tuple)) else edge["from"])
+            ).element
+            == "pet_id"
+            for edge in element_scoped
+        )
+
+        # Still a wall (see module docstring and task-6b-report.md): `_execute_runtime_
+        # session`'s selection only checks `to`, and the one element edge this checkout
+        # produces is a READS edge (element on `from`), so the Java runtime stage is
+        # still never invoked and no edge can reach HIGH yet. Widening the selection to
+        # either end is Task 6c's job.
         assert high == []
         assert summary["runtimeStatus"] == "NOT_PROVIDED"
         assert summary["runtimeReasons"] == ["execution-failed"]

@@ -616,6 +616,13 @@ class JavaSpringEvidenceCompiler:
         methods = _facts_by_subject(by_kind["java.method"])
         query_annotations = _query_annotations(by_kind["java.annotation"])
         tables = _native_profile_tables(by_kind["sql.table"], context.schema_profile)
+        elements_by_method: dict[tuple[str, str], list[tuple[str, str]]] = {}
+        for fact in by_kind["spring.query-element"]:
+            attributes = dict(fact.attributes)
+            key = (str(attributes["repository"]), str(attributes["method"]))
+            elements_by_method.setdefault(key, []).append(
+                (str(attributes["table"]), str(attributes["column"]))
+            )
         candidates: list[_CompiledCandidate] = []
         unresolved = 0
 
@@ -835,6 +842,49 @@ class JavaSpringEvidenceCompiler:
                     operation.query,
                 )
             )
+
+            # Additionally element-scope the dataset side for every provable column a
+            # `spring.query-element` fact ties to this exact invoked (repository, method)
+            # -- but only when that fact's own table agrees with the table this candidate
+            # already resolved to. A fact for a different table (a cross-entity JPQL
+            # projection, resolved against the repository's own declared entity rather
+            # than the entity the query actually targets) must never element-scope a
+            # candidate it does not describe; that stays an honest wall.
+            for element_table, column in elements_by_method.get(
+                (repository.subject, called), ()
+            ):
+                if element_table != table_name:
+                    continue
+                element_dataset_urn = str(
+                    LineageUrn(
+                        context.environment,
+                        context.platform,
+                        context.system,
+                        table_name,
+                    ).with_element(column)
+                )
+                element_transform = f"{transform}#{column}"
+                element_from_urn, element_to_urn = (
+                    (element_dataset_urn, service_urn)
+                    if operation.edge_type == "READS"
+                    else (service_urn, element_dataset_urn)
+                )
+                candidates.append(
+                    _CompiledCandidate(
+                        element_from_urn,
+                        element_to_urn,
+                        operation.edge_type,
+                        element_transform,
+                        service_urn,
+                        element_dataset_urn,
+                        operation.rationale,
+                        invocation,
+                        repository,
+                        entity,
+                        table,
+                        operation.query,
+                    )
+                )
 
         edges = _collapse_java_spring_candidates(
             candidates, context, analysis.framework.evidence

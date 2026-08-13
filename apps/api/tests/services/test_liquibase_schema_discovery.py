@@ -54,9 +54,10 @@ def test_a_liquibase_only_repository_completes() -> None:
 def test_edges_resolve_against_the_changelog_table() -> None:
     result = _analyze()
 
-    assert result.edge_count == 2
-    assert result.document["datasetsSeen"] == [
-        "urn:ldp:staging:postgres:billing:invoices"
+    assert result.edge_count == 3
+    assert sorted(result.document["datasetsSeen"]) == [
+        "urn:ldp:staging:postgres:billing:invoices",
+        "urn:ldp:staging:postgres:billing:invoices#currency",
     ]
 
 

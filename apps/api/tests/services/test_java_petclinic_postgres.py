@@ -109,10 +109,14 @@ def test_the_petclinic_java_repository_completes_with_no_residue() -> None:
 def test_it_produces_reads_and_writes_over_both_tables() -> None:
     result = _java()
 
-    assert result.edge_count == 4
-    assert result.read_count == 2
+    assert result.edge_count == 5
+    assert result.read_count == 3
     assert result.write_count == 2
-    assert sorted(result.document["datasetsSeen"]) == [OWNERS, VISITS]
+    assert sorted(result.document["datasetsSeen"]) == [
+        OWNERS,
+        f"{OWNERS}#last_name",
+        VISITS,
+    ]
 
 
 def test_derived_query_methods_resolve_to_their_table() -> None:

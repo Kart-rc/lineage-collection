@@ -176,7 +176,7 @@ def main() -> int:
 
         def _is_element_scoped_dataset_urn(value: str) -> bool:
             # A raw '#' substring is not proof of element scope: the Java analyzer's
-            # `to` can be a `service://repo/Owner#findAll` endpoint URN, whose '#'
+            # `to`/`from` can be a `service://repo/Owner#findAll` endpoint URN, whose '#'
             # separates method from type, not dataset from column.
             if "#" not in value:
                 return False
@@ -185,8 +185,20 @@ def main() -> int:
             except ValueError:
                 return False
 
-        element_scoped = [e for e in edges if _is_element_scoped_dataset_urn(str(e["to"]))]
-        print(f"  of which element-scoped (real dataset#column 'to'): {len(element_scoped)}")
+        def _edge_is_element_scoped(edge: dict) -> bool:
+            # Since Task 6b, an element-scoped Java edge can carry its dataset#column
+            # side on EITHER end: READS orientation puts it in `from` (the dataset side
+            # reads into the service), WRITES puts it in `to`. Checking only `to` (as
+            # Task 6 did, before element edges existed at all) would silently miss every
+            # READ -- which is exactly the orientation petclinic's own reachable HIGH
+            # candidate (`VisitRepository.findByPetId` -> `visits#pet_id`) uses.
+            from_urns = edge["from"] if isinstance(edge["from"], (list, tuple)) else [edge["from"]]
+            return _is_element_scoped_dataset_urn(str(edge["to"])) or any(
+                _is_element_scoped_dataset_urn(str(urn)) for urn in from_urns
+            )
+
+        element_scoped = [e for e in edges if _edge_is_element_scoped(e)]
+        print(f"  of which element-scoped (real dataset#column on 'to' or 'from'): {len(element_scoped)}")
 
         high_edges = []
         for edge in sorted(edges, key=lambda e: e["edgeKey"]):
@@ -208,13 +220,27 @@ def main() -> int:
             if not element_scoped:
                 print(
                     "STRUCTURAL WALL: every SCA edge for this checkout is dataset-scoped "
-                    "(no '#element' in 'to'). `_execute_runtime_session` only ever hands "
-                    "element-scoped edges to the Java runtime stage, so runtime "
+                    "(no '#element' on either end). `_execute_runtime_session` only ever "
+                    "hands element-scoped edges to the Java runtime stage, so runtime "
                     "corroboration — and therefore band HIGH — is unreachable for this "
                     "repository's shape without inventing an element edge, which the "
                     "task boundary forbids. Sample edge URNs:"
                 )
                 for edge in sorted(edges, key=lambda e: e["edgeKey"])[:6]:
+                    print(f"    {edge['from']} -> {edge['to']}")
+            else:
+                print(
+                    "ELEMENT EDGES EXIST, RUNTIME CORROBORATION DOES NOT (yet): "
+                    f"{len(element_scoped)} element-scoped SCA edge(s) are on the graph "
+                    "(Task 6b), so the honest wall moved from 'no element evidence at "
+                    "all' to 'element evidence exists but the Java runtime stage never "
+                    "runs for it' -- `_execute_runtime_session`'s selection, "
+                    "`_edge_parts`, session-plane emission, and consolidation's merge "
+                    "still only understand a dataset-to-dataset shape, not a "
+                    "dataset-element-to-service one. That wiring is Task 6c. Element-"
+                    "scoped edges:"
+                )
+                for edge in sorted(element_scoped, key=lambda e: e["edgeKey"]):
                     print(f"    {edge['from']} -> {edge['to']}")
             return 1
 

@@ -2709,3 +2709,119 @@ interface OwnerRepository extends JpaRepository<Owner,Integer> {
 
     elements = _elements(result)
     assert ("findByLastNameStartingWith", "last_name", "derived") in elements
+
+
+# --- L4: query-element facts wired into element-scoped SCA edges ------------------------
+
+
+def test_derived_predicate_method_yields_both_the_dataset_edge_and_the_element_edge() -> None:
+    """A same-entity derived-query method proves a specific column, so it should ground
+
+    an additional edge on that column, alongside the existing bare dataset edge (kept
+    for existing consumers).
+    """
+    evidence = _compile_java_spring(
+        _lineage_sources(
+            entity='''package example;
+import jakarta.persistence.Column;
+import jakarta.persistence.Entity;
+import jakarta.persistence.Table;
+@Entity @Table(name="owners") class Owner {
+  private Integer id;
+  @Column(name="last_name") private String lastName;
+}
+''',
+            repository='''package example;
+import java.util.List;
+import org.springframework.data.jpa.repository.JpaRepository;
+interface OwnerRepository extends JpaRepository<Owner, Integer> {
+  List<Owner> findByLastName(String lastName);
+}
+''',
+            service='''package example;
+class OwnerService {
+  private final OwnerRepository owners;
+  OwnerService(OwnerRepository owners) { this.owners = owners; }
+  Object load() { return owners.findByLastName("Smith"); }
+}
+''',
+            schema="create table owners (id integer primary key, last_name varchar(255));",
+        )
+    )
+
+    assert evidence.status == "COMPLETE"
+    assert len(evidence.edges) == 2
+
+    bare = next(edge for edge in evidence.edges if "#" not in edge.dataset_urn)
+    element = next(edge for edge in evidence.edges if "#" in edge.dataset_urn)
+
+    assert bare.edge_type == "READS"
+    assert bare.dataset_urn == "urn:ldp:staging:postgres:petclinic:owners"
+    assert bare.from_urn == bare.dataset_urn
+    assert bare.to_urn == bare.service_urn
+    assert bare.transform == "OwnerRepository.findByLastName -> owners"
+
+    assert element.edge_type == "READS"
+    assert element.dataset_urn == "urn:ldp:staging:postgres:petclinic:owners#last_name"
+    assert element.from_urn == element.dataset_urn
+    assert element.to_urn == element.service_urn == bare.service_urn
+    assert element.transform == "OwnerRepository.findByLastName -> owners#last_name"
+
+
+def test_cross_entity_jpql_never_element_scopes_the_mismatched_table_candidate() -> None:
+    """Mirrors petclinic's `PetRepository.findPetTypeById` -> `types`.
+
+    The @Query redirects the edge to a different entity's table (`types`), but the
+    query-element fact for that method resolves its property against the repository's
+    *own* declared entity (`Owner`, table `owners`) -- a real, residue-guarded fact, just
+    for the wrong table. That mismatch must never element-scope the redirected
+    `owners -> types` candidate; whether the cross-entity projection gets its own edge is
+    out of scope here, so the wall for it stays.
+    """
+    evidence = _compile_java_spring(
+        _lineage_sources(
+            entity='''package example;
+import jakarta.persistence.Entity;
+import jakarta.persistence.Table;
+@Entity @Table(name="owners") class Owner {
+  private Integer id;
+}
+''',
+            repository='''package example;
+import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+interface OwnerRepository extends JpaRepository<Owner, Integer> {
+  @Query("FROM PetType t WHERE t.id = ?1")
+  Object findTypeById(Integer id);
+}
+''',
+            service='''package example;
+class OwnerService {
+  private final OwnerRepository owners;
+  OwnerService(OwnerRepository owners) { this.owners = owners; }
+  Object load() { return owners.findTypeById(1); }
+}
+''',
+            schema=(
+                "create table owners (id integer primary key); "
+                "create table types (id integer primary key, name varchar(255));"
+            ),
+        )
+        + (
+            _source(
+                "src/example/PetType.java",
+                '''package example;
+import jakarta.persistence.Entity;
+import jakarta.persistence.Table;
+@Entity @Table(name="types") class PetType {
+  private Integer id;
+}
+''',
+            ),
+        )
+    )
+
+    assert evidence.status == "COMPLETE"
+    assert len(evidence.edges) == 1
+    assert evidence.edges[0].dataset_urn == "urn:ldp:staging:postgres:petclinic:types"
+    assert "#" not in evidence.edges[0].dataset_urn
