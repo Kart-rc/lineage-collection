@@ -76,6 +76,7 @@ class JavaObservation:
     method: str
     table: str
     operation: str
+    fields: tuple[str, ...] = ()
 
     @property
     def key(self) -> tuple[str, str]:
@@ -223,21 +224,30 @@ def generate_recorder_source() -> str:
         "public final class Recorder implements InvocationHandler {\n"
         "    public static final List<String> OBSERVED = new ArrayList<>();\n"
         "    private final String repositoryType;\n"
-        "    private final String table;\n\n"
-        "    private Recorder(String repositoryType, String table) {\n"
+        "    private final String table;\n"
+        "    private final String fields;\n\n"
+        "    private Recorder(String repositoryType, String table, String fields) {\n"
         "        this.repositoryType = repositoryType;\n"
         "        this.table = table;\n"
+        "        this.fields = fields;\n"
         "    }\n\n"
         "    public static Object proxy(Class<?> repository, Class<?> entity) {\n"
         "        Table annotation = entity.getAnnotation(Table.class);\n"
         "        String table = annotation == null ? \"UNMAPPED\" : annotation.name();\n"
+        "        List<String> names = new ArrayList<>();\n"
+        "        for (Field field : entity.getDeclaredFields()) {\n"
+        "            if (field.isSynthetic() || Modifier.isStatic(field.getModifiers())) continue;\n"
+        "            names.add(field.getName());\n"
+        "        }\n"
+        "        String fields = String.join(\",\", names);\n"
         "        return Proxy.newProxyInstance(\n"
         "            repository.getClassLoader(), new Class<?>[]{repository},\n"
-        "            new Recorder(repository.getSimpleName(), table));\n"
+        "            new Recorder(repository.getSimpleName(), table, fields));\n"
         "    }\n\n"
         "    @Override\n"
         "    public Object invoke(Object p, Method method, Object[] args) {\n"
-        "        OBSERVED.add(repositoryType + \"\\t\" + method.getName() + \"\\t\" + table);\n"
+        "        OBSERVED.add(repositoryType + \"\\t\" + method.getName() + \"\\t\" + table"
+        " + \"\\t\" + fields);\n"
         "        Class<?> type = method.getReturnType();\n"
         "        if (type == Optional.class) return Optional.empty();\n"
         "        if (type == List.class) return List.of();\n"
@@ -340,15 +350,22 @@ def parse_observations(stdout: str) -> tuple[JavaObservation, ...]:
         if not line.startswith("OBSERVED\t"):
             continue
         parts = line.split("\t")
-        if len(parts) != 4:
+        if len(parts) not in (4, 5):
             raise JavaHarnessError("harness emitted a malformed observation")
-        _marker, repository_type, method, table = parts
+        fields: tuple[str, ...] = ()
+        if len(parts) == 5:
+            _marker, repository_type, method, table, raw_fields = parts
+            if raw_fields:
+                fields = tuple(raw_fields.split(","))
+        else:
+            _marker, repository_type, method, table = parts
         observations.append(
             JavaObservation(
                 repository_type=repository_type,
                 method=method,
                 table=table,
                 operation=classify_operation(method),
+                fields=fields,
             )
         )
     return tuple(observations)
