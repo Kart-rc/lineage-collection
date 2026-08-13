@@ -723,3 +723,79 @@ Reuse `/private/tmp/lineage-estate` because `verify_real_repo_confidence.py` alr
 - Spec §5 error table → Task 3 Step 3 reason mapping + Task 4 `not-requested` + Task 7 golden test.
 - Spec §6 tests → Tasks 1-2 (unit), 5 (fixture acceptance), 6 (petclinic acceptance), 7 (regression locks). The spec's "resolver invariant fails loudly" test is subsumed: wire identity is derived from URNs, so a mismatched snapshot manifests as a failed corroboration match in Task 5's acceptance test rather than a silent pass.
 - Type consistency: `RuntimeStageResult` is the single stage result type across both seams; `sdk_payloads`/`session_scope` consume the stage observation dict shape defined at `runtime_stage.py:100-111`; reason strings appear only from the closed vocabulary.
+
+---
+
+## Addendum (controller ruling after Task 6 BLOCKED): Tasks 6b–6d — element-grounded Java edges to HIGH
+
+Task 6 proved the wall: `JavaSpringEvidenceCompiler.compile()` (services/java_spring_sca.py:~806)
+always emits bare dataset URNs (READS: `dataset -> service://repo/Type#method`; WRITES reversed),
+while the residue-guarded `spring.query-element` facts (`_emit_query_elements`, :2472 — per-method
+provable columns from derived-query names and JPQL, mapped through proven entity-field facts) are
+grouped in `by_kind` and never wired into edges. The goal (a real Java repo edge at HIGH) requires
+wiring them through. Honesty boundaries unchanged: element edges only from residue-guarded facts;
+runtime corroboration only from what the proxy recorder genuinely witnesses (the repository's own
+entity table + declared fields), so cross-entity JPQL projections (e.g. petclinic
+`PetRepository.findPetTypeById` -> `types.id`) will remain static-only — expected and correct.
+The reachable petclinic HIGH candidate is `VisitRepository.findByPetId(In)` -> `visits.pet_id`
+(same-entity derived predicate, witnessed via `_column_matches("petId","pet_id")`).
+
+### Task 6b: Element-scoped Java SCA edges from query-element facts
+
+**Files:** Modify `apps/api/src/lineage_api/services/java_spring_sca.py` (compile candidate loop
+~:806 and `_collapse_java_spring_candidates` if needed); Test `apps/api/tests/services/test_java_spring_sca.py`.
+
+In `compile()`: build `elements_by_method` = {fact.subject: [(table, column), ...]} from
+`by_kind["spring.query-element"]`. In the candidate loop, after `dataset_urn` is built, when the
+invoked `repository#method` has query-element facts whose table equals the resolved `table_name`,
+ADDITIONALLY append one candidate per column with the dataset side element-scoped:
+`str(LineageUrn(env, platform, system, table_name).with_element(column))`, same from/to orientation
+(READS: element-dataset -> service; WRITES: service -> element-dataset), transform suffixed with
+`#column`. The bare dataset edge is kept (existing consumers/tests unchanged). TDD: a test proving
+a repository with a derived predicate method yields both the dataset edge and the element edge;
+a JPQL projection onto a different entity yields the element edge for that other table only when
+the table resolves (else residue, existing behavior). Full suite green; petclinic script now
+prints element-scoped edges > 0 (still 0 HIGH until 6c). Commit: `feat: element-ground Java SCA
+edges from provable query elements`.
+
+### Task 6c: Runtime corroboration for service-anchored element edges
+
+**Files:** Modify `apps/api/src/lineage_api/services/orchestration.py` (`_execute_runtime_session`
+Java edge selection), `apps/api/src/lineage_api/application/java_runtime_stage.py` (`_edge_parts`/
+`match_edges` both orientations), `apps/api/src/lineage_api/application/runtime_emission.py`
+(endpoint payload form), `apps/api/src/lineage_api/services/runtime.py` (`_parse_sdk` optional
+`endpoint`), `packages/contracts/runtime-observation.schema.json` (additive optional `endpoint`),
+`apps/api/src/lineage_api/services/consolidation.py` (`merge_runtime_observation` endpoint branch).
+Tests in the matching existing test files per component.
+
+1. Selection: a Java-eligible edge is one where EITHER endpoint parses as `urn:ldp:` with
+   non-None `.element` (reuse `_is_element_scoped_dataset_urn` on both ends). Python selection
+   unchanged (`to` element-scoped).
+2. `_edge_parts`: if `to` is an element ldp URN -> (table, element from `to`, op WRITE);
+   elif `from[0]` is an element ldp URN -> (table, element from `from[0]`, op READ). edgeType
+   mapping unchanged ("READS"->READ else WRITE for {WRITE,WRITES,DERIVES}).
+3. Emission: when a corroborated edge has a `service://` endpoint, emit the SDK payload with
+   `source: {dataset, field}` from the element side and `endpoint: {service: "<service-urn>"}`
+   INSTEAD of `target`; other keys unchanged. `session_scope` includes only the dataset side.
+4. `_parse_sdk`: allow `endpoint` as alternative to `target` (exactly one of the two);
+   endpoint form normalizes to `{granularity: "ELEMENT", sourceDatasets: [ds], sourceFields: [f],
+   targetDataset: ds, targetField: f, endpoint: service_urn, edgeType, transform, exact: True,
+   observedAt}` (targetDataset/-Field mirror the source so scope/idempotency/sequence logic is
+   untouched; `endpoint` carries the service identity for the merge).
+5. `merge_runtime_observation`: when the observation carries `endpoint`, ELEMENT candidates are
+   edges where either (edge_type READS-like: `tuple(edge.from_urns) == (ds#f,)` and
+   `edge.to_urn == endpoint`) or (WRITES-like: `edge.from_urns == (endpoint,)` and
+   `edge.to_urn == ds#f`), exact string equality on the service side, catalog-resolved URN on the
+   dataset side, `runtime_scope="ELEMENT"`. Never parse the service URN with `LineageUrn`.
+   No change to band rules — HIGH arises from the existing `derive_consolidation` check.
+Commit: `feat: corroborate service-anchored element edges through the session plane`.
+
+### Task 6d: Petclinic to HIGH, re-frozen
+
+Re-run `scripts/verify_petclinic_runtime_confidence.py` and iterate within the existing
+boundaries until >= 1 edge prints band=HIGH display=VERIFIED 92 (expected: the
+`visits.pet_id -> VisitResource#...` READ edge). Update the frozen
+`test_petclinic_runtime_acceptance.py` to assert the HIGH state (skips unchanged). Update
+`measure_real_petclinic.py` expectations only if edge counts changed (additive element edges).
+Regression locks: full suite, 18/18 alignment, 20/24 real-repo. Commit: `feat: petclinic runtime
+corroboration to HIGH through the product path`.
