@@ -81,7 +81,7 @@ tracked path must occur in exactly one disposition, and `COMPLETE` is impossible
 or failed paths.
 
 The bounded JSON result contains only identifiers, digests, status, stage names and counts. Static
-`exact=true` means the source citation is exact, not that the operation ran. By default, runtime verification is off and `runtimeStatus` remains `NOT_PROVIDED` (with `runtimeReasons == ["not-requested"]`). To enable per-collection runtime verification, pass `runtime_execution=True` to the collection call, which will execute Python and Java runtime stages against SCA edges in-process.
+`exact=true` means the source citation is exact, not that the operation ran. By default, runtime verification is off and `runtimeStatus` remains `NOT_PROVIDED` (with `runtimeReasons == ["not-requested"]`). Runtime verification is currently a library-level opt-in: passing `runtime_execution=True` to `RepositoryCollectionService.collect(...)` executes Python and Java runtime stages against SCA edges in-process. Neither the CLI (`collect-checkout` above) nor the `POST /api/collections` HTTP endpoint exposes this flag yet.
 
 Spring Petclinic is an acceptance example, not a special case in production code:
 
@@ -261,7 +261,7 @@ The default command is hermetic and reports `HERMITIC_LOCAL_PASS` or failure ind
 an external repository is not implicit test input, it also reports
 `LOCAL_REAL_REPOSITORY_REQUIRED`; that status is not counted as a pass. Set
 `LINEAGE_REAL_REPOSITORY_CHECKOUT` to the exact pinned Petclinic checkout before running
-`make acceptance-smoke` to add the separate `LOCAL_REAL_REPOSITORY_PASS` proof. This static proof defaults to `RUNTIME_NOT_PROVIDED` (no runtime verification); to enable runtime verification per-collection, pass `runtime_execution=True`. Live cloud rows remain `AWS_REQUIRED`, and collection defaults to runtime off.
+`make acceptance-smoke` to add the separate `LOCAL_REAL_REPOSITORY_PASS` proof. This static proof defaults to `RUNTIME_NOT_PROVIDED` (no runtime verification); runtime verification is currently a library-level opt-in on `RepositoryCollectionService.collect(..., runtime_execution=True)` and is not exposed by `make acceptance-smoke`, the CLI, or the collections API. Live cloud rows remain `AWS_REQUIRED`, and collection defaults to runtime off.
 
 Run only the named crash/redrive scenario with:
 
