@@ -206,6 +206,7 @@ def build_services(
         outbox_dispatcher=OutboxDispatcher(outbox, broker, clock),
         broker=broker,
         durable_clock=clock,
+        resolver=resolver,
     )
 
     def environment_reader(environment: str) -> EnvironmentPin | None:

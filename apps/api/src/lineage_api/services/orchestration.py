@@ -27,12 +27,22 @@ from lineage_api.services.consolidation import ConsolidationService, MechanismAs
 from lineage_api.services.evidence_store import EvidenceStore
 from lineage_api.services.intake import IntakeService, PushDelivery
 from lineage_api.services.publisher import PublisherService
+from lineage_api.services.resolver import Resolver
 from lineage_api.services.review import ReviewService
 from lineage_api.services.runtime import RuntimeLineageService
 
 
 def _utc_now() -> str:
     return datetime.now(UTC).isoformat().replace("+00:00", "Z")
+
+
+def _combined_verdict(verdicts: list[str]) -> str | None:
+    real = [v for v in verdicts if v != "NOT_PROVIDED"]
+    if not real:
+        return None
+    if all(v == "CORROBORATED" for v in real):
+        return "CORROBORATED"
+    return "PARTIALLY_CORROBORATED"
 
 
 class TargetCommandProcessingError(RuntimeError):
@@ -62,6 +72,7 @@ class OrchestrationService:
         broker: LaneBrokerPort,
         durable_clock: ClockPort,
         clock: Callable[[], str] = _utc_now,
+        resolver: Resolver | None = None,
     ) -> None:
         self._database = database
         self._intake = intake
@@ -79,6 +90,7 @@ class OrchestrationService:
         self._broker = broker
         self._durable_clock = durable_clock
         self._clock = clock
+        self._resolver = resolver
         self._fault_injector: Callable[[str], None] | None = None
 
     def set_fault_injector(self, injector: Callable[[str], None] | None) -> None:
@@ -508,7 +520,8 @@ class OrchestrationService:
                 "proposal": None,
                 "coverageManifest": i8["coverageManifest"],
                 "analysis": i5["analysis"],
-                "runtimeStatus": i6["runtime"]["status"],
+                "runtimeStatus": i6["runtime"].get("verification") or i6["runtime"]["status"],
+                "runtimeReasons": i6["runtime"].get("reasons", []),
                 "resume": {"reusedStages": workflow.reused_stage_ids},
             }
         i7 = workflow.checkpoint(
@@ -533,7 +546,8 @@ class OrchestrationService:
             "coverageManifest": i8["coverageManifest"],
             "evidenceManifest": i10["evidenceManifest"],
             "analysis": i5["analysis"],
-            "runtimeStatus": i6["runtime"]["status"],
+            "runtimeStatus": i6["runtime"].get("verification") or i6["runtime"]["status"],
+            "runtimeReasons": i6["runtime"].get("reasons", []),
             "resume": {"reusedStages": workflow.reused_stage_ids},
         }
 
@@ -623,6 +637,8 @@ class OrchestrationService:
             "proposal": b9["proposal"],
             "coverageManifest": b8["coverageManifest"],
             "evidenceManifest": b10["evidenceManifest"],
+            "runtimeStatus": b6["runtime"].get("verification") or b6["runtime"]["status"],
+            "runtimeReasons": b6["runtime"].get("reasons", []),
             "resume": {"reusedStages": workflow.reused_stage_ids},
         }
 
@@ -933,6 +949,10 @@ class OrchestrationService:
         run_id: str,
         sca: dict[str, Any],
     ) -> dict[str, Any]:
+        reasons: list[str] = []
+        verification: str | None = None
+        if envelope.get("runtimeExecution") is True:
+            verification, reasons = self._execute_runtime_session(envelope, sca)
         durable_status = self._runtime.evidence_status(
             repo=envelope["repo"],
             environment=envelope["env"],
@@ -1003,7 +1023,132 @@ class OrchestrationService:
         if "evidenceRef" in runtime:
             detail["runtimeEvidenceRef"] = runtime["evidenceRef"]
         self._stage(run_id, "STORING_EVIDENCE", detail)
+        if envelope.get("runtimeExecution") is True:
+            runtime["reasons"] = reasons
+            if verification is not None:
+                runtime["verification"] = verification
         return {"runtime": runtime}
+
+    def _execute_runtime_session(
+        self, envelope: dict[str, Any], sca: dict[str, Any]
+    ) -> tuple[str | None, list[str]]:
+        """Produce runtime session evidence from the SCA claim. Fail-closed:
+        every failure returns a closed-vocabulary reason and leaves SCA alone."""
+        from lineage_api.application.java_runtime_stage import (
+            java_home_or_none,
+            run_java_runtime_stage,
+        )
+        from lineage_api.application.runtime_emission import sdk_payloads, session_scope
+        from lineage_api.application.runtime_stage import (
+            catalog_element_resolver,
+            run_runtime_stage,
+        )
+        from lineage_api.domain.urns import LineageUrn
+        from lineage_api.services.resolver import ResolveContext
+        from lineage_api.services.runtime_verification import StaticEdge
+
+        edges = [
+            edge
+            for edge in sca["sca"]["edges"]
+            if "#" in str(edge.get("to", "")) and edge.get("from")
+        ]
+        if not edges:
+            return None, ["execution-failed"]
+        snapshot = self._snapshot_provider.resolve(envelope)
+        read = lambda path: snapshot.read_bytes(path).decode()
+        python_paths = [p for p in snapshot.paths if p.endswith(".py")]
+        java_paths = [p for p in snapshot.paths if p.endswith(".java")]
+        observed_at = self._clock()
+        envelope_platform = LineageUrn.parse(str(edges[0]["to"])).platform
+        observations: list[dict] = []
+        verdicts: list[str] = []
+        reasons: list[str] = []
+        if python_paths and self._resolver is not None:
+            try:
+                stage = run_runtime_stage(
+                    module_path=python_paths[0],
+                    module_source=read(python_paths[0]),
+                    static_edges=tuple(
+                        StaticEdge(
+                            str(e["from"][0]),
+                            str(e["to"]),
+                            str(e["edgeType"]),
+                            str(e.get("transform", "")),
+                        )
+                        for e in edges
+                    ),
+                    resolve=catalog_element_resolver(
+                        self._resolver,
+                        ResolveContext(
+                            env=envelope["env"],
+                            platform=envelope_platform,
+                            system=envelope["system"],
+                            repo=envelope["repo"],
+                            digest=envelope["digest"],
+                            config={},
+                            snapshot_id=self._resolver.snapshot_id,
+                        ),
+                    ),
+                    observed_at=observed_at,
+                    allow_execution=True,
+                )
+                observations += list(stage.observations)
+                verdicts.append(stage.verdict)
+            except Exception:
+                reasons.append("execution-failed")
+        if java_paths:
+            java_home = java_home_or_none()
+            if java_home is None:
+                reasons.append("jvm-unavailable")
+            else:
+                try:
+                    stage = run_java_runtime_stage(
+                        sources={p: read(p) for p in java_paths},
+                        static_edges=edges,
+                        observed_at=observed_at,
+                        java_home=java_home,
+                    )
+                    observations += list(stage.observations)
+                    verdicts.append(stage.verdict)
+                except Exception:
+                    reasons.append("execution-failed")
+        if not observations:
+            return _combined_verdict(verdicts), reasons or ["execution-failed"]
+        payloads = sdk_payloads(
+            observations,
+            artifact_digest=envelope["digest"],
+            run_id=str(envelope["eventId"]),
+        )
+        try:
+            grant = self._runtime.grant_session(
+                repo=envelope["repo"],
+                environment=envelope["env"],
+                artifact_digest=envelope["digest"],
+                datasets=session_scope(observations),
+                ttl_seconds=300,
+                actor="collection-orchestrator",
+            )
+            session_id, token = str(grant["sessionId"]), str(grant["token"])
+            self._runtime.mark_ready(session_id, token)
+            for payload in payloads:
+                self._runtime.observe(session_id, token, "SDK", payload)
+            self._runtime.begin_drain(session_id, token)
+            manifest = self._runtime.close(
+                session_id,
+                token,
+                expected_observations=len(payloads),
+                drained=True,
+            )
+        except DomainError as error:
+            code = (
+                "session-denied"
+                if error.code == "RUNTIME_PRODUCTION_DENIED"
+                else "observation-rejected"
+            )
+            return _combined_verdict(verdicts), [*reasons, code]
+        if manifest.get("outcome") != "COMPLETE":
+            return _combined_verdict(verdicts), [*reasons, "session-incomplete"]
+        return _combined_verdict(verdicts), reasons
 
     @staticmethod
     def _valid_runtime_assertions(value: object) -> bool:

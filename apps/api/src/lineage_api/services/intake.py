@@ -111,6 +111,8 @@ class IntakeService:
         runtime_observation = payload.get("runtimeObservation")
         if isinstance(runtime_observation, dict):
             envelope["runtimeObservation"] = runtime_observation
+        if payload.get("runtimeExecution") is True:
+            envelope["runtimeExecution"] = True
         repository_source = payload.get("repositorySource")
         if repository_source is not None:
             normalized_source = _repository_source(repository_source, repo)
