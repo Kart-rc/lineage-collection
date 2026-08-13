@@ -1053,10 +1053,22 @@ class OrchestrationService:
         from lineage_api.services.resolver import ResolveContext
         from lineage_api.services.runtime_verification import StaticEdge
 
+        def _is_element_scoped_dataset_urn(value: str) -> bool:
+            # A raw '#' substring is not proof of element scope: a Java analyzer's `to`
+            # can be a `service://repo/Owner#findAll` endpoint URN, whose '#' separates
+            # method from type, not dataset from column. Only a `urn:ldp:` dataset URN
+            # with a real `.element` is element scope.
+            if "#" not in value:
+                return False
+            try:
+                return LineageUrn.parse(value).element is not None
+            except ValueError:
+                return False
+
         edges = [
             edge
             for edge in sca["sca"]["edges"]
-            if "#" in str(edge.get("to", "")) and edge.get("from")
+            if _is_element_scoped_dataset_urn(str(edge.get("to", ""))) and edge.get("from")
         ]
         if not edges:
             return None, ["execution-failed"]
