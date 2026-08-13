@@ -30,22 +30,38 @@ added the `endpoint` SDK payload form (`application/runtime_emission.py`, `servi
 runtime.py:_parse_sdk`) so a service-anchored element edge can be observed at all, and
 added the matching `merge_runtime_observation` endpoint branch (exact string equality on
 the service side, catalog-resolved URN on the dataset side, never `LineageUrn.parse` on
-the service URN). `VisitRepository.findByPetId(In)`'s element edge is now genuinely
-selected and handed to the Java runtime stage -- but band HIGH still is not reached here,
-because the stage's harness compiles every `.java` path in the whole multi-module
-checkout (including unrelated services' Spring Boot entry points, which need dependencies
-the harness's classpath does not have), so the real run fails with a `javac` error before
-it ever gets to witness a field. Runtime execution therefore still fails closed with
-`execution-failed`, and every consolidated edge still stays at band SINGLE -- for a
-different, more advanced reason than before 6c. Narrowing the harness's compile scope to
-entity/repository/injection-site files is Task 6d's job, not this one's.
+the service URN). `VisitRepository.findByPetId(In)`'s element edge was genuinely selected
+and handed to the Java runtime stage -- but band HIGH was not reached yet, because the
+stage's harness compiled every `.java` path in the whole multi-module checkout (including
+unrelated services' Spring Boot entry points, which need dependencies the harness's
+classpath does not have), so the real run failed with a `javac` error before it ever got
+to witness a field.
 
-This test now locks the Task 6c state: at least one element-scoped SCA edge is on the
-consolidated graph (Task 6b), the selection/wiring genuinely reaches the Java runtime
-stage for it (Task 6c), and band HIGH and the runtime status stay exactly what they were
-before 6c -- because the harness compile-scope wall, not the selection wall, is what now
-stands between this checkout and HIGH. Any future change that alters this state without
-being a deliberate, reviewed step of 6d should fail this test.
+Task 6d (see `task-6d-report.md`) narrowed the harness's compile scope: `java_runtime_stage
+.select_relevant_java_sources` first scopes the checkout down to the Maven module(s) that
+declare a type one of the edges under verification actually names (read off the edge's own
+`service://repo/FQCN#method` endpoint -- never guessed), then within that module to files
+matching the entity/repository/injection-site shapes `java_runtime_verification` already
+reads. `java_runtime_verification.generate_harness` also grew the framework-annotation
+stubs a real Spring MVC/Bean-Validation/JPA-column source imports (`generate_stub_sources`)
+and switched from a fixed `example` package with `new Type(...)` construction to a fully
+reflective one (`Class.forName` + `setAccessible`, `qualified_type_names` reading each
+type's real `package` declaration) -- petclinic's own `VisitResource` is package-private,
+which a compile-time `new VisitResource(...)` from the harness's own package cannot
+construct. With these three fixes, the harness genuinely compiles and runs on the real
+`visits-service` module, and the generated proxy genuinely witnesses `VisitRepository`'s
+`findByPetId`/`findByPetIdIn` call against `visits`, including the `petId` field --
+corroborating `visits#pet_id -> VisitResource#read` to band HIGH / display VERIFIED 92%.
+
+This test now locks the Task 6d state: at least one element-scoped SCA edge is on the
+consolidated graph (Task 6b), the Java runtime stage genuinely compiles, runs, and
+witnesses it (Task 6c selection + Task 6d compile-scope narrowing), and at least one
+consolidated edge reaches band HIGH with SCA+RUNTIME provenance on the real, unmodified
+upstream checkout -- the goal's stop condition. The rest of the graph (owners, pets,
+types, vets) stays at band SINGLE: those edges are dataset-scoped only (no provable
+per-column fact) or cross-entity JPQL projections this seam correctly refuses to witness
+(see the Task 6 addendum), so they are asserted to stay exactly where they are, not
+silently allowed to drift toward HIGH too.
 
 One real bug *was* found and fixed by the Task 6 iteration, and is covered here too:
 before the fix, `_execute_runtime_session` treated any `#` in an edge's `to` as proof of
@@ -77,6 +93,7 @@ from lineage_api.application.repository_sources import (
 )
 from lineage_api.config import Settings
 from lineage_api.dependencies import build_services
+from lineage_api.domain.product_confidence import project_confidence
 from lineage_api.domain.urns import LineageUrn, is_element_scoped_dataset_urn
 
 
@@ -177,7 +194,7 @@ def _is_element_scoped_edge(edge: dict) -> bool:
     )
 
 
-def test_petclinic_collects_through_the_product_path_with_element_edges_but_still_no_runtime_corroboration() -> None:
+def test_petclinic_reaches_band_high_through_the_product_path() -> None:
     revision = _revision()
     snapshot = _snapshot(revision)
     descriptor = _descriptor(snapshot)
@@ -220,16 +237,49 @@ def test_petclinic_collects_through_the_product_path_with_element_edges_but_stil
             for edge in element_scoped
         )
 
-        # Still a wall, but a different one now (see module docstring and
-        # task-6c-report.md): the selection genuinely reaches the Java runtime stage for
-        # this READS edge (element on `from`) since Task 6c, but the harness's own compile
-        # scope (every `.java` path in the whole multi-module checkout) fails to build, so
-        # the stage never gets to witness a field. No edge reaches HIGH yet. Narrowing the
-        # harness's compile scope is Task 6d's job.
-        assert high == []
-        assert summary["runtimeStatus"] == "NOT_PROVIDED"
-        assert summary["runtimeReasons"] == ["execution-failed"]
-        assert all(edge["band"] == "SINGLE" for edge in edges), [e["band"] for e in edges]
+        # Task 6d's stop condition: the harness's compile scope narrows to a module the
+        # edge under test actually names, framework stubs and reflective construction
+        # let it genuinely compile and run, and the generated proxy genuinely witnesses
+        # `VisitRepository.findByPetId(In)` against `visits` -- including the `petId`
+        # field -- so this edge reaches band HIGH with real SCA+RUNTIME provenance.
+        assert high, "expected at least one consolidated edge at band HIGH (Task 6d)"
+        assert summary["runtimeStatus"] == "CORROBORATED"
+        assert summary["runtimeReasons"] == []
+
+        visits_pet_id_high = [
+            edge
+            for edge in high
+            if str(edge["to"]).endswith(
+                "org.springframework.samples.petclinic.visits.web.VisitResource#read"
+            )
+            and any(
+                str(urn).endswith(":visits#pet_id")
+                for urn in (
+                    edge["from"] if isinstance(edge["from"], (list, tuple)) else [edge["from"]]
+                )
+            )
+        ]
+        assert visits_pet_id_high, [
+            (e["from"], e["to"]) for e in high
+        ]
+        target = visits_pet_id_high[0]
+        mechanisms = {p["mechanism"] for p in target["provenance"]}
+        assert mechanisms == {"SCA", "RUNTIME"}
+        assert target["corroboration"] == "ELEMENT"
+
+        display = project_confidence(target["band"], target["provenance"])
+        assert display.display_band == "VERIFIED"
+        assert display.percent == 92
+
+        # Honest about the rest of the graph: every other edge -- dataset-scoped reads/
+        # writes over owners/pets/types/vets, and the cross-entity JPQL projections the
+        # Task 6 addendum documents as correctly unwitnessable by this seam -- stays at
+        # band SINGLE. Runtime corroboration never drifts onto edges this seam cannot
+        # actually witness.
+        non_target = [e for e in edges if e is not target]
+        assert all(edge["band"] == "SINGLE" for edge in non_target), [
+            (e["from"], e["to"], e["band"]) for e in non_target if e["band"] != "SINGLE"
+        ]
 
         # The regression this test guards at full scale: a Java READ edge's `to` is a
         # `service://repo/Type#method` endpoint URN. Its '#' must never be mistaken for

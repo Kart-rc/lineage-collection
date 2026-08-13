@@ -168,24 +168,50 @@ def test_a_java_read_edges_service_endpoint_hash_never_crashes_runtime_execution
     Before the fix, `_execute_runtime_session` treated any `#` in `to` as proof of
     element scope and handed the raw string to `LineageUrn.parse`, which raised for a
     `service://` URN and turned the whole collection into `PIPELINE_FAILED`. The correct
-    behaviour is to fail closed: no element-scoped SCA edge exists for this fixture (a
-    Spring Data JPA repository read/write is dataset-scoped only), so runtime execution
-    is skipped with `execution-failed` and every edge stays at band SINGLE — proven, not
-    invented.
+    behaviour is to fail closed instead of crashing.
+
+    Before Task 6d, this fixture's own `javac` invocation always failed anyway (the
+    harness compiled every `.java` path in the whole checkout, including files the
+    generated harness's classpath could not satisfy), so "fails closed" and "the
+    checkout genuinely doesn't corroborate" were indistinguishable here. Task 6d's
+    compile-scope narrowing (`java_runtime_stage.select_relevant_java_sources`) plus
+    the harness's new framework stubs and reflective construction
+    (`java_runtime_verification.generate_harness`) mean this fixture's `javac`
+    invocation now genuinely succeeds: `OwnerController.findByLastName` really is
+    invoked against a proxy that reports `owners`/`last_name`, corroborating
+    `owners#last_name -> OwnerController#findByLastName` to band HIGH. This test's
+    purpose — a Java READ edge's endpoint '#' must never crash runtime execution — still
+    holds; it is extended to assert the new, real outcome instead of the coincidental
+    compile failure that used to stand in for it.
     """
     descriptor = _java_descriptor(_java_snapshot())
 
     summary = services.repository_collection.collect(descriptor, runtime_execution=True)
     assert summary["outcome"] == "ACCEPTED"
-    assert summary["runtimeStatus"] == "NOT_PROVIDED"
-    assert summary["runtimeReasons"] == ["execution-failed"]
+    assert summary["runtimeStatus"] == "CORROBORATED"
+    assert summary["runtimeReasons"] == []
 
     edges = [
         edge.as_dict() for edge in services.orchestration._consolidation._latest_edges()
     ]
     assert edges, "the java fixture must yield SCA edges for this regression to mean anything"
-    assert all(edge["band"] == "SINGLE" for edge in edges), [e["band"] for e in edges]
 
+    high = [edge for edge in edges if edge["band"] == "HIGH"]
+    assert high, [edge["band"] for edge in edges]
+    mechanisms = {p["mechanism"] for p in high[0]["provenance"]}
+    assert mechanisms == {"SCA", "RUNTIME"}
+    display = project_confidence(high[0]["band"], high[0]["provenance"])
+    assert display.display_band == "VERIFIED"
+    assert display.percent == 92
+
+    non_high = [edge for edge in edges if edge["band"] != "HIGH"]
+    assert all(edge["band"] == "SINGLE" for edge in non_high), [
+        edge["band"] for edge in non_high
+    ]
+
+    # The regression this test guards: a Java READ edge's `to` is a
+    # `service://repo/Type#method` endpoint URN. Its '#' must never be mistaken for
+    # element scope and must never crash `_execute_runtime_session`.
     read_edges = [edge for edge in edges if str(edge["to"]).startswith("service://")]
     assert read_edges, "expected at least one READ edge whose 'to' is a service endpoint"
     assert all("#" in edge["to"] for edge in read_edges)
