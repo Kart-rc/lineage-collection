@@ -91,7 +91,7 @@ def test_runtime_execution_absent_is_byte_identical_to_today(tmp_path) -> None:
 
     assert collected["outcome"] == "ACCEPTED"
     assert collected["runtimeStatus"] == "NOT_PROVIDED"
-    assert collected["runtimeReasons"] == []
+    assert "runtimeReasons" not in collected
     assert collected["evidenceManifest"]["runtime"] == {"status": "NOT_PROVIDED"}
 
     with services.database.connection() as connection:

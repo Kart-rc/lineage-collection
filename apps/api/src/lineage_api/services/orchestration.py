@@ -512,7 +512,7 @@ class OrchestrationService:
                 "I8", lambda: self._incremental_recheck(command, i1, i3, i6)
             )
             self._fail(i1["runId"], "ANALYZING", "INTEGRATION_REQUIRED")
-            return {
+            result = {
                 "outcome": "INTEGRATION_REQUIRED",
                 "reason": "INTEGRATION_REQUIRED",
                 "eventId": envelope["eventId"],
@@ -521,9 +521,11 @@ class OrchestrationService:
                 "coverageManifest": i8["coverageManifest"],
                 "analysis": i5["analysis"],
                 "runtimeStatus": i6["runtime"].get("verification") or i6["runtime"]["status"],
-                "runtimeReasons": i6["runtime"].get("reasons", []),
                 "resume": {"reusedStages": workflow.reused_stage_ids},
             }
+            if envelope.get("runtimeExecution") is True:
+                result["runtimeReasons"] = i6["runtime"].get("reasons", [])
+            return result
         i7 = workflow.checkpoint(
             "I7", lambda: self._incremental_consolidate(i1["runId"], i5, i6)
         )
@@ -537,7 +539,7 @@ class OrchestrationService:
             "I10",
             lambda: self._incremental_finalize(command, i5, i6, i7, i8, i9),
         )
-        return {
+        result = {
             "outcome": "ACCEPTED",
             "reason": None,
             "eventId": envelope["eventId"],
@@ -547,9 +549,11 @@ class OrchestrationService:
             "evidenceManifest": i10["evidenceManifest"],
             "analysis": i5["analysis"],
             "runtimeStatus": i6["runtime"].get("verification") or i6["runtime"]["status"],
-            "runtimeReasons": i6["runtime"].get("reasons", []),
             "resume": {"reusedStages": workflow.reused_stage_ids},
         }
+        if envelope.get("runtimeExecution") is True:
+            result["runtimeReasons"] = i6["runtime"].get("reasons", [])
+        return result
 
     def _run_baseline(
         self,
@@ -629,7 +633,7 @@ class OrchestrationService:
             lambda: self._baseline_finalize(command, b5, b6, b7, b8, b9, b2),
         )
         no_lineage = b9.get("decision") == "NO_LINEAGE"
-        return {
+        result = {
             "outcome": "NO_LINEAGE" if no_lineage else "ACCEPTED",
             "reason": "NO_LINEAGE_EVIDENCE" if no_lineage else None,
             "eventId": envelope["eventId"],
@@ -638,9 +642,11 @@ class OrchestrationService:
             "coverageManifest": b8["coverageManifest"],
             "evidenceManifest": b10["evidenceManifest"],
             "runtimeStatus": b6["runtime"].get("verification") or b6["runtime"]["status"],
-            "runtimeReasons": b6["runtime"].get("reasons", []),
             "resume": {"reusedStages": workflow.reused_stage_ids},
         }
+        if envelope.get("runtimeExecution") is True:
+            result["runtimeReasons"] = b6["runtime"].get("reasons", [])
+        return result
 
     def _baseline_pins(self, envelope: dict[str, Any]) -> dict[str, Any]:
         selection = AnalyzerSelection.from_envelope(envelope)

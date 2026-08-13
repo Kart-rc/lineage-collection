@@ -311,7 +311,6 @@ class RepositoryCollectionService:
             "runtimeReasons": (
                 list(result.get("runtimeReasons"))
                 if isinstance(result.get("runtimeReasons"), list)
-                and result.get("runtimeReasons")
                 else ["not-requested"]
             ),
             "analysisStatus": analysis.get("status"),
