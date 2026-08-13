@@ -158,6 +158,18 @@ _RESIDUE_CODES = frozenset(
         "unsupported-jpa-version",
         "unsupported-sql",
         "wildcard-framework-symbol",
+        # Migration-replay vocabulary: `_ingest_migrations` forwards residue produced
+        # by `schema_migrations` verbatim, so that closed set is part of this one.
+        "ambiguous-migration-version",
+        "malformed-changelog",
+        "malformed-migration-sql",
+        "missing-changelog-include",
+        "repeatable-migration-excluded",
+        "unknown-migration-table",
+        "unmodelled-changelog-change",
+        "unmodelled-migration-statement",
+        "unrecognised-migration-name",
+        "unsupported-changelog-format",
     }
 )
 

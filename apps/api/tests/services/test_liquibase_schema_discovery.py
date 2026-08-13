@@ -67,3 +67,45 @@ def test_a_column_added_by_a_later_changeset_is_in_the_schema() -> None:
 
     transforms = {edge["transform"] for edge in result.document["edges"]}
     assert "InvoiceRepository.findByCurrency -> invoices" in transforms
+
+
+class _SnapshotWithUnmodelledChange(_Snapshot):
+    """The fixture repo, with one changelog change type the replay cannot model."""
+
+    _TARGET = "src/main/resources/db/changelog/changes/002-add-currency.xml"
+    _EXTENDED = b"""<databaseChangeLog xmlns="http://www.liquibase.org/xml/ns/dbchangelog">
+  <changeSet id="2" author="billing">
+    <addColumn tableName="invoices">
+      <column name="currency" type="char(3)"/>
+    </addColumn>
+  </changeSet>
+  <changeSet id="3" author="billing">
+    <dropColumn tableName="invoices" columnName="draft_note"/>
+  </changeSet>
+  <changeSet id="4" author="billing">
+    <addForeignKeyConstraint baseTableName="invoices" baseColumnNames="account_id"
+      referencedTableName="accounts" referencedColumnNames="id"
+      constraintName="fk_invoices_account"/>
+  </changeSet>
+</databaseChangeLog>
+"""
+
+    def read_bytes(self, relative_path: str) -> bytes:
+        if relative_path == self._TARGET:
+            return self._EXTENDED
+        return super().read_bytes(relative_path)
+
+
+def test_an_unmodelled_changelog_change_is_residue_not_a_crash() -> None:
+    """schema_migrations residue codes must be forwardable into the cell's residue.
+
+    Real-world changelogs (e.g. jhipster's) routinely contain change types the replay
+    does not model. That must surface as honest residue forcing INTEGRATION_REQUIRED,
+    never as a JavaSpringAnalysisError crash that fails the whole collection.
+    """
+    result = AnalyzerRegistry.default().analyze(
+        _SnapshotWithUnmodelledChange(), SELECTION, "run", "corr"
+    )
+
+    assert result.status == "INTEGRATION_REQUIRED"
+    assert "unmodelled-changelog-change" in result.status_reasons
