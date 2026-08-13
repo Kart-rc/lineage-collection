@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
+import shutil
 from pathlib import Path
 
 from lineage_api.config import Settings
@@ -147,3 +148,63 @@ def test_runtime_failure_degrades_with_reason_and_leaves_sca_untouched(tmp_path)
     assert denied_edges == baseline_edges
     assert baseline["analysis"]["status"] == collected["analysis"]["status"]
     assert baseline["analysis"]["edgeCount"] == collected["analysis"]["edgeCount"]
+
+
+def test_partial_seam_failure_keeps_verdict_when_the_other_seam_completes_a_session(
+    tmp_path, monkeypatch
+) -> None:
+    from lineage_api.dependencies import build_services
+    from lineage_api.services.intake import PushDelivery
+
+    # A private copy of the fixture tree so a dummy .java path can be added without
+    # touching the checked-in fixtures other tests (e.g. baseline scope) depend on.
+    fixture_root = tmp_path / "fixtures"
+    shutil.copytree(PROJECT_ROOT / "fixtures", fixture_root)
+    (fixture_root / "repositories" / "payments-pipeline" / "Dummy.java").write_text(
+        "// dummy source; java_home_or_none is patched unavailable before this compiles\n"
+    )
+
+    settings = Settings(
+        project_root=PROJECT_ROOT,
+        data_directory=tmp_path / "data",
+        fixture_directory=fixture_root,
+        database_path=tmp_path / "data" / "lineage.db",
+        object_directory=tmp_path / "data" / "objects",
+        webhook_secret=SECRET,
+    )
+    services = build_services(settings)
+    services.reset()
+
+    import lineage_api.application.java_runtime_stage as java_runtime_stage
+
+    monkeypatch.setattr(java_runtime_stage, "java_home_or_none", lambda: None)
+
+    payload = {
+        "eventId": "delivery-mixed-seam",
+        "eventType": "repo.push",
+        "repo": "payments-pipeline",
+        "digest": "demo-digest-mixed-seam",
+        "env": "staging",
+        "system": "payments",
+        "changedFiles": ["pipeline.py", "Dummy.java"],
+        "receivedAt": "2026-08-04T16:00:00Z",
+        "runtimeExecution": True,
+    }
+    body = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
+    signature = hmac.new(SECRET.encode(), body, hashlib.sha256).hexdigest()
+
+    collected = services.orchestration.process_push(
+        PushDelivery(payload, f"sha256={signature}")
+    )
+
+    assert collected["runtimeStatus"] == "CORROBORATED"
+    assert collected["runtimeReasons"] == ["jvm-unavailable"]
+
+    with services.database.connection() as connection:
+        row = connection.execute(
+            "SELECT outcome FROM runtime_sessions WHERE repo = ? AND environment = ? "
+            "AND artifact_digest = ?",
+            ("payments-pipeline", "staging", "demo-digest-mixed-seam"),
+        ).fetchone()
+    assert row is not None
+    assert row["outcome"] == "COMPLETE"
