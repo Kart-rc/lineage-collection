@@ -93,9 +93,7 @@ Sequence: grant a session via `RuntimeLineageService.grant_session` → `generat
 
 ### Task 4: Surface the verdict
 
-- [ ] Replace the hardcoded `runtimeStatus: NOT_PROVIDED` in the collection status document with the stage's verdict.
-- [ ] Assert in a test that a collection which ran the stage reports `CORROBORATED`, and one that did not still reports `NOT_PROVIDED` — the honest default.
-- [ ] Update `docs/prototype-coverage.md` L06 and the runtime design doc's §5, which currently states the loop is "not yet on the collection path."
+- [x] **Complete** — see `/docs/superpowers/plans/2026-08-12-runtime-collection-product-path.md` Task 7.
 
 ---
 
