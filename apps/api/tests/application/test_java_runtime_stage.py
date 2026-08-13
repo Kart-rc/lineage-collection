@@ -42,3 +42,14 @@ def test_element_observations_take_stage_shape():
     assert observations[0]["runtimeScope"] == "ELEMENT"
     assert observations[0]["sessionComplete"] is True
     assert observations[0]["from"] == EDGE["from"]
+
+
+def test_dataset_scope_edge_is_ignored_not_unmatched():
+    dataset_edge = {
+        "from": ["urn:ldp:staging:postgres:petclinic:owners"],
+        "to": "urn:ldp:staging:postgres:petclinic:owners",
+        "edgeType": "WRITE",
+    }
+    matched, unmatched = match_edges([dataset_edge, EDGE], [OBS])
+    assert matched == [EDGE]
+    assert dataset_edge not in matched and dataset_edge not in unmatched

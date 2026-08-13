@@ -42,7 +42,11 @@ def match_edges(
 ) -> tuple[list[dict], list[dict]]:
     matched: list[dict] = []
     unmatched: list[dict] = []
-    for edge in static_edges:
+    # Dataset-scope edges (no "#" in `to`) are not claims this element seam can judge —
+    # it only ever witnesses table+field pairs — so they are neither corroborated nor
+    # static_only; they are simply excluded from the verdict this stage computes.
+    element_edges = [edge for edge in static_edges if "#" in str(edge["to"])]
+    for edge in element_edges:
         table, element, operation = _edge_parts(edge)
         witnessed = any(
             observation.table == table
