@@ -126,6 +126,7 @@ def test_runtime_failure_degrades_with_reason_and_leaves_sca_untouched(tmp_path)
     )
 
     assert collected["outcome"] == "ACCEPTED"
+    assert collected["runtimeStatus"] == "NOT_PROVIDED"
     assert collected["runtimeReasons"] == ["session-denied"]
 
     with services.database.connection() as connection:

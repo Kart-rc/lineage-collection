@@ -1113,7 +1113,7 @@ class OrchestrationService:
                 except Exception:
                     reasons.append("execution-failed")
         if not observations:
-            return _combined_verdict(verdicts), reasons or ["execution-failed"]
+            return None, reasons or ["execution-failed"]
         payloads = sdk_payloads(
             observations,
             artifact_digest=envelope["digest"],
@@ -1145,9 +1145,9 @@ class OrchestrationService:
                 if error.code == "RUNTIME_PRODUCTION_DENIED"
                 else "observation-rejected"
             )
-            return _combined_verdict(verdicts), [*reasons, code]
+            return None, [*reasons, code]
         if manifest.get("outcome") != "COMPLETE":
-            return _combined_verdict(verdicts), [*reasons, "session-incomplete"]
+            return None, [*reasons, "session-incomplete"]
         return _combined_verdict(verdicts), reasons
 
     @staticmethod
