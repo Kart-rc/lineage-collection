@@ -285,19 +285,26 @@ class AnalyzerRegistry:
             )
         )
 
-    def resolve(self, selection: AnalyzerSelection) -> AnalyzerDefinition:
+    def resolve_pack(self, analyzer_pack: str) -> AnalyzerDefinition:
+        """Look up a pack's own registered determinants (source kind, framework, ...).
+
+        Unlike `resolve`, this does not validate a caller-supplied selection against
+        the registry; it answers "what does this pack actually require", which is
+        exactly what callers need when they must *construct* a selection (or a source
+        descriptor) for a pack rather than merely check one they were handed.
+        """
         definition = next(
-            (
-                item
-                for item in self._definitions
-                if item.analyzer_pack == selection.analyzer_pack
-            ),
+            (item for item in self._definitions if item.analyzer_pack == analyzer_pack),
             None,
         )
         if definition is None:
             raise AnalyzerSelectionError(
                 "UNKNOWN_ANALYZER_PACK", "analyzer pack is outside the closed registry"
             )
+        return definition
+
+    def resolve(self, selection: AnalyzerSelection) -> AnalyzerDefinition:
+        definition = self.resolve_pack(selection.analyzer_pack)
         checks = (
             (
                 selection.ruleset == definition.ruleset,
@@ -592,8 +599,9 @@ class PinnedSnapshotProvider:
             raise AnalyzerSelectionError(
                 "INVALID_SOURCE_DESCRIPTOR", "exact checkout source descriptor is required"
             )
+        definition = AnalyzerRegistry.default().resolve_pack(self._snapshot.analyzer_pack)
         expected = {
-            "sourceKind": "git-checkout",
+            "sourceKind": definition.source_kind,
             "origin": self._snapshot.origin,
             "revision": self._snapshot.revision,
             "scopeDigest": self._snapshot.scope_digest,
@@ -605,7 +613,7 @@ class PinnedSnapshotProvider:
             .disposition_digest,
             "analyzerPack": self._snapshot.analyzer_pack,
             "ruleset": self._snapshot.ruleset,
-            "framework": "spring-data-jpa",
+            "framework": definition.framework,
             "schemaProfile": source.get("schemaProfile"),
             "platform": self._snapshot.platform,
         }
@@ -1046,23 +1054,24 @@ class _JavaSpringAnalyzerAdapter:
 def canonical_source_metadata(
     snapshot: RepositorySnapshot, *, schema_profile: str
 ) -> dict[str, str]:
+    definition = AnalyzerRegistry.default().resolve_pack(snapshot.analyzer_pack)
     selection = AnalyzerSelection(
         analyzer_pack=snapshot.analyzer_pack,
         ruleset=snapshot.ruleset,
-        source_kind="git-checkout",
-        framework="spring-data-jpa",
+        source_kind=definition.source_kind,
+        framework=definition.framework,
         schema_profile=schema_profile,
     )
     source_scope = AnalyzerRegistry.default().source_scope(snapshot, selection)
     return {
-        "sourceKind": "git-checkout",
+        "sourceKind": definition.source_kind,
         "origin": snapshot.origin,
         "revision": snapshot.revision,
         "scopeDigest": snapshot.scope_digest,
         "scopeDispositionDigest": source_scope.disposition_digest,
         "analyzerPack": snapshot.analyzer_pack,
         "ruleset": snapshot.ruleset,
-        "framework": "spring-data-jpa",
+        "framework": definition.framework,
         "schemaProfile": schema_profile,
         "platform": snapshot.platform,
     }
