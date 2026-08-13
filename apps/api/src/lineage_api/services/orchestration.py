@@ -29,7 +29,7 @@ from lineage_api.services.intake import IntakeService, PushDelivery
 from lineage_api.services.publisher import PublisherService
 from lineage_api.services.resolver import Resolver
 from lineage_api.services.review import ReviewService
-from lineage_api.services.runtime import RuntimeLineageService
+from lineage_api.services.runtime import SELF_GRANTED_RUNTIME_ACTOR, RuntimeLineageService
 
 
 def _utc_now() -> str:
@@ -43,6 +43,34 @@ def _combined_verdict(verdicts: list[str]) -> str | None:
     if all(v == "CORROBORATED" for v in real):
         return "CORROBORATED"
     return "PARTIALLY_CORROBORATED"
+
+
+def _runtime_status_for_summary(envelope: dict[str, Any], runtime: dict[str, Any]) -> Any:
+    """The `runtimeStatus` value surfaced on a collection summary.
+
+    When `runtime_execution=True` was requested, this field is contractually one of
+    the closed CORROBORATED | PARTIALLY_CORROBORATED | NOT_PROVIDED verdict values --
+    never the internal evidence-pipeline status (VALIDATED/REJECTED/INCOMPLETE/...),
+    which describes a different vocabulary entirely. Any execution failure (or a
+    verdict of "nothing corroborated") collapses to NOT_PROVIDED here, alongside the
+    closed-vocabulary `runtimeReasons`. When the flag was not set, this preserves the
+    original behaviour exactly (byte-identical default-off): the internal evidence
+    status is surfaced as-is, unchanged from before this collapsing was introduced.
+    """
+    if envelope.get("runtimeExecution") is True:
+        return runtime.get("verification") or "NOT_PROVIDED"
+    return runtime["status"]
+
+
+def _runtime_stage_diagnostic(stage: str, exc: Exception) -> dict[str, str]:
+    """Bounded, operator-facing diagnostic for a runtime stage that raised. Recorded
+    on run-stage detail only -- the closed-vocabulary wire `runtimeReasons` never
+    carries exception text, only the fixed "execution-failed" reason code."""
+    return {
+        "stage": stage,
+        "exceptionType": type(exc).__name__,
+        "message": str(exc)[:160],
+    }
 
 
 class TargetCommandProcessingError(RuntimeError):
@@ -520,7 +548,7 @@ class OrchestrationService:
                 "proposal": None,
                 "coverageManifest": i8["coverageManifest"],
                 "analysis": i5["analysis"],
-                "runtimeStatus": i6["runtime"].get("verification") or i6["runtime"]["status"],
+                "runtimeStatus": _runtime_status_for_summary(envelope, i6["runtime"]),
                 "resume": {"reusedStages": workflow.reused_stage_ids},
             }
             if envelope.get("runtimeExecution") is True:
@@ -548,7 +576,7 @@ class OrchestrationService:
             "coverageManifest": i8["coverageManifest"],
             "evidenceManifest": i10["evidenceManifest"],
             "analysis": i5["analysis"],
-            "runtimeStatus": i6["runtime"].get("verification") or i6["runtime"]["status"],
+            "runtimeStatus": _runtime_status_for_summary(envelope, i6["runtime"]),
             "resume": {"reusedStages": workflow.reused_stage_ids},
         }
         if envelope.get("runtimeExecution") is True:
@@ -641,7 +669,7 @@ class OrchestrationService:
             "proposal": b9["proposal"],
             "coverageManifest": b8["coverageManifest"],
             "evidenceManifest": b10["evidenceManifest"],
-            "runtimeStatus": b6["runtime"].get("verification") or b6["runtime"]["status"],
+            "runtimeStatus": _runtime_status_for_summary(envelope, b6["runtime"]),
             "resume": {"reusedStages": workflow.reused_stage_ids},
         }
         if envelope.get("runtimeExecution") is True:
@@ -957,8 +985,9 @@ class OrchestrationService:
     ) -> dict[str, Any]:
         reasons: list[str] = []
         verification: str | None = None
+        diagnostics: list[dict[str, str]] = []
         if envelope.get("runtimeExecution") is True:
-            verification, reasons = self._execute_runtime_session(envelope, sca)
+            verification, reasons, diagnostics = self._execute_runtime_session(envelope, sca)
         durable_status = self._runtime.evidence_status(
             repo=envelope["repo"],
             environment=envelope["env"],
@@ -1028,6 +1057,12 @@ class OrchestrationService:
         }
         if "evidenceRef" in runtime:
             detail["runtimeEvidenceRef"] = runtime["evidenceRef"]
+        if diagnostics:
+            # Diagnostic detail (exception type + a bounded message) for an
+            # execution-failed runtime stage. This is operator-facing run-stage
+            # detail only -- the wire-facing `runtimeReasons` vocabulary stays closed
+            # to "execution-failed" and never carries raw exception text.
+            detail["runtimeDiagnostics"] = diagnostics
         self._stage(run_id, "STORING_EVIDENCE", detail)
         if envelope.get("runtimeExecution") is True:
             runtime["reasons"] = reasons
@@ -1037,10 +1072,14 @@ class OrchestrationService:
 
     def _execute_runtime_session(
         self, envelope: dict[str, Any], sca: dict[str, Any]
-    ) -> tuple[str | None, list[str]]:
+    ) -> tuple[str | None, list[str], list[dict[str, str]]]:
         """Produce runtime session evidence from the SCA claim. Fail-closed:
-        every failure returns a closed-vocabulary reason and leaves SCA alone."""
+        every failure returns a closed-vocabulary reason and leaves SCA alone. Also
+        returns bounded diagnostics (exception type + truncated message) for any
+        execution-failed stage, for the caller to attach to run-stage detail -- never
+        to the closed-vocabulary reasons themselves."""
         from lineage_api.application.java_runtime_stage import (
+            is_java_service_anchored_edge,
             java_home_or_none,
             run_java_runtime_stage,
         )
@@ -1053,18 +1092,17 @@ class OrchestrationService:
         from lineage_api.services.resolver import ResolveContext
         from lineage_api.services.runtime_verification import StaticEdge
 
-        def _from_urns(edge: dict[str, Any]) -> list[str]:
-            value = edge.get("from") or []
-            items = value if isinstance(value, (list, tuple)) else [value]
-            return [str(item) for item in items]
-
         # Python selection is unchanged: only edges whose `to` is itself an
         # element-scoped ldp dataset URN are eligible -- the Python DERIVES pipeline
-        # never anchors an edge to a service endpoint. Java selection is wider: since
-        # element-ground Java SCA edges, a Java element edge's dataset#column side can
-        # land on EITHER end (READS: element in `from`, service endpoint in `to`;
-        # WRITES: reversed), so a Java edge is eligible when EITHER endpoint parses as
-        # an element-scoped ldp dataset URN.
+        # never anchors an edge to a service endpoint. Java selection is narrower than
+        # a simple either-end check: since element-ground Java SCA edges, a Java
+        # element edge's dataset#column side can land on EITHER end (READS: element in
+        # `from`, service endpoint in `to`; WRITES: reversed) -- but the OTHER end must
+        # be a `service://` endpoint. A Python-shape edge with an ldp element URN on
+        # BOTH ends carries no service anchor at all and must never enter the Java
+        # seam: nothing there witnesses a dataset-to-dataset transform, so admitting it
+        # risks a coincidental table-write observation "corroborating" a derivation
+        # that never executed.
         python_edges = [
             edge
             for edge in sca["sca"]["edges"]
@@ -1073,14 +1111,10 @@ class OrchestrationService:
         java_edges = [
             edge
             for edge in sca["sca"]["edges"]
-            if edge.get("from")
-            and (
-                is_element_scoped_dataset_urn(str(edge.get("to", "")))
-                or any(is_element_scoped_dataset_urn(urn) for urn in _from_urns(edge))
-            )
+            if edge.get("from") and is_java_service_anchored_edge(edge)
         ]
         if not python_edges and not java_edges:
-            return None, ["execution-failed"]
+            return None, ["execution-failed"], []
         snapshot = self._snapshot_provider.resolve(envelope)
         read = lambda path: snapshot.read_bytes(path).decode()
         python_paths = [p for p in snapshot.paths if p.endswith(".py")]
@@ -1089,6 +1123,7 @@ class OrchestrationService:
         observations: list[dict] = []
         verdicts: list[str] = []
         reasons: list[str] = []
+        diagnostics: list[dict[str, str]] = []
         if python_paths and self._resolver is not None and python_edges:
             envelope_platform = LineageUrn.parse(str(python_edges[0]["to"])).platform
             try:
@@ -1121,8 +1156,9 @@ class OrchestrationService:
                 )
                 observations += list(stage.observations)
                 verdicts.append(stage.verdict)
-            except Exception:
+            except Exception as exc:
                 reasons.append("execution-failed")
+                diagnostics.append(_runtime_stage_diagnostic("python", exc))
         if java_paths and java_edges:
             java_home = java_home_or_none()
             if java_home is None:
@@ -1137,15 +1173,18 @@ class OrchestrationService:
                     )
                     observations += list(stage.observations)
                     verdicts.append(stage.verdict)
-                except Exception:
+                except Exception as exc:
                     reasons.append("execution-failed")
+                    diagnostics.append(_runtime_stage_diagnostic("java", exc))
         if not observations:
-            return None, reasons or ["execution-failed"]
+            return None, reasons or ["execution-failed"], diagnostics
         payloads = sdk_payloads(
             observations,
             artifact_digest=envelope["digest"],
             run_id=str(envelope["eventId"]),
         )
+        session_id: str | None = None
+        token: str | None = None
         try:
             grant = self._runtime.grant_session(
                 repo=envelope["repo"],
@@ -1153,7 +1192,7 @@ class OrchestrationService:
                 artifact_digest=envelope["digest"],
                 datasets=session_scope(observations),
                 ttl_seconds=300,
-                actor="collection-orchestrator",
+                actor=SELF_GRANTED_RUNTIME_ACTOR,
             )
             session_id, token = str(grant["sessionId"]), str(grant["token"])
             self._runtime.mark_ready(session_id, token)
@@ -1172,10 +1211,35 @@ class OrchestrationService:
                 if error.code == "RUNTIME_PRODUCTION_DENIED"
                 else "observation-rejected"
             )
-            return None, [*reasons, code]
+            self._finalize_failed_self_granted_session(session_id, reason=code)
+            return None, [*reasons, code], diagnostics
         if manifest.get("outcome") != "COMPLETE":
-            return None, [*reasons, "session-incomplete"]
-        return _combined_verdict(verdicts), reasons
+            # `close()` above already drove the session to a terminal CLOSED state
+            # (outcome INCOMPLETE) -- this best-effort call is a no-op against an
+            # already-closed session today, kept for defense in depth against a
+            # future RuntimeLineageService that leaves a non-COMPLETE close open.
+            self._finalize_failed_self_granted_session(session_id, reason="session-incomplete")
+            return None, [*reasons, "session-incomplete"], diagnostics
+        return _combined_verdict(verdicts), reasons, diagnostics
+
+    def _finalize_failed_self_granted_session(
+        self, session_id: str | None, *, reason: str
+    ) -> None:
+        """Best-effort revoke of a session `_execute_runtime_session` granted for
+        itself but could not drive to a COMPLETE close. Terminates any session left in
+        a non-terminal lifecycle state (e.g. a mid-session observation rejection) so it
+        can never linger as READY/OBSERVING; `evidence_status` also excludes a
+        self-granted REVOKED session from contaminating a later evidence lookup. Never
+        raises: this is cleanup on an already-failed path, and must not turn a
+        fail-closed runtime failure into a hard collection failure."""
+        if session_id is None:
+            return
+        try:
+            self._runtime.revoke(
+                session_id, actor=SELF_GRANTED_RUNTIME_ACTOR, reason=reason
+            )
+        except DomainError:
+            pass
 
     @staticmethod
     def _valid_runtime_assertions(value: object) -> bool:

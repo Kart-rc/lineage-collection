@@ -45,6 +45,29 @@ def _from_urns(edge: dict) -> list[str]:
     return [str(item) for item in items]
 
 
+def _is_service_endpoint_urn(value: str) -> bool:
+    return value.startswith("service://")
+
+
+def is_java_service_anchored_edge(edge: dict) -> bool:
+    """True only when the edge has an ldp element-scoped dataset URN on exactly ONE
+    end and a `service://` endpoint URN on the other -- the only shape the Java seam
+    can ground. A Python-shape DERIVES edge (both ends ldp element URNs, no service
+    anchor at all) must be excluded: nothing here witnesses a dataset-to-dataset
+    transform, so admitting it risks a coincidental table-write observation
+    "corroborating" a derivation that never ran. A dataset-scope edge (neither end
+    element-scoped) is excluded the same way it always was. `from` must also carry
+    exactly one URN -- a service-anchored edge is never a multi-source merge.
+    """
+    to_urn = str(edge.get("to", ""))
+    from_urns = _from_urns(edge)
+    to_element = is_element_scoped_dataset_urn(to_urn)
+    from_element = any(is_element_scoped_dataset_urn(urn) for urn in from_urns)
+    if to_element == from_element or len(from_urns) != 1:
+        return False
+    return _is_service_endpoint_urn(from_urns[0] if to_element else to_urn)
+
+
 def _edge_parts(edge: dict) -> tuple[str, str, str]:
     """Locate the edge's element-scoped `dataset#column` side and derive an operation.
 
@@ -55,12 +78,13 @@ def _edge_parts(edge: dict) -> tuple[str, str, str]:
     Type#method` endpoint URN's own '#' never parses as an element-scoped ldp URN
     (`is_element_scoped_dataset_urn` guards that), so this never confuses the two.
     """
+    from_urns = _from_urns(edge)
+    assert len(from_urns) == 1, "service-anchored Java edge must carry exactly one from URN"
     to_urn = str(edge["to"])
     if is_element_scoped_dataset_urn(to_urn):
         table, element = _element_urn_parts(to_urn)
         return table, element, "WRITE"
-    from_urn = _from_urns(edge)[0]
-    table, element = _element_urn_parts(from_urn)
+    table, element = _element_urn_parts(from_urns[0])
     return table, element, "READ"
 
 
@@ -69,18 +93,14 @@ def match_edges(
 ) -> tuple[list[dict], list[dict]]:
     matched: list[dict] = []
     unmatched: list[dict] = []
-    # Dataset-scope edges (neither end an element-scoped ldp URN) are not claims this
-    # element seam can judge — it only ever witnesses table+field pairs — so they are
-    # neither corroborated nor static_only; they are simply excluded from the verdict
-    # this stage computes. A `service://repo/Type#method` endpoint's own '#' never
-    # counts as element scope either, so a Java READ edge's `to` never false-positives
-    # here.
-    element_edges = [
-        edge
-        for edge in static_edges
-        if is_element_scoped_dataset_urn(str(edge["to"]))
-        or any(is_element_scoped_dataset_urn(urn) for urn in _from_urns(edge))
-    ]
+    # Dataset-scope edges (neither end an element-scoped ldp URN) and both-ends-ldp
+    # edges (a Python-shape DERIVES edge with no `service://` anchor at all) are not
+    # claims this element seam can judge — it only ever witnesses table+field pairs
+    # reached through a service call — so they are neither corroborated nor
+    # static_only; they are simply excluded from the verdict this stage computes.
+    # Defense in depth: this mirrors (does not just rely on) the caller's own
+    # eligibility filter.
+    element_edges = [edge for edge in static_edges if is_java_service_anchored_edge(edge)]
     for edge in element_edges:
         table, element, operation = _edge_parts(edge)
         witnessed = any(
@@ -168,6 +188,31 @@ def select_relevant_java_sources(
     }
 
 
+def _minimal_subprocess_env(java_home: str | None) -> dict[str, str]:
+    """A minimal environment for compiling and running repo-derived Java code.
+
+    Only PATH (to resolve the OS's own shared libraries/tools) and JAVA_HOME (when a
+    JVM was resolved from one) are passed through, plus HOME/TMPDIR when the host
+    process has them -- the JVM itself can genuinely consult these (e.g. user
+    preferences, class data sharing, temp file placement) even though this harness
+    always names an explicit working directory. Nothing else from the orchestrator's
+    own environment -- secrets, cloud credentials, unrelated service config -- is
+    passed through to `javac`/`java` while they execute code drawn from the repo
+    under collection.
+    """
+    env: dict[str, str] = {}
+    path = os.environ.get("PATH")
+    if path:
+        env["PATH"] = path
+    if java_home:
+        env["JAVA_HOME"] = java_home
+    for key in ("HOME", "TMPDIR"):
+        value = os.environ.get(key)
+        if value:
+            env[key] = value
+    return env
+
+
 def run_java_runtime_stage(
     *,
     sources: Mapping[str, str],
@@ -182,6 +227,7 @@ def run_java_runtime_stage(
     prefix = (Path(java_home) / "bin") if java_home else Path("")
     javac = str(prefix / "javac") if java_home else "javac"
     java = str(prefix / "java") if java_home else "java"
+    env = _minimal_subprocess_env(java_home)
     with tempfile.TemporaryDirectory() as workdir:
         root = Path(workdir)
         files = []
@@ -193,11 +239,11 @@ def run_java_runtime_stage(
                 files.append(str(path))
         subprocess.run(
             [javac, "-d", str(root / "classes"), *files],
-            check=True, capture_output=True, timeout=120,
+            check=True, capture_output=True, timeout=120, env=env,
         )
         completed = subprocess.run(
             [java, "-cp", str(root / "classes"), "harness.GeneratedRuntimeTest"],
-            check=True, capture_output=True, text=True, timeout=120,
+            check=True, capture_output=True, text=True, timeout=120, env=env,
         )
     observations = parse_observations(completed.stdout)
     matched, unmatched = match_edges(static_edges, observations)

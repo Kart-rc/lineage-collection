@@ -150,6 +150,111 @@ def test_runtime_failure_degrades_with_reason_and_leaves_sca_untouched(tmp_path)
     assert baseline["analysis"]["edgeCount"] == collected["analysis"]["edgeCount"]
 
 
+# --- Critical 1: a mid-session observation rejection must degrade to NOT_PROVIDED
+# (never leak the internal INCOMPLETE evidence status) and must not leave a dangling,
+# non-terminal self-granted session that contaminates a later collection.
+
+
+def test_mid_session_observation_rejection_degrades_to_not_provided_and_revokes_session(
+    tmp_path,
+) -> None:
+    from lineage_api.dependencies import build_services
+    from lineage_api.domain.errors import DomainError
+
+    services = build_services(_settings(tmp_path))
+    services.reset()
+
+    def _reject_observation(*args, **kwargs):
+        raise DomainError(
+            "RUNTIME_SCOPE_VIOLATION",
+            "Runtime observation references a dataset outside the signed session scope",
+            "runtime-test",
+        )
+
+    services.orchestration._runtime.observe = _reject_observation
+
+    collected = services.orchestration.process_push(
+        _delivery(
+            "delivery-mid-session-rejection",
+            digest="demo-digest-mid-session-rejection",
+            runtime_execution=True,
+        )
+    )
+
+    assert collected["outcome"] == "ACCEPTED"
+    assert collected["runtimeStatus"] == "NOT_PROVIDED"
+    assert collected["runtimeReasons"] == ["observation-rejected"]
+
+    with services.database.connection() as connection:
+        rows = connection.execute(
+            "SELECT state, outcome, actor FROM runtime_sessions WHERE repo = ? "
+            "AND environment = ? AND artifact_digest = ?",
+            ("payments-pipeline", "staging", "demo-digest-mid-session-rejection"),
+        ).fetchall()
+    # Exactly one session was self-granted for this attempt, and it was driven to a
+    # terminal CLOSED/REVOKED state -- never left dangling in READY/OBSERVING with
+    # outcome=None.
+    assert len(rows) == 1
+    assert rows[0]["state"] == "CLOSED"
+    assert rows[0]["outcome"] == "REVOKED"
+    assert rows[0]["actor"] == "collection-orchestrator"
+
+
+def test_subsequent_default_off_collection_of_same_digest_is_not_provided(tmp_path) -> None:
+    from lineage_api.application.repository_collection import RepositoryCollectionService
+    from lineage_api.dependencies import build_services
+    from lineage_api.domain.errors import DomainError
+
+    services = build_services(_settings(tmp_path))
+    services.reset()
+
+    def _reject_observation(*args, **kwargs):
+        raise DomainError(
+            "RUNTIME_SCOPE_VIOLATION",
+            "Runtime observation references a dataset outside the signed session scope",
+            "runtime-test",
+        )
+
+    services.orchestration._runtime.observe = _reject_observation
+    services.orchestration.process_push(
+        _delivery(
+            "delivery-mid-session-rejection-2",
+            digest="demo-digest-later-default-off",
+            runtime_execution=True,
+        )
+    )
+    # Restore normal observation handling before the later, unrelated default-off
+    # collection -- only the earlier self-granted session's REVOKED outcome should be
+    # in play here.
+    del services.orchestration._runtime.observe
+
+    later = services.orchestration.process_push(
+        _delivery(
+            "delivery-later-default-off",
+            digest="demo-digest-later-default-off",
+            runtime_execution=False,
+        )
+    )
+
+    assert later["outcome"] == "ACCEPTED"
+    assert later["runtimeStatus"] == "NOT_PROVIDED"
+    # `RepositoryCollectionService._summarize` is what actually stamps the
+    # ["not-requested"] default onto the wire result when `runtimeReasons` is absent
+    # (see `test_runtime_execution_absent_is_byte_identical_to_today` for the raw,
+    # key-absent orchestration contract this is built on).
+    summarized = RepositoryCollectionService._summarize(
+        later, "irrelevant-scope-digest", "irrelevant-revision"
+    )
+    assert summarized["runtimeReasons"] == ["not-requested"]
+
+    evidence = services.runtime.evidence_status(
+        repo="payments-pipeline",
+        environment="staging",
+        artifact_digest="demo-digest-later-default-off",
+    )
+    assert evidence == {"status": "NOT_PROVIDED", "sessionIds": []}
+
+
 def test_partial_seam_failure_keeps_verdict_when_the_other_seam_completes_a_session(
     tmp_path, monkeypatch
 ) -> None:
@@ -178,6 +283,12 @@ def test_partial_seam_failure_keeps_verdict_when_the_other_seam_completes_a_sess
     import lineage_api.application.java_runtime_stage as java_runtime_stage
 
     monkeypatch.setattr(java_runtime_stage, "java_home_or_none", lambda: None)
+    # This test's own concern is reason-aggregation (python succeeds, java seam is
+    # jvm-unavailable) -- not Java edge *selection*, which Critical 2's dedicated
+    # tests cover. `pipeline.py`'s SCA edges are Python-shape (both ends ldp, no
+    # service anchor) and are correctly excluded from java_edges by that fix, so the
+    # java branch here is kept reachable by loosening eligibility for this test alone.
+    monkeypatch.setattr(java_runtime_stage, "is_java_service_anchored_edge", lambda edge: True)
 
     payload = {
         "eventId": "delivery-mixed-seam",
@@ -208,6 +319,49 @@ def test_partial_seam_failure_keeps_verdict_when_the_other_seam_completes_a_sess
         ).fetchone()
     assert row is not None
     assert row["outcome"] == "COMPLETE"
+
+
+# --- Important 3: a runtime stage exception is a bounded, closed-vocabulary
+# "execution-failed" on the wire, but the exception type + a truncated message are
+# still captured somewhere an operator can see them.
+
+
+def test_execution_failed_stage_exception_is_captured_as_diagnostic_detail(
+    tmp_path, monkeypatch
+) -> None:
+    from lineage_api.dependencies import build_services
+
+    services = build_services(_settings(tmp_path))
+    services.reset()
+
+    def _boom(*args, **kwargs):
+        raise ValueError("synthetic python stage failure for diagnostics coverage")
+
+    monkeypatch.setattr("lineage_api.application.runtime_stage.run_runtime_stage", _boom)
+
+    collected = services.orchestration.process_push(
+        _delivery(
+            "delivery-execution-failed",
+            digest="demo-digest-execution-failed",
+            runtime_execution=True,
+        )
+    )
+
+    assert collected["outcome"] == "ACCEPTED"
+    assert collected["runtimeStatus"] == "NOT_PROVIDED"
+    # The wire-facing reason stays inside the closed vocabulary -- no exception text.
+    assert collected["runtimeReasons"] == ["execution-failed"]
+
+    storing_evidence = next(
+        stage for stage in collected["run"]["stages"] if stage["stage"] == "STORING_EVIDENCE"
+    )
+    assert storing_evidence["detail"]["runtimeDiagnostics"] == [
+        {
+            "stage": "python",
+            "exceptionType": "ValueError",
+            "message": "synthetic python stage failure for diagnostics coverage",
+        }
+    ]
 
 
 # --- Task 6c: `_execute_runtime_session`'s Java edge selection accepts an
@@ -306,20 +460,25 @@ def test_java_selection_accepts_an_element_scoped_urn_on_either_end(
         "digest": "demo-digest-java-selection",
         "eventId": "delivery-java-selection",
     }
-    verification, reasons = services.orchestration._execute_runtime_session(
-        envelope, _sca([READS_EDGE, WRITES_EDGE, DATASET_SCOPE_EDGE])
+    verification, reasons, diagnostics = services.orchestration._execute_runtime_session(
+        envelope, _sca([READS_EDGE, WRITES_EDGE, DATASET_SCOPE_EDGE, PYTHON_EDGE])
     )
 
     # Both orientations were selected and handed to the Java stage; the dataset-scoped
-    # edge (neither end an element-scoped ldp URN) was not.
+    # edge (neither end an element-scoped ldp URN) was not, and neither was the
+    # both-ends-ldp Python-shape DERIVES edge -- Critical 2: nothing in the Java seam
+    # witnesses a dataset-to-dataset transform, so a table-write observation must never
+    # be able to "corroborate" it.
     selected = captured["static_edges"]
     assert READS_EDGE in selected
     assert WRITES_EDGE in selected
     assert DATASET_SCOPE_EDGE not in selected
+    assert PYTHON_EDGE not in selected
     # No observations from the stub stage -> execution-failed, but the point already
     # proven above is that selection reached the stage with the right edges.
     assert verification is None
     assert reasons == ["execution-failed"]
+    assert diagnostics == []
 
 
 def test_python_selection_stays_to_only_and_is_unaffected_by_java_widening(

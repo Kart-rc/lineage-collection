@@ -14,6 +14,17 @@ from lineage_api.domain.errors import DomainError
 
 
 Mechanism = Literal["OPENLINEAGE", "SDK", "OTEL"]
+
+# The only production caller that grants a session on its own behalf (rather than on
+# behalf of an external agent pushing observations) is the collection orchestrator's
+# opt-in `runtime_execution=True` path. When such a self-granted session fails and is
+# revoked, that revocation is bookkeeping for the orchestrator's own attempt -- not
+# genuine externally-provided runtime evidence -- and must not be surfaced by
+# `evidence_status` as an INCOMPLETE result for a later (possibly default-off)
+# collection of the same artifact. Sessions revoked under any other actor keep the
+# existing INCOMPLETE-reporting behaviour untouched.
+SELF_GRANTED_RUNTIME_ACTOR = "collection-orchestrator"
+
 _PROHIBITED_KEYS = {
     "authorization",
     "bind",
@@ -316,18 +327,30 @@ class RuntimeLineageService:
         with self._database.connection() as connection:
             rows = connection.execute(
                 """
-                SELECT session_id, state, outcome FROM runtime_sessions
+                SELECT session_id, state, outcome, actor FROM runtime_sessions
                 WHERE repo = ? AND environment = ? AND artifact_digest = ?
                 ORDER BY updated_at, session_id
                 """,
                 (repo, environment, artifact_digest),
             ).fetchall()
-        if not rows:
+        # A self-granted session the orchestrator revoked after its own runtime
+        # execution failed is not externally-provided evidence; exclude it so it
+        # cannot contaminate this (or a later, possibly default-off) evidence lookup.
+        # Externally-granted sessions -- including ones revoked by an operator --
+        # keep the original behaviour below.
+        visible = [
+            row
+            for row in rows
+            if not (
+                row["outcome"] == "REVOKED" and row["actor"] == SELF_GRANTED_RUNTIME_ACTOR
+            )
+        ]
+        if not visible:
             return {"status": "NOT_PROVIDED", "sessionIds": []}
-        complete_ids = [row["session_id"] for row in rows if row["outcome"] == "COMPLETE"]
+        complete_ids = [row["session_id"] for row in visible if row["outcome"] == "COMPLETE"]
         if complete_ids:
             return {"status": "VALIDATED", "sessionIds": complete_ids}
-        session_ids = [row["session_id"] for row in rows]
+        session_ids = [row["session_id"] for row in visible]
         return {
             "status": "INCOMPLETE",
             "reason": "SESSION_INCOMPLETE",

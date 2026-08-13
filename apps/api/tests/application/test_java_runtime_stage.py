@@ -1,13 +1,16 @@
 """apps/api/tests/application/test_java_runtime_stage.py"""
 from lineage_api.application.java_runtime_stage import (
     element_observations,
+    is_java_service_anchored_edge,
     match_edges,
     select_relevant_java_sources,
 )
 from lineage_api.services.java_runtime_verification import JavaObservation
 
+# A Java WRITE edge always anchors its service endpoint on `from` and the
+# dataset#column it writes on `to` -- see the READS/WRITES orientation cases below.
 EDGE = {
-    "from": ["urn:ldp:staging:postgres:petclinic:owners#first_name"],
+    "from": ["service://petclinic-microservices/OwnerResource#save"],
     "to": "urn:ldp:staging:postgres:petclinic:owners#first_name",
     "edgeType": "WRITE",
 }
@@ -96,11 +99,53 @@ def test_reads_orientation_wrong_table_is_static_only():
     assert matched == [] and unmatched == [READS_EDGE]
 
 
-def test_to_element_scope_takes_precedence_when_both_ends_are_element_scoped():
-    # EDGE has both `to` and `from[0]` element-scoped (the synthetic WRITE fixture
-    # above); `to` wins, matching the existing WRITE-orientation behaviour exactly.
-    matched, unmatched = match_edges([EDGE], [OBS])
-    assert matched == [EDGE] and unmatched == []
+# --- Critical 2: a Python-shape DERIVES edge (both ends ldp element URNs, no
+# `service://` anchor on either side) must never enter the Java seam. Nothing there
+# witnesses a dataset-to-dataset transform, so admitting it risks a coincidental
+# table-write observation "corroborating" a derivation that never ran.
+
+BOTH_ENDS_LDP_EDGE = {
+    "from": ["urn:ldp:staging:snowflake:payments:raw.transactions#amount"],
+    "to": "urn:ldp:staging:snowflake:payments:analytics.daily_revenue#gross_revenue",
+    "edgeType": "DERIVES",
+    "transform": "SUM(amount)",
+}
+
+
+def test_both_ends_ldp_edge_is_ignored_by_match_edges_not_unmatched():
+    # A table-write observation on the very table/column the `to` side names must not
+    # be able to "corroborate" this edge -- it is excluded entirely, exactly like the
+    # dataset-scope case above.
+    matched, unmatched = match_edges([BOTH_ENDS_LDP_EDGE, EDGE], [OBS])
+    assert matched == [EDGE]
+    assert BOTH_ENDS_LDP_EDGE not in matched and BOTH_ENDS_LDP_EDGE not in unmatched
+
+
+def test_is_java_service_anchored_edge_requires_exactly_one_service_end():
+    assert is_java_service_anchored_edge(EDGE) is True
+    assert is_java_service_anchored_edge(READS_EDGE) is True
+    assert is_java_service_anchored_edge(BOTH_ENDS_LDP_EDGE) is False
+
+
+def test_is_java_service_anchored_edge_rejects_dataset_scope_edge():
+    dataset_edge = {
+        "from": ["urn:ldp:staging:postgres:petclinic:owners"],
+        "to": "urn:ldp:staging:postgres:petclinic:owners",
+        "edgeType": "WRITE",
+    }
+    assert is_java_service_anchored_edge(dataset_edge) is False
+
+
+def test_is_java_service_anchored_edge_rejects_multi_from():
+    multi_from_edge = {
+        "from": [
+            "service://petclinic-microservices/OwnerResource#save",
+            "service://petclinic-microservices/OtherResource#save",
+        ],
+        "to": "urn:ldp:staging:postgres:petclinic:owners#first_name",
+        "edgeType": "WRITE",
+    }
+    assert is_java_service_anchored_edge(multi_from_edge) is False
 
 
 # --- Task 6d: compile-scope narrowing --------------------------------------------------
@@ -217,3 +262,48 @@ def test_narrowing_falls_back_to_every_module_when_no_edge_names_a_declared_type
     assert any(path.startswith("spring-petclinic-customers-service/") for path in scoped)
     assert any(path.startswith("spring-petclinic-visits-service/") for path in scoped)
     assert not any(path.endswith("VisitsServiceApplication.java") for path in scoped)
+
+
+# --- Important 4: `javac`/`java` must run under a minimal environment, not the full
+# parent environment, while executing repo-derived code.
+
+
+def test_javac_and_java_run_under_a_minimal_env_without_leaking_secrets(monkeypatch):
+    import subprocess as subprocess_module
+
+    import lineage_api.application.java_runtime_stage as java_runtime_stage
+
+    monkeypatch.setenv("FAKE_SECRET", "shhh-do-not-leak")
+    monkeypatch.setenv("AWS_SECRET_ACCESS_KEY", "also-should-not-leak")
+    # A JAVA_HOME already sitting in the orchestrator's own environment must never be
+    # the one that reaches the subprocess -- only the resolved `java_home` argument.
+    monkeypatch.setenv("JAVA_HOME", "/should/not/leak/via/parent/env")
+
+    captured_envs: list[dict[str, str]] = []
+
+    def _fake_run(args, **kwargs):
+        captured_envs.append(kwargs.get("env"))
+        return subprocess_module.CompletedProcess(args, 0, stdout="", stderr="")
+
+    monkeypatch.setattr(java_runtime_stage.subprocess, "run", _fake_run)
+
+    sources = {
+        "src/main/java/visits/model/Visit.java": VISIT_ENTITY,
+        "src/main/java/visits/model/VisitRepository.java": VISIT_REPOSITORY,
+        "src/main/java/visits/web/VisitResource.java": VISIT_RESOURCE,
+    }
+    java_runtime_stage.run_java_runtime_stage(
+        sources=sources,
+        static_edges=[VISIT_STATIC_EDGE],
+        observed_at="2026-08-12T10:00:00Z",
+        java_home="/fake/resolved/java-home",
+    )
+
+    assert len(captured_envs) == 2  # javac, then java
+    for env in captured_envs:
+        assert env is not None
+        assert "FAKE_SECRET" not in env
+        assert "AWS_SECRET_ACCESS_KEY" not in env
+        assert env["JAVA_HOME"] == "/fake/resolved/java-home"
+        assert "PATH" in env
+        assert set(env) <= {"PATH", "JAVA_HOME", "HOME", "TMPDIR"}
