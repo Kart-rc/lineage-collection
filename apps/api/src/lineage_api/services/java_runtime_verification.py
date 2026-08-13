@@ -29,7 +29,6 @@ from dataclasses import dataclass
 
 
 MAX_TYPES = 256
-HARNESS_PACKAGE = "example"
 
 # Spring Data method-name prefixes and the access they imply. Anything outside this map is
 # recorded as an observation with an UNKNOWN operation rather than guessed into a lineage
@@ -109,6 +108,7 @@ _CONSTRUCTOR_FIELD = re.compile(r"private\s+final\s+([A-Za-z_][A-Za-z0-9_]*)\s+(
 _PUBLIC_METHOD = re.compile(
     r"public\s+(?!class\b|interface\b)[A-Za-z_][\w<>,.\[\]]*\s+([a-z][A-Za-z0-9_]*)\s*\(([^)]*)\)"
 )
+_PACKAGE = re.compile(r"^\s*package\s+([\w.]+)\s*;", re.M)
 
 
 def read_entities(sources: Mapping[str, str]) -> tuple[JavaEntity, ...]:
@@ -175,6 +175,19 @@ def _strip_comments(text: str) -> str:
     return re.sub(r"//[^\n]*", " ", text)
 
 
+def qualified_type_names(sources: Mapping[str, str]) -> dict[str, str]:
+    """Map each source file's top-level type's simple name to its real fully-qualified
+    name, read off its own `package` declaration -- never a fixed harness package. A
+    real checkout scatters entities, repositories, and injection sites across many
+    packages, so the generated harness needs each type's real package to load it."""
+    qualified: dict[str, str] = {}
+    for path, text in sources.items():
+        simple = path.rsplit("/", 1)[-1].removesuffix(".java")
+        match = _PACKAGE.search(_strip_comments(text))
+        qualified[simple] = f"{match.group(1)}.{simple}" if match else simple
+    return qualified
+
+
 # --------------------------------------------------------------------------------------
 # Generating the harness
 # --------------------------------------------------------------------------------------
@@ -210,6 +223,166 @@ def generate_stub_sources() -> dict[str, str]:
             "import java.lang.annotation.*;\n"
             "@Retention(RetentionPolicy.RUNTIME) @Target(ElementType.METHOD)\n"
             "public @interface Query { String value(); }\n"
+        ),
+        # The remaining stubs below are the framework surface a real Spring Data JPA
+        # REST controller/entity actually imports (validation, JPA column mapping,
+        # web MVC mappings, logging, metrics, JSON formatting) -- annotations only, no
+        # runtime behaviour, so the production source compiles unmodified with nothing
+        # else on the classpath. Each member exists because a real production source
+        # (petclinic's visits-service) references it; none is invented ahead of need.
+        "jakarta/persistence/Id.java": (
+            "package jakarta.persistence;\n"
+            "import java.lang.annotation.*;\n"
+            "@Retention(RetentionPolicy.RUNTIME)\n"
+            "public @interface Id {}\n"
+        ),
+        "jakarta/persistence/GenerationType.java": (
+            "package jakarta.persistence;\n"
+            "public enum GenerationType { AUTO, IDENTITY, SEQUENCE, TABLE }\n"
+        ),
+        "jakarta/persistence/GeneratedValue.java": (
+            "package jakarta.persistence;\n"
+            "import java.lang.annotation.*;\n"
+            "@Retention(RetentionPolicy.RUNTIME)\n"
+            "public @interface GeneratedValue {\n"
+            "    GenerationType strategy() default GenerationType.AUTO;\n"
+            "    String generator() default \"\";\n"
+            "}\n"
+        ),
+        "jakarta/persistence/Column.java": (
+            "package jakarta.persistence;\n"
+            "import java.lang.annotation.*;\n"
+            "@Retention(RetentionPolicy.RUNTIME)\n"
+            "public @interface Column { String name() default \"\"; }\n"
+        ),
+        "jakarta/persistence/TemporalType.java": (
+            "package jakarta.persistence;\n"
+            "public enum TemporalType { DATE, TIME, TIMESTAMP }\n"
+        ),
+        "jakarta/persistence/Temporal.java": (
+            "package jakarta.persistence;\n"
+            "import java.lang.annotation.*;\n"
+            "@Retention(RetentionPolicy.RUNTIME)\n"
+            "public @interface Temporal { TemporalType value(); }\n"
+        ),
+        "jakarta/validation/Valid.java": (
+            "package jakarta.validation;\n"
+            "import java.lang.annotation.*;\n"
+            "@Retention(RetentionPolicy.RUNTIME)\n"
+            "public @interface Valid {}\n"
+        ),
+        "jakarta/validation/constraints/Min.java": (
+            "package jakarta.validation.constraints;\n"
+            "import java.lang.annotation.*;\n"
+            "@Retention(RetentionPolicy.RUNTIME)\n"
+            "public @interface Min { long value(); }\n"
+        ),
+        "jakarta/validation/constraints/Size.java": (
+            "package jakarta.validation.constraints;\n"
+            "import java.lang.annotation.*;\n"
+            "@Retention(RetentionPolicy.RUNTIME)\n"
+            "public @interface Size { int min() default 0; int max() default Integer.MAX_VALUE; }\n"
+        ),
+        "org/springframework/http/HttpStatus.java": (
+            "package org.springframework.http;\n"
+            "public enum HttpStatus { OK, CREATED, NO_CONTENT, BAD_REQUEST, NOT_FOUND, "
+            "INTERNAL_SERVER_ERROR }\n"
+        ),
+        "org/springframework/web/bind/annotation/RestController.java": (
+            "package org.springframework.web.bind.annotation;\n"
+            "import java.lang.annotation.*;\n"
+            "@Retention(RetentionPolicy.RUNTIME) @Target(ElementType.TYPE)\n"
+            "public @interface RestController {}\n"
+        ),
+        "org/springframework/web/bind/annotation/RequestMapping.java": (
+            "package org.springframework.web.bind.annotation;\n"
+            "import java.lang.annotation.*;\n"
+            "@Retention(RetentionPolicy.RUNTIME)\n"
+            "public @interface RequestMapping { String[] value() default {}; }\n"
+        ),
+        "org/springframework/web/bind/annotation/GetMapping.java": (
+            "package org.springframework.web.bind.annotation;\n"
+            "import java.lang.annotation.*;\n"
+            "@Retention(RetentionPolicy.RUNTIME)\n"
+            "public @interface GetMapping { String[] value() default {}; }\n"
+        ),
+        "org/springframework/web/bind/annotation/PostMapping.java": (
+            "package org.springframework.web.bind.annotation;\n"
+            "import java.lang.annotation.*;\n"
+            "@Retention(RetentionPolicy.RUNTIME)\n"
+            "public @interface PostMapping { String[] value() default {}; }\n"
+        ),
+        "org/springframework/web/bind/annotation/PutMapping.java": (
+            "package org.springframework.web.bind.annotation;\n"
+            "import java.lang.annotation.*;\n"
+            "@Retention(RetentionPolicy.RUNTIME)\n"
+            "public @interface PutMapping { String[] value() default {}; }\n"
+        ),
+        "org/springframework/web/bind/annotation/DeleteMapping.java": (
+            "package org.springframework.web.bind.annotation;\n"
+            "import java.lang.annotation.*;\n"
+            "@Retention(RetentionPolicy.RUNTIME)\n"
+            "public @interface DeleteMapping { String[] value() default {}; }\n"
+        ),
+        "org/springframework/web/bind/annotation/PathVariable.java": (
+            "package org.springframework.web.bind.annotation;\n"
+            "import java.lang.annotation.*;\n"
+            "@Retention(RetentionPolicy.RUNTIME)\n"
+            "public @interface PathVariable { String value() default \"\"; "
+            "boolean required() default true; }\n"
+        ),
+        "org/springframework/web/bind/annotation/RequestParam.java": (
+            "package org.springframework.web.bind.annotation;\n"
+            "import java.lang.annotation.*;\n"
+            "@Retention(RetentionPolicy.RUNTIME)\n"
+            "public @interface RequestParam { String value() default \"\"; "
+            "boolean required() default true; }\n"
+        ),
+        "org/springframework/web/bind/annotation/RequestBody.java": (
+            "package org.springframework.web.bind.annotation;\n"
+            "import java.lang.annotation.*;\n"
+            "@Retention(RetentionPolicy.RUNTIME)\n"
+            "public @interface RequestBody {}\n"
+        ),
+        "org/springframework/web/bind/annotation/ResponseStatus.java": (
+            "package org.springframework.web.bind.annotation;\n"
+            "import java.lang.annotation.*;\n"
+            "import org.springframework.http.HttpStatus;\n"
+            "@Retention(RetentionPolicy.RUNTIME)\n"
+            "public @interface ResponseStatus { HttpStatus value() default HttpStatus.OK; }\n"
+        ),
+        "org/slf4j/Logger.java": (
+            "package org.slf4j;\n"
+            "public interface Logger {\n"
+            "    void info(String format, Object... arguments);\n"
+            "    void warn(String format, Object... arguments);\n"
+            "    void error(String format, Object... arguments);\n"
+            "    void debug(String format, Object... arguments);\n"
+            "}\n"
+        ),
+        "org/slf4j/LoggerFactory.java": (
+            "package org.slf4j;\n"
+            "public final class LoggerFactory {\n"
+            "    private static final Logger NOOP = new Logger() {\n"
+            "        public void info(String format, Object... arguments) {}\n"
+            "        public void warn(String format, Object... arguments) {}\n"
+            "        public void error(String format, Object... arguments) {}\n"
+            "        public void debug(String format, Object... arguments) {}\n"
+            "    };\n"
+            "    public static Logger getLogger(Class<?> type) { return NOOP; }\n"
+            "}\n"
+        ),
+        "io/micrometer/core/annotation/Timed.java": (
+            "package io.micrometer.core.annotation;\n"
+            "import java.lang.annotation.*;\n"
+            "@Retention(RetentionPolicy.RUNTIME)\n"
+            "public @interface Timed { String value() default \"\"; }\n"
+        ),
+        "com/fasterxml/jackson/annotation/JsonFormat.java": (
+            "package com.fasterxml.jackson.annotation;\n"
+            "import java.lang.annotation.*;\n"
+            "@Retention(RetentionPolicy.RUNTIME)\n"
+            "public @interface JsonFormat { String pattern() default \"\"; }\n"
         ),
     }
 
@@ -262,52 +435,83 @@ def generate_test_source(
     entities: Sequence[JavaEntity],
     repositories: Sequence[JavaRepository],
     sites: Sequence[JavaInjectionSite],
+    qualified: Mapping[str, str] = {},
 ) -> str:
-    """A generated harness that exercises every injected repository method."""
+    """A generated harness that exercises every injected repository method.
+
+    Every production type is loaded and constructed through reflection
+    (`Class.forName` + `setAccessible`) instead of a compile-time `new <Type>(...)`:
+    a real injection site is routinely package-private (Spring only ever needs
+    container visibility, never public), so a direct reference from the harness's own
+    `harness` package would fail to compile on exactly the classes this stage most
+    needs to instrument. `qualified` maps each type's simple name to its real
+    fully-qualified name, read off its own `package` declaration by
+    `qualified_type_names` -- a real multi-module checkout scatters entities,
+    repositories, and injection sites across many packages, never one fixed package.
+    """
     entity_table = {entity.type_name: entity for entity in entities}
     by_name = {repository.type_name: repository for repository in repositories}
+
+    def fqcn(simple: str) -> str:
+        return qualified.get(simple, simple)
 
     lines = [
         "package harness;",
         "import java.lang.reflect.*;",
-        "import example.*;",
         "",
         "/** Generated: constructs each injection site with recording proxies. */",
         "public final class GeneratedRuntimeTest {",
         "    public static void main(String[] args) throws Exception {",
     ]
-    for site in sites:
+    for site_index, site in enumerate(sites):
         types = [by_name[type_name] for _field, type_name in site.repository_fields]
         if any(repository.entity_type not in entity_table for repository in types):
             continue
-        arguments = ", ".join(
-            f"Recorder.proxy({repository.type_name}.class, "
-            f"{repository.entity_type}.class)"
-            for repository in types
-        )
-        casts = ", ".join(f"({repository.type_name}) p{index}" for index, repository in enumerate(types))
+        lines.append("        try {")
+        proxy_vars = []
+        repo_class_vars = []
         for index, repository in enumerate(types):
-            lines.append(
-                f"        Object p{index} = Recorder.proxy({repository.type_name}.class, "
-                f"{repository.entity_type}.class);"
-            )
-        lines.append(f"        {site.type_name} site = new {site.type_name}({casts});")
+            repo_var = f"repoClass{site_index}_{index}"
+            entity_var = f"entityClass{site_index}_{index}"
+            proxy_var = f"proxy{site_index}_{index}"
+            lines.append(f"            Class<?> {repo_var} = Class.forName(\"{fqcn(repository.type_name)}\");")
+            lines.append(f"            Class<?> {entity_var} = Class.forName(\"{fqcn(repository.entity_type)}\");")
+            lines.append(f"            Object {proxy_var} = Recorder.proxy({repo_var}, {entity_var});")
+            proxy_vars.append(proxy_var)
+            repo_class_vars.append(repo_var)
+        site_class_var = f"siteClass{site_index}"
+        ctor_var = f"ctor{site_index}"
+        obj_var = f"site{site_index}"
+        lines.append(f"            Class<?> {site_class_var} = Class.forName(\"{fqcn(site.type_name)}\");")
+        lines.append(
+            f"            Constructor<?> {ctor_var} = {site_class_var}.getDeclaredConstructor("
+            + ", ".join(repo_class_vars) + ");"
+        )
+        lines.append(f"            {ctor_var}.setAccessible(true);")
+        lines.append(
+            f"            Object {obj_var} = {ctor_var}.newInstance(" + ", ".join(proxy_vars) + ");"
+        )
         for method in site.methods:
             # A generated call must never fail the harness; a throwing method is still
             # evidence that the call reached the repository.
-            lines.append("        try {")
-            lines.append(f"            invoke(site, \"{method}\");")
-            lines.append("        } catch (Throwable ignored) { }")
-        del arguments
+            lines.append(f"            invokeQuiet({obj_var}, \"{method}\");")
+        lines.append("        } catch (Throwable ignored) { }")
     lines += [
         "        for (String observation : Recorder.OBSERVED) {",
         "            System.out.println(\"OBSERVED\\t\" + observation);",
         "        }",
         "    }",
         "",
+        "    private static void invokeQuiet(Object target, String name) {",
+        "        try {",
+        "            invoke(target, name);",
+        "        } catch (Throwable ignored) { }",
+        "    }",
+        "",
         "    private static void invoke(Object target, String name) throws Exception {",
-        "        for (Method method : target.getClass().getMethods()) {",
+        "        for (Method method : target.getClass().getDeclaredMethods()) {",
         "            if (!method.getName().equals(name) || method.getParameterCount() > 1) continue;",
+        "            method.setAccessible(true);",
         "            Object[] arguments = new Object[method.getParameterCount()];",
         "            for (int i = 0; i < arguments.length; i++) {",
         "                Class<?> type = method.getParameterTypes()[i];",
@@ -334,7 +538,7 @@ def generate_harness(sources: Mapping[str, str]) -> dict[str, str]:
     harness = generate_stub_sources()
     harness["harness/Recorder.java"] = generate_recorder_source()
     harness["harness/GeneratedRuntimeTest.java"] = generate_test_source(
-        entities, repositories, sites
+        entities, repositories, sites, qualified_type_names(sources)
     )
     return harness
 

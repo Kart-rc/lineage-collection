@@ -14,6 +14,9 @@ from lineage_api.services.java_runtime_verification import (
     JavaObservation,
     generate_harness,
     parse_observations,
+    read_entities,
+    read_injection_sites,
+    read_repositories,
 )
 from lineage_api.services.liveness import derive_liveness
 
@@ -107,6 +110,64 @@ def element_observations(edges: Sequence[dict], observed_at: str) -> list[dict]:
     ]
 
 
+def _target_type_names(static_edges: Sequence[dict]) -> set[str]:
+    """The simple type names an edge's own `service://repo/FQCN#method` endpoint
+    names -- read straight off the edge, never guessed."""
+    names: set[str] = set()
+    for edge in static_edges:
+        for urn in (str(edge.get("to", "")), *_from_urns(edge)):
+            if urn.startswith("service://") and "#" in urn:
+                fqcn = urn.split("/", 3)[-1].split("#", 1)[0]
+                names.add(fqcn.rsplit(".", 1)[-1])
+    return names
+
+
+def _module_of(path: str) -> str:
+    """The top-level checkout directory a path lives under -- a Maven module's own
+    root in a multi-module checkout, or '' for a path with no directory component."""
+    return path.split("/", 1)[0] if "/" in path else ""
+
+
+def select_relevant_java_sources(
+    sources: Mapping[str, str], static_edges: Sequence[dict]
+) -> dict[str, str]:
+    """Narrow the harness's compile scope from the whole checkout to what it actually
+    needs: entity/repository/injection-site files (the shapes `generate_harness` reads
+    to build the harness), scoped first to the module(s) that declare a type one of
+    `static_edges`' own `service://repo/FQCN#method` endpoints names.
+
+    A whole multi-module checkout compiles as one `javac` invocation, so one unrelated
+    module's missing dependency (another service's Spring Boot entry point, wired for
+    a runtime container this harness never provides) fails the WHOLE build -- silently
+    starving every edge, including ones this seam could otherwise witness. Module
+    scoping is not a second filter bolted on for convenience: it is what keeps the
+    structural filter's own promise (compile only what an edge under test needs)
+    honest when the checkout is multi-module. Falls back to the full structural
+    filter, unscoped, when no edge names a type this checkout declares (e.g. a
+    dataset-only edge already excluded upstream) -- narrower is only safe when it is
+    still complete for the edges being verified.
+    """
+    target_names = _target_type_names(static_edges)
+    modules = {
+        _module_of(path)
+        for path in sources
+        if path.rsplit("/", 1)[-1].removesuffix(".java") in target_names
+    }
+    scoped = (
+        {path: text for path, text in sources.items() if _module_of(path) in modules}
+        if modules
+        else sources
+    )
+    repositories = read_repositories(scoped)
+    return {
+        path: text
+        for path, text in scoped.items()
+        if read_entities({path: text})
+        or read_repositories({path: text})
+        or read_injection_sites({path: text}, repositories)
+    }
+
+
 def run_java_runtime_stage(
     *,
     sources: Mapping[str, str],
@@ -116,14 +177,15 @@ def run_java_runtime_stage(
 ) -> RuntimeStageResult:
     if java_home is None:
         raise RuntimeError("jvm-unavailable")
-    harness = generate_harness(dict(sources))
+    scoped_sources = select_relevant_java_sources(sources, static_edges)
+    harness = generate_harness(scoped_sources)
     prefix = (Path(java_home) / "bin") if java_home else Path("")
     javac = str(prefix / "javac") if java_home else "javac"
     java = str(prefix / "java") if java_home else "java"
     with tempfile.TemporaryDirectory() as workdir:
         root = Path(workdir)
         files = []
-        for relative, text in {**dict(sources), **harness}.items():
+        for relative, text in {**scoped_sources, **harness}.items():
             path = root / relative
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text(text)
