@@ -1,0 +1,4 @@
+<databaseChangeLog xmlns="http://www.liquibase.org/xml/ns/dbchangelog">
+  <include file="src/main/resources/db/changelog/changes/001-create-invoices.xml"/>
+  <include file="src/main/resources/db/changelog/changes/002-add-currency.xml"/>
+</databaseChangeLog>

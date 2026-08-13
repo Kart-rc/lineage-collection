@@ -12,6 +12,7 @@ from lineage_api.application.models import Command, OutboxEvent, WorkflowKind, p
 from lineage_api.application.ports import ClockPort, IntakeUnitOfWorkPort
 from lineage_api.application.repository_sources import validate_repository_identity
 from lineage_api.db import Database
+from lineage_api.services.analyzer_registry import AnalyzerRegistry, AnalyzerSelectionError
 
 
 LANE_POLICY_VERSION = "1.0.0"
@@ -111,6 +112,8 @@ class IntakeService:
         runtime_observation = payload.get("runtimeObservation")
         if isinstance(runtime_observation, dict):
             envelope["runtimeObservation"] = runtime_observation
+        if payload.get("runtimeExecution") is True:
+            envelope["runtimeExecution"] = True
         repository_source = payload.get("repositorySource")
         if repository_source is not None:
             normalized_source = _repository_source(repository_source, repo)
@@ -326,18 +329,26 @@ def _repository_source(value: object, repository: str) -> dict[str, str] | None:
         validate_repository_identity(source["origin"], repository)
     except ValueError:
         return None
+    if any(
+        _SOURCE_TEXT.fullmatch(source[field]) is None
+        for field in ("analyzerPack", "ruleset")
+    ):
+        return None
+    # The exact-checkout boundary is a closed cell: the declared source kind and
+    # framework must be the ones the registry actually requires for the declared
+    # pack, not a value hardcoded to any single pack (e.g. the java one).
+    try:
+        definition = AnalyzerRegistry.default().resolve_pack(source["analyzerPack"])
+    except AnalyzerSelectionError:
+        return None
     if (
-        source["sourceKind"] != "git-checkout"
-        or source["framework"] != "spring-data-jpa"
+        source["sourceKind"] != definition.source_kind
+        or source["framework"] != definition.framework
         or _SOURCE_REVISION.fullmatch(source["revision"]) is None
         or _SOURCE_SCOPE.fullmatch(source["scopeDigest"]) is None
         or _SOURCE_SCOPE.fullmatch(source["scopeDispositionDigest"]) is None
-        or source["schemaProfile"] not in {"h2", "mysql", "postgres"}
+        or source["schemaProfile"] not in definition.schema_profiles
         or source["platform"] != source["schemaProfile"]
-        or any(
-            _SOURCE_TEXT.fullmatch(source[field]) is None
-            for field in ("analyzerPack", "ruleset")
-        )
     ):
         return None
     return source

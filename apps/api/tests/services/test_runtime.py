@@ -379,3 +379,112 @@ def test_otel_requires_a_separately_approved_parser_contract_for_exact_columns(r
     assert observation["granularity"] == "ELEMENT"
     assert observation["exact"] is True
     assert observation["parserContract"] == "otel-sql-parser-v1"
+
+
+# --- Task 6c: SDK endpoint payload form. A service-anchored Java element edge names one
+# end with a `service://repo/Type#method` endpoint URN rather than another dataset
+# element, so the SDK payload carries `endpoint: {"service": ...}` instead of `target`.
+# The normalized observation mirrors the source dataset/field into targetDataset/
+# targetField so the session's per-dataset sequence/idempotency logic (keyed off
+# sourceDatasets + targetDataset) stays untouched.
+
+SERVICE_DATASET = "mysql://petclinic/visits"
+SERVICE_URN = (
+    "service://spring-petclinic-microservices/"
+    "org.springframework.samples.petclinic.visits.web.VisitResource#read"
+)
+
+
+def _endpoint_payload(**overrides) -> dict[str, object]:
+    payload = {
+        "schemaVersion": "1.0.0",
+        "observationId": "sdk-endpoint-observation-1",
+        "sequence": 1,
+        "artifactDigest": ARTIFACT,
+        "source": {"dataset": SERVICE_DATASET, "field": "pet_id"},
+        "endpoint": {"service": SERVICE_URN},
+        "edgeType": "READS",
+        "transform": "",
+        "observedAt": "2026-08-06T12:00:00Z",
+    }
+    payload.update(overrides)
+    return payload
+
+
+def _grant_ready_for_endpoint(service):
+    grant = service.grant_session(
+        repo="spring-petclinic-microservices",
+        environment="staging",
+        artifact_digest=ARTIFACT,
+        datasets=(SERVICE_DATASET,),
+        ttl_seconds=300,
+        actor="runtime-test",
+    )
+    ready = service.mark_ready(grant["sessionId"], grant["token"])
+    assert ready["state"] == "READY"
+    return grant
+
+
+def test_sdk_endpoint_form_mirrors_source_into_target_and_carries_the_endpoint(
+    runtime,
+) -> None:
+    service, _, _ = runtime
+    grant = _grant_ready_for_endpoint(service)
+
+    observation = service.observe(grant["sessionId"], grant["token"], "SDK", _endpoint_payload())
+
+    assert observation["granularity"] == "ELEMENT"
+    assert observation["sourceDatasets"] == [SERVICE_DATASET]
+    assert observation["sourceFields"] == ["pet_id"]
+    assert observation["targetDataset"] == SERVICE_DATASET
+    assert observation["targetField"] == "pet_id"
+    assert observation["endpoint"] == SERVICE_URN
+    assert observation["edgeType"] == "READS"
+    assert observation["exact"] is True
+    assert "target" not in observation
+
+
+def test_sdk_payload_with_both_target_and_endpoint_is_rejected(runtime) -> None:
+    service, _, _ = runtime
+    grant = _grant_ready_for_endpoint(service)
+    payload = _endpoint_payload(target={"dataset": SERVICE_DATASET, "field": "pet_id"})
+
+    with pytest.raises(DomainError) as rejected:
+        service.observe(grant["sessionId"], grant["token"], "SDK", payload)
+
+    assert rejected.value.code in {"RUNTIME_UNKNOWN_FIELD", "RUNTIME_SHAPE_INVALID"}
+
+
+def test_sdk_payload_with_neither_target_nor_endpoint_is_rejected(runtime) -> None:
+    service, _, _ = runtime
+    grant = _grant_ready_for_endpoint(service)
+    payload = _endpoint_payload()
+    del payload["endpoint"]
+
+    with pytest.raises(DomainError) as rejected:
+        service.observe(grant["sessionId"], grant["token"], "SDK", payload)
+
+    assert rejected.value.code in {"RUNTIME_UNKNOWN_FIELD", "RUNTIME_SHAPE_INVALID"}
+
+
+def test_sdk_endpoint_object_stays_a_closed_schema(runtime) -> None:
+    service, _, _ = runtime
+    grant = _grant_ready_for_endpoint(service)
+    payload = _endpoint_payload(endpoint={"service": SERVICE_URN, "unknown": "field"})
+
+    with pytest.raises(DomainError) as rejected:
+        service.observe(grant["sessionId"], grant["token"], "SDK", payload)
+
+    assert rejected.value.code == "RUNTIME_UNKNOWN_FIELD"
+
+
+def test_ordinary_target_form_is_unaffected_by_the_endpoint_addition(runtime) -> None:
+    service, _, _ = runtime
+    grant = _grant_ready(service)
+
+    observation = service.observe(
+        grant["sessionId"], grant["token"], "SDK", _fixture("sdk-field-mapping.json")
+    )
+
+    assert "endpoint" not in observation
+    assert observation["targetDataset"] == TARGET_DATASET

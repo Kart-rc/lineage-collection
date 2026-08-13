@@ -1,0 +1,71 @@
+{
+  "codePathKeys": [
+    "codeRef",
+    "freq",
+    "guard",
+    "id",
+    "writes"
+  ],
+  "confidenceNotes": {
+    "inferred": "LLM-derived, not yet observed at runtime",
+    "probable": "Static + LLM, partially observed at runtime",
+    "verified": "Runtime-confirmed by multiple signals"
+  },
+  "confidenceSignals": [
+    "dask",
+    "llm",
+    "otel",
+    "spark",
+    "static"
+  ],
+  "confidenceThresholds": {
+    "inferred": 0,
+    "probable": 65,
+    "verified": 90
+  },
+  "datasetKinds": [
+    "cache",
+    "datastore",
+    "kafka",
+    "s3file",
+    "s3land",
+    "search"
+  ],
+  "elementFieldSignature": [
+    "name",
+    "type",
+    "tag",
+    "up",
+    "down",
+    "xf"
+  ],
+  "interactionChannels": [
+    "async",
+    "graphql",
+    "grpc",
+    "rest"
+  ],
+  "interactionKeys": [
+    "ch",
+    "from",
+    "mode",
+    "note",
+    "op",
+    "sla",
+    "to"
+  ],
+  "livenessBands": [
+    "COLD",
+    "DEAD?",
+    "HOT",
+    "WARM"
+  ],
+  "schemaVersion": "1.0.0",
+  "severityBands": [
+    "break",
+    "origin",
+    "warn"
+  ],
+  "source": "Throughline - Agentic.dc.html",
+  "sourceBytes": 242743
+}

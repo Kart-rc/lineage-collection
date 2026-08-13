@@ -218,6 +218,7 @@ def test_collect_returns_api_representation_and_signs_deterministic_payload(
         "proposalId": "proposal-collection",
         "proposalStatus": "IN_REVIEW",
         "runtimeStatus": "NOT_PROVIDED",
+        "runtimeReasons": ["not-requested"],
         "analysisStatus": "COMPLETE",
         "statusReasons": [],
         "coverageManifest": {

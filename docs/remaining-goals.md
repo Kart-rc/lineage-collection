@@ -3,8 +3,8 @@
 | Field | Value |
 |---|---|
 | Status | Active |
-| Branch | `feat/remaining-goals` (on top of merged `codex/lineage-prototype`) |
-| Pull request | [#2 — Build durable lineage collection and Spring lineage proof](https://github.com/Kart-rc/lineage-collection/pull/2) |
+| Branch | `fix/review-findings-pr3` (on top of `main` at `ced8984`) |
+| Pull request | [#3 — Target architecture, safe remote acquisition, collection product flow](https://github.com/Kart-rc/lineage-collection/pull/3) — **merged** `ced8984` |
 | Last reconciled | 2026-08-11 |
 
 ## 1. Goal
@@ -63,6 +63,9 @@ regresses them:
 - AWS packaging, workflow-definition parity, CDK assertions, and synthesis evidence.
 
 The most recent retained real-repository evidence checksum is
+`sha256:60585677f9abd74706843aa16eeb23e9af9ec6be38ea8023c26575171b1f6a75`, from a
+`LOCAL_REAL_REPOSITORY_PASS` acceptance run on 2026-08-12 recording 15 edges, 10 reads, 5 writes,
+8 residue and 0 unresolved with `runtimeStatus` `NOT_PROVIDED`. It supersedes
 `sha256:84d6345e2d597aef0f068d6a6c3b24f4bf0acaf438b24311066d8fda8b304f40`.
 
 ## 4. Remaining goals
@@ -76,7 +79,7 @@ implemented autonomously. In the order that unblocks the most:
 | 2 | Sign off the architecture review (both the offline HTML and the Mermaid block have been rendered and inspected) | G1 → `COMPLETE` |
 | 3 | Sign off the product experience (the browser smoke has been run and passes) | G4, G5 → `COMPLETE` |
 | 4 | Approve an AWS account, profile, region, context values, and opt in to billable/externally visible traffic | G6, and the deferred AWS `submit_collection` in G3 |
-| 5 | Decide the branch and pull request: work sits on `feat/remaining-goals`, nothing is pushed, and PR #2 named above is already merged | G7 |
+| 5 | Merge the review-findings follow-up branch | G7 → `COMPLETE` |
 
 
 ### G1 — Publish the canonical target AWS architecture
@@ -390,7 +393,42 @@ results exist.
 
 ### G7 — Close the pull-request review loop and merge to main
 
-**Status:** `IN_PROGRESS`
+**Status:** `IN_PROGRESS` — PR #3 is merged and its review threads are resolved; a review-findings follow-up PR is open and awaiting merge
+
+PR #3 was reviewed and merged into `main` as `ced8984` on 2026-08-11. `origin/main` contains the
+reviewed head, and the branch had incorporated the then-current `main` with no conflicts.
+
+Copilot raised three actionable inline threads. All three were reproduced or validated, addressed
+with evidence, replied to, and resolved:
+
+| Thread | Verdict | Outcome |
+|---|---|---|
+| Client-side origin validation looser than the server | Valid | `apps/web/src/api/repositoryOrigin.ts` mirrors `canonicalize_https_origin`; verified against the Python authority on a 17-case corpus with identical verdicts. |
+| `http.curloptResolve` multi-address format claimed invalid | **Incorrect** | `man git-config` documents `[+]HOST:PORT:ADDRESS[,ADDRESS]`, and a `GIT_CURL_VERBOSE` run shows libcurl connecting to the first pinned address. No change; reasoning posted on the thread. |
+| Unquoted table identifiers in the product-flow digest | Valid | Identifiers quoted with `"` doubling. |
+
+Gates run on the follow-up branch: full backend suite, web and infra suites, both builds,
+`make architecture-check`, `make workflow-check`, `make synth` (all 11 stacks) and
+`make acceptance-smoke`.
+
+A second review round on the follow-up PR raised three more threads, also handled:
+
+| Thread | Verdict | Outcome |
+|---|---|---|
+| Numeric-looking hosts diverge from the server (`127.1`, `0x7f.1`, `example.123`) | **Valid** | Real divergence: WHATWG `URL` rewrites the first two to `127.0.0.1` and throws on the third, while the server accepts all three. The validator now parses the raw authority instead of using `new URL`. |
+| Credential test case does not exercise the credential branch | **Incorrect** | The test does carry the full `https://user:token@…` URL; GitHub redacted it in the review UI. `new URL(...).username === "user"`, and the assertion passes on the credential message. |
+| G7 status line reads as truncated | Valid | Reworded. |
+
+Parity is now checked over a 33-case corpus run through both the Python authority and the
+TypeScript mirror, with identical verdicts on every case.
+
+One unresolved observation, recorded rather than dismissed: a single run of the infra suite under
+heavy concurrent load reported `2 failed | 28 passed`. It has not reproduced in ten subsequent runs
+— sequential, two suites concurrently, alongside a `cdk synth`, and under a full backend run — and
+the failing test names were lost because the capturing command filtered its own output. Treat the
+infra suite as green but not proven flake-free; if it recurs, capture the full output first.
+
+Remaining before `COMPLETE`: merge the follow-up branch, then re-verify `origin/main`.
 
 Draft PR #2 exists and is merge-clean, but it is not a completion signal. The branch must first
 contain G1–G6 evidence and be reconciled with current `main`.

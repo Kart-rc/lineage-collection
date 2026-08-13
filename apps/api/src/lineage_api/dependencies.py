@@ -197,7 +197,7 @@ def build_services(
         analyzer_registry=analyzer_registry,
         snapshot_provider=snapshot_provider,
         store=store,
-        consolidation=ConsolidationService(database),
+        consolidation=ConsolidationService(database, resolver=resolver),
         review=review,
         publisher=publisher,
         runtime=runtime,
@@ -206,6 +206,7 @@ def build_services(
         outbox_dispatcher=OutboxDispatcher(outbox, broker, clock),
         broker=broker,
         durable_clock=clock,
+        resolver=resolver,
     )
 
     def environment_reader(environment: str) -> EnvironmentPin | None:

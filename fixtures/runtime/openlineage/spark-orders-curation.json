@@ -1,0 +1,33 @@
+{
+  "eventType": "COMPLETE",
+  "eventTime": "2026-08-12T10:00:00Z",
+  "run": { "runId": "spark-orders-curation-1" },
+  "job": { "namespace": "lakehouse", "name": "OrdersCurationJob" },
+  "inputs": [
+    { "namespace": "s3://raw-lake", "name": "raw/events/orders" }
+  ],
+  "outputs": [
+    {
+      "namespace": "s3://raw-lake",
+      "name": "curated/orders",
+      "facets": {
+        "columnLineage": {
+          "fields": {
+            "order_total": {
+              "inputFields": [
+                { "namespace": "s3://raw-lake", "name": "raw/events/orders", "field": "amount" }
+              ],
+              "transformationDescription": "sum(col(amount))"
+            },
+            "order_date": {
+              "inputFields": [
+                { "namespace": "s3://raw-lake", "name": "raw/events/orders", "field": "occurred_at" }
+              ],
+              "transformationDescription": "to_date(col(occurred_at))"
+            }
+          }
+        }
+      }
+    }
+  ]
+}

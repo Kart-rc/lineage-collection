@@ -5,7 +5,7 @@ import json
 import re
 import xml.etree.ElementTree as ET
 from bisect import bisect_right
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import PurePosixPath
 from typing import Iterable, TypeAlias
 
@@ -17,6 +17,14 @@ from sqlglot.tokens import Token, TokenType
 from tree_sitter import Language, Node, Parser, Tree
 
 from lineage_api.domain.urns import LineageUrn
+from lineage_api.services.schema_migrations import (
+    MigrationSource,
+    is_flyway_migration,
+    is_liquibase_changelog,
+    order_migrations,
+    replay_liquibase,
+    replay_migrations,
+)
 
 
 FactValue: TypeAlias = str | tuple[str, ...]
@@ -26,6 +34,7 @@ _SUPPORTED_COORDINATES = {
 }
 _ENTITY_FQN = "jakarta.persistence.Entity"
 _TABLE_FQN = "jakarta.persistence.Table"
+_COLUMN_FQN = "jakarta.persistence.Column"
 _JPA_REPOSITORY_FQN = "org.springframework.data.jpa.repository.JpaRepository"
 _REPOSITORY_FQN = "org.springframework.data.repository.Repository"
 _QUERY_FQN = "org.springframework.data.jpa.repository.Query"
@@ -34,6 +43,7 @@ _APPROVED_FRAMEWORK_SYMBOLS = frozenset(
     {
         _ENTITY_FQN,
         _TABLE_FQN,
+        _COLUMN_FQN,
         _JPA_REPOSITORY_FQN,
         _REPOSITORY_FQN,
         _QUERY_FQN,
@@ -109,7 +119,9 @@ _RESIDUE_CODES = frozenset(
         "ambiguous-entity-name",
         "ambiguous-framework-evidence",
         "ambiguous-framework-symbol",
+        "ambiguous-repository-abstraction",
         "ambiguous-repository-injection",
+        "ambiguous-wildcard-symbol",
         "dynamic-framework-evidence",
         "dynamic-entity-name",
         "dynamic-query",
@@ -135,7 +147,9 @@ _RESIDUE_CODES = frozenset(
         "shadowed-repository-receiver",
         "unbound-repository-receiver",
         "unknown-framework",
+        "unmapped-entity-column",
         "unresolved-framework-symbol",
+        "unresolved-query-property",
         "unresolved-repository-entity",
         "unresolved-table-mapping",
         "unsupported-boot-version",
@@ -514,6 +528,10 @@ class _Operation:
     label: str
     rationale: str
     query: SyntaxFact | None = None
+    # A @Query may legitimately target an entity other than the one its repository is
+    # declared over — Petclinic's PetRepository reads PetType. The edge then belongs to
+    # that entity's table, which is more precise than refusing it as a conflict.
+    entity_override: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -568,6 +586,9 @@ class JavaSpringEvidenceCompiler:
                 "spring.entity-table",
                 "spring.query",
                 "spring.repository-association",
+                "spring.entity-field",
+                "spring.query-element",
+                "sql.column",
                 "sql.table",
             }
         }
@@ -595,6 +616,13 @@ class JavaSpringEvidenceCompiler:
         methods = _facts_by_subject(by_kind["java.method"])
         query_annotations = _query_annotations(by_kind["java.annotation"])
         tables = _native_profile_tables(by_kind["sql.table"], context.schema_profile)
+        elements_by_method: dict[tuple[str, str], list[tuple[str, str]]] = {}
+        for fact in by_kind["spring.query-element"]:
+            attributes = dict(fact.attributes)
+            key = (str(attributes["repository"]), str(attributes["method"]))
+            elements_by_method.setdefault(key, []).append(
+                (str(attributes["table"]), str(attributes["column"]))
+            )
         candidates: list[_CompiledCandidate] = []
         unresolved = 0
 
@@ -734,6 +762,54 @@ class JavaSpringEvidenceCompiler:
                 status_reasons.add(code)
                 continue
 
+            if operation.entity_override is not None:
+                override = next(
+                    (
+                        candidate
+                        for _subject, candidate in entities.values
+                        if candidate.attribute("entityName") == operation.entity_override
+                    ),
+                    None,
+                )
+                override_identity = (
+                    _mapping_table_identity(override, context.schema_profile)
+                    if override is not None
+                    else None
+                )
+                override_tables = (
+                    tuple(
+                        item
+                        for item in tables
+                        if (
+                            (
+                                candidate := _sql_fact_table_identity(
+                                    item, context.schema_profile
+                                )
+                            )
+                            is not None
+                            and override_identity is not None
+                            and override_identity.matches(candidate)
+                        )
+                    )
+                    if override_identity is not None
+                    else ()
+                )
+                if len(override_tables) != 1:
+                    unresolved += 1
+                    residue.append(
+                        JavaSpringCompilationResidue(
+                            "query-entity-conflict",
+                            invocation.location,
+                            (invocation.identifier, repository.identifier),
+                        )
+                    )
+                    status_reasons.add("query-entity-conflict")
+                    continue
+                entity = override
+                table = override_tables[0]
+                table_identity = override_identity
+                table_name = override_identity.rendered
+
             service_urn = f"service://{context.repository}/{owner_and_method}"
             dataset_urn = str(
                 LineageUrn(
@@ -766,6 +842,49 @@ class JavaSpringEvidenceCompiler:
                     operation.query,
                 )
             )
+
+            # Additionally element-scope the dataset side for every provable column a
+            # `spring.query-element` fact ties to this exact invoked (repository, method)
+            # -- but only when that fact's own table agrees with the table this candidate
+            # already resolved to. A fact for a different table (a cross-entity JPQL
+            # projection, resolved against the repository's own declared entity rather
+            # than the entity the query actually targets) must never element-scope a
+            # candidate it does not describe; that stays an honest wall.
+            for element_table, column in elements_by_method.get(
+                (repository.subject, called), ()
+            ):
+                if element_table != table_name:
+                    continue
+                element_dataset_urn = str(
+                    LineageUrn(
+                        context.environment,
+                        context.platform,
+                        context.system,
+                        table_name,
+                    ).with_element(column)
+                )
+                element_transform = f"{transform}#{column}"
+                element_from_urn, element_to_urn = (
+                    (element_dataset_urn, service_urn)
+                    if operation.edge_type == "READS"
+                    else (service_urn, element_dataset_urn)
+                )
+                candidates.append(
+                    _CompiledCandidate(
+                        element_from_urn,
+                        element_to_urn,
+                        operation.edge_type,
+                        element_transform,
+                        service_urn,
+                        element_dataset_urn,
+                        operation.rationale,
+                        invocation,
+                        repository,
+                        entity,
+                        table,
+                        operation.query,
+                    )
+                )
 
         edges = _collapse_java_spring_candidates(
             candidates, context, analysis.framework.evidence
@@ -876,7 +995,10 @@ def _native_profile_tables(
         if (
             _optional_attribute(fact, "dialectMode") == "native"
             and _optional_attribute(fact, "dialect") == expected_dialect
-            and schema_profile in PurePosixPath(fact.location.path).parts
+            and (
+                schema_profile in PurePosixPath(fact.location.path).parts
+                or _optional_attribute(fact, "schemaSource") == "migration"
+            )
         )
     )
 
@@ -1045,8 +1167,13 @@ def _resolve_operation(
             else isinstance(target, str)
             and target == entity.attribute("entityName")
         )
+        override: str | None = None
         if not target_matches:
-            return None, "query-table-conflict" if language == "SQL" else "query-entity-conflict"
+            if language == "SQL" or not isinstance(target, str):
+                return None, "query-table-conflict"
+            # Only an entity actually declared in this scope may redirect the edge; an
+            # unknown name is still a conflict, never a guessed table.
+            override = target
         edge_type = "READS" if operation == "SELECT" else "WRITES"
         return (
             _Operation(
@@ -1054,6 +1181,7 @@ def _resolve_operation(
                 f" [{language} {operation}]",
                 f"explicit @Query parsed as {language} {operation}",
                 query,
+                override,
             ),
             None,
         )
@@ -1205,12 +1333,13 @@ def _jpql_query_operation(
     if isinstance(expression, exp.Select):
         projection = expression.expressions
         source = expression.args.get("from")
-        if (
-            len(projection) != 1
-            or not isinstance(projection[0], exp.Column)
-            or not isinstance(source, exp.From)
-            or source.this is not table
-        ):
+        if not isinstance(source, exp.From) or source.this is not table:
+            return None
+        # `FROM X WHERE ...` is valid JPQL shorthand for selecting X; sqlglot renders the
+        # absent projection as a star. Spring Data uses this form in real repositories.
+        if len(projection) == 1 and isinstance(projection[0], exp.Star):
+            return "SELECT", table
+        if len(projection) != 1 or not isinstance(projection[0], exp.Column):
             return None
         return "SELECT", table
     if isinstance(expression, exp.Update):
@@ -1364,6 +1493,7 @@ def _evidence_fact_attributes(
             "nameQuoted",
             "schema",
             "schemaQuoted",
+            "schemaSource",
         },
     }.get(fact.kind, set())
     return tuple(
@@ -1412,6 +1542,13 @@ class _BuildClosure:
     jpa: tuple[_BuildEvidence, ...]
     relevant: bool
     invalid: bool
+    # A multi-module Maven build splits its evidence: the aggregator declares the Boot
+    # parent, each module declares the JPA dependency. These three fields are what let
+    # the two halves be rejoined through the parent coordinates the module itself
+    # states, without inferring anything from directory layout.
+    coordinates: tuple[str, str] | None = None
+    parent_coordinates: tuple[str, str] | None = None
+    aggregator: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -1465,18 +1602,28 @@ class JavaSpringScaAnalyzer:
         parsed_java: list[_ParsedJava] = []
         sql_files_parsed = 0
 
+        migration_sources = tuple(
+            source
+            for source in ordered
+            if is_flyway_migration(source.path) or is_liquibase_changelog(source.path)
+        )
         for source in ordered:
             if source.path.endswith(".java"):
                 parsed = self._parse_java(source)
                 if parsed is not None:
                     parsed_java.append(parsed)
-            elif source.path.endswith(".sql"):
+            elif source.path.endswith(".sql") and source not in migration_sources:
                 if self._parse_sql(source):
                     sql_files_parsed += 1
+        if migration_sources:
+            sql_files_parsed += self._ingest_migrations(migration_sources)
 
         repository_types, symbols = self._extract_java_facts(parsed_java, framework)
         if framework.status == "supported":
             self._extract_repository_usage(parsed_java, repository_types, symbols)
+            # Both passes have run, so entity fields can now be grounded in real columns.
+            self._emit_entity_fields()
+            self._emit_query_elements()
 
         facts = tuple(sorted(self._facts, key=lambda item: item.identifier))
         residue = tuple(
@@ -1503,6 +1650,84 @@ class JavaSpringScaAnalyzer:
                 ast_nodes_indexed=self._ast_nodes_indexed,
             ),
         )
+
+    def _ingest_migrations(self, sources: tuple[JavaSpringSource, ...]) -> int:
+        """Replay ordered migrations and emit the same schema facts a schema.sql would.
+
+        The replay is the schema; emitting per-statement facts would report tables and
+        columns that later migrations removed. An incomplete replay emits nothing, so
+        resolution fails closed on `missing-schema-table` rather than binding an entity
+        to a schema the migrations do not actually produce.
+        """
+        migrations = tuple(
+            MigrationSource(
+                path=source.path,
+                content=source.content,
+                dialect=_SQLGLOT_DIALECTS[source.sql_dialect]
+                if source.sql_dialect
+                else "postgres",
+                order=(),
+            )
+            for source in sources
+        )
+        changelogs = tuple(
+            item for item in migrations if is_liquibase_changelog(item.path)
+        )
+        if changelogs:
+            ordering_residue = ()
+            schema = replay_liquibase(changelogs)
+        else:
+            ordered, ordering_residue = order_migrations(migrations)
+            schema = replay_migrations(ordered)
+        by_path = {source.path: source for source in sources}
+
+        for entry in ordering_residue + schema.residue:
+            source = by_path.get(entry.path)
+            self._add_residue(
+                entry.code,
+                "migration schema replay could not model this input",
+                entry.symbol,
+                _whole_file_location(source, "sql_file")
+                if source is not None
+                else _scope_location(sources),
+            )
+
+        if not schema.complete:
+            return 0
+
+        dialect = migrations[0].dialect if migrations else "postgres"
+        for table in schema.tables:
+            source = by_path[table.path]
+            self._add_fact(
+                "sql.table",
+                table.name,
+                (
+                    ("catalog", ""),
+                    ("catalogQuoted", "false"),
+                    ("dialect", dialect),
+                    ("dialectMode", "native"),
+                    ("nameQuoted", "false"),
+                    ("schema", table.schema),
+                    ("schemaQuoted", "false"),
+                    ("schemaSource", "migration"),
+                ),
+                _whole_file_location(source, "table"),
+            )
+            for column in table.columns:
+                column_source = by_path[column.path]
+                self._add_fact(
+                    "sql.column",
+                    f"{table.name}.{column.name}",
+                    (
+                        ("column", column.name),
+                        ("dataType", column.data_type),
+                        ("dialect", dialect),
+                        ("primaryKey", "true" if column.primary_key else "false"),
+                        ("table", table.name),
+                    ),
+                    _whole_file_location(column_source, "table"),
+                )
+        return len(sources)
 
     def _bounded_sources(
         self, sources: Iterable[JavaSpringSource]
@@ -1535,7 +1760,9 @@ class JavaSpringScaAnalyzer:
             total_bytes += len(source.content)
             if total_bytes > self._limits.max_total_bytes:
                 raise JavaSpringAnalysisError("source total byte limit exceeded")
-            if source.path.endswith(".sql"):
+            # A Liquibase changelog is a schema source too: its `<sql>` escape hatch is
+            # parsed with the profile's dialect, so it carries one legitimately.
+            if source.path.endswith(".sql") or is_liquibase_changelog(source.path):
                 if source.sql_dialect is not None and source.sql_dialect not in _SQLGLOT_DIALECTS:
                     raise JavaSpringAnalysisError("SQL dialect is not in the supported closed set")
             elif source.sql_dialect is not None:
@@ -1564,11 +1791,14 @@ class JavaSpringScaAnalyzer:
                 closures.append(_BuildClosure(source.path, (), (), True, True))
                 continue
             if PurePosixPath(source.path).name == "pom.xml":
-                closure = self._maven_framework_evidence(source, text)
+                closure = self._maven_framework_evidence(
+                    source, text, _declared_parent_boot_versions(source, text, sources)
+                )
             else:
                 closure = self._gradle_framework_evidence(source, text)
             closures.append(closure)
 
+        closures = _inherit_parent_build_evidence(closures)
         relevant = [closure for closure in closures if closure.relevant]
         if not relevant:
             location = (
@@ -1595,7 +1825,7 @@ class JavaSpringScaAnalyzer:
                     closure.path,
                     _whole_file_location(source, "build_file"),
                 )
-            if not closure.jpa:
+            if not closure.jpa and not closure.aggregator:
                 incomplete = True
                 self._add_residue(
                     "missing-jpa-dependency",
@@ -1671,7 +1901,10 @@ class JavaSpringScaAnalyzer:
         )
 
     def _maven_framework_evidence(
-        self, source: JavaSpringSource, text: str
+        self,
+        source: JavaSpringSource,
+        text: str,
+        inherited_boot: frozenset[str] = frozenset(),
     ) -> _BuildClosure:
         if "<!DOCTYPE" in text.upper() or "<!ENTITY" in text.upper():
             self._add_residue(
@@ -1696,7 +1929,21 @@ class JavaSpringScaAnalyzer:
         jpa: list[_BuildEvidence] = []
         relevant = False
         invalid = False
+        own_values = _xml_values(root)
         parent = _xml_direct_child(root, "parent")
+        parent_values = _xml_values(parent) if parent is not None else {}
+        own_group = own_values.get("groupId") or parent_values.get("groupId", "")
+        coordinates = (
+            (own_group, own_values["artifactId"])
+            if own_values.get("artifactId")
+            else None
+        )
+        parent_coordinates = (
+            (parent_values.get("groupId", ""), parent_values["artifactId"])
+            if parent_values.get("artifactId")
+            else None
+        )
+        aggregator = _xml_direct_child(root, "modules") is not None
         if parent is not None:
             values = _xml_values(parent)
             if (
@@ -1774,7 +2021,9 @@ class JavaSpringScaAnalyzer:
                 continue
             inherited = False
             if not version:
-                boot_versions = {item.version for item in boot}
+                # A module's versionless JPA dependency is managed by the Boot BOM its
+                # aggregator declares, so the parent's version counts here too.
+                boot_versions = {item.version for item in boot} or set(inherited_boot)
                 if len(boot_versions) == 1:
                     version = next(iter(boot_versions))
                     inherited = True
@@ -1801,7 +2050,14 @@ class JavaSpringScaAnalyzer:
                 _BuildEvidence(source.path, "data-jpa", group, artifact, version, inherited)
             )
         return _BuildClosure(
-            source.path, tuple(boot), tuple(jpa), relevant, invalid
+            source.path,
+            tuple(boot),
+            tuple(jpa),
+            relevant or aggregator,
+            invalid,
+            coordinates,
+            parent_coordinates,
+            aggregator,
         )
 
     def _gradle_framework_evidence(
@@ -2011,6 +2267,9 @@ class JavaSpringScaAnalyzer:
     ) -> tuple[set[str], _JavaSymbolIndex]:
         symbols = _build_java_symbol_index(parsed_files)
         repository_types: set[str] = set()
+        # abstraction FQN -> {(entityFqn, entityType, idType, specialization, baseFqn)}
+        abstractions: dict[str, set[tuple[str, str, str, str, str]]] = {}
+        abstraction_sites: dict[str, SourceLocation] = {}
         for parsed in parsed_files:
             root = parsed.tree.root_node
             for child in root.named_children:
@@ -2037,7 +2296,7 @@ class JavaSpringScaAnalyzer:
                 qualified_name = _qualified_type_name(
                     declaration, parsed.package, parsed.source.content
                 )
-                extends, implements, generic_nodes = _super_types(
+                extends, implements, generic_nodes, plain_nodes = _super_types(
                     declaration, parsed.source.content
                 )
                 attributes: list[tuple[str, FactValue]] = [
@@ -2114,6 +2373,35 @@ class JavaSpringScaAnalyzer:
                             ),
                             self._node_location(parsed.source.path, generic),
                         )
+                        # A specialization usually also extends a plain project interface
+                        # -- the type services actually inject. Record the candidate so
+                        # the abstraction can inherit this entity once every
+                        # specialization has been seen.
+                        for plain in plain_nodes:
+                            abstraction_fqn = self._resolve_java_symbol(
+                                parsed,
+                                _node_text(plain, parsed.source.content),
+                                plain,
+                                symbols,
+                            )
+                            if (
+                                abstraction_fqn is None
+                                or abstraction_fqn not in symbols.local_types
+                            ):
+                                continue
+                            abstractions.setdefault(abstraction_fqn, set()).add(
+                                (
+                                    entity_fqn,
+                                    arguments[0],
+                                    arguments[1],
+                                    qualified_name,
+                                    base_fqn,
+                                )
+                            )
+                            abstraction_sites.setdefault(
+                                abstraction_fqn,
+                                self._node_location(parsed.source.path, plain),
+                            )
                 self._emit_members(
                     parsed,
                     declaration,
@@ -2121,7 +2409,243 @@ class JavaSpringScaAnalyzer:
                     symbols,
                     framework_supported=framework.status == "supported",
                 )
+
+        self._resolve_repository_abstractions(
+            repository_types, abstractions, abstraction_sites
+        )
         return repository_types, symbols
+
+    def _emit_entity_fields(self) -> None:
+        """Ground each entity field in a real schema column — the element level.
+
+        Runs after both the Java and SQL passes so the join can be proven rather than
+        assumed. A field only becomes an element when its column actually exists in the
+        table the entity maps to: `@Transient` fields, relations and computed members
+        simply have no column and are left out instead of invented.
+        """
+        columns: dict[str, set[str]] = {}
+        for fact in self._facts:
+            if fact.kind == "sql.column":
+                columns.setdefault(dict(fact.attributes)["table"], set()).add(
+                    dict(fact.attributes)["column"]
+                )
+        if not columns:
+            return
+        entity_tables = {
+            fact.subject: dict(fact.attributes)["table"]
+            for fact in self._facts
+            if fact.kind == "spring.entity-table"
+        }
+        if not entity_tables:
+            return
+
+        # An entity commonly keeps its columns on a @MappedSuperclass, so a field
+        # declared on an ancestor belongs to the entity's table too. The chain is
+        # resolved by simple name against declared types; an ambiguous name is skipped
+        # rather than picked.
+        by_simple_name: dict[str, list[str]] = {}
+        supertypes: dict[str, tuple[str, ...]] = {}
+        for fact in self._facts:
+            if fact.kind != "java.type":
+                continue
+            by_simple_name.setdefault(fact.subject.rsplit(".", 1)[-1], []).append(
+                fact.subject
+            )
+            extends = dict(fact.attributes).get("extends")
+            if isinstance(extends, tuple):
+                supertypes[fact.subject] = tuple(
+                    str(item).split("<", 1)[0].strip() for item in extends
+                )
+
+        # A @MappedSuperclass is mapped into *each* inheriting entity's table, so one
+        # declaring class can legitimately belong to several entities: Person supplies
+        # last_name to both owners and vets. Each pairing is emitted independently.
+        owning_entities: dict[str, list[tuple[str, str]]] = {
+            entity: [(entity, table)] for entity, table in entity_tables.items()
+        }
+        for entity, table in sorted(entity_tables.items()):
+            frontier = [entity]
+            seen: set[str] = set()
+            while frontier:
+                current = frontier.pop()
+                for raw in supertypes.get(current, ()):
+                    candidates = by_simple_name.get(raw.rsplit(".", 1)[-1], [])
+                    if len(candidates) != 1:
+                        continue
+                    ancestor = candidates[0]
+                    if ancestor in entity_tables or ancestor in seen:
+                        continue
+                    seen.add(ancestor)
+                    owners = owning_entities.setdefault(ancestor, [])
+                    if (entity, table) not in owners:
+                        owners.append((entity, table))
+                    frontier.append(ancestor)
+
+        for fact in list(self._facts):
+            if fact.kind != "java.field" or "#" not in fact.subject:
+                continue
+            declaring, field = fact.subject.rsplit("#", 1)
+            for owner, table in owning_entities.get(declaring, ()):
+                available = columns.get(table, set())
+                attributes = dict(fact.attributes)
+                explicit = attributes.get("column")
+                if explicit is not None:
+                    if explicit not in available:
+                        # An explicit @Column naming a column the schema does not have is a
+                        # real contradiction, not a field to skip.
+                        self._add_residue(
+                            "unmapped-entity-column",
+                            "explicit @Column name is absent from the mapped table",
+                            f"{table}.{explicit}",
+                            fact.location,
+                        )
+                        continue
+                    column, mapping = explicit, "explicit"
+                else:
+                    candidate = _snake_case(field)
+                    if candidate not in available:
+                        continue
+                    column, mapping = candidate, "convention"
+                self._add_fact(
+                    "spring.entity-field",
+                    f"{owner}#{field}",
+                    (
+                        ("column", column),
+                        ("entity", owner),
+                        ("field", field),
+                        ("mapping", mapping),
+                        ("table", table),
+                    ),
+                    fact.location,
+                )
+
+    def _emit_query_elements(self) -> None:
+        """Resolve each repository method to the columns it actually touches.
+
+        Two provable sources: a derived query method name, and a literal JPQL body. Both
+        are resolved through the entity's proven field-to-column mappings, so a property
+        that does not correspond to a real column is quarantined rather than invented.
+        """
+        fields_by_entity: dict[str, dict[str, tuple[str, str]]] = {}
+        for fact in self._facts:
+            if fact.kind != "spring.entity-field":
+                continue
+            attributes = dict(fact.attributes)
+            fields_by_entity.setdefault(attributes["entity"], {})[attributes["field"]] = (
+                attributes["column"],
+                attributes["table"],
+            )
+        if not fields_by_entity:
+            return
+        entity_by_repository = {
+            fact.subject: dict(fact.attributes)["entityFqn"]
+            for fact in self._facts
+            if fact.kind == "spring.repository-association"
+        }
+        queries = {
+            fact.subject: dict(fact.attributes)["query"]
+            for fact in self._facts
+            if fact.kind == "spring.query"
+        }
+
+        for fact in list(self._facts):
+            if fact.kind != "java.method" or "#" not in fact.subject:
+                continue
+            repository, signature = fact.subject.rsplit("#", 1)
+            entity = entity_by_repository.get(repository)
+            if entity is None:
+                continue
+            fields = fields_by_entity.get(entity)
+            if not fields:
+                continue
+            method = signature.split("(", 1)[0]
+            query = queries.get(fact.subject)
+            if query is not None:
+                properties: tuple[str, ...] | None = _jpql_properties(query)
+                derivation = "jpql"
+            else:
+                properties = _derived_properties(method)
+                derivation = "derived"
+            if not properties:
+                continue
+            role = (
+                "projection"
+                if derivation == "jpql"
+                else "predicate"
+            )
+            for prop in properties:
+                mapped = fields.get(prop)
+                if mapped is None:
+                    self._add_residue(
+                        "unresolved-query-property",
+                        "query property does not map to a proven schema column",
+                        f"{method}:{prop}",
+                        fact.location,
+                    )
+                    continue
+                column, table = mapped
+                self._add_fact(
+                    "spring.query-element",
+                    f"{repository}#{method}:{column}",
+                    (
+                        ("column", column),
+                        ("derivation", derivation),
+                        ("entity", entity),
+                        ("method", method),
+                        ("property", prop),
+                        ("repository", repository),
+                        ("role", role),
+                        ("table", table),
+                    ),
+                    fact.location,
+                )
+
+    def _resolve_repository_abstractions(
+        self,
+        repository_types: set[str],
+        abstractions: dict[str, set[tuple[str, str, str, str, str]]],
+        abstraction_sites: dict[str, SourceLocation],
+    ) -> None:
+        """Let a plain interface inherit the entity of its Spring Data specialization.
+
+        Services frequently inject an abstraction rather than the Spring Data type, so
+        without this the receiver is unbound and no lineage is produced at all. The
+        inheritance only happens when it is unambiguous: if two specializations of the
+        same abstraction disagree on the entity, Spring's choice is a runtime decision
+        and the abstraction is quarantined rather than guessed.
+        """
+        for abstraction_fqn, candidates in sorted(abstractions.items()):
+            if abstraction_fqn in repository_types:
+                # Already a repository in its own right; nothing to inherit.
+                continue
+            entities = {candidate[0] for candidate in candidates}
+            location = abstraction_sites[abstraction_fqn]
+            if len(entities) != 1:
+                self._add_residue(
+                    "ambiguous-repository-abstraction",
+                    "specializations disagree on the entity behind the injected abstraction",
+                    abstraction_fqn,
+                    location,
+                )
+                continue
+            entity_fqn, entity_type, id_type, specialization, base_fqn = sorted(
+                candidates
+            )[0]
+            repository_types.add(abstraction_fqn)
+            self._add_fact(
+                "spring.repository-association",
+                abstraction_fqn,
+                (
+                    ("baseFqn", base_fqn),
+                    ("baseType", base_fqn.rsplit(".", 1)[-1]),
+                    ("entityFqn", entity_fqn),
+                    ("entityType", entity_type),
+                    ("idType", id_type),
+                    ("viaAbstraction", "true"),
+                    ("specializedBy", specialization),
+                ),
+                location,
+            )
 
     def _emit_annotations(
         self,
@@ -2271,19 +2795,37 @@ class JavaSpringScaAnalyzer:
         for member in body.named_children:
             if member.type == "field_declaration":
                 field_type = member.child_by_field_name("type")
-                for declarator in (
+                declarators = [
                     child
                     for child in member.named_children
                     if child.type == "variable_declarator"
-                ):
-                    name_node = declarator.child_by_field_name("name")
-                    if name_node is None or field_type is None:
-                        continue
-                    name = _node_text(name_node, parsed.source.content)
+                    and child.child_by_field_name("name") is not None
+                ]
+                if field_type is None or not declarators:
+                    continue
+                names = [
+                    _node_text(
+                        declarator.child_by_field_name("name"), parsed.source.content
+                    )
+                    for declarator in declarators
+                ]
+                # Annotations belong to the declaration, so they are resolved once and
+                # attributed to its first declarator rather than emitted per name.
+                column_override = _column_override(
+                    self._emit_annotations(
+                        parsed, member, f"{owner}#{names[0]}", symbols
+                    )
+                )
+                for declarator, name in zip(declarators, names):
+                    attributes: list[tuple[str, FactValue]] = [
+                        ("type", _node_text(field_type, parsed.source.content))
+                    ]
+                    if column_override is not None:
+                        attributes.append(("column", column_override))
                     self._add_fact(
                         "java.field",
                         f"{owner}#{name}",
-                        (("type", _node_text(field_type, parsed.source.content)),),
+                        tuple(attributes),
                         self._node_location(parsed.source.path, declarator),
                     )
             elif member.type == "constructor_declaration":
@@ -2452,6 +2994,27 @@ class JavaSpringScaAnalyzer:
                 return None
             return resolved
         if context.wildcard_imports and simple_name in _SENSITIVE_FRAMEWORK_NAMES:
+            # An on-demand import can still be provable *within the closed approved set*:
+            # if exactly one approved framework package is wildcard-imported here and it
+            # is the only approved package declaring this simple name, no other approved
+            # symbol can be in play. Two such packages — `Repository` is declared by both
+            # `org.springframework.data.repository` and `org.springframework.stereotype`
+            # — remain a real ambiguity, and a package outside the approved set proves
+            # nothing at all. This is what lets an unmodified `import jakarta.persistence.*`
+            # resolve without widening the approved set itself.
+            approved = sorted(
+                fqn
+                for fqn in _APPROVED_FRAMEWORK_SYMBOLS
+                if fqn.rsplit(".", 1)[-1] == simple_name
+                and fqn.rsplit(".", 1)[0] in context.wildcard_imports
+            )
+            shadowing = [
+                f"{package}.{simple_name}"
+                for package in context.wildcard_imports
+                if f"{package}.{simple_name}" in symbols.local_types
+            ]
+            if len(approved) == 1 and not shadowing:
+                return approved[0]
             self._add_residue(
                 "wildcard-framework-symbol",
                 "wildcard imports cannot prove a framework-sensitive symbol",
@@ -2459,6 +3022,27 @@ class JavaSpringScaAnalyzer:
                 location,
             )
             return None
+        if context.wildcard_imports:
+            # A *local* name is different: the tracked scope is closed, so if exactly one
+            # wildcard-imported package declares this simple name in the snapshot, no
+            # other declaration can be in play. Two candidates are a real ambiguity.
+            candidates = sorted(
+                {
+                    f"{package}.{simple_name}"
+                    for package in context.wildcard_imports
+                    if f"{package}.{simple_name}" in symbols.local_types
+                }
+            )
+            if len(candidates) > 1:
+                self._add_residue(
+                    "ambiguous-wildcard-symbol",
+                    "multiple wildcard imports declare the same local simple name",
+                    simple_name,
+                    location,
+                )
+                return None
+            if len(candidates) == 1:
+                return candidates[0]
         if simple_name in {
             "Boolean",
             "Byte",
@@ -2700,6 +3284,19 @@ class JavaSpringScaAnalyzer:
 
         complete = True
         for statement_tokens in _sql_statement_tokens(tokens):
+            if _is_session_statement_tokens(statement_tokens):
+                # `CREATE DATABASE` and `USE` set up a session; they declare no table and
+                # carry no lineage, so they are inventory-only rather than a reason to
+                # reject the file. Real MySQL schema dumps open with both.
+                self._add_residue(
+                    "ignored-schema-statement",
+                    "session statements declare no table and carry no lineage",
+                    statement_tokens[0].text,
+                    _sql_token_location(
+                        source.path, text, statement_tokens[0], "sql_statement"
+                    ),
+                )
+                continue
             if not _is_create_table_tokens(statement_tokens):
                 is_index = _is_create_index_tokens(statement_tokens)
                 valid_index = is_index and _valid_create_index_statement(
@@ -2801,9 +3398,23 @@ class JavaSpringScaAnalyzer:
                     ("nameQuoted", _sql_expression_quoted(table.this)),
                     ("schema", table.db),
                     ("schemaQuoted", _sql_expression_quoted(table.args.get("db"))),
+                    ("schemaSource", "profile-schema"),
                 ),
                 _sql_token_location(source.path, text, locations[0], "table"),
             )
+            for column, data_type, primary_key in _created_columns(statement):
+                self._add_fact(
+                    "sql.column",
+                    f"{table.name}.{column}",
+                    (
+                        ("column", column),
+                        ("dataType", data_type),
+                        ("dialect", sqlglot_dialect),
+                        ("primaryKey", "true" if primary_key else "false"),
+                        ("table", table.name),
+                    ),
+                    _sql_token_location(source.path, text, locations[0], "table"),
+                )
         return complete
 
     def _add_fact(
@@ -2859,6 +3470,93 @@ class JavaSpringScaAnalyzer:
         self._residue.append(
             AnalysisResidue(code, f"diagnostic:{code}", safe_symbol, location)
         )
+
+
+def _maven_identity(text: str) -> tuple[tuple[str, str] | None, tuple[str, str] | None, str]:
+    """(own coordinates, parent coordinates, boot-parent version) for one pom, cheaply."""
+    try:
+        root = ET.fromstring(text)
+    except ET.ParseError:
+        return None, None, ""
+    own = _xml_values(root)
+    parent_node = _xml_direct_child(root, "parent")
+    parent = _xml_values(parent_node) if parent_node is not None else {}
+    own_group = own.get("groupId") or parent.get("groupId", "")
+    coordinates = (
+        (own_group, own["artifactId"]) if own.get("artifactId") else None
+    )
+    parent_coordinates = (
+        (parent.get("groupId", ""), parent["artifactId"])
+        if parent.get("artifactId")
+        else None
+    )
+    boot_version = (
+        parent.get("version", "")
+        if parent.get("groupId") == "org.springframework.boot"
+        and parent.get("artifactId") == "spring-boot-starter-parent"
+        else ""
+    )
+    return coordinates, parent_coordinates, boot_version
+
+
+def _declared_parent_boot_versions(
+    source: JavaSpringSource,
+    text: str,
+    sources: tuple[JavaSpringSource, ...],
+) -> frozenset[str]:
+    """Boot versions reachable through the parent this pom explicitly declares."""
+    _, parent_coordinates, _ = _maven_identity(text)
+    if parent_coordinates is None:
+        return frozenset()
+    versions: set[str] = set()
+    for candidate in sources:
+        if candidate.path == source.path:
+            continue
+        if PurePosixPath(candidate.path).name != "pom.xml":
+            continue
+        try:
+            candidate_text = candidate.content.decode("utf-8", errors="strict")
+        except UnicodeDecodeError:
+            continue
+        coordinates, _, boot_version = _maven_identity(candidate_text)
+        if coordinates == parent_coordinates and boot_version:
+            versions.add(boot_version)
+    return frozenset(versions)
+
+
+def _inherit_parent_build_evidence(
+    closures: list[_BuildClosure],
+) -> list[_BuildClosure]:
+    """Let a module inherit Boot evidence from the aggregator it names as its parent.
+
+    Maven multi-module builds put the Boot parent in the aggregator and the Spring Data
+    JPA dependency in each module, so neither file carries a complete closure alone.
+    The link is followed only through the parent coordinates the module explicitly
+    declares and only to a pom present in the analysed scope — never inferred from
+    directory position, and never from a pom the snapshot does not contain.
+    """
+    by_coordinates = {
+        closure.coordinates: closure
+        for closure in closures
+        if closure.coordinates is not None
+    }
+    rejoined: list[_BuildClosure] = []
+    for closure in closures:
+        if closure.boot or closure.parent_coordinates is None:
+            rejoined.append(closure)
+            continue
+        parent = by_coordinates.get(closure.parent_coordinates)
+        if parent is None or not parent.boot:
+            rejoined.append(closure)
+            continue
+        inherited = tuple(
+            _BuildEvidence(
+                closure.path, item.kind, item.group, item.artifact, item.version, True
+            )
+            for item in parent.boot
+        )
+        rejoined.append(replace(closure, boot=inherited, relevant=True))
+    return rejoined
 
 
 def _validate_source_path(path: str) -> None:
@@ -3247,20 +3945,33 @@ def _simple_type(type_name: str) -> str:
 
 def _super_types(
     declaration: Node, content: bytes
-) -> tuple[tuple[str, ...], tuple[str, ...], tuple[Node, ...]]:
+) -> tuple[tuple[str, ...], tuple[str, ...], tuple[Node, ...], tuple[Node, ...]]:
+    """Split declared supertypes into generic and plain nodes.
+
+    The plain nodes matter for repository abstractions: a Spring Data specialization
+    typically extends both a framework base with generics *and* a plain project interface
+    that services actually inject.
+    """
     extends: list[str] = []
     implements: list[str] = []
     generic_nodes: list[Node] = []
+    plain_nodes: list[Node] = []
     for child in declaration.named_children:
         if child.type in {"extends_interfaces", "superclass"}:
             types = _direct_supertype_nodes(child)
             extends.extend(_node_text(node, content) for node in types)
-            generic_nodes.extend(node for node in types if node.type == "generic_type")
         elif child.type in {"super_interfaces", "implements_interfaces"}:
             types = _direct_supertype_nodes(child)
             implements.extend(_node_text(node, content) for node in types)
-            generic_nodes.extend(node for node in types if node.type == "generic_type")
-    return tuple(extends), tuple(implements), tuple(generic_nodes)
+        else:
+            continue
+        generic_nodes.extend(node for node in types if node.type == "generic_type")
+        plain_nodes.extend(
+            node
+            for node in types
+            if node.type in {"type_identifier", "scoped_type_identifier"}
+        )
+    return tuple(extends), tuple(implements), tuple(generic_nodes), tuple(plain_nodes)
 
 
 def _direct_supertype_nodes(node: Node) -> tuple[Node, ...]:
@@ -3610,9 +4321,14 @@ def _constructor_binding(
         return None
     field_name = _node_text(field_node, content)
     parameter_name = _node_text(right, content)
-    if fields.get(field_name) != parameters.get(parameter_name):
+    # `fields` holds only tracked repository fields, and an unresolvable parameter type
+    # is None. Comparing the two `.get` results alone treats "both absent" as a match,
+    # so an injected collaborator that is neither tracked nor resolvable looked like a
+    # binding and then indexed a field that was never there.
+    field_type = fields.get(field_name)
+    if field_type is None or field_type != parameters.get(parameter_name):
         return None
-    return field_name, parameter_name, fields[field_name]
+    return field_name, parameter_name, field_type
 
 
 def _receiver_name(node: Node | None, content: bytes) -> tuple[str, bool] | None:
@@ -3640,6 +4356,41 @@ def _created_table(statement: exp.Expression | None) -> exp.Table | None:
     return target if isinstance(target, exp.Table) else None
 
 
+def _created_columns(
+    statement: exp.Expression | None,
+) -> tuple[tuple[str, str, bool], ...]:
+    """Return (column, dataType, isPrimaryKey) for a proven CREATE TABLE.
+
+    Only literal column definitions count. A table whose shape comes from a query or a
+    LIKE clause has no provable element list, so it yields nothing rather than a guess.
+    """
+    if (
+        not isinstance(statement, exp.Create)
+        or str(statement.args.get("kind", "")).upper() != "TABLE"
+    ):
+        return ()
+    schema = statement.this
+    if not isinstance(schema, exp.Schema):
+        return ()
+    columns: list[tuple[str, str, bool]] = []
+    for definition in schema.expressions:
+        if not isinstance(definition, exp.ColumnDef):
+            continue
+        name = definition.this
+        if not isinstance(name, exp.Identifier) or not name.name:
+            continue
+        data_type = definition.args.get("kind")
+        primary_key = any(
+            isinstance(constraint, exp.ColumnConstraint)
+            and isinstance(constraint.kind, exp.PrimaryKeyColumnConstraint)
+            for constraint in definition.args.get("constraints") or ()
+        )
+        columns.append(
+            (name.name, data_type.sql().upper() if data_type is not None else "", primary_key)
+        )
+    return tuple(columns)
+
+
 def _sql_expression_quoted(expression: object) -> str:
     return (
         "true"
@@ -3661,6 +4412,19 @@ def _sql_statement_tokens(tokens: list[Token]) -> tuple[tuple[Token, ...], ...]:
     if start < len(tokens):
         statements.append(tuple(tokens[start:]))
     return tuple(statements)
+
+
+def _is_session_statement_tokens(tokens: tuple[Token, ...]) -> bool:
+    """`USE db`, `CREATE DATABASE`, `CREATE SCHEMA` — session setup, not schema."""
+    if not tokens:
+        return False
+    if tokens[0].token_type == TokenType.USE:
+        return True
+    return (
+        len(tokens) >= 2
+        and tokens[0].token_type == TokenType.CREATE
+        and tokens[1].token_type in {TokenType.DATABASE, TokenType.SCHEMA}
+    )
 
 
 def _is_create_table_tokens(tokens: tuple[Token, ...]) -> bool:
@@ -3903,3 +4667,83 @@ def _sql_token_location(
         ast_kind,
         f"sql.token[{token.start}:{token.end + 1}]/{ast_kind}",
     )
+
+
+def _column_override(annotations: tuple["_AnnotationRecord", ...]) -> str | None:
+    """The literal column name from an exact `@Column(name=...)`, if one is provable.
+
+    Only a resolved `jakarta.persistence.Column` carrying a bounded literal counts. A
+    dynamic or unresolvable annotation leaves the field to the naming convention rather
+    than inventing a column name.
+    """
+    for record in annotations:
+        if record.resolved_fqn != _COLUMN_FQN:
+            continue
+        name = dict(record.literal_values).get("name")
+        if isinstance(name, str) and _EVIDENCE_TABLE_IDENTIFIER.fullmatch(name):
+            return name
+        return None
+    return None
+
+
+def _snake_case(name: str) -> str:
+    """JPA's default physical naming: camelCase becomes snake_case."""
+    return re.sub(r"(?<=[a-z0-9])(?=[A-Z])", "_", name).lower()
+
+
+# Spring Data derived-query grammar, reduced to what can be proven without a parser.
+_DERIVED_SUBJECTS = (
+    "findBy", "readBy", "getBy", "queryBy", "searchBy", "streamBy",
+    "countBy", "existsBy", "deleteBy", "removeBy",
+)
+_DERIVED_WRITE_SUBJECTS = ("deleteBy", "removeBy")
+# Trailing operator keywords that qualify a property rather than name one.
+_DERIVED_KEYWORDS = (
+    "IsStartingWith", "IsEndingWith", "IsNotContaining", "IsContaining", "StartingWith",
+    "EndingWith", "Containing", "IgnoreCase", "NotContains", "GreaterThanEqual",
+    "LessThanEqual", "GreaterThan", "LessThan", "IsNotNull", "IsNull", "NotNull",
+    "IsBetween", "Between", "NotLike", "Like", "NotIn", "In", "IsTrue", "IsFalse",
+    "True", "False", "After", "Before", "Near", "Within", "Regex", "Not", "Is",
+    "Equals", "Contains", "Matches", "Exists",
+)
+
+
+def _derived_properties(method: str) -> tuple[str, ...] | None:
+    """Split a derived query method into the properties it constrains.
+
+    Returns None when the name is not a derived query at all, so a plain repository
+    method is never mistaken for one.
+    """
+    subject = next((item for item in _DERIVED_SUBJECTS if method.startswith(item)), None)
+    if subject is None:
+        return None
+    remainder = method[len(subject):]
+    if not remainder:
+        return ()
+    # OrderBy introduces sort properties, which are read too, so keep both halves.
+    remainder = remainder.replace("OrderBy", "And")
+    properties: list[str] = []
+    for part in re.split(r"And|Or", remainder):
+        if not part:
+            continue
+        for keyword in _DERIVED_KEYWORDS:
+            if part.endswith(keyword) and len(part) > len(keyword):
+                part = part[: -len(keyword)]
+                break
+        if part and part[0].isupper():
+            properties.append(part[0].lower() + part[1:])
+    return tuple(properties)
+
+
+def _jpql_properties(query: str, alias_hint: str | None = None) -> tuple[str, ...]:
+    """Property references in a JPQL body, as `alias.property` pairs.
+
+    Only dotted references are taken: a bare identifier could be an entity, an alias or a
+    keyword, and guessing between them is exactly what this analyzer must not do.
+    """
+    found: list[str] = []
+    for match in re.finditer(r"\b[A-Za-z_][A-Za-z0-9_]*\.([A-Za-z_][A-Za-z0-9_]*)", query):
+        name = match.group(1)
+        if name not in found:
+            found.append(name)
+    return tuple(found)

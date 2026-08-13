@@ -19,9 +19,9 @@ prototype labels remain useful: **Implemented**, **Fixture adapter**, **Interfac
 | L01 URN and resolver | Implemented | `LOCAL_PASS` | Canonical URNs, ordered catalog resolution, aliases, element validation, quarantine, snapshot/version determinants | Enterprise catalog export/schema, platform case/quote corpus and governed alias mutation are `NOT_CONFIGURED` |
 | L02 intake and queues | Implemented | `LOCAL_PASS`, `SYNTH_PASS`, live `AWS_REQUIRED` | HMAC intake, dedupe, durable acceptance/outbox, FIFO groups, lease visibility, DLQ/redrive contracts, EventBridge/SQS routing and lane headroom | GitHub/Jenkins canonical receivers and 100/s plus 10k-burst AWS evidence |
 | L03 orchestration | Implemented | `LOCAL_PASS`, `SYNTH_PASS`, live `AWS_REQUIRED` | Versioned B1–B10, I1–I10, P1–P8, D1–D6 and N1–N6 definitions; generated ASL parity; immutable handler versions; crash redrive | Live Step Functions execution/canary and production quota evidence |
-| L04 SCA engine | Implemented seed pack plus closed Java/Spring cell | `LOCAL_PASS`, Spring Petclinic `LOCAL_REAL_REPOSITORY_PASS`, packaged target `SYNTH_PASS` | Deterministic Python AST matcher; repository-neutral Tree-sitter Java + SQLGlot Spring Boot/Data JPA/PostgreSQL pack; exact citations/transforms/residue; bounded callback Fargate target; exact-revision acquisition for local checkouts and public HTTPS Git origins with pre-connect address revalidation, pinned addresses, no redirects/proxies/credential helpers/hooks, process-group bounds and guaranteed cleanup | Other languages/frameworks, Maven/Gradle module graphs, custom repository bases, dynamic query construction, nonstandard schema discovery, hostile-estate load corpus and enterprise conventions remain outside this cell |
+| L04 SCA engine | Implemented seed pack plus closed Java/Spring cell | `LOCAL_PASS`, Spring Petclinic `LOCAL_REAL_REPOSITORY_PASS`, packaged target `SYNTH_PASS` | Deterministic Python AST matcher; repository-neutral Tree-sitter Java + SQLGlot Spring Boot/Data JPA/PostgreSQL pack; exact citations/transforms/residue; element-level schema columns and entity-field mappings (`sql.column`, `spring.entity-field`) resolved by explicit `@Column` or the JPA snake_case convention and grounded in a real schema column, including fields inherited from a `@MappedSuperclass` (mapped into each inheriting entity's own table); L3 field lineage (`spring.query-element`) resolving derived query method names and literal JPQL bodies to the columns they touch; bounded callback Fargate target; exact-revision acquisition for local checkouts and public HTTPS Git origins with pre-connect address revalidation, pinned addresses, no redirects/proxies/credential helpers/hooks, process-group bounds and guaranteed cleanup | Other languages/frameworks, Maven/Gradle module graphs, custom repository bases, dynamic query construction, nonstandard schema discovery, hostile-estate load corpus and enterprise conventions remain outside this cell. Measured against `spring-petclinic-rest` at `698bd832eac0da48e72deb63ce7ab275d98a88fb` (153 paths, 87 production Java files, 1772 facts): framework-sensitive names still do not resolve through on-demand imports (`wildcard-framework-symbol`) because jars are invisible to the analyzer, so an entity whose `@Entity`/`@Table` arrive via `import jakarta.persistence.*;` yields no table mapping; unnamed `CREATE INDEX ON <table> (<col>)` is recorded as `malformed-sql` even though sqlglot parses it, and a `@Table` annotation built from a constant is `dynamic-table-mapping`. Those three force `INTEGRATION_REQUIRED`, which is the designed fail-closed outcome, not a defect |
 | L05 LLM gateway | Interface only | `LOCAL_PASS` for skip/no-fabrication contracts; `NOT_CONFIGURED` externally | LLM provenance/confidence contract, residue boundary and no-fabrication behavior | Approved Bedrock gateway, models, prompts, budgets, cache and guardrails |
-| L06 runtime observation | Implemented contracts and local plane | `LOCAL_PASS`; live integrations `NOT_CONFIGURED` | Signed expiring non-production sessions, revoke/drain/close manifests, OpenLineage facets, metadata-only SDK mapping, OTel connectivity mapping and artifact binding | Spark/Dask listener installation, OTel collector topology and weekly production hard-deny probe |
+| L06 runtime observation | Implemented contracts and local plane | `LOCAL_PASS`; live integrations `NOT_CONFIGURED` | Signed expiring non-production sessions, revoke/drain/close manifests, OpenLineage facets, metadata-only SDK mapping, OTel connectivity mapping and artifact binding; local plane now carries real stage-produced sessions on the collection path via per-collection opt-in (`runtime_execution=True`), in-process execution | Isolation remains a stated limit; Spark/Dask listener installation, OTel collector topology and weekly production hard-deny probe |
 | L07 consolidation and confidence | Implemented | `LOCAL_PASS` | Stable edge/provenance identities, commutative/idempotent merge, band/corroboration separation, transform conflict, late runtime reconciliation | Estate-scale partition/hot-key and full contradiction/decay corpus |
 | L08 evidence and control stores | Implemented local + AWS adapters | `LOCAL_PASS`, `SYNTH_PASS`, live `AWS_REQUIRED` | Canonical SHA-256 objects, overwrite/tamper refusal, SQLite/Dynamo conditional control, versioned S3 references, production Object Lock/replication topology | Live retention, replication-time and restore evidence with compliance-approved periods |
 | L09 proposals and review | Implemented | `LOCAL_PASS` | Deterministic diffs, lifecycle, optimistic lock, immutable approvals/corrections/audit and manual publish | TAS/RBAC ownership, governed auto-publish sampling and calibration corpus are `NOT_CONFIGURED` |
@@ -32,6 +32,130 @@ prototype labels remain useful: **Implemented**, **Fixture adapter**, **Interfac
 | L14 infrastructure and deployment | Implementation in progress | `SYNTH_PASS`, package `LOCAL_PASS`, live `AWS_REQUIRED` | Ten CDK stacks, nine Lambda aliases/canaries including explicit classification compute, SCA Fargate, queues/DLQs, DynamoDB/S3/Kinesis/Neptune/API/budget/backup/recovery and exact OCI digests | A2–A9 real stage bindings/product delivery plus clean-account deploy, canary rollback and service-quota validation |
 | L15 NFR and resiliency | Implemented local harness | `LOCAL_PASS`; scale/availability/DR `AWS_REQUIRED` | Named failpoints, replay equivalence, publication crash matrix, lane fairness smoke, truthful resilience UI and content-addressed acceptance evidence | 12-hour Baseline, sustained/burst, error-budget, cost, multi-AZ failure and RPO/RTO drills |
 | L16 delivery plan | Implemented through Task 21 | Tasks 17–21 `LOCAL_PASS`/`SYNTH_PASS`; Task 22 pending | Build-ready B01–B16 PRDs, deployable packages, executable AWS workflow spine, acceptance harness and operator/diagram handoff | Task 22 PR/review loop and all external evidence above |
+
+## Product prototype alignment (2026-08-12)
+
+The expectation is **derived from the prototype document, not paraphrased**.
+`scripts/extract_prototype_expectation.py` parses the actual
+`Throughline - Agentic.dc.html` (242,743 bytes) and writes the vocabularies it models to
+`docs/architecture/prototype-expectation.json`:
+
+| Extracted from the document | Value |
+|---|---|
+| element field signature | `name, type, tag, up, down, xf` |
+| confidence bands | `verified ≥90, probable ≥65, inferred` |
+| confidence signals | `dask, llm, otel, spark, static` |
+| liveness bands | `HOT, WARM, COLD, DEAD?` |
+| severity bands | `break, origin, warn` |
+| interaction channels | `async, graphql, grpc, rest` |
+| dataset kinds | `cache, datastore, kafka, s3file, s3land, search` |
+
+`apps/api/tests/test_prototype_expectation.py` asserts the platform implements every
+term in that file, so a change to the prototype breaks the build rather than drifting
+silently. `scripts/verify_prototype_alignment.py` then scores the composed output:
+**18/18 dimensions on the purpose-built fixtures**, across six repositories in two
+estates (a Java service, three SQL/Python pipelines, and the H2 corpus that must keep
+failing closed).
+
+### The real upstream checkout: COMPLETE, scored 9/9
+
+`scripts/measure_real_petclinic.py <path>` runs the full pipeline against an unmodified
+`spring-petclinic-microservices` checkout at `305a1f13e4f961001d4e6cb50a9db51dc3fc5967`
+(208 files, 8 modules, analysed from the repository root — the smallest scope containing
+a complete build closure):
+
+```
+status: COMPLETE   edges=14  reads=10  writes=4   residue: ignored-schema-statement x6
+  owners, pets, types, vets, visits — including two JPQL @Query edges
+interactions: 15 inbound, 1 outbound, 5 residue
+  OUT REST  -> customers-service  GET /owners/{ownerId}
+  IN  REST  GET /api/gateway/owners/{ownerId}, POST /owners, PUT /owners/{ownerId}, ...
+composed graph: 13 edges over 9 datasets    blast radius from owners: 5 impacted
+
+scored against Throughline - Agentic.dc.html (242,743 bytes):  9/9 ON THE REAL CHECKOUT
+```
+
+It produced **zero** edges at the start of this increment. Six boundaries were closed,
+each narrowed rather than removed:
+
+1. **On-demand framework imports.** `import jakarta.persistence.*;` binds a
+   framework-sensitive name only when exactly one *approved* package is
+   wildcard-imported, it is the only approved package declaring that name, and no local
+   type shadows it. `Repository` — declared by both
+   `org.springframework.data.repository` and `org.springframework.stereotype` — stays
+   residue, and an unapproved package still proves nothing. This is a deliberate,
+   bounded loosening of a previously absolute rule; two existing tests asserted the
+   absolute form and were rewritten with the trade-off stated in the test.
+2. **Multi-module Maven.** A module inherits Boot evidence through the parent
+   coordinates it explicitly declares, to a pom present in scope — never inferred from
+   directory position. Aggregators need not declare the JPA dependency; versionless
+   module dependencies resolve against the parent's managed Boot version.
+3. **MySQL DDL.** `CREATE DATABASE` and `USE` are session setup carrying no lineage, so
+   they are inventory-only rather than grounds to reject a schema file.
+4. **Per-module profile schemas.** A microservices repository keeps one schema per
+   service, so a profile schema may live under any module directory.
+5. **Cross-entity `@Query`.** A `@Query` naming another entity resolves to *that*
+   entity's table — Petclinic's `PetRepository` legitimately reads `PetType` — provided
+   the entity is declared in scope. An unknown name is still a conflict, never a guess.
+   JPQL shorthand `FROM X WHERE ...` is supported.
+6. **Other-profile schemas.** A `db/<profile>/schema.sql` the run did not select is
+   skipped, not unsupported; shipping an HSQLDB dev schema must not make a repository
+   unanalysable.
+
+Interactions on the real repository cover both directions, and the one outbound call
+built from a variable (`VisitsServiceClient`) is refused as `dynamic-endpoint` rather
+than guessed — the discipline holding on real code.
+
+### Schema sources
+
+The cell reads three schema sources, in this order of specificity:
+
+| Source | Path convention | Notes |
+|---|---|---|
+| Profile schema | `**/src/main/resources/db/<profile>/schema.sql` | Most specific; wins when present |
+| Flyway migrations | `**/db/migration/**/V<version>__*.sql` | Replayed in numeric version order |
+| Liquibase changelogs | `**/db/changelog/**/*.xml`, or any `*changelog*.xml` | Replayed in include then document order |
+
+Migrations are **replayed, not accumulated**: a set containing `DROP TABLE` cannot be
+reduced by appending facts without emitting a table that no longer exists. A statement
+or change the replay cannot model marks the whole schema incomplete and emits nothing,
+so resolution fails closed on `missing-schema-table` rather than binding an entity to a
+schema the migrations do not produce.
+
+Flyway specifics: `R__` repeatable migrations are excluded (they carry no position in
+the sequence); two migrations at the same version are `ambiguous-migration-version`
+rather than an arbitrary tie-break; vendor directories (`db/migration/mysql/`) apply
+only to their own profile.
+
+Liquibase specifics: `createTable`, `addColumn`, `dropColumn`, `dropTable` are modelled
+declaratively — no SQL dialect parsing is needed — and the `<sql>` escape hatch is
+replayed through the same statement applier Flyway uses, so both sources are
+semantically identical. `include` and `includeAll` are followed only to files present in
+scope; a missing include is `missing-changelog-include` and makes the replay incomplete.
+YAML and JSON changelogs are refused as `unsupported-changelog-format` rather than
+guessed at.
+
+Not modelled by either replay: `ALTER TABLE RENAME`, `ALTER COLUMN`, and Liquibase
+`renameColumn`/`renameTable`. These are fail-closed, but they are a real limit — renames
+are common in long-lived migration histories.
+
+### Other limits
+
+- Liveness bands read `COLD` because the generated plan exercises each edge once; they
+  describe that run, not production traffic. The bottom band is `UNOBSERVED`, not the
+  prototype's `DEAD?`, because the evidence only supports "this session did not witness
+  it".
+- The Python and SQL cells disagree on one transform's text (sqlglot renders `DATE(x)` as
+  `CAST(x AS DATE)` under some dialects), so transform text — and therefore edge identity
+  — is schema-profile dependent. Composition marks it `transformConflict`.
+- OTel span enrichment to interactions is designed but not built; outbound extraction
+  covers `@FeignClient` only.
+
+New in this increment: `sql-transformation-v1`, `services/composition.py`,
+`services/impact_simulation.py`, `domain/product_confidence.py`, `services/liveness.py`,
+`application/runtime_stage.py`, `domain/interactions.py`,
+`services/java_interaction_sca.py` (REST, GraphQL, gRPC, async channels), and
+catalog-owned dataset kinds. Plans for every dimension are in `docs/superpowers/plans/`.
 
 ## Tasks 17–21 delivery status (Tasks 17–20 implementation plus handoff)
 

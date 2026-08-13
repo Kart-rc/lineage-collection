@@ -14,8 +14,26 @@ from lineage_api.services.java_spring_sca import (
     JavaSpringScaAnalyzer,
     JavaSpringSource,
 )
-from lineage_api.services.resolver import ResolveContext
+from lineage_api.services.resolver import (
+    RawName,
+    ResolveContext,
+    ResolvedName,
+    Resolver,
+)
+from lineage_api.services.kafka_binding_sca import (
+    is_stream_configuration,
+    read_stream_bindings,
+)
+from lineage_api.services.schema_migrations import (
+    is_flyway_migration,
+    is_liquibase_changelog,
+)
 from lineage_api.services.sca import ScaAnalyzer
+from lineage_api.services.sql_transformation_sca import (
+    SqlTransformationSource,
+    analyze_sql_sources,
+    compile_derivation_edges,
+)
 
 
 _MAX_SELECTION_TEXT = 128
@@ -177,10 +195,25 @@ class AnalyzerRegistry:
         self._definitions = tuple(sorted(definitions, key=lambda item: item.analyzer_pack))
 
     @classmethod
-    def default(cls, python_analyzer: ScaAnalyzer | None = None) -> "AnalyzerRegistry":
+    def default(
+        cls,
+        python_analyzer: ScaAnalyzer | None = None,
+        sql_resolver: Resolver | None = None,
+        kafka_resolver: Resolver | None = None,
+    ) -> "AnalyzerRegistry":
         python_handler = (
             _PythonAnalyzerAdapter(python_analyzer).analyze
             if python_analyzer is not None
+            else None
+        )
+        sql_handler = (
+            _SqlTransformationAnalyzerAdapter(sql_resolver).analyze
+            if sql_resolver is not None
+            else None
+        )
+        kafka_handler = (
+            _KafkaBindingAnalyzerAdapter(kafka_resolver).analyze
+            if kafka_resolver is not None
             else None
         )
         return cls(
@@ -213,22 +246,65 @@ class AnalyzerRegistry:
                     "repository-scope-v1",
                     _JavaSpringAnalyzerAdapter().analyze,
                 ),
+                AnalyzerDefinition(
+                    "kafka-streams-v1",
+                    "kafka-binding-rules-v1",
+                    "git-checkout",
+                    "spring-cloud-stream",
+                    ("kafka",),
+                    (
+                        kafka_resolver.resolver_version
+                        if kafka_resolver is not None
+                        else "catalog-resolver-v1"
+                    ),
+                    (
+                        kafka_resolver.snapshot_id
+                        if kafka_resolver is not None
+                        else "catalog-snapshot-v1"
+                    ),
+                    kafka_handler,
+                ),
+                AnalyzerDefinition(
+                    "sql-transformation-v1",
+                    "sql-transformation-rules-v1",
+                    "git-checkout",
+                    "sql-transformation",
+                    ("postgres", "snowflake"),
+                    (
+                        sql_resolver.resolver_version
+                        if sql_resolver is not None
+                        else "catalog-resolver-v1"
+                    ),
+                    (
+                        sql_resolver.snapshot_id
+                        if sql_resolver is not None
+                        else "catalog-snapshot-v1"
+                    ),
+                    sql_handler,
+                ),
             )
         )
 
-    def resolve(self, selection: AnalyzerSelection) -> AnalyzerDefinition:
+    def resolve_pack(self, analyzer_pack: str) -> AnalyzerDefinition:
+        """Look up a pack's own registered determinants (source kind, framework, ...).
+
+        Unlike `resolve`, this does not validate a caller-supplied selection against
+        the registry; it answers "what does this pack actually require", which is
+        exactly what callers need when they must *construct* a selection (or a source
+        descriptor) for a pack rather than merely check one they were handed.
+        """
         definition = next(
-            (
-                item
-                for item in self._definitions
-                if item.analyzer_pack == selection.analyzer_pack
-            ),
+            (item for item in self._definitions if item.analyzer_pack == analyzer_pack),
             None,
         )
         if definition is None:
             raise AnalyzerSelectionError(
                 "UNKNOWN_ANALYZER_PACK", "analyzer pack is outside the closed registry"
             )
+        return definition
+
+    def resolve(self, selection: AnalyzerSelection) -> AnalyzerDefinition:
+        definition = self.resolve_pack(selection.analyzer_pack)
         checks = (
             (
                 selection.ruleset == definition.ruleset,
@@ -324,6 +400,31 @@ class AnalyzerRegistry:
                 if PurePosixPath(path).suffix == ".md"
                 or PurePosixPath(path).name
                 in {"expected-lineage.json", "repository-evidence.json"}
+            )
+            unsupported = tuple(
+                path
+                for path in expected
+                if path not in set(selected) and path not in set(skipped)
+            )
+        elif selection.analyzer_pack == "kafka-streams-v1":
+            # This cell reads configuration. Everything else in the repository is simply
+            # not its concern — "unsupported" would wrongly claim the repository is
+            # outside the cell's compatibility boundary.
+            selected = tuple(path for path in expected if is_stream_configuration(path))
+            skipped = tuple(path for path in expected if path not in set(selected))
+            unsupported = ()
+        elif selection.analyzer_pack == "sql-transformation-v1":
+            selected = tuple(
+                path
+                for path in expected
+                if PurePosixPath(path).suffix == ".sql"
+                and PurePosixPath(path).parts[:1] == ("sql",)
+            )
+            skipped = tuple(
+                path
+                for path in expected
+                if PurePosixPath(path).suffix == ".md"
+                or PurePosixPath(path).name == "expected-lineage.json"
             )
             unsupported = tuple(
                 path
@@ -498,8 +599,9 @@ class PinnedSnapshotProvider:
             raise AnalyzerSelectionError(
                 "INVALID_SOURCE_DESCRIPTOR", "exact checkout source descriptor is required"
             )
+        definition = AnalyzerRegistry.default().resolve_pack(self._snapshot.analyzer_pack)
         expected = {
-            "sourceKind": "git-checkout",
+            "sourceKind": definition.source_kind,
             "origin": self._snapshot.origin,
             "revision": self._snapshot.revision,
             "scopeDigest": self._snapshot.scope_digest,
@@ -511,7 +613,7 @@ class PinnedSnapshotProvider:
             .disposition_digest,
             "analyzerPack": self._snapshot.analyzer_pack,
             "ruleset": self._snapshot.ruleset,
-            "framework": "spring-data-jpa",
+            "framework": definition.framework,
             "schemaProfile": source.get("schemaProfile"),
             "platform": self._snapshot.platform,
         }
@@ -575,6 +677,220 @@ class _PythonAnalyzerAdapter:
         )
 
 
+class _KafkaBindingAnalyzerAdapter:
+    """Turn Spring Cloud Stream bindings into topic dataset edges.
+
+    A binding proves which topic a function reads or writes, so the edge is dataset-level
+    by nature. Claiming element-level lineage from a binding would be a guess: the
+    configuration says nothing about fields.
+    """
+
+    def __init__(self, resolver: Resolver) -> None:
+        self._resolver = resolver
+
+    def analyze(
+        self,
+        snapshot: AnalyzerSnapshot,
+        schema_profile: str,
+        run_id: str,
+        correlation_id: str,
+    ) -> AnalyzerRunResult:
+        sources = {
+            path: snapshot.read_bytes(path).decode("utf-8", errors="replace")
+            for path in snapshot.paths
+            if is_stream_configuration(path)
+        }
+        analysis = read_stream_bindings(sources)
+        context = ResolveContext(
+            env=snapshot.environment,
+            platform="kafka",
+            system=snapshot.system,
+            repo=snapshot.repository,
+            digest=snapshot.revision,
+            config={},
+            snapshot_id=self._resolver.snapshot_id,
+        )
+
+        edges: list[dict[str, Any]] = []
+        residue = [
+            {
+                "code": item.code,
+                "location": {"path": item.path, "line": item.line},
+                "symbol": item.symbol,
+            }
+            for item in analysis.residue
+        ]
+        datasets: set[str] = set()
+
+        for binding in analysis.bindings:
+            resolved = self._resolver.resolve(
+                RawName("dataset", binding.topic, "SCA", ()), context
+            )
+            if not isinstance(resolved, ResolvedName):
+                residue.append(
+                    {
+                        "code": "unresolved-topic",
+                        "location": {"path": binding.path, "line": binding.line},
+                        "symbol": binding.topic,
+                    }
+                )
+                continue
+            topic_urn = str(resolved.urn)
+            service_urn = f"service://{snapshot.repository}/{binding.function}"
+            datasets.add(topic_urn)
+            from_urn, to_urn = (
+                (topic_urn, service_urn)
+                if binding.direction == "READS"
+                else (service_urn, topic_urn)
+            )
+            identity = "|".join(
+                (snapshot.repository, binding.path, str(binding.line), from_urn, to_urn)
+            )
+            edges.append(
+                {
+                    "provenanceId": f"prov-{hashlib.sha256(identity.encode()).hexdigest()[:24]}",
+                    "from": [from_urn],
+                    "to": to_urn,
+                    "edgeType": binding.direction,
+                    "transform": f"{binding.function} {binding.binding} -> {binding.topic}",
+                    "mechanism": "SCA",
+                    "exact": True,
+                    "file": binding.path,
+                    "line": binding.line,
+                }
+            )
+
+        status = "INTEGRATION_REQUIRED" if residue else "COMPLETE"
+        status_reasons = tuple(sorted({str(item["code"]) for item in residue}))
+        document = {
+            "schemaVersion": "1.0.0",
+            "repo": snapshot.repository,
+            "digest": snapshot.revision,
+            "runId": run_id,
+            "correlationId": correlation_id,
+            "rulesetVersion": snapshot.ruleset,
+            "resolverVersion": self._resolver.resolver_version,
+            "snapshotId": self._resolver.snapshot_id,
+            "status": status,
+            "statusReasons": list(status_reasons),
+            "edges": sorted(edges, key=lambda item: (item["to"], item["from"][0])),
+            "residue": residue,
+            "datasetsSeen": sorted(datasets),
+            "coverage": {"bindingsSeen": len(analysis.bindings)},
+            "stats": {
+                "filesAnalyzed": len(sources),
+                "edgesEmitted": len(edges),
+                "residueCount": len(residue),
+                "quarantinedCount": 0,
+            },
+        }
+        return AnalyzerRunResult(
+            document=document,
+            status=status,
+            status_reasons=status_reasons,
+            edge_count=len(edges),
+            read_count=sum(1 for e in edges if e["edgeType"] == "READS"),
+            write_count=sum(1 for e in edges if e["edgeType"] == "WRITES"),
+            residue_count=len(residue),
+            unresolved_count=0,
+        )
+
+
+class _SqlTransformationAnalyzerAdapter:
+    def __init__(self, resolver: Resolver) -> None:
+        self._resolver = resolver
+
+    def analyze(
+        self,
+        snapshot: AnalyzerSnapshot,
+        schema_profile: str,
+        run_id: str,
+        correlation_id: str,
+    ) -> AnalyzerRunResult:
+        resolver = self._resolver
+        sources = tuple(
+            SqlTransformationSource(path, snapshot.read_bytes(path), schema_profile)
+            for path in snapshot.paths
+            if PurePosixPath(path).suffix == ".sql"
+        )
+        analysis = analyze_sql_sources(sources)
+        edges, resolution_residue = compile_derivation_edges(
+            analysis,
+            resolver,
+            ResolveContext(
+                env=snapshot.environment,
+                platform=schema_profile,
+                system=snapshot.system,
+                repo=snapshot.repository,
+                digest=snapshot.revision,
+                config={},
+                snapshot_id=resolver.snapshot_id,
+            ),
+            repo=snapshot.repository,
+            digest=snapshot.revision,
+            run_id=run_id,
+            correlation_id=correlation_id,
+            ruleset_version=snapshot.ruleset,
+        )
+        residue = analysis.residue + resolution_residue
+        status = "INTEGRATION_REQUIRED" if residue else "COMPLETE"
+        status_reasons = tuple(sorted({item.code for item in residue}))
+        document = {
+            "schemaVersion": "1.0.0",
+            "repo": snapshot.repository,
+            "digest": snapshot.revision,
+            "runId": run_id,
+            "correlationId": correlation_id,
+            "rulesetVersion": snapshot.ruleset,
+            "resolverVersion": resolver.resolver_version,
+            "snapshotId": resolver.snapshot_id,
+            "status": status,
+            "statusReasons": list(status_reasons),
+            "edges": [
+                {
+                    "provenanceId": edge.provenance_id,
+                    "from": [edge.from_urn],
+                    "to": edge.to_urn,
+                    "edgeType": edge.edge_type,
+                    "transform": edge.transform,
+                    "mechanism": edge.mechanism,
+                    "exact": edge.exact,
+                    "file": edge.file,
+                    "line": edge.line,
+                }
+                for edge in edges
+            ],
+            "residue": [
+                {
+                    "code": item.code,
+                    "location": {"path": item.path, "line": item.line},
+                    "symbol": item.symbol,
+                }
+                for item in residue
+            ],
+            "datasetsSeen": sorted(
+                {edge.to_urn.rsplit("#", 1)[0] for edge in edges}
+                | {edge.from_urn.rsplit("#", 1)[0] for edge in edges}
+            ),
+            "stats": {
+                "filesAnalyzed": analysis.files_analyzed,
+                "edgesEmitted": len(edges),
+                "residueCount": len(residue),
+                "quarantinedCount": 0,
+            },
+        }
+        return AnalyzerRunResult(
+            document=document,
+            status=status,
+            status_reasons=status_reasons,
+            edge_count=len(edges),
+            read_count=0,
+            write_count=0,
+            residue_count=len(residue),
+            unresolved_count=0,
+        )
+
+
 class _JavaSpringAnalyzerAdapter:
     def analyze(
         self,
@@ -584,16 +900,29 @@ class _JavaSpringAnalyzerAdapter:
         correlation_id: str,
     ) -> AnalyzerRunResult:
         sources = []
+        migration_paths = tuple(
+            path
+            for path in snapshot.paths
+            if _is_migration_for_profile(path, schema_profile)
+            or (is_liquibase_changelog(path) and path.endswith(".xml"))
+        )
         schema_candidates = tuple(
             path
             for path in snapshot.paths
             if _is_profile_schema_path(path, schema_profile)
         )
+        # An explicit profile schema is the more specific declaration and wins. When only
+        # migrations are present they are the schema source, and the single-file rule
+        # does not apply: a migration set is a sequence by construction.
+        if migration_paths and not schema_candidates:
+            schema_candidates = migration_paths
+        # Distinct modules may each own a schema; the same path appearing twice is a
+        # real ambiguity about which bytes are authoritative.
         schema_reason = (
             "missing-profile-schema"
             if not schema_candidates
             else "ambiguous-profile-schema"
-            if len(schema_candidates) > 1
+            if len(schema_candidates) != len(set(schema_candidates))
             else None
         )
         for path in snapshot.paths:
@@ -605,20 +934,18 @@ class _JavaSpringAnalyzerAdapter:
                 PurePosixPath(path).parts
             ) != 1:
                 continue
-            if suffix not in {".java", ".sql"} and name not in {
-                "pom.xml",
-                "build.gradle",
-                "build.gradle.kts",
-            }:
+            if (
+                suffix not in {".java", ".sql"}
+                and name not in {"pom.xml", "build.gradle", "build.gradle.kts"}
+                and not is_liquibase_changelog(path)
+            ):
                 continue
-            if suffix == ".sql" and (
+            if (suffix == ".sql" or is_liquibase_changelog(path)) and (
                 schema_reason is not None or path not in schema_candidates
             ):
                 continue
             dialect = (
-                schema_profile
-                if suffix == ".sql"
-                else None
+                schema_profile if suffix == ".sql" or is_liquibase_changelog(path) else None
             )
             sources.append(JavaSpringSource(path, snapshot.read_bytes(path), dialect))
         analysis = JavaSpringScaAnalyzer().analyze(tuple(sources))
@@ -727,31 +1054,38 @@ class _JavaSpringAnalyzerAdapter:
 def canonical_source_metadata(
     snapshot: RepositorySnapshot, *, schema_profile: str
 ) -> dict[str, str]:
+    definition = AnalyzerRegistry.default().resolve_pack(snapshot.analyzer_pack)
     selection = AnalyzerSelection(
         analyzer_pack=snapshot.analyzer_pack,
         ruleset=snapshot.ruleset,
-        source_kind="git-checkout",
-        framework="spring-data-jpa",
+        source_kind=definition.source_kind,
+        framework=definition.framework,
         schema_profile=schema_profile,
     )
     source_scope = AnalyzerRegistry.default().source_scope(snapshot, selection)
     return {
-        "sourceKind": "git-checkout",
+        "sourceKind": definition.source_kind,
         "origin": snapshot.origin,
         "revision": snapshot.revision,
         "scopeDigest": snapshot.scope_digest,
         "scopeDispositionDigest": source_scope.disposition_digest,
         "analyzerPack": snapshot.analyzer_pack,
         "ruleset": snapshot.ruleset,
-        "framework": "spring-data-jpa",
+        "framework": definition.framework,
         "schemaProfile": schema_profile,
         "platform": snapshot.platform,
     }
 
 
 def _is_profile_schema_path(path: str, schema_profile: str) -> bool:
+    """A profile schema at the repository root *or* under any module directory.
+
+    A multi-module repository keeps one schema per service, so anchoring this to the
+    root would make every microservices checkout unanalysable. The trailing five
+    segments are still exact — the profile directory and file name are not guessed.
+    """
     parts = PurePosixPath(path).parts
-    return parts == (
+    return parts[-6:] == (
         "src",
         "main",
         "resources",
@@ -767,12 +1101,16 @@ def _java_source_disposition(path: str, schema_profile: str) -> str:
     suffix = pure.suffix.lower()
     if name in {"pom.xml", "build.gradle", "build.gradle.kts"}:
         return "selected" if len(pure.parts) == 1 else "skipped"
+    if is_liquibase_changelog(path):
+        return "selected" if suffix == ".xml" else "skipped"
     if suffix == ".java":
         if _is_main_java_path(path):
             return "selected"
         return "skipped" if _is_test_path(path) else "unsupported"
     if suffix == ".sql":
-        if _is_profile_schema_path(path, schema_profile):
+        if _is_profile_schema_path(path, schema_profile) or _is_migration_for_profile(
+            path, schema_profile
+        ):
             return "selected"
         return "skipped" if _is_policy_skipped_sql(path) else "unsupported"
     return "skipped"
@@ -781,6 +1119,23 @@ def _java_source_disposition(path: str, schema_profile: str) -> str:
 def _is_test_path(path: str) -> bool:
     parts = tuple(part.lower() for part in PurePosixPath(path).parts)
     return "test" in parts or "tests" in parts or "fixtures" in parts
+
+
+_KNOWN_SCHEMA_PROFILES = frozenset({"h2", "mysql", "postgres"})
+
+
+def _is_migration_for_profile(path: str, schema_profile: str) -> bool:
+    """Whether a Flyway migration applies to the profile being analysed.
+
+    Flyway allows vendor-specific directories (`db/migration/<vendor>/`). Replaying
+    another vendor's migrations would produce a schema the target database never has,
+    so only migrations with no vendor directory, or this profile's own, are applied.
+    """
+    if not is_flyway_migration(path):
+        return False
+    parts = set(PurePosixPath(path).parts)
+    foreign = (_KNOWN_SCHEMA_PROFILES & parts) - {schema_profile}
+    return not foreign
 
 
 def _is_policy_skipped_sql(path: str) -> bool:
@@ -805,10 +1160,14 @@ def _is_policy_skipped_sql(path: str) -> bool:
         for part in parts
     ):
         return True
+    # Any `db/<profile>/schema.sql` is a profile schema. The one matching the requested
+    # profile is selected earlier; the rest belong to other profiles the repository also
+    # ships (HSQLDB for local dev is ubiquitous) and are skipped, not unsupported. A
+    # hardcoded profile list here would make a real repository unanalysable for shipping
+    # a dialect this cell does not read.
     return (
         len(parts) >= 3
         and parts[-3] == "db"
-        and parts[-2] in {"h2", "mysql", "postgres"}
         and parts[-1] == "schema.sql"
     )
 

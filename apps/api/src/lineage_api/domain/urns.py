@@ -64,3 +64,20 @@ class LineageUrn:
             other.dataset,
             other.element,
         )
+
+
+def is_element_scoped_dataset_urn(value: str) -> bool:
+    """True when `value` parses as a `urn:ldp:` LineageUrn carrying a real `.element`.
+
+    A raw '#' substring is not proof of element scope: other URN schemes (for example
+    a Java analyzer's `service://repo/Type#method` endpoint URN) also use '#' for their
+    own purposes -- there it separates a Java type from a method, not a dataset from a
+    column. Only a `urn:ldp:` dataset URN that parses cleanly and carries a non-`None`
+    `.element` counts as element scope.
+    """
+    if "#" not in value:
+        return False
+    try:
+        return LineageUrn.parse(value).element is not None
+    except ValueError:
+        return False

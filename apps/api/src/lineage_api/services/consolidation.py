@@ -11,6 +11,17 @@ from lineage_api.application.consolidation import (
 )
 from lineage_api.db import Database
 from lineage_api.domain.evidence import EvidenceRef, ScaEdgeEvidence
+from lineage_api.domain.object_store import (
+    canonical_object_key,
+    canonical_scheme,
+    is_object_store,
+)
+from lineage_api.services.resolver import (
+    RawName,
+    ResolveContext,
+    ResolvedName,
+    Resolver,
+)
 from lineage_api.domain.urns import LineageUrn
 
 
@@ -168,9 +179,14 @@ class ConsolidationService:
         self,
         database: Database,
         clock: Callable[[], str] = _utc_now,
+        resolver: "Resolver | None" = None,
     ) -> None:
         self._database = database
         self._clock = clock
+        # Object-store identity is catalog-owned: the wire carries a bucket, but the URN
+        # carries the owning system, and only the catalog knows the mapping. Without a
+        # resolver an object-store observation is refused rather than minted wrong.
+        self._resolver = resolver
 
     def merge(self, assertion: MechanismAssertion) -> ConsolidatedEdge:
         edge_key = self.edge_key_for(assertion)
@@ -235,15 +251,40 @@ class ConsolidationService:
         if granularity not in {"DATASET", "ELEMENT"}:
             return []
         source_datasets = tuple(
-            self._runtime_dataset_urn(str(value), environment)
+            self._resolve_runtime_dataset(str(value), environment)
             for value in observation.get("sourceDatasets", [])
         )
-        target_dataset = self._runtime_dataset_urn(
+        target_dataset = self._resolve_runtime_dataset(
             str(observation.get("targetDataset", "")), environment
         )
         candidates = self._latest_edges()
         matched: list[ConsolidatedEdge] = []
-        if granularity == "ELEMENT":
+        endpoint = observation.get("endpoint")
+        if granularity == "ELEMENT" and isinstance(endpoint, str) and endpoint:
+            # A service-anchored edge: one side is the element (the dataset column the
+            # runtime observation names via sourceDatasets/sourceFields, mirrored into
+            # targetDataset/targetField by `_parse_sdk`), the other is a service
+            # endpoint identity carried verbatim on the wire. The endpoint is NEVER
+            # parsed as a `LineageUrn` -- it is matched by exact string equality only,
+            # on whichever orientation (READS: element in `from`, endpoint in `to`;
+            # WRITES: reversed) the candidate edge actually has.
+            source_fields = tuple(str(value) for value in observation.get("sourceFields", []))
+            if len(source_fields) != 1 or len(source_datasets) != 1:
+                return []
+            expected_element = str(
+                LineageUrn.parse(source_datasets[0]).with_element(source_fields[0])
+            )
+            edge_type = observation.get("edgeType")
+            candidates = [
+                edge
+                for edge in candidates
+                if edge.edge_type == edge_type
+                and (
+                    (tuple(edge.from_urns) == (expected_element,) and edge.to_urn == endpoint)
+                    or (tuple(edge.from_urns) == (endpoint,) and edge.to_urn == expected_element)
+                )
+            ]
+        elif granularity == "ELEMENT":
             source_fields = tuple(str(value) for value in observation.get("sourceFields", []))
             target_field = observation.get("targetField")
             if len(source_fields) != len(source_datasets) or not isinstance(target_field, str):
@@ -325,13 +366,52 @@ class ConsolidationService:
 
     @staticmethod
     def _runtime_dataset_urn(value: str, environment: str) -> str:
+        """Mint a URN from the wire. Correct only for non-object-store identifiers."""
         if "://" not in value:
             raise ValueError(f"invalid runtime dataset identifier: {value}")
         platform, remainder = value.split("://", 1)
         if "/" not in remainder:
             raise ValueError(f"invalid runtime dataset identifier: {value}")
         system, dataset = remainder.split("/", 1)
+        if is_object_store(platform):
+            # Must agree with the analyzer by construction, not by coincidence: an edge
+            # and its own observation are matched by exact URN equality downstream.
+            dataset = canonical_object_key(dataset)
+            platform = canonical_scheme(platform)
         return LineageUrn(environment, platform, system, dataset).dataset_urn
+
+    def _resolve_runtime_dataset(self, value: str, environment: str) -> str:
+        """Resolve a runtime dataset identifier the same way the analyzer would.
+
+        For an object store the wire names a bucket while the URN names the owning
+        system, so minting from the wire produces an identity the analyzer never
+        creates and corroboration silently never happens.
+        """
+        scheme = value.split("://", 1)[0] if "://" in value else ""
+        if is_object_store(scheme) and self._resolver is None:
+            # Minting an object-store URN from the wire names the bucket where the URN
+            # must name the owning system. Refusing is the only correct answer.
+            raise ValueError(
+                f"object-store observation requires a catalog resolver: {value}"
+            )
+        if self._resolver is not None:
+            resolved = self._resolver.resolve(
+                RawName("dataset", value, "RUNTIME", ()),
+                ResolveContext(
+                    env=environment,
+                    platform=canonical_scheme(scheme) if is_object_store(scheme) else scheme,
+                    system="",
+                    repo="",
+                    digest="",
+                    config={},
+                    snapshot_id=self._resolver.snapshot_id,
+                ),
+            )
+            if isinstance(resolved, ResolvedName):
+                return resolved.urn.dataset_urn
+            if is_object_store(scheme):
+                raise ValueError(f"unresolvable runtime dataset identifier: {value}")
+        return self._runtime_dataset_urn(value, environment)
 
     @staticmethod
     def edge_key_for(assertion: MechanismAssertion) -> str:

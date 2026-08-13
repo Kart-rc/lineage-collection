@@ -3,9 +3,23 @@
   "snapshotId": "catalog-demo-v1",
   "resolverVersion": "1.0.0",
   "vocabulary": {
-    "environments": ["staging"],
-    "platforms": ["snowflake"],
-    "systems": ["payments"]
+    "environments": [
+      "staging"
+    ],
+    "platforms": [
+      "hive",
+      "kafka",
+      "postgres",
+      "s3",
+      "snowflake"
+    ],
+    "systems": [
+      "inventory",
+      "lakehouse",
+      "payments",
+      "petclinic",
+      "warehouse"
+    ]
   },
   "datasets": [
     {
@@ -14,13 +28,29 @@
       "platform": "snowflake",
       "system": "payments",
       "name": "raw.transactions",
-      "aliases": ["snowflake://payments/raw.transactions", "RAW.TRANSACTIONS"],
+      "aliases": [
+        "snowflake://payments/raw.transactions",
+        "RAW.TRANSACTIONS"
+      ],
       "elements": [
-        {"name": "transaction_id", "type": "STRING"},
-        {"name": "customer_id", "type": "STRING"},
-        {"name": "amount", "type": "DECIMAL"},
-        {"name": "occurred_at", "type": "TIMESTAMP"}
-      ]
+        {
+          "name": "transaction_id",
+          "type": "STRING"
+        },
+        {
+          "name": "customer_id",
+          "type": "STRING"
+        },
+        {
+          "name": "amount",
+          "type": "DECIMAL"
+        },
+        {
+          "name": "occurred_at",
+          "type": "TIMESTAMP"
+        }
+      ],
+      "kind": "DATASTORE"
     },
     {
       "catalogRef": "catalog://payments/analytics.daily_revenue",
@@ -28,12 +58,24 @@
       "platform": "snowflake",
       "system": "payments",
       "name": "analytics.daily_revenue",
-      "aliases": ["DAILY_REVENUE"],
+      "aliases": [
+        "DAILY_REVENUE"
+      ],
       "elements": [
-        {"name": "revenue_date", "type": "DATE"},
-        {"name": "customer_id", "type": "STRING"},
-        {"name": "gross_revenue", "type": "DECIMAL"}
-      ]
+        {
+          "name": "revenue_date",
+          "type": "DATE"
+        },
+        {
+          "name": "customer_id",
+          "type": "STRING"
+        },
+        {
+          "name": "gross_revenue",
+          "type": "DECIMAL"
+        }
+      ],
+      "kind": "LAKE_FILE"
     },
     {
       "catalogRef": "catalog://payments/risk.customer_features",
@@ -43,9 +85,243 @@
       "name": "risk.customer_features",
       "aliases": [],
       "elements": [
-        {"name": "customer_id", "type": "STRING"},
-        {"name": "lifetime_value", "type": "DECIMAL"}
+        {
+          "name": "customer_id",
+          "type": "STRING"
+        },
+        {
+          "name": "lifetime_value",
+          "type": "DECIMAL"
+        }
+      ],
+      "kind": "LAKE_FILE"
+    },
+    {
+      "catalogRef": "catalog://petclinic/owners",
+      "env": "staging",
+      "platform": "postgres",
+      "system": "petclinic",
+      "name": "owners",
+      "aliases": [
+        "OWNERS"
+      ],
+      "kind": "DATASTORE",
+      "elements": [
+        {
+          "name": "id",
+          "type": "INTEGER"
+        },
+        {
+          "name": "last_name",
+          "type": "STRING"
+        },
+        {
+          "name": "city",
+          "type": "STRING"
+        }
+      ]
+    },
+    {
+      "catalogRef": "catalog://petclinic/visits",
+      "env": "staging",
+      "platform": "postgres",
+      "system": "petclinic",
+      "name": "visits",
+      "aliases": [],
+      "kind": "DATASTORE",
+      "elements": [
+        {
+          "name": "id",
+          "type": "INTEGER"
+        },
+        {
+          "name": "owner_id",
+          "type": "INTEGER"
+        },
+        {
+          "name": "visit_date",
+          "type": "DATE"
+        }
+      ]
+    },
+    {
+      "catalogRef": "catalog://petclinic/analytics.owner_ltv",
+      "env": "staging",
+      "platform": "postgres",
+      "system": "petclinic",
+      "name": "analytics.owner_ltv",
+      "aliases": [],
+      "kind": "LAKE_FILE",
+      "elements": [
+        {
+          "name": "owner_id",
+          "type": "INTEGER"
+        },
+        {
+          "name": "home_city",
+          "type": "STRING"
+        },
+        {
+          "name": "visit_count",
+          "type": "INTEGER"
+        }
+      ]
+    },
+    {
+      "catalogRef": "catalog://lakehouse/raw-events-orders",
+      "env": "staging",
+      "platform": "s3",
+      "system": "lakehouse",
+      "name": "raw/events/orders",
+      "aliases": [],
+      "kind": "LAKE_LANDING",
+      "elements": [
+        {
+          "name": "order_id",
+          "type": "STRING"
+        },
+        {
+          "name": "customer_id",
+          "type": "STRING"
+        },
+        {
+          "name": "amount",
+          "type": "DECIMAL"
+        },
+        {
+          "name": "occurred_at",
+          "type": "TIMESTAMP"
+        }
+      ],
+      "locator": "s3://raw-lake/raw/events/orders"
+    },
+    {
+      "catalogRef": "catalog://lakehouse/curated-orders",
+      "env": "staging",
+      "platform": "s3",
+      "system": "lakehouse",
+      "name": "curated/orders",
+      "aliases": [],
+      "kind": "LAKE_FILE",
+      "elements": [
+        {
+          "name": "order_id",
+          "type": "STRING"
+        },
+        {
+          "name": "customer_id",
+          "type": "STRING"
+        },
+        {
+          "name": "order_total",
+          "type": "DECIMAL"
+        },
+        {
+          "name": "order_date",
+          "type": "DATE"
+        }
+      ],
+      "locator": "s3://raw-lake/curated/orders"
+    },
+    {
+      "catalogRef": "catalog://inventory/inventory-update-events",
+      "env": "staging",
+      "platform": "kafka",
+      "system": "inventory",
+      "name": "inventory-update-events",
+      "aliases": [],
+      "kind": "STREAM",
+      "elements": [
+        {
+          "name": "sku",
+          "type": "STRING"
+        },
+        {
+          "name": "quantity",
+          "type": "INT"
+        },
+        {
+          "name": "occurred_at",
+          "type": "TIMESTAMP"
+        }
+      ]
+    },
+    {
+      "catalogRef": "catalog://inventory/inventory-count-events",
+      "env": "staging",
+      "platform": "kafka",
+      "system": "inventory",
+      "name": "inventory-count-events",
+      "aliases": [],
+      "kind": "STREAM",
+      "elements": [
+        {
+          "name": "sku",
+          "type": "STRING"
+        },
+        {
+          "name": "count",
+          "type": "INT"
+        },
+        {
+          "name": "window_end",
+          "type": "TIMESTAMP"
+        }
+      ]
+    },
+    {
+      "catalogRef": "catalog://warehouse/test.t1",
+      "env": "staging",
+      "platform": "hive",
+      "system": "warehouse",
+      "name": "test.t1",
+      "aliases": [
+        "t1"
+      ],
+      "kind": "DATASTORE",
+      "elements": [
+        {
+          "name": "a",
+          "type": "INT"
+        },
+        {
+          "name": "b",
+          "type": "STRING"
+        }
+      ]
+    },
+    {
+      "catalogRef": "catalog://warehouse/test.t2",
+      "env": "staging",
+      "platform": "hive",
+      "system": "warehouse",
+      "name": "test.t2",
+      "aliases": [
+        "t2"
+      ],
+      "kind": "DATASTORE",
+      "elements": [
+        {
+          "name": "a",
+          "type": "INT"
+        },
+        {
+          "name": "b",
+          "type": "STRING"
+        }
       ]
     }
-  ]
+  ],
+  "objectStores": {
+    "schemeAliases": {
+      "s3": "s3",
+      "s3a": "s3",
+      "s3n": "s3",
+      "gs": "gs",
+      "gcs": "gs",
+      "abfs": "abfs",
+      "abfss": "abfs"
+    },
+    "maxLocatorDepth": 8
+  }
 }
