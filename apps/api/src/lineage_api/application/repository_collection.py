@@ -166,7 +166,9 @@ class RepositoryCollectionService:
         self._process_push = process_push
         self._analyzers = analyzer_registry or AnalyzerRegistry.default()
 
-    def collect(self, descriptor: RepositoryCollectionDescriptor) -> dict[str, Any]:
+    def collect(
+        self, descriptor: RepositoryCollectionDescriptor, *, runtime_execution: bool = False
+    ) -> dict[str, Any]:
         self._validate(descriptor)
         snapshot = descriptor.snapshot
         metadata = canonical_source_metadata(
@@ -188,6 +190,8 @@ class RepositoryCollectionService:
             "repositorySource": metadata,
             "receivedAt": "1970-01-01T00:00:00Z",
         }
+        if runtime_execution:
+            payload["runtimeExecution"] = True
         canonical = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
         signature = hmac.new(self._secret, canonical, hashlib.sha256).hexdigest()
         try:
@@ -304,6 +308,12 @@ class RepositoryCollectionService:
             "proposalId": proposal.get("proposalId"),
             "proposalStatus": proposal.get("state"),
             "runtimeStatus": result.get("runtimeStatus", "NOT_PROVIDED"),
+            "runtimeReasons": (
+                list(result.get("runtimeReasons"))
+                if isinstance(result.get("runtimeReasons"), list)
+                and result.get("runtimeReasons")
+                else ["not-requested"]
+            ),
             "analysisStatus": analysis.get("status"),
             "statusReasons": _detached_status_reasons(
                 analysis.get("statusReasons", [])
