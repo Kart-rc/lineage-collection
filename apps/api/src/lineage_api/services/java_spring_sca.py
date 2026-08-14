@@ -2705,8 +2705,11 @@ class JavaSpringScaAnalyzer:
                 continue
             name = _node_text(name_node, parsed.source.content)
             resolved = self._resolve_java_symbol(parsed, name, annotation, symbols)
+            ignored_keys = (
+                _TABLE_IGNORED_ATTRIBUTE_KEYS if resolved == _TABLE_FQN else frozenset()
+            )
             literal_values, dynamic_values = _annotation_values(
-                annotation, parsed.source.content
+                annotation, parsed.source.content, ignored_keys
             )
             attributes: list[tuple[str, FactValue]] = list(literal_values)
             if resolved is not None:
@@ -4038,7 +4041,9 @@ def _generic_parts(node: Node, content: bytes) -> tuple[str, tuple[str, ...]] | 
 
 
 def _annotation_values(
-    annotation: Node, content: bytes
+    annotation: Node,
+    content: bytes,
+    ignored_keys: frozenset[str] = frozenset(),
 ) -> tuple[tuple[tuple[str, str], ...], tuple[str, ...]]:
     arguments = annotation.child_by_field_name("arguments")
     if arguments is None:
@@ -4053,6 +4058,8 @@ def _annotation_values(
         else:
             name = "value"
             value = argument
+        if name in ignored_keys:
+            continue
         literal = _java_literal(value, content)
         if literal is None:
             dynamic.append(_node_text(value, content) if value is not None else "<missing>")

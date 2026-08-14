@@ -656,6 +656,31 @@ class Owner {{ static final String TABLE_NAME = "owners"; }}
     assert expected_code in {entry.code for entry in result.residue}
 
 
+def test_table_unique_constraints_do_not_block_a_literal_table_name() -> None:
+    """spring-petclinic-rest's Role entity: `@Table(name = "roles",
+    uniqueConstraints = @UniqueConstraint(...))`. The extra nested-annotation
+    attribute must not defeat the literal `name` extraction.
+    """
+    java = '''package example;
+import jakarta.persistence.Entity;
+import jakarta.persistence.Table;
+import jakarta.persistence.UniqueConstraint;
+@Entity
+@Table(name = "roles", uniqueConstraints = @UniqueConstraint(columnNames = {"username", "role"}))
+class Role {}
+'''
+    result = JavaSpringScaAnalyzer().analyze(
+        (
+            _source("pom.xml", _maven_build()),
+            _source("src/example/Role.java", java),
+        )
+    )
+
+    tables = _facts(result, "spring.entity-table")
+    assert [fact.attribute("table") for fact in tables] == ["roles"]
+    assert "dynamic-table-mapping" not in {item.code for item in result.residue}
+
+
 def test_absent_table_annotation_emits_explicit_default_candidate() -> None:
     java = '''package example;
 import jakarta.persistence.Entity;
