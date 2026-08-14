@@ -35,19 +35,42 @@ _SUPPORTED_COORDINATES = {
 _ENTITY_FQN = "jakarta.persistence.Entity"
 _TABLE_FQN = "jakarta.persistence.Table"
 _COLUMN_FQN = "jakarta.persistence.Column"
+_JOIN_COLUMN_FQN = "jakarta.persistence.JoinColumn"
+_MANY_TO_ONE_FQN = "jakarta.persistence.ManyToOne"
+_ONE_TO_ONE_FQN = "jakarta.persistence.OneToOne"
+_ONE_TO_MANY_FQN = "jakarta.persistence.OneToMany"
+_MANY_TO_MANY_FQN = "jakarta.persistence.ManyToMany"
+_ASSOCIATION_FQNS = frozenset(
+    {_MANY_TO_ONE_FQN, _ONE_TO_ONE_FQN, _ONE_TO_MANY_FQN, _MANY_TO_MANY_FQN}
+)
 _JPA_REPOSITORY_FQN = "org.springframework.data.jpa.repository.JpaRepository"
 _REPOSITORY_FQN = "org.springframework.data.repository.Repository"
 _QUERY_FQN = "org.springframework.data.jpa.repository.Query"
 _AUTOWIRED_FQN = "org.springframework.beans.factory.annotation.Autowired"
+_JAKARTA_INJECT_FQN = "jakarta.inject.Inject"
+_JAVAX_INJECT_FQN = "javax.inject.Inject"
+_FIELD_INJECTION_FQNS = frozenset(
+    {_AUTOWIRED_FQN, _JAKARTA_INJECT_FQN, _JAVAX_INJECT_FQN}
+)
+# @Table attributes that never feed a resolved fact (nested annotations, arrays of
+# constraints) so a dynamic expression there must not block the literal `name`.
+_TABLE_IGNORED_ATTRIBUTE_KEYS = frozenset({"uniqueConstraints", "indexes"})
 _APPROVED_FRAMEWORK_SYMBOLS = frozenset(
     {
         _ENTITY_FQN,
         _TABLE_FQN,
         _COLUMN_FQN,
+        _JOIN_COLUMN_FQN,
+        _MANY_TO_ONE_FQN,
+        _ONE_TO_ONE_FQN,
+        _ONE_TO_MANY_FQN,
+        _MANY_TO_MANY_FQN,
         _JPA_REPOSITORY_FQN,
         _REPOSITORY_FQN,
         _QUERY_FQN,
         _AUTOWIRED_FQN,
+        _JAKARTA_INJECT_FQN,
+        _JAVAX_INJECT_FQN,
         "org.springframework.stereotype.Controller",
         "org.springframework.stereotype.Repository",
         "org.springframework.stereotype.Service",
