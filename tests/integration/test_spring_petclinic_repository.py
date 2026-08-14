@@ -59,21 +59,32 @@ _REPOSITORY_CHAINS = [
 ]
 _EDGE_ORACLE = sorted(
     [
-        ("READS", "OwnerRepository", "Owner", "owners", "OwnerController#findOwner", "findById"),
-        ("READS", "OwnerRepository", "Owner", "owners", "OwnerController#findPaginatedForOwnersLastName", "findByLastNameStartingWith"),
-        ("WRITES", "OwnerRepository", "Owner", "owners", "OwnerController#processCreationForm", "save"),
-        ("WRITES", "OwnerRepository", "Owner", "owners", "OwnerController#processUpdateOwnerForm", "save"),
-        ("READS", "OwnerRepository", "Owner", "owners", "OwnerController#showOwner", "findById"),
-        ("READS", "OwnerRepository", "Owner", "owners", "PetController#findOwner", "findById"),
-        ("READS", "OwnerRepository", "Owner", "owners", "PetController#findPet", "findById"),
-        ("READS", "PetTypeRepository", "PetType", "types", "PetController#populatePetTypes", "findPetTypes"),
-        ("WRITES", "OwnerRepository", "Owner", "owners", "PetController#processCreationForm", "saveAndFlush"),
-        ("WRITES", "OwnerRepository", "Owner", "owners", "PetController#updatePetDetails", "saveAndFlush"),
-        ("READS", "PetTypeRepository", "PetType", "types", "PetTypeFormatter#parse", "findPetTypes"),
-        ("READS", "OwnerRepository", "Owner", "owners", "VisitController#loadPetWithVisit", "findById"),
-        ("WRITES", "OwnerRepository", "Owner", "owners", "VisitController#processNewVisitForm", "save"),
-        ("READS", "VetRepository", "Vet", "vets", "VetController#findPaginated", "findAll"),
-        ("READS", "VetRepository", "Vet", "vets", "VetController#showResourcesVetList", "findAll"),
+        # Dataset-scope edges: one per (repository call site, table).
+        ("READS", "OwnerRepository", "Owner", "owners", "OwnerController#findOwner", "findById", ""),
+        ("READS", "OwnerRepository", "Owner", "owners", "OwnerController#findPaginatedForOwnersLastName", "findByLastNameStartingWith", ""),
+        ("WRITES", "OwnerRepository", "Owner", "owners", "OwnerController#processCreationForm", "save", ""),
+        ("WRITES", "OwnerRepository", "Owner", "owners", "OwnerController#processUpdateOwnerForm", "save", ""),
+        ("READS", "OwnerRepository", "Owner", "owners", "OwnerController#showOwner", "findById", ""),
+        ("READS", "OwnerRepository", "Owner", "owners", "PetController#findOwner", "findById", ""),
+        ("READS", "OwnerRepository", "Owner", "owners", "PetController#findPet", "findById", ""),
+        ("READS", "PetTypeRepository", "PetType", "types", "PetController#populatePetTypes", "findPetTypes", ""),
+        ("WRITES", "OwnerRepository", "Owner", "owners", "PetController#processCreationForm", "saveAndFlush", ""),
+        ("WRITES", "OwnerRepository", "Owner", "owners", "PetController#updatePetDetails", "saveAndFlush", ""),
+        ("READS", "PetTypeRepository", "PetType", "types", "PetTypeFormatter#parse", "findPetTypes", ""),
+        ("READS", "OwnerRepository", "Owner", "owners", "VisitController#loadPetWithVisit", "findById", ""),
+        ("WRITES", "OwnerRepository", "Owner", "owners", "VisitController#processNewVisitForm", "save", ""),
+        ("READS", "VetRepository", "Vet", "vets", "VetController#findPaginated", "findAll", ""),
+        ("READS", "VetRepository", "Vet", "vets", "VetController#showResourcesVetList", "findAll", ""),
+        # Element-scope edges: a proven column claim emits its own dataset#column
+        # edge alongside the dataset-scope edge for the same call site.
+        ("READS", "OwnerRepository", "Owner", "owners", "OwnerController#findOwner", "findById", "id"),
+        ("READS", "OwnerRepository", "Owner", "owners", "OwnerController#findPaginatedForOwnersLastName", "findByLastNameStartingWith", "last_name"),
+        ("READS", "OwnerRepository", "Owner", "owners", "OwnerController#showOwner", "findById", "id"),
+        ("READS", "OwnerRepository", "Owner", "owners", "PetController#findOwner", "findById", "id"),
+        ("READS", "OwnerRepository", "Owner", "owners", "PetController#findPet", "findById", "id"),
+        ("READS", "PetTypeRepository", "PetType", "types", "PetController#populatePetTypes", "findPetTypes", "name"),
+        ("READS", "PetTypeRepository", "PetType", "types", "PetTypeFormatter#parse", "findPetTypes", "name"),
+        ("READS", "OwnerRepository", "Owner", "owners", "VisitController#loadPetWithVisit", "findById", "id"),
     ]
 )
 _DATABASE_EFFECT_ALGORITHM = "sqlite-canonical-relational-snapshot-v1"
@@ -834,6 +845,12 @@ def _edge_summary(document: dict[str, object]) -> list[tuple[str, ...]]:
             raise AcceptanceOracleError("service identity is malformed")
         full_service = service.rsplit("/", 1)[-1]
         class_method = full_service.rsplit(".", 1)[-1]
+        raw_froms = edge.get("from") or []
+        froms = raw_froms if isinstance(raw_froms, list) else [raw_froms]
+        element = ""
+        for end in (str(edge.get("to", "")), *[str(item) for item in froms]):
+            if end.startswith("urn:ldp:") and "#" in end:
+                element = end.rsplit("#", 1)[-1]
         summary.append(
             (
                 edge_type,
@@ -842,6 +859,7 @@ def _edge_summary(document: dict[str, object]) -> list[tuple[str, ...]]:
                 str(table["subject"]),
                 class_method,
                 invocation_attributes["method"],
+                element,
             )
         )
     return sorted(summary)
@@ -869,7 +887,7 @@ def _build_manifest(
     _assert_equal(first.get("stages"), _STAGES, "stage ledger differs from the oracle")
     _assert_equal(
         first.get("counts"),
-        {"edges": 15, "reads": 10, "residue": 8, "unresolved": 0, "writes": 5},
+        {"edges": 23, "reads": 18, "residue": 8, "unresolved": 0, "writes": 5},
         "lineage counts differ from the oracle",
     )
     coverage_summary = first.get("coverageManifest")
@@ -953,8 +971,9 @@ def _build_manifest(
             "table": table,
             "serviceCall": service,
             "repositoryMethod": method,
+            "element": element,
         }
-        for edge_type, repository, entity, table, service, method in edges
+        for edge_type, repository, entity, table, service, method, element in edges
     ]
     return {
         "schemaVersion": "1.0.0",
@@ -982,7 +1001,7 @@ def _build_manifest(
             "coverageManifestId": coverage_summary["manifestId"],
         },
         "stages": _STAGES,
-        "counts": {"edges": 15, "reads": 10, "writes": 5, "residue": 8, "unresolved": 0},
+        "counts": {"edges": 23, "reads": 18, "writes": 5, "residue": 8, "unresolved": 0},
         "coverage": {
             "state": "COMPLETE",
             "counts": coverage_summary["counts"],
@@ -1614,7 +1633,7 @@ def test_supervisor_rejects_partial_or_multiple_pass_json() -> None:
         )
     with pytest.raises(supervisor.SupervisorError, match="INVALID_PASS"):
         supervisor._validate_pass_document(
-            b'{"counts":{"edges":15,"reads":10,"residue":8,"unresolved":false,'
+            b'{"counts":{"edges":23,"reads":18,"residue":8,"unresolved":false,'
             b'"writes":5},"evidenceClass":"LOCAL_REAL_REPOSITORY_PASS",'
             b'"manifestChecksum":"sha256:0000000000000000000000000000000000000000000000000000000000000000",'
             b'"manifestPath":"data/acceptance/run/java-spring/'
@@ -1881,8 +1900,8 @@ def test_real_spring_petclinic_repository_acceptance(tmp_path: Path) -> None:
         "repository": "spring-petclinic",
         "revision": REVISION,
     }
-    assert manifest["counts"]["edges"] == 15
-    assert manifest["counts"]["reads"] == 10
+    assert manifest["counts"]["edges"] == 23
+    assert manifest["counts"]["reads"] == 18
     assert manifest["counts"]["writes"] == 5
     assert manifest["counts"]["unresolved"] == 0
     assert manifest["coverage"]["counts"] == {
