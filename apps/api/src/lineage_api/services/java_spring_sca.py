@@ -3137,6 +3137,51 @@ class JavaSpringScaAnalyzer:
                             fields[_node_text(field_name, parsed.source.content)] = type_name
 
                 bound_fields: set[str] = set()
+                # Field injection (`@Autowired`/`@Inject` directly on the field) is just
+                # as statically provable as a constructor parameter: the declared type is
+                # fixed at compile time, so the same binding semantics apply. Setter
+                # injection is deliberately excluded -- the annotation sits on the method,
+                # not the field, so this loop never sees it.
+                for member in body.named_children:
+                    if member.type != "field_declaration":
+                        continue
+                    field_type = member.child_by_field_name("type")
+                    if field_type is None:
+                        continue
+                    type_name = self._resolve_java_symbol(
+                        parsed,
+                        _node_text(field_type, parsed.source.content),
+                        field_type,
+                        symbols,
+                    )
+                    if type_name not in repository_types:
+                        continue
+                    if not any(
+                        self._has_resolved_annotation(parsed, member, symbols, fqn)
+                        for fqn in _FIELD_INJECTION_FQNS
+                    ):
+                        continue
+                    for declarator in (
+                        child
+                        for child in member.named_children
+                        if child.type == "variable_declarator"
+                    ):
+                        field_name_node = declarator.child_by_field_name("name")
+                        if field_name_node is None:
+                            continue
+                        field_name = _node_text(field_name_node, parsed.source.content)
+                        bound_fields.add(field_name)
+                        self._add_fact(
+                            "spring.repository-binding",
+                            f"{owner}#{field_name}",
+                            (
+                                ("field", field_name),
+                                ("injectionMode", "field"),
+                                ("parameter", ""),
+                                ("repositoryType", type_name),
+                            ),
+                            self._node_location(parsed.source.path, member),
+                        )
                 constructors = tuple(
                     member
                     for member in body.named_children

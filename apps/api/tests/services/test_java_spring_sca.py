@@ -974,6 +974,70 @@ class OwnerService {
     assert len(_facts(result, "java.invocation")) == 1
 
 
+def test_autowired_field_injected_repository_binds_like_constructor_injection() -> None:
+    """spring-petclinic-rest's UserServiceImpl uses `@Autowired private
+    UserRepository userRepository;` field injection rather than a constructor. The
+    declared field type is just as statically provable as a constructor parameter.
+    """
+    repository = '''package example;
+import org.springframework.data.jpa.repository.JpaRepository;
+class Owner {}
+interface OwnerRepository extends JpaRepository<Owner, Integer> {}
+'''
+    service = '''package example;
+import org.springframework.beans.factory.annotation.Autowired;
+class OwnerService {
+  @Autowired
+  private OwnerRepository owners;
+  Owner save(Owner value) { return owners.save(value); }
+}
+'''
+    result = JavaSpringScaAnalyzer().analyze(
+        (
+            _source("pom.xml", _maven_build()),
+            _source("src/example/OwnerRepository.java", repository),
+            _source("src/example/OwnerService.java", service),
+        )
+    )
+
+    bindings = _facts(result, "spring.repository-binding")
+    assert [(f.attribute("field"), f.attribute("injectionMode")) for f in bindings] == [
+        ("owners", "field")
+    ]
+    assert len(_facts(result, "java.invocation")) == 1
+    assert "unbound-repository-receiver" not in {item.code for item in result.residue}
+
+
+def test_setter_injected_repository_stays_unbound() -> None:
+    """Setter injection is not statically provable the way a field or constructor
+    declaration is, so it must stay quarantined rather than guessed.
+    """
+    repository = '''package example;
+import org.springframework.data.jpa.repository.JpaRepository;
+class Owner {}
+interface OwnerRepository extends JpaRepository<Owner, Integer> {}
+'''
+    service = '''package example;
+import org.springframework.beans.factory.annotation.Autowired;
+class OwnerService {
+  private OwnerRepository owners;
+  @Autowired
+  public void setOwners(OwnerRepository owners) { this.owners = owners; }
+  Owner save(Owner value) { return owners.save(value); }
+}
+'''
+    result = JavaSpringScaAnalyzer().analyze(
+        (
+            _source("pom.xml", _maven_build()),
+            _source("src/example/OwnerRepository.java", repository),
+            _source("src/example/OwnerService.java", service),
+        )
+    )
+
+    assert _facts(result, "spring.repository-binding") == ()
+    assert "unbound-repository-receiver" in {item.code for item in result.residue}
+
+
 def test_nested_types_have_collision_free_qualified_names_and_ast_paths() -> None:
     java = '''package example;
 class A { static class Inner {} }
