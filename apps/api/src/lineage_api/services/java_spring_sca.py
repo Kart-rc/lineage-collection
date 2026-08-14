@@ -2538,6 +2538,11 @@ class JavaSpringScaAnalyzer:
                         continue
                     column, mapping = explicit, "explicit"
                 elif join_column is not None:
+                    if attributes.get("toMany") == "true":
+                        # A to-many @JoinColumn names the foreign key on the TARGET
+                        # entity's table; it neither claims nor contradicts a column
+                        # of the declaring entity's own table.
+                        continue
                     if join_column not in available:
                         # Same contradiction as an explicit @Column: a literal
                         # @JoinColumn naming a column the entity's own table does not
@@ -2901,6 +2906,7 @@ class JavaSpringScaAnalyzer:
                 column_override = _column_override(field_annotations)
                 join_column_override = _join_column_override(field_annotations)
                 is_association = _is_association_field(field_annotations)
+                is_to_many = _is_to_many_association_field(field_annotations)
                 for declarator, name in zip(declarators, names):
                     attributes: list[tuple[str, FactValue]] = [
                         ("type", _node_text(field_type, parsed.source.content))
@@ -2911,6 +2917,8 @@ class JavaSpringScaAnalyzer:
                         attributes.append(("joinColumn", join_column_override))
                     if is_association:
                         attributes.append(("association", "true"))
+                    if is_to_many:
+                        attributes.append(("toMany", "true"))
                     self._add_fact(
                         "java.field",
                         f"{owner}#{name}",
@@ -4599,9 +4607,15 @@ def _valid_create_index_statement(
     table = index.args.get("table")
     parameters = index.args.get("params")
     columns = parameters.args.get("columns") if isinstance(parameters, exp.IndexParameters) else None
-    return (
+    # PostgreSQL's `CREATE INDEX ON table (col)` omits the index name and lets the
+    # server pick one; an anonymous index is structurally valid inventory. A present
+    # name must still be a bounded literal identifier.
+    name_is_valid = name is None or (
         isinstance(name, exp.Identifier)
         and _EVIDENCE_TABLE_IDENTIFIER.fullmatch(name.name) is not None
+    )
+    return (
+        name_is_valid
         and isinstance(table, exp.Table)
         and _sql_expression_table_identity(table, dialect) is not None
         and isinstance(columns, list)
@@ -4654,7 +4668,12 @@ def _closed_create_index_tokens(tokens: tuple[Token, ...]) -> bool:
             and consume_type(TokenType.EXISTS)
         ):
             return False
-    if not consume_identifier() or not consume_type(TokenType.ON):
+    # PostgreSQL allows the index name to be omitted (`CREATE INDEX ON t (c)`);
+    # the server names it. A present name must be a bounded literal identifier.
+    if position < len(tokens) and tokens[position].token_type != TokenType.ON:
+        if not consume_identifier():
+            return False
+    if not consume_type(TokenType.ON):
         return False
     if not consume_identifier():
         return False
@@ -4845,6 +4864,16 @@ def _join_column_override(annotations: tuple["_AnnotationRecord", ...]) -> str |
 def _is_association_field(annotations: tuple["_AnnotationRecord", ...]) -> bool:
     """Whether a field carries one of JPA's exact relationship annotations."""
     return any(record.resolved_fqn in _ASSOCIATION_FQNS for record in annotations)
+
+
+_TO_MANY_FQNS = frozenset({_ONE_TO_MANY_FQN, _MANY_TO_MANY_FQN})
+
+
+def _is_to_many_association_field(annotations: tuple["_AnnotationRecord", ...]) -> bool:
+    """Whether the field's relationship annotation targets a collection. A to-many
+    `@JoinColumn` names the foreign key on the TARGET entity's table, so it never
+    claims -- or contradicts -- a column of the declaring entity's own table."""
+    return any(record.resolved_fqn in _TO_MANY_FQNS for record in annotations)
 
 
 def _snake_case(name: str) -> str:

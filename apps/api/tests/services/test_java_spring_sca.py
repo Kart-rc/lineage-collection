@@ -2096,6 +2096,41 @@ class OwnerService {
         assert "missing-schema-table" in evidence.status_reasons
 
 
+def test_an_anonymous_postgres_create_index_is_ignored_inventory() -> None:
+    """spring-petclinic-rest's postgres schema uses PostgreSQL's optional-name form
+    `CREATE INDEX ON vets (last_name)`. An anonymous index is structurally valid
+    DDL -- the server names it -- so it is inventory-only, never malformed SQL.
+    """
+    sources = _lineage_sources(
+        entity='''package example;
+import jakarta.persistence.Entity;
+import jakarta.persistence.Table;
+@Entity @Table(name="owners") class Owner {}
+''',
+        repository='''package example;
+import org.springframework.data.jpa.repository.JpaRepository;
+interface OwnerRepository extends JpaRepository<Owner, Integer> {}
+''',
+        service='''package example;
+class OwnerService {
+  private final OwnerRepository owners;
+  OwnerService(OwnerRepository owners) { this.owners = owners; }
+  Owner load(Integer id) { return owners.findById(id).orElseThrow(); }
+}
+''',
+        schema=(
+            "create table owners (id integer primary key); "
+            "create index on owners(id);"
+        ),
+    )
+
+    evidence = _compile_java_spring(sources)
+
+    assert evidence.status == "COMPLETE"
+    assert "malformed-sql" not in {item.code for item in evidence.residue}
+    assert "ignored-schema-statement" in {item.code for item in evidence.residue}
+
+
 def test_analysis_residue_is_blocking_except_explicit_ignored_schema_inventory() -> None:
     sources = _lineage_sources(
         entity='''package example;
@@ -2941,6 +2976,101 @@ interface OwnerRepository extends JpaRepository<Owner, Integer> {
     assert ("findByLastName", "last_name", "jpql") in elements
     assert not any(fact.attribute("column") == "pets" for fact in _facts(result, "spring.query-element"))
     assert "unresolved-query-property" not in {item.code for item in result.residue}
+
+
+def test_a_to_many_join_column_is_not_an_own_table_contradiction() -> None:
+    """spring-petclinic's `Owner.pets` is a unidirectional `@OneToMany` whose
+    `@JoinColumn(name = "owner_id")` names the foreign key on the TARGET table
+    (`pets`), never a column of the owning entity's own table (`owners`). A literal
+    to-many join column must not be quarantined as an unmapped entity column, and
+    must not claim `owner_id` as an element of `owners` either.
+    """
+    entity_pet = '''package example;
+import jakarta.persistence.Entity;
+import jakarta.persistence.Table;
+@Entity @Table(name="pets") class Pet {}
+'''
+    entity_owner = '''package example;
+import jakarta.persistence.Column;
+import jakarta.persistence.Entity;
+import jakarta.persistence.JoinColumn;
+import jakarta.persistence.OneToMany;
+import jakarta.persistence.Table;
+import java.util.List;
+@Entity @Table(name="owners")
+class Owner {
+  @Column(name="last_name") private String lastName;
+  @OneToMany
+  @JoinColumn(name = "owner_id")
+  private final List<Pet> pets = null;
+}
+'''
+    repository = '''package example;
+import org.springframework.data.jpa.repository.JpaRepository;
+interface OwnerRepository extends JpaRepository<Owner, Integer> {}
+'''
+    schema = (
+        "create table owners (id integer primary key, last_name varchar(255));\n"
+        "create table pets (id integer primary key, owner_id integer not null);"
+    )
+    sources = (
+        _source("pom.xml", _maven_build()),
+        _source("src/example/Pet.java", entity_pet),
+        _source("src/example/Owner.java", entity_owner),
+        _source("src/example/OwnerRepository.java", repository),
+        _source("src/main/resources/db/postgres/schema.sql", schema, dialect="postgres"),
+    )
+
+    result = JavaSpringScaAnalyzer().analyze(sources)
+
+    assert "unmapped-entity-column" not in {item.code for item in result.residue}
+    assert not any(
+        fact.attribute("field") == "pets"
+        for fact in _facts(result, "spring.entity-field")
+    )
+
+
+def test_a_to_one_join_column_absent_from_the_own_table_stays_quarantined() -> None:
+    """The to-many forgiveness must not weaken the to-one contradiction: a
+    `@ManyToOne` join column lives on the entity's own table, so a literal
+    `@JoinColumn` naming a column that table does not have is still residue.
+    """
+    entity_pet = '''package example;
+import jakarta.persistence.Entity;
+import jakarta.persistence.Table;
+@Entity @Table(name="pets") class Pet {}
+'''
+    entity_visit = '''package example;
+import jakarta.persistence.Entity;
+import jakarta.persistence.JoinColumn;
+import jakarta.persistence.ManyToOne;
+import jakarta.persistence.Table;
+@Entity @Table(name="visits")
+class Visit {
+  @ManyToOne
+  @JoinColumn(name = "pet_identifier")
+  private Pet pet;
+}
+'''
+    repository = '''package example;
+import org.springframework.data.jpa.repository.JpaRepository;
+interface VisitRepository extends JpaRepository<Visit, Integer> {}
+'''
+    schema = (
+        "create table pets (id integer primary key);\n"
+        "create table visits (id integer primary key, pet_id integer not null);"
+    )
+    sources = (
+        _source("pom.xml", _maven_build()),
+        _source("src/example/Pet.java", entity_pet),
+        _source("src/example/Visit.java", entity_visit),
+        _source("src/example/VisitRepository.java", repository),
+        _source("src/main/resources/db/postgres/schema.sql", schema, dialect="postgres"),
+    )
+
+    result = JavaSpringScaAnalyzer().analyze(sources)
+
+    assert "unmapped-entity-column" in {item.code for item in result.residue}
 
 
 def test_jpql_property_matching_neither_column_nor_association_stays_residue() -> None:
