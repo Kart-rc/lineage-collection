@@ -30,10 +30,23 @@ Gaps, each deliberately recorded rather than silently missing:
 7. Analyzer breadth is Python + Java/Spring; Spark/Dask cells deferred.
 
 Leverage-ordered closure sequence: (1) expose runtime verification on the product path (CLI +
-`POST /api/collections` flag); (2) build OTel enrichment and extend outbound extraction to
-RestTemplate/WebClient; (3) stand up the guardrailed tier-3 LLM path against an approved model;
-(4) run the identity-resolution spike on a real catalog snapshot. Steps 3-4 are blocked on CTX
-owners, consistent with [Lineage Platform Remaining Goals](/projects/remaining-goals.md).
+`POST /api/collections` flag) — **implemented 2026-08-14**: `runtimeVerification` submission field
+(strict boolean, shared parser, all surfaces) and `collect-checkout --runtime-verification`, TDD'd
+in `apps/api/tests/test_collection_runtime_flag.py`, with the API path reaching `CORROBORATED` on
+the checked-in `java-petclinic-postgres` fixture and the default staying byte-identical
+runtime-off; (2) build OTel enrichment and extend outbound extraction to
+RestTemplate/WebClient — **closed 2026-08-14**: RestTemplate/WebClient literal-URL extraction
+turned out to already exist with tests (the coverage doc was stale and has been corrected), and
+OTel interaction enrichment is now wired into the OTLP adapter (`OtelAdapter.normalize` surfaces
+interaction-shaped spans on a separate `interactions` plane under an explicit `INTERACTION`
+profile granularity, typed residue instead of connectivity downgrades, TDD'd in
+`apps/api/tests/runtime/test_otel_adapter_interactions.py`); what remains of gap 2 is
+enterprise-collector wiring, which is CTX-12; (3) stand up the guardrailed tier-3 LLM path
+against an approved model — **owner-blocked** (CTX-09 forbids any external model call or spend
+until the AI-platform owner supplies endpoint/models/prompts/budgets); (4) run the
+identity-resolution spike on a real catalog snapshot — **owner-blocked** (CTX-01..04 forbid
+inventing catalog schema or vocabularies). Steps 3-4 cannot be implemented autonomously,
+consistent with [Lineage Platform Remaining Goals](/projects/remaining-goals.md).
 
 ## Related
 
