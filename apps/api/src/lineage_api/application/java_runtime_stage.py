@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import os
+import re
 import shutil
 import subprocess
 import tempfile
@@ -179,13 +180,46 @@ def select_relevant_java_sources(
         else sources
     )
     repositories = read_repositories(scoped)
-    return {
+    structural = {
         path: text
         for path, text in scoped.items()
         if read_entities({path: text})
         or read_repositories({path: text})
         or read_injection_sites({path: text}, repositories)
     }
+    return _with_reference_closure(structural, scoped)
+
+
+_JAVA_COMMENT = re.compile(r"/\*[\s\S]*?\*/|//[^\n]*")
+
+
+def _with_reference_closure(
+    selected: dict[str, str], pool: Mapping[str, str]
+) -> dict[str, str]:
+    """Add every pool source whose declared type a selected source references.
+
+    The structural filter keeps only entity/repository/injection-site files, but a
+    real checkout's entities extend project-local bases (`Owner extends Person
+    extends BaseEntity`, a `@MappedSuperclass` in another package) that match no
+    structural shape -- and a same-package supertype is reachable with no import at
+    all. `javac` compiles the selected set in one invocation, so every project type
+    a kept file names must be kept too, to a fixpoint. Comments are stripped before
+    scanning so prose naming a type never resurrects a dropped file.
+    """
+    declared_by_name = {
+        path.rsplit("/", 1)[-1].removesuffix(".java"): path for path in pool
+    }
+    result = dict(selected)
+    frontier = list(selected.values())
+    while frontier:
+        text = _JAVA_COMMENT.sub(" ", frontier.pop())
+        for simple, path in declared_by_name.items():
+            if path in result:
+                continue
+            if re.search(rf"\b{re.escape(simple)}\b", text):
+                result[path] = pool[path]
+                frontier.append(pool[path])
+    return result
 
 
 def _minimal_subprocess_env(java_home: str | None) -> dict[str, str]:

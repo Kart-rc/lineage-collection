@@ -51,11 +51,17 @@ class JavaEntity:
 
 @dataclass(frozen=True, slots=True)
 class JavaRepository:
-    """A Spring Data repository interface and the entity it is typed on."""
+    """A Spring Data repository interface and the entity it is typed on.
+
+    `parents` records the other interfaces in its extends clause -- petclinic-rest's
+    `SpringDataOwnerRepository extends OwnerRepository, Repository<Owner, Integer>`
+    is injected everywhere as `OwnerRepository`, so instrumentation must be able to
+    resolve the project's own abstract interface back to this repository."""
 
     type_name: str
     entity_type: str
     methods: tuple[str, ...]
+    parents: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -99,9 +105,22 @@ _ENTITY = re.compile(
     r"@Entity\b[\s\S]{0,400}?@Table\s*\(\s*name\s*=\s*\"([A-Za-z0-9_.]+)\"[\s\S]{0,400}?"
     r"\b(?:class)\s+([A-Za-z_][A-Za-z0-9_]*)"
 )
+# Every Spring Data base a real repository interface extends -- petclinic's
+# VetRepository uses the minimal `Repository` marker, not JpaRepository -- and the
+# base may sit anywhere in the extends clause (petclinic-rest puts the project's own
+# abstract interface first: `extends OwnerRepository, Repository<Owner, Integer>`).
+_SPRING_DATA_BASES = (
+    "JpaRepository",
+    "ListCrudRepository",
+    "CrudRepository",
+    "PagingAndSortingRepository",
+    "Repository",
+)
 _REPOSITORY = re.compile(
-    r"\binterface\s+([A-Za-z_][A-Za-z0-9_]*)\s+extends\s+JpaRepository\s*<\s*"
-    r"([A-Za-z_][A-Za-z0-9_]*)\s*,"
+    r"\binterface\s+([A-Za-z_][A-Za-z0-9_]*)\s+extends\s+([^{]*)\{"
+)
+_REPOSITORY_BASE = re.compile(
+    r"\b(?:" + "|".join(_SPRING_DATA_BASES) + r")\s*<\s*([A-Za-z_][A-Za-z0-9_]*)\s*,"
 )
 _REPO_METHOD = re.compile(r"^\s*(?:[A-Za-z_][\w<>,.\[\]\s]*?)\s+([a-z][A-Za-z0-9_]*)\s*\(", re.M)
 _CONSTRUCTOR_FIELD = re.compile(r"private\s+final\s+([A-Za-z_][A-Za-z0-9_]*)\s+([a-z][A-Za-z0-9_]*)\s*;")
@@ -124,13 +143,34 @@ def read_repositories(sources: Mapping[str, str]) -> tuple[JavaRepository, ...]:
     found: list[JavaRepository] = []
     for text in sources.values():
         stripped = _strip_comments(text)
-        for type_name, entity in _REPOSITORY.findall(stripped):
+        for type_name, clause in _REPOSITORY.findall(stripped):
+            base = _REPOSITORY_BASE.search(clause)
+            if base is None:
+                continue
+            # The clause's other interfaces (generics erased) are the parents an
+            # injection site may be typed against; Spring Data bases are not.
+            flattened = clause
+            while "<" in flattened:
+                reduced = re.sub(r"<[^<>]*>", " ", flattened)
+                if reduced == flattened:
+                    break
+                flattened = reduced
+            parents = tuple(
+                name
+                for name in re.findall(r"\b([A-Z][A-Za-z0-9_]*)\b", flattened)
+                if name not in _SPRING_DATA_BASES
+            )
             body = stripped.split("{", 1)[1] if "{" in stripped else ""
             methods = tuple(
                 sorted({name for name in _REPO_METHOD.findall(body) if name != type_name})
             )
             found.append(
-                JavaRepository(type_name=type_name, entity_type=entity, methods=methods)
+                JavaRepository(
+                    type_name=type_name,
+                    entity_type=base.group(1),
+                    methods=methods,
+                    parents=parents,
+                )
             )
     return tuple(sorted(found, key=lambda item: item.type_name))[:MAX_TYPES]
 
@@ -138,7 +178,7 @@ def read_repositories(sources: Mapping[str, str]) -> tuple[JavaRepository, ...]:
 def read_injection_sites(
     sources: Mapping[str, str], repositories: Sequence[JavaRepository]
 ) -> tuple[JavaInjectionSite, ...]:
-    known = {repository.type_name for repository in repositories}
+    known = repository_resolution(repositories)
     sites: list[JavaInjectionSite] = []
     for path, text in sources.items():
         stripped = _strip_comments(text)
@@ -163,6 +203,25 @@ def read_injection_sites(
             JavaInjectionSite(type_name=type_name, repository_fields=fields, methods=methods)
         )
     return tuple(sorted(sites, key=lambda item: item.type_name))
+
+
+def repository_resolution(
+    repositories: Sequence[JavaRepository],
+) -> dict[str, JavaRepository]:
+    """Map every name an injection site may be typed against -- the Spring Data
+    repository itself or one of its declared parent interfaces -- to the repository
+    that instruments it. A parent claimed by two repositories resolves to neither:
+    guessing which proxy satisfies the field would fabricate evidence."""
+    resolution: dict[str, JavaRepository] = {}
+    ambiguous: set[str] = set()
+    for repository in repositories:
+        for name in (repository.type_name, *repository.parents):
+            if name in resolution and resolution[name] is not repository:
+                ambiguous.add(name)
+            resolution[name] = repository
+    for name in ambiguous:
+        del resolution[name]
+    return resolution
 
 
 def _argument_count(arguments: str) -> int:
@@ -206,7 +265,7 @@ def generate_stub_sources() -> dict[str, str]:
             "package jakarta.persistence;\n"
             "import java.lang.annotation.*;\n"
             "@Retention(RetentionPolicy.RUNTIME) @Target(ElementType.TYPE)\n"
-            "public @interface Table { String name(); }\n"
+            "public @interface Table { String name(); UniqueConstraint[] uniqueConstraints() default {}; }\n"
         ),
         "org/springframework/data/jpa/repository/JpaRepository.java": (
             "package org.springframework.data.jpa.repository;\n"
@@ -215,6 +274,7 @@ def generate_stub_sources() -> dict[str, str]:
             "    Optional<T> findById(ID id);\n"
             "    List<T> findAll();\n"
             "    T save(T entity);\n"
+            "    T saveAndFlush(T entity);\n"
             "    void deleteById(ID id);\n"
             "}\n"
         ),
@@ -222,7 +282,7 @@ def generate_stub_sources() -> dict[str, str]:
             "package org.springframework.data.jpa.repository;\n"
             "import java.lang.annotation.*;\n"
             "@Retention(RetentionPolicy.RUNTIME) @Target(ElementType.METHOD)\n"
-            "public @interface Query { String value(); }\n"
+            "public @interface Query { String value(); String countQuery() default \"\"; boolean nativeQuery() default false; }\n"
         ),
         # The remaining stubs below are the framework surface a real Spring Data JPA
         # REST controller/entity actually imports (validation, JPA column mapping,
@@ -253,7 +313,7 @@ def generate_stub_sources() -> dict[str, str]:
             "package jakarta.persistence;\n"
             "import java.lang.annotation.*;\n"
             "@Retention(RetentionPolicy.RUNTIME)\n"
-            "public @interface Column { String name() default \"\"; }\n"
+            "public @interface Column { String name() default \"\"; int length() default 255; String columnDefinition() default \"\"; }\n"
         ),
         "jakarta/persistence/TemporalType.java": (
             "package jakarta.persistence;\n"
@@ -329,13 +389,14 @@ def generate_stub_sources() -> dict[str, str]:
             "import java.lang.annotation.*;\n"
             "@Retention(RetentionPolicy.RUNTIME)\n"
             "public @interface PathVariable { String value() default \"\"; "
-            "boolean required() default true; }\n"
+            "String name() default \"\"; boolean required() default true; }\n"
         ),
         "org/springframework/web/bind/annotation/RequestParam.java": (
             "package org.springframework.web.bind.annotation;\n"
             "import java.lang.annotation.*;\n"
             "@Retention(RetentionPolicy.RUNTIME)\n"
             "public @interface RequestParam { String value() default \"\"; "
+            "String name() default \"\"; String defaultValue() default \"\"; "
             "boolean required() default true; }\n"
         ),
         "org/springframework/web/bind/annotation/RequestBody.java": (
@@ -384,6 +445,397 @@ def generate_stub_sources() -> dict[str, str]:
             "@Retention(RetentionPolicy.RUNTIME)\n"
             "public @interface JsonFormat { String pattern() default \"\"; }\n"
         ),
+        # The stubs below are the surface the main spring-petclinic repository's
+        # entities and controllers import: superclass mapping (@MappedSuperclass),
+        # the full JPA relationship set, Spring Data commons bases and paging,
+        # Spring MVC model/binding/redirect types, and the small behavioural
+        # classes (ToStringCreator, ModelAndView, PageRequest) their method bodies
+        # construct. Behavioural members return `this`/empty values only -- no
+        # framework semantics are imitated beyond what compiling requires.
+        "jakarta/persistence/MappedSuperclass.java": (
+            "package jakarta.persistence;\n"
+            "import java.lang.annotation.*;\n"
+            "@Retention(RetentionPolicy.RUNTIME) @Target(ElementType.TYPE)\n"
+            "public @interface MappedSuperclass {}\n"
+        ),
+        "jakarta/persistence/FetchType.java": (
+            "package jakarta.persistence;\n"
+            "public enum FetchType { LAZY, EAGER }\n"
+        ),
+        "jakarta/persistence/CascadeType.java": (
+            "package jakarta.persistence;\n"
+            "public enum CascadeType { ALL, PERSIST, MERGE, REMOVE, REFRESH, DETACH }\n"
+        ),
+        "jakarta/persistence/JoinColumn.java": (
+            "package jakarta.persistence;\n"
+            "import java.lang.annotation.*;\n"
+            "@Retention(RetentionPolicy.RUNTIME)\n"
+            "public @interface JoinColumn {\n"
+            "    String name() default \"\";\n"
+            "    String referencedColumnName() default \"\";\n"
+            "    boolean nullable() default true;\n"
+            "}\n"
+        ),
+        "jakarta/persistence/JoinTable.java": (
+            "package jakarta.persistence;\n"
+            "import java.lang.annotation.*;\n"
+            "@Retention(RetentionPolicy.RUNTIME)\n"
+            "public @interface JoinTable {\n"
+            "    String name() default \"\";\n"
+            "    JoinColumn[] joinColumns() default {};\n"
+            "    JoinColumn[] inverseJoinColumns() default {};\n"
+            "}\n"
+        ),
+        "jakarta/persistence/ManyToOne.java": (
+            "package jakarta.persistence;\n"
+            "import java.lang.annotation.*;\n"
+            "@Retention(RetentionPolicy.RUNTIME)\n"
+            "public @interface ManyToOne {\n"
+            "    FetchType fetch() default FetchType.EAGER;\n"
+            "    CascadeType[] cascade() default {};\n"
+            "    boolean optional() default true;\n"
+            "}\n"
+        ),
+        "jakarta/persistence/OneToOne.java": (
+            "package jakarta.persistence;\n"
+            "import java.lang.annotation.*;\n"
+            "@Retention(RetentionPolicy.RUNTIME)\n"
+            "public @interface OneToOne {\n"
+            "    FetchType fetch() default FetchType.EAGER;\n"
+            "    CascadeType[] cascade() default {};\n"
+            "    String mappedBy() default \"\";\n"
+            "}\n"
+        ),
+        "jakarta/persistence/OneToMany.java": (
+            "package jakarta.persistence;\n"
+            "import java.lang.annotation.*;\n"
+            "@Retention(RetentionPolicy.RUNTIME)\n"
+            "public @interface OneToMany {\n"
+            "    FetchType fetch() default FetchType.LAZY;\n"
+            "    CascadeType[] cascade() default {};\n"
+            "    String mappedBy() default \"\";\n"
+            "    boolean orphanRemoval() default false;\n"
+            "}\n"
+        ),
+        "jakarta/persistence/ManyToMany.java": (
+            "package jakarta.persistence;\n"
+            "import java.lang.annotation.*;\n"
+            "@Retention(RetentionPolicy.RUNTIME)\n"
+            "public @interface ManyToMany {\n"
+            "    FetchType fetch() default FetchType.LAZY;\n"
+            "    CascadeType[] cascade() default {};\n"
+            "    String mappedBy() default \"\";\n"
+            "}\n"
+        ),
+        "jakarta/persistence/OrderBy.java": (
+            "package jakarta.persistence;\n"
+            "import java.lang.annotation.*;\n"
+            "@Retention(RetentionPolicy.RUNTIME)\n"
+            "public @interface OrderBy { String value() default \"\"; }\n"
+        ),
+        "jakarta/persistence/Transient.java": (
+            "package jakarta.persistence;\n"
+            "import java.lang.annotation.*;\n"
+            "@Retention(RetentionPolicy.RUNTIME)\n"
+            "public @interface Transient {}\n"
+        ),
+        "jakarta/validation/constraints/NotBlank.java": (
+            "package jakarta.validation.constraints;\n"
+            "import java.lang.annotation.*;\n"
+            "@Retention(RetentionPolicy.RUNTIME)\n"
+            "public @interface NotBlank { String message() default \"\"; }\n"
+        ),
+        "jakarta/validation/constraints/NotEmpty.java": (
+            "package jakarta.validation.constraints;\n"
+            "import java.lang.annotation.*;\n"
+            "@Retention(RetentionPolicy.RUNTIME)\n"
+            "public @interface NotEmpty { String message() default \"\"; }\n"
+        ),
+        "jakarta/validation/constraints/NotNull.java": (
+            "package jakarta.validation.constraints;\n"
+            "import java.lang.annotation.*;\n"
+            "@Retention(RetentionPolicy.RUNTIME)\n"
+            "public @interface NotNull { String message() default \"\"; }\n"
+        ),
+        "jakarta/validation/constraints/Pattern.java": (
+            "package jakarta.validation.constraints;\n"
+            "import java.lang.annotation.*;\n"
+            "@Retention(RetentionPolicy.RUNTIME)\n"
+            "public @interface Pattern { String regexp(); String message() default \"\"; }\n"
+        ),
+        "jakarta/validation/constraints/Digits.java": (
+            "package jakarta.validation.constraints;\n"
+            "import java.lang.annotation.*;\n"
+            "@Retention(RetentionPolicy.RUNTIME)\n"
+            "public @interface Digits { int integer(); int fraction(); }\n"
+        ),
+        "jakarta/xml/bind/annotation/XmlRootElement.java": (
+            "package jakarta.xml.bind.annotation;\n"
+            "import java.lang.annotation.*;\n"
+            "@Retention(RetentionPolicy.RUNTIME) @Target(ElementType.TYPE)\n"
+            "public @interface XmlRootElement { String name() default \"\"; }\n"
+        ),
+        "jakarta/xml/bind/annotation/XmlElement.java": (
+            "package jakarta.xml.bind.annotation;\n"
+            "import java.lang.annotation.*;\n"
+            "@Retention(RetentionPolicy.RUNTIME)\n"
+            "public @interface XmlElement { String name() default \"\"; }\n"
+        ),
+        "org/springframework/core/style/ToStringCreator.java": (
+            "package org.springframework.core.style;\n"
+            "public class ToStringCreator {\n"
+            "    public ToStringCreator(Object target) {}\n"
+            "    public ToStringCreator append(String name, Object value) { return this; }\n"
+            "}\n"
+        ),
+        "org/springframework/format/annotation/DateTimeFormat.java": (
+            "package org.springframework.format.annotation;\n"
+            "import java.lang.annotation.*;\n"
+            "@Retention(RetentionPolicy.RUNTIME)\n"
+            "public @interface DateTimeFormat {\n"
+            "    String pattern() default \"\";\n"
+            "    ISO iso() default ISO.NONE;\n"
+            "    enum ISO { DATE, TIME, DATE_TIME, NONE }\n"
+            "}\n"
+        ),
+        "org/springframework/format/Formatter.java": (
+            "package org.springframework.format;\n"
+            "import java.text.ParseException;\n"
+            "import java.util.Locale;\n"
+            "public interface Formatter<T> {\n"
+            "    T parse(String text, Locale locale) throws ParseException;\n"
+            "    String print(T object, Locale locale);\n"
+            "}\n"
+        ),
+        "org/springframework/data/domain/Page.java": (
+            "package org.springframework.data.domain;\n"
+            "import java.util.List;\n"
+            "public interface Page<T> extends Iterable<T> {\n"
+            "    List<T> getContent();\n"
+            "    int getTotalPages();\n"
+            "    long getTotalElements();\n"
+            "    boolean isEmpty();\n"
+            "}\n"
+        ),
+        "org/springframework/data/domain/Pageable.java": (
+            "package org.springframework.data.domain;\n"
+            "public interface Pageable {}\n"
+        ),
+        "org/springframework/data/domain/PageRequest.java": (
+            "package org.springframework.data.domain;\n"
+            "public class PageRequest implements Pageable {\n"
+            "    private PageRequest() {}\n"
+            "    public static PageRequest of(int page, int size) { return new PageRequest(); }\n"
+            "}\n"
+        ),
+        "org/springframework/data/repository/Repository.java": (
+            "package org.springframework.data.repository;\n"
+            "public interface Repository<T, ID> {}\n"
+        ),
+        "org/springframework/data/repository/CrudRepository.java": (
+            "package org.springframework.data.repository;\n"
+            "import java.util.Optional;\n"
+            "public interface CrudRepository<T, ID> extends Repository<T, ID> {\n"
+            "    Optional<T> findById(ID id);\n"
+            "    Iterable<T> findAll();\n"
+            "    <S extends T> S save(S entity);\n"
+            "    void deleteById(ID id);\n"
+            "    long count();\n"
+            "    boolean existsById(ID id);\n"
+            "}\n"
+        ),
+        "org/springframework/data/repository/ListCrudRepository.java": (
+            "package org.springframework.data.repository;\n"
+            "import java.util.List;\n"
+            "public interface ListCrudRepository<T, ID> extends CrudRepository<T, ID> {\n"
+            "    List<T> findAll();\n"
+            "}\n"
+        ),
+        "org/springframework/data/repository/PagingAndSortingRepository.java": (
+            "package org.springframework.data.repository;\n"
+            "import org.springframework.data.domain.Page;\n"
+            "import org.springframework.data.domain.Pageable;\n"
+            "public interface PagingAndSortingRepository<T, ID> extends Repository<T, ID> {\n"
+            "    Page<T> findAll(Pageable pageable);\n"
+            "}\n"
+        ),
+        "org/springframework/stereotype/Controller.java": (
+            "package org.springframework.stereotype;\n"
+            "import java.lang.annotation.*;\n"
+            "@Retention(RetentionPolicy.RUNTIME) @Target(ElementType.TYPE)\n"
+            "public @interface Controller {}\n"
+        ),
+        "org/springframework/stereotype/Component.java": (
+            "package org.springframework.stereotype;\n"
+            "import java.lang.annotation.*;\n"
+            "@Retention(RetentionPolicy.RUNTIME) @Target(ElementType.TYPE)\n"
+            "public @interface Component { String value() default \"\"; }\n"
+        ),
+        "org/springframework/stereotype/Service.java": (
+            "package org.springframework.stereotype;\n"
+            "import java.lang.annotation.*;\n"
+            "@Retention(RetentionPolicy.RUNTIME) @Target(ElementType.TYPE)\n"
+            "public @interface Service { String value() default \"\"; }\n"
+        ),
+        "org/springframework/stereotype/Repository.java": (
+            "package org.springframework.stereotype;\n"
+            "import java.lang.annotation.*;\n"
+            "@Retention(RetentionPolicy.RUNTIME) @Target(ElementType.TYPE)\n"
+            "public @interface Repository { String value() default \"\"; }\n"
+        ),
+        "org/springframework/ui/Model.java": (
+            "package org.springframework.ui;\n"
+            "public interface Model {\n"
+            "    Model addAttribute(String name, Object value);\n"
+            "    Model addAttribute(Object value);\n"
+            "}\n"
+        ),
+        "org/springframework/ui/ModelMap.java": (
+            "package org.springframework.ui;\n"
+            "public class ModelMap {\n"
+            "    public ModelMap addAttribute(String name, Object value) { return this; }\n"
+            "}\n"
+        ),
+        "org/springframework/validation/Errors.java": (
+            "package org.springframework.validation;\n"
+            "public interface Errors {\n"
+            "    boolean hasErrors();\n"
+            "    void rejectValue(String field, String errorCode, String defaultMessage);\n"
+            "    void rejectValue(String field, String errorCode);\n"
+            "}\n"
+        ),
+        "org/springframework/validation/BindingResult.java": (
+            "package org.springframework.validation;\n"
+            "public interface BindingResult extends Errors {}\n"
+        ),
+        "org/springframework/validation/Validator.java": (
+            "package org.springframework.validation;\n"
+            "public interface Validator {\n"
+            "    boolean supports(Class<?> clazz);\n"
+            "    void validate(Object target, Errors errors);\n"
+            "}\n"
+        ),
+        "org/springframework/web/bind/WebDataBinder.java": (
+            "package org.springframework.web.bind;\n"
+            "public class WebDataBinder {\n"
+            "    public void setDisallowedFields(String... fields) {}\n"
+            "    public void setAllowedFields(String... fields) {}\n"
+            "    public void setValidator(Object validator) {}\n"
+            "}\n"
+        ),
+        "org/springframework/web/bind/annotation/InitBinder.java": (
+            "package org.springframework.web.bind.annotation;\n"
+            "import java.lang.annotation.*;\n"
+            "@Retention(RetentionPolicy.RUNTIME)\n"
+            "public @interface InitBinder { String[] value() default {}; }\n"
+        ),
+        "org/springframework/web/bind/annotation/ModelAttribute.java": (
+            "package org.springframework.web.bind.annotation;\n"
+            "import java.lang.annotation.*;\n"
+            "@Retention(RetentionPolicy.RUNTIME)\n"
+            "public @interface ModelAttribute { String value() default \"\"; }\n"
+        ),
+        "org/springframework/web/bind/annotation/ResponseBody.java": (
+            "package org.springframework.web.bind.annotation;\n"
+            "import java.lang.annotation.*;\n"
+            "@Retention(RetentionPolicy.RUNTIME)\n"
+            "public @interface ResponseBody {}\n"
+        ),
+        "org/springframework/web/servlet/ModelAndView.java": (
+            "package org.springframework.web.servlet;\n"
+            "public class ModelAndView {\n"
+            "    public ModelAndView(String viewName) {}\n"
+            "    public ModelAndView addObject(Object value) { return this; }\n"
+            "    public ModelAndView addObject(String name, Object value) { return this; }\n"
+            "}\n"
+        ),
+        "org/springframework/web/servlet/mvc/support/RedirectAttributes.java": (
+            "package org.springframework.web.servlet.mvc.support;\n"
+            "public interface RedirectAttributes {\n"
+            "    RedirectAttributes addAttribute(String name, Object value);\n"
+            "    RedirectAttributes addFlashAttribute(String name, Object value);\n"
+            "}\n"
+        ),
+        "org/springframework/cache/annotation/Cacheable.java": (
+            "package org.springframework.cache.annotation;\n"
+            "import java.lang.annotation.*;\n"
+            "@Retention(RetentionPolicy.RUNTIME)\n"
+            "public @interface Cacheable { String[] value() default {}; }\n"
+        ),
+        "org/springframework/dao/DataAccessException.java": (
+            "package org.springframework.dao;\n"
+            "public class DataAccessException extends RuntimeException {\n"
+            "    public DataAccessException(String message) { super(message); }\n"
+            "}\n"
+        ),
+        "org/springframework/dao/DataIntegrityViolationException.java": (
+            "package org.springframework.dao;\n"
+            "public class DataIntegrityViolationException extends DataAccessException {\n"
+            "    public DataIntegrityViolationException(String message) { super(message); }\n"
+            "}\n"
+        ),
+        "org/springframework/util/Assert.java": (
+            "package org.springframework.util;\n"
+            "public abstract class Assert {\n"
+            "    public static void notNull(Object object, String message) {}\n"
+            "    public static void state(boolean expression, String message) {}\n"
+            "    public static void isTrue(boolean expression, String message) {}\n"
+            "}\n"
+        ),
+        "org/springframework/util/StringUtils.java": (
+            "package org.springframework.util;\n"
+            "public abstract class StringUtils {\n"
+            "    public static boolean hasText(String text) {\n"
+            "        return text != null && !text.isBlank();\n"
+            "    }\n"
+            "    public static boolean hasLength(String text) {\n"
+            "        return text != null && !text.isEmpty();\n"
+            "    }\n"
+            "}\n"
+        ),
+        "jakarta/persistence/UniqueConstraint.java": (
+            "package jakarta.persistence;\n"
+            "import java.lang.annotation.*;\n"
+            "@Retention(RetentionPolicy.RUNTIME)\n"
+            "public @interface UniqueConstraint { String[] columnNames(); }\n"
+        ),
+        "com/fasterxml/jackson/annotation/JsonIgnore.java": (
+            "package com.fasterxml.jackson.annotation;\n"
+            "import java.lang.annotation.*;\n"
+            "@Retention(RetentionPolicy.RUNTIME)\n"
+            "public @interface JsonIgnore {}\n"
+        ),
+        "org/springframework/dao/EmptyResultDataAccessException.java": (
+            "package org.springframework.dao;\n"
+            "public class EmptyResultDataAccessException extends DataAccessException {\n"
+            "    public EmptyResultDataAccessException(String message) { super(message); }\n"
+            "}\n"
+        ),
+        "org/springframework/orm/ObjectRetrievalFailureException.java": (
+            "package org.springframework.orm;\n"
+            "import org.springframework.dao.DataAccessException;\n"
+            "public class ObjectRetrievalFailureException extends DataAccessException {\n"
+            "    public ObjectRetrievalFailureException(String message) { super(message); }\n"
+            "}\n"
+        ),
+        "org/springframework/context/annotation/Profile.java": (
+            "package org.springframework.context.annotation;\n"
+            "import java.lang.annotation.*;\n"
+            "@Retention(RetentionPolicy.RUNTIME)\n"
+            "public @interface Profile { String[] value(); }\n"
+        ),
+        "org/springframework/data/repository/query/Param.java": (
+            "package org.springframework.data.repository.query;\n"
+            "import java.lang.annotation.*;\n"
+            "@Retention(RetentionPolicy.RUNTIME)\n"
+            "public @interface Param { String value(); }\n"
+        ),
+        "org/springframework/transaction/annotation/Transactional.java": (
+            "package org.springframework.transaction.annotation;\n"
+            "import java.lang.annotation.*;\n"
+            "@Retention(RetentionPolicy.RUNTIME)\n"
+            "public @interface Transactional { boolean readOnly() default false; }\n"
+        ),
     }
 
 
@@ -392,6 +844,8 @@ def generate_recorder_source() -> str:
     return (
         "package harness;\n"
         "import java.lang.reflect.*;\nimport java.util.*;\n"
+        "import jakarta.persistence.Column;\n"
+        "import jakarta.persistence.JoinColumn;\n"
         "import jakarta.persistence.Table;\n\n"
         "/** Records repository calls and resolves the table from the entity's @Table. */\n"
         "public final class Recorder implements InvocationHandler {\n"
@@ -408,9 +862,26 @@ def generate_recorder_source() -> str:
         "        Table annotation = entity.getAnnotation(Table.class);\n"
         "        String table = annotation == null ? \"UNMAPPED\" : annotation.name();\n"
         "        List<String> names = new ArrayList<>();\n"
-        "        for (Field field : entity.getDeclaredFields()) {\n"
-        "            if (field.isSynthetic() || Modifier.isStatic(field.getModifiers())) continue;\n"
-        "            names.add(field.getName());\n"
+        "        // Entity fields live on @MappedSuperclass ancestors too (petclinic's\n"
+        "        // Owner.lastName is declared on Person), so walk the hierarchy.\n"
+        "        for (Class<?> level = entity; level != null && level != Object.class;\n"
+        "                level = level.getSuperclass()) {\n"
+        "            for (Field field : level.getDeclaredFields()) {\n"
+        "                if (field.isSynthetic() || Modifier.isStatic(field.getModifiers())) continue;\n"
+        "                String name = field.getName();\n"
+        "                // The physical column name is the witnessable element: SCA\n"
+        "                // resolves a derived `findByPetId` to the association's own\n"
+        "                // @JoinColumn (`pet_id`), never to the Java field `pet`. A\n"
+        "                // collection-typed field's @JoinColumn names a column on the\n"
+        "                // TARGET table, so it never renames the field here.\n"
+        "                Column column = field.getAnnotation(Column.class);\n"
+        "                if (column != null && !column.name().isEmpty()) name = column.name();\n"
+        "                JoinColumn join = field.getAnnotation(JoinColumn.class);\n"
+        "                boolean toMany = Collection.class.isAssignableFrom(field.getType())\n"
+        "                    || Map.class.isAssignableFrom(field.getType());\n"
+        "                if (join != null && !join.name().isEmpty() && !toMany) name = join.name();\n"
+        "                names.add(name);\n"
+        "            }\n"
         "        }\n"
         "        String fields = String.join(\",\", names);\n"
         "        return Proxy.newProxyInstance(\n"
@@ -450,7 +921,7 @@ def generate_test_source(
     repositories, and injection sites across many packages, never one fixed package.
     """
     entity_table = {entity.type_name: entity for entity in entities}
-    by_name = {repository.type_name: repository for repository in repositories}
+    by_name = repository_resolution(repositories)
 
     def fqcn(simple: str) -> str:
         return qualified.get(simple, simple)
@@ -464,28 +935,37 @@ def generate_test_source(
         "    public static void main(String[] args) throws Exception {",
     ]
     for site_index, site in enumerate(sites):
+        if any(type_name not in by_name for _field, type_name in site.repository_fields):
+            continue
         types = [by_name[type_name] for _field, type_name in site.repository_fields]
         if any(repository.entity_type not in entity_table for repository in types):
             continue
         lines.append("        try {")
         proxy_vars = []
-        repo_class_vars = []
-        for index, repository in enumerate(types):
+        ctor_class_vars = []
+        for index, (repository, (_field, declared)) in enumerate(
+            zip(types, site.repository_fields)
+        ):
+            # The proxy implements the Spring Data repository type; the constructor
+            # is looked up by the field's own declared type (petclinic-rest injects
+            # the parent interface, which the Spring Data type extends).
             repo_var = f"repoClass{site_index}_{index}"
+            declared_var = f"declaredClass{site_index}_{index}"
             entity_var = f"entityClass{site_index}_{index}"
             proxy_var = f"proxy{site_index}_{index}"
             lines.append(f"            Class<?> {repo_var} = Class.forName(\"{fqcn(repository.type_name)}\");")
+            lines.append(f"            Class<?> {declared_var} = Class.forName(\"{fqcn(declared)}\");")
             lines.append(f"            Class<?> {entity_var} = Class.forName(\"{fqcn(repository.entity_type)}\");")
             lines.append(f"            Object {proxy_var} = Recorder.proxy({repo_var}, {entity_var});")
             proxy_vars.append(proxy_var)
-            repo_class_vars.append(repo_var)
+            ctor_class_vars.append(declared_var)
         site_class_var = f"siteClass{site_index}"
         ctor_var = f"ctor{site_index}"
         obj_var = f"site{site_index}"
         lines.append(f"            Class<?> {site_class_var} = Class.forName(\"{fqcn(site.type_name)}\");")
         lines.append(
             f"            Constructor<?> {ctor_var} = {site_class_var}.getDeclaredConstructor("
-            + ", ".join(repo_class_vars) + ");"
+            + ", ".join(ctor_class_vars) + ");"
         )
         lines.append(f"            {ctor_var}.setAccessible(true);")
         lines.append(

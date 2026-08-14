@@ -531,3 +531,54 @@ def test_python_selection_stays_to_only_and_is_unaffected_by_java_widening(
     assert (WRITES_EDGE["from"][0], WRITES_EDGE["to"], WRITES_EDGE["edgeType"]) in selected
     assert (READS_EDGE["from"][0], READS_EDGE["to"], READS_EDGE["edgeType"]) not in selected
     assert len(selected) == 2
+
+
+def test_no_groundable_edge_is_reported_as_its_own_reason_not_execution_failed(
+    tmp_path,
+) -> None:
+    # Most real repositories that end INTEGRATION_REQUIRED carry zero element-scoped
+    # or service-anchored edges -- nothing either runtime seam could ground. That is
+    # not a failed execution: nothing was executable. The closed vocabulary must say
+    # so, or every such collection reads as a runtime crash to the operator.
+    from lineage_api.dependencies import build_services
+
+    services = build_services(_settings(tmp_path))
+    services.reset()
+
+    envelope = {
+        "env": "staging",
+        "system": "petclinic",
+        "repo": "spring-petclinic-microservices",
+        "digest": "demo-digest-no-groundable",
+        "eventId": "delivery-no-groundable",
+    }
+    verification, reasons, diagnostics = services.orchestration._execute_runtime_session(
+        envelope, _sca([DATASET_SCOPE_EDGE])
+    )
+
+    assert verification is None
+    assert reasons == ["no-groundable-edges"]
+    assert diagnostics == []
+
+
+def test_called_process_error_diagnostic_carries_the_stderr_tail() -> None:
+    # `str(CalledProcessError)` is only the command line -- for a harness `javac`
+    # failure the compiler's own errors live in `stderr`, and without them the
+    # diagnostic is undebuggable. The bounded message must include the stderr tail.
+    import subprocess
+
+    from lineage_api.services.orchestration import _runtime_stage_diagnostic
+
+    error = subprocess.CalledProcessError(
+        1,
+        ["javac", "-d", "classes", "Owner.java"],
+        output=b"",
+        stderr=b"Owner.java:3: error: package org.example.missing does not exist\n",
+    )
+
+    diagnostic = _runtime_stage_diagnostic("java", error)
+
+    assert diagnostic["stage"] == "java"
+    assert diagnostic["exceptionType"] == "CalledProcessError"
+    assert "package org.example.missing does not exist" in diagnostic["message"]
+    assert len(diagnostic["message"]) <= 480

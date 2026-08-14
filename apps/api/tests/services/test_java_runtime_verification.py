@@ -73,6 +73,38 @@ def test_entities_repositories_and_injection_sites_are_read_from_the_corpus() ->
     assert set(sites[0].methods) == {"find", "save"}
 
 
+def test_every_spring_data_base_interface_is_recognized_as_a_repository() -> None:
+    # spring-petclinic's VetRepository extends `Repository<Vet, Integer>` -- the
+    # deliberately minimal Spring Data marker -- and other real repositories extend
+    # the Crud/ListCrud/PagingAndSorting bases. All of them are Spring Data
+    # repositories the proxy seam can instrument, not just JpaRepository.
+    template = (
+        "package example;\n"
+        "import org.springframework.data.repository.{base};\n"
+        "interface {name} extends {base}<Vet, Integer> {{\n"
+        "    java.util.List<Vet> findAll();\n"
+        "}}\n"
+    )
+    sources = {
+        f"src/{name}.java": template.format(base=base, name=name)
+        for base, name in (
+            ("Repository", "VetRepository"),
+            ("CrudRepository", "CrudVetRepository"),
+            ("ListCrudRepository", "ListCrudVetRepository"),
+            ("PagingAndSortingRepository", "PagingVetRepository"),
+        )
+    }
+
+    repositories = read_repositories(sources)
+
+    assert {(r.type_name, r.entity_type) for r in repositories} == {
+        ("VetRepository", "Vet"),
+        ("CrudVetRepository", "Vet"),
+        ("ListCrudVetRepository", "Vet"),
+        ("PagingVetRepository", "Vet"),
+    }
+
+
 def test_a_commented_out_entity_never_registers_a_table() -> None:
     # The corpus deliberately contains `// @Entity class FakeOwner {}` and a string
     # literal mentioning a repository, to catch analyzers that match on raw text.
@@ -384,4 +416,119 @@ def test_a_package_private_injection_site_across_packages_compiles_and_runs(
     assert observations, "expected the proxy to record the invoked repository call"
     assert observations[0].table == "visits"
     assert observations[0].operation == "READ"
-    assert "petId" in observations[0].fields
+    # The recorder reports the physical @Column name (`pet_id`), not the Java field
+    # name (`petId`): the physical column is what an SCA element edge names.
+    assert "pet_id" in observations[0].fields
+
+
+PETCLINIC_REST_SHAPE = {
+    "src/model/Team.java": (
+        "package example;\n"
+        "import jakarta.persistence.Entity;\n"
+        "import jakarta.persistence.Table;\n"
+        "@Entity @Table(name=\"teams\")\n"
+        "public class Team {}\n"
+    ),
+    "src/model/Owner.java": (
+        "package example;\n"
+        "import jakarta.persistence.Entity;\n"
+        "import jakarta.persistence.JoinColumn;\n"
+        "import jakarta.persistence.ManyToOne;\n"
+        "import jakarta.persistence.Table;\n"
+        "@Entity @Table(name=\"owners\")\n"
+        "public class Owner {\n"
+        "    private String lastName;\n"
+        "    @ManyToOne @JoinColumn(name = \"team_id\") private Team team;\n"
+        "}\n"
+    ),
+    "src/repository/OwnerRepository.java": (
+        "package example;\n"
+        "import java.util.Collection;\n"
+        "public interface OwnerRepository {\n"
+        "    Collection<Owner> findByLastName(String lastName);\n"
+        "    void save(Owner owner);\n"
+        "}\n"
+    ),
+    "src/springdatajpa/SpringDataOwnerRepository.java": (
+        "package example;\n"
+        "import org.springframework.data.repository.Repository;\n"
+        "public interface SpringDataOwnerRepository extends OwnerRepository, "
+        "Repository<Owner, Integer> {\n"
+        "}\n"
+    ),
+    "src/service/ClinicServiceImpl.java": (
+        "package example;\n"
+        "import java.util.Collection;\n"
+        "class ClinicServiceImpl {\n"
+        "    private final OwnerRepository ownerRepository;\n"
+        "    ClinicServiceImpl(OwnerRepository ownerRepository) {\n"
+        "        this.ownerRepository = ownerRepository;\n"
+        "    }\n"
+        "    public Collection<Owner> findOwnerByLastName(String lastName) {\n"
+        "        return ownerRepository.findByLastName(lastName);\n"
+        "    }\n"
+        "}\n"
+    ),
+}
+
+
+def test_a_spring_data_base_anywhere_in_the_extends_clause_is_recognized() -> None:
+    # spring-petclinic-rest declares `SpringDataOwnerRepository extends
+    # OwnerRepository, Repository<Owner, Integer>` -- the Spring Data base is not
+    # first in the clause, and the project's own abstract interface is remembered as
+    # a parent so injection sites typed against it can still be instrumented.
+    repositories = read_repositories(PETCLINIC_REST_SHAPE)
+
+    assert [(r.type_name, r.entity_type) for r in repositories] == [
+        ("SpringDataOwnerRepository", "Owner")
+    ]
+    assert repositories[0].parents == ("OwnerRepository",)
+
+
+def test_an_injection_site_typed_by_the_parent_interface_is_instrumented() -> None:
+    # ClinicServiceImpl injects `OwnerRepository` -- the abstract project interface
+    # the Spring Data repository extends -- never the Spring Data type itself.
+    repositories = read_repositories(PETCLINIC_REST_SHAPE)
+
+    sites = read_injection_sites(PETCLINIC_REST_SHAPE, repositories)
+
+    assert [site.type_name for site in sites] == ["ClinicServiceImpl"]
+    assert sites[0].repository_fields == (("ownerRepository", "OwnerRepository"),)
+
+
+@pytest.mark.skipif(_javac() is None, reason="no JDK available; set LINEAGE_JAVA_HOME")
+def test_the_parent_interface_injection_shape_compiles_and_witnesses(tmp_path: Path) -> None:
+    javac = _javac()
+    assert javac is not None
+    java = str(Path(javac).with_name("java"))
+
+    workspace = tmp_path / "src"
+    for relative, text in {**PETCLINIC_REST_SHAPE, **generate_harness(PETCLINIC_REST_SHAPE)}.items():
+        path = workspace / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text, encoding="utf-8")
+    listing = tmp_path / "files.txt"
+    listing.write_text(
+        "\n".join(str(path) for path in sorted(workspace.rglob("*.java"))), encoding="utf-8"
+    )
+    compiled = subprocess.run(
+        [javac, "-d", str(tmp_path / "classes"), f"@{listing}"],
+        capture_output=True, text=True, timeout=180, check=False,
+    )
+    assert compiled.returncode == 0, compiled.stderr
+    ran = subprocess.run(
+        [java, "-cp", str(tmp_path / "classes"), "harness.GeneratedRuntimeTest"],
+        capture_output=True, text=True, timeout=120, check=False,
+    )
+    assert ran.returncode == 0, ran.stderr
+
+    observations = parse_observations(ran.stdout)
+
+    assert {(o.method, o.table, o.operation) for o in observations} >= {
+        ("findByLastName", "owners", "READ"),
+    }
+    owner_read = next(o for o in observations if o.method == "findByLastName")
+    # A to-one association's physical @JoinColumn name is the witnessable element --
+    # SCA resolves `findVisitsByPetId` to `pet_id`, never to the Java field `pet`.
+    assert "team_id" in owner_read.fields
+    assert "lastName" in owner_read.fields
