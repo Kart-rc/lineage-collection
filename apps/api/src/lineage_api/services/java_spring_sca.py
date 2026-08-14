@@ -2524,6 +2524,7 @@ class JavaSpringScaAnalyzer:
                 available = columns.get(table, set())
                 attributes = dict(fact.attributes)
                 explicit = attributes.get("column")
+                join_column = attributes.get("joinColumn")
                 if explicit is not None:
                     if explicit not in available:
                         # An explicit @Column naming a column the schema does not have is a
@@ -2536,6 +2537,19 @@ class JavaSpringScaAnalyzer:
                         )
                         continue
                     column, mapping = explicit, "explicit"
+                elif join_column is not None:
+                    if join_column not in available:
+                        # Same contradiction as an explicit @Column: a literal
+                        # @JoinColumn naming a column the entity's own table does not
+                        # have is a real mismatch, not a field to skip silently.
+                        self._add_residue(
+                            "unmapped-entity-column",
+                            "explicit @JoinColumn name is absent from the mapped table",
+                            f"{table}.{join_column}",
+                            fact.location,
+                        )
+                        continue
+                    column, mapping = join_column, "join-column"
                 else:
                     candidate = _snake_case(field)
                     if candidate not in available:
@@ -2562,14 +2576,17 @@ class JavaSpringScaAnalyzer:
         that does not correspond to a real column is quarantined rather than invented.
         """
         fields_by_entity: dict[str, dict[str, tuple[str, str]]] = {}
+        association_fields_by_entity: dict[str, dict[str, tuple[str, str]]] = {}
         for fact in self._facts:
             if fact.kind != "spring.entity-field":
                 continue
             attributes = dict(fact.attributes)
-            fields_by_entity.setdefault(attributes["entity"], {})[attributes["field"]] = (
-                attributes["column"],
-                attributes["table"],
-            )
+            entry = (attributes["column"], attributes["table"])
+            fields_by_entity.setdefault(attributes["entity"], {})[attributes["field"]] = entry
+            if attributes.get("mapping") == "join-column":
+                association_fields_by_entity.setdefault(attributes["entity"], {})[
+                    attributes["field"]
+                ] = entry
         if not fields_by_entity:
             return
         entity_by_repository = {
@@ -2582,6 +2599,17 @@ class JavaSpringScaAnalyzer:
             for fact in self._facts
             if fact.kind == "spring.query"
         }
+        # Any field carrying a JPA relationship annotation, declared directly on the
+        # entity -- not just the join-column-backed ones -- so a JPQL `join fetch
+        # owner.pets` traversal can be told apart from a real, unproven property.
+        declared_associations_by_entity: dict[str, set[str]] = {}
+        for fact in self._facts:
+            if fact.kind != "java.field" or "#" not in fact.subject:
+                continue
+            if dict(fact.attributes).get("association") != "true":
+                continue
+            declaring, field = fact.subject.rsplit("#", 1)
+            declared_associations_by_entity.setdefault(declaring, set()).add(field)
 
         for fact in list(self._facts):
             if fact.kind != "java.method" or "#" not in fact.subject:
@@ -2610,7 +2638,25 @@ class JavaSpringScaAnalyzer:
             )
             for prop in properties:
                 mapped = fields.get(prop)
+                if (
+                    mapped is None
+                    and derivation == "derived"
+                    and prop.endswith("Id")
+                    and len(prop) > len("Id")
+                ):
+                    # Association traversal: `findByPetId` on a `pet` association whose
+                    # `@JoinColumn` is a proven literal resolves straight to that join
+                    # column -- the property head is the association, `Id` is its key.
+                    head = prop[: -len("Id")]
+                    mapped = association_fields_by_entity.get(entity, {}).get(head)
                 if mapped is None:
+                    if derivation == "jpql" and prop in declared_associations_by_entity.get(
+                        entity, set()
+                    ):
+                        # A JPQL property naming a declared association (e.g. `left join
+                        # fetch owner.pets`) is association traversal, not a column
+                        # projection -- it contributes no column claim and is not residue.
+                        continue
                     self._add_residue(
                         "unresolved-query-property",
                         "query property does not map to a proven schema column",
@@ -2849,17 +2895,22 @@ class JavaSpringScaAnalyzer:
                 ]
                 # Annotations belong to the declaration, so they are resolved once and
                 # attributed to its first declarator rather than emitted per name.
-                column_override = _column_override(
-                    self._emit_annotations(
-                        parsed, member, f"{owner}#{names[0]}", symbols
-                    )
+                field_annotations = self._emit_annotations(
+                    parsed, member, f"{owner}#{names[0]}", symbols
                 )
+                column_override = _column_override(field_annotations)
+                join_column_override = _join_column_override(field_annotations)
+                is_association = _is_association_field(field_annotations)
                 for declarator, name in zip(declarators, names):
                     attributes: list[tuple[str, FactValue]] = [
                         ("type", _node_text(field_type, parsed.source.content))
                     ]
                     if column_override is not None:
                         attributes.append(("column", column_override))
+                    if join_column_override is not None:
+                        attributes.append(("joinColumn", join_column_override))
+                    if is_association:
+                        attributes.append(("association", "true"))
                     self._add_fact(
                         "java.field",
                         f"{owner}#{name}",
@@ -4771,6 +4822,29 @@ def _column_override(annotations: tuple["_AnnotationRecord", ...]) -> str | None
             return name
         return None
     return None
+
+
+def _join_column_override(annotations: tuple["_AnnotationRecord", ...]) -> str | None:
+    """The literal column name from an exact `@JoinColumn(name=...)`, if provable.
+
+    An association's foreign-key column is only usable as a resolution anchor -- for
+    example a derived `findByXId` method -- when it names a bounded literal. Anything
+    else (no `@JoinColumn`, or a dynamic name) leaves the association without a
+    physical column of its own.
+    """
+    for record in annotations:
+        if record.resolved_fqn != _JOIN_COLUMN_FQN:
+            continue
+        name = dict(record.literal_values).get("name")
+        if isinstance(name, str) and _EVIDENCE_TABLE_IDENTIFIER.fullmatch(name):
+            return name
+        return None
+    return None
+
+
+def _is_association_field(annotations: tuple["_AnnotationRecord", ...]) -> bool:
+    """Whether a field carries one of JPA's exact relationship annotations."""
+    return any(record.resolved_fqn in _ASSOCIATION_FQNS for record in annotations)
 
 
 def _snake_case(name: str) -> str:

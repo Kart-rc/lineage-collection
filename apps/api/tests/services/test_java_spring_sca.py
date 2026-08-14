@@ -2800,6 +2800,186 @@ interface OwnerRepository extends JpaRepository<Owner,Integer> {
     assert ("findByLastNameStartingWith", "last_name", "derived") in elements
 
 
+def test_derived_property_resolves_through_a_many_to_one_join_column() -> None:
+    """spring-petclinic-rest's `VisitRepository.findByPetId` derives against
+    `Visit.pet`, a `@ManyToOne` with an explicit `@JoinColumn(name = "pet_id")`. The
+    derived property `petId` is association traversal (`pet` + the association's key)
+    and resolves to the declared join column, not a made-up `pet_id` field.
+    """
+    entity_pet = '''package example;
+import jakarta.persistence.Entity;
+import jakarta.persistence.Table;
+@Entity @Table(name="pets") class Pet {}
+'''
+    entity_visit = '''package example;
+import jakarta.persistence.Entity;
+import jakarta.persistence.JoinColumn;
+import jakarta.persistence.ManyToOne;
+import jakarta.persistence.Table;
+@Entity @Table(name="visits")
+class Visit {
+  @ManyToOne
+  @JoinColumn(name = "pet_id")
+  private Pet pet;
+}
+'''
+    repository = '''package example;
+import java.util.List;
+import org.springframework.data.jpa.repository.JpaRepository;
+interface VisitRepository extends JpaRepository<Visit, Integer> {
+  List<Visit> findByPetId(Integer petId);
+}
+'''
+    schema = "create table visits (id integer primary key, pet_id integer not null);"
+    sources = (
+        _source("pom.xml", _maven_build()),
+        _source("src/example/Pet.java", entity_pet),
+        _source("src/example/Visit.java", entity_visit),
+        _source("src/example/VisitRepository.java", repository),
+        _source("src/main/resources/db/postgres/schema.sql", schema, dialect="postgres"),
+    )
+
+    result = JavaSpringScaAnalyzer().analyze(sources)
+
+    elements = _elements(result)
+    assert ("findByPetId", "pet_id", "derived") in elements
+    assert "unresolved-query-property" not in {item.code for item in result.residue}
+
+
+def test_derived_property_without_a_literal_join_column_stays_residue() -> None:
+    """The association+Id resolution only fires on a proven, literal @JoinColumn --
+    an association with no explicit join column keeps its residue rather than
+    guessing a `<field>_id` convention that JPA does not itself guarantee.
+    """
+    entity_pet = '''package example;
+import jakarta.persistence.Entity;
+import jakarta.persistence.Table;
+@Entity @Table(name="pets") class Pet {}
+'''
+    entity_visit = '''package example;
+import jakarta.persistence.Column;
+import jakarta.persistence.Entity;
+import jakarta.persistence.ManyToOne;
+import jakarta.persistence.Table;
+@Entity @Table(name="visits")
+class Visit {
+  @Column(name = "description") private String description;
+  @ManyToOne
+  private Pet pet;
+}
+'''
+    repository = '''package example;
+import java.util.List;
+import org.springframework.data.jpa.repository.JpaRepository;
+interface VisitRepository extends JpaRepository<Visit, Integer> {
+  List<Visit> findByPetId(Integer petId);
+}
+'''
+    schema = (
+        "create table visits (id integer primary key, pet_id integer not null, "
+        "description varchar(255));"
+    )
+    sources = (
+        _source("pom.xml", _maven_build()),
+        _source("src/example/Pet.java", entity_pet),
+        _source("src/example/Visit.java", entity_visit),
+        _source("src/example/VisitRepository.java", repository),
+        _source("src/main/resources/db/postgres/schema.sql", schema, dialect="postgres"),
+    )
+
+    result = JavaSpringScaAnalyzer().analyze(sources)
+
+    elements = _elements(result)
+    assert not any(method == "findByPetId" for method, _c, _d in elements)
+    assert "unresolved-query-property" in {item.code for item in result.residue}
+
+
+def test_jpql_join_fetch_of_a_declared_association_is_not_residue() -> None:
+    """spring-petclinic-rest's SpringDataOwnerRepository queries `left join fetch
+    owner.pets`, a declared `@OneToMany`. That is association traversal, not a
+    column projection, so it must not be flagged as an unresolved query property.
+    """
+    entity_pet = '''package example;
+import jakarta.persistence.Entity;
+import jakarta.persistence.Table;
+@Entity @Table(name="pets") class Pet {}
+'''
+    entity_owner = '''package example;
+import jakarta.persistence.Column;
+import jakarta.persistence.Entity;
+import jakarta.persistence.OneToMany;
+import jakarta.persistence.Table;
+import java.util.Set;
+@Entity @Table(name="owners")
+class Owner {
+  @Column(name="last_name") private String lastName;
+  @OneToMany(mappedBy = "owner")
+  private Set<Pet> pets;
+}
+'''
+    repository = '''package example;
+import java.util.Collection;
+import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+interface OwnerRepository extends JpaRepository<Owner, Integer> {
+  @Query("SELECT DISTINCT owner FROM Owner owner left join fetch owner.pets WHERE owner.lastName LIKE :lastName%")
+  Collection<Owner> findByLastName(String lastName);
+}
+'''
+    schema = "create table owners (id integer primary key, last_name varchar(255));"
+    sources = (
+        _source("pom.xml", _maven_build()),
+        _source("src/example/Pet.java", entity_pet),
+        _source("src/example/Owner.java", entity_owner),
+        _source("src/example/OwnerRepository.java", repository),
+        _source("src/main/resources/db/postgres/schema.sql", schema, dialect="postgres"),
+    )
+
+    result = JavaSpringScaAnalyzer().analyze(sources)
+
+    elements = _elements(result)
+    assert ("findByLastName", "last_name", "jpql") in elements
+    assert not any(fact.attribute("column") == "pets" for fact in _facts(result, "spring.query-element"))
+    assert "unresolved-query-property" not in {item.code for item in result.residue}
+
+
+def test_jpql_property_matching_neither_column_nor_association_stays_residue() -> None:
+    """A JPQL property that names something real (a declared association) is
+    forgiven; a property that names nothing provable at all is not.
+    """
+    entity_owner = '''package example;
+import jakarta.persistence.Column;
+import jakarta.persistence.Entity;
+import jakarta.persistence.Table;
+@Entity @Table(name="owners")
+class Owner {
+  @Column(name="last_name") private String lastName;
+}
+'''
+    repository = '''package example;
+import java.util.Collection;
+import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+interface OwnerRepository extends JpaRepository<Owner, Integer> {
+  @Query("SELECT owner FROM Owner owner WHERE owner.nickname = :nickname")
+  Collection<Owner> findByNickname(String nickname);
+}
+'''
+    schema = "create table owners (id integer primary key, last_name varchar(255));"
+    sources = (
+        _source("pom.xml", _maven_build()),
+        _source("src/example/Owner.java", entity_owner),
+        _source("src/example/OwnerRepository.java", repository),
+        _source("src/main/resources/db/postgres/schema.sql", schema, dialect="postgres"),
+    )
+
+    result = JavaSpringScaAnalyzer().analyze(sources)
+
+    elements = _elements(result)
+    assert not any(method == "findByNickname" for method, _c, _d in elements)
+    assert "unresolved-query-property" in {item.code for item in result.residue}
+
+
 # --- L4: query-element facts wired into element-scoped SCA edges ------------------------
 
 
