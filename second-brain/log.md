@@ -63,4 +63,6 @@
 * **Creation**: Added [Throughline Prototype: Lineage Directions](/references/prototype-throughline-lineage-directions.md).
 * **Creation**: Added [Throughline Prototype: Worked Example](/references/prototype-worked-example.md).
 * **Update**: Linked [Implementation and Evidence Coverage](/references/prototype-coverage.md) to the Throughline Agentic prototype document it is scored against.
+* **Creation**: Added [Prototype Collection Gap Assessment](/notes/prototype-collection-gap-assessment.md) capturing the conversational analysis of implementation versus the Throughline collection expectation.
 * **Update**: Ingested the Throughline prototype corpus — 17 concepts from "Data Lineage Impact Platform-10/" (17 .dc.html documents; skipped as duplicates: Throughline.html and "Roadmap and LOE.html" bundled renderings; skipped as non-text: screenshots/, uploads/, support.js, .thumbnail).
+* **Creation**: Added [Lineage Architecture Diagram](/references/lineage-architecture-diagram.md) — ingested "Lineage-collection-Architecture/Lineage Architecture Diagram.dc.html", the four-panel visual synthesis (component map, AWS production mapping, component internals, M1 walking skeleton).
