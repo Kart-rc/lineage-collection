@@ -612,3 +612,31 @@ def test_failure_after_sca_checkpoint_resumes_without_reanalysis(
     with restarted.database.connection() as connection:
         assert connection.execute("SELECT COUNT(*) FROM proposals").fetchone()[0] == 1
         assert connection.execute("SELECT COUNT(*) FROM edge_ledger").fetchone()[0] == 2
+
+
+def test_source_validation_failure_reports_its_bounded_reason(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """A bare SOURCE_VALIDATION_FAILED is undiagnosable: a tracked symlink, an
+    oversized blob, and a git stdout overflow all looked identical. The validator's
+    own messages are closed, bounded strings carrying no repository content, so the
+    CLI surfaces the message as a `reason` -- still bounded, still path-free."""
+    checkout, revision = _checkout(tmp_path)
+    (checkout / "docs-link").symlink_to("pom.xml")
+    _git(checkout, "add", "--all")
+    _git(checkout, "commit", "--quiet", "-m", "symlink")
+    revision = _git(checkout, "rev-parse", "HEAD")
+    monkeypatch.setenv("LINEAGE_DATA_DIR", str(tmp_path / "state"))
+
+    assert run(_arguments(checkout, revision)) == 2
+    text = capsys.readouterr().out
+    result = json.loads(text)
+    assert result == {
+        "errorCode": "SOURCE_VALIDATION_FAILED",
+        "outcome": "INVALID",
+        "reason": "tracked symlinks are forbidden",
+    }
+    assert len(text.encode()) < 512
+    assert str(checkout) not in text

@@ -145,8 +145,11 @@ def _collect_checkout(args: argparse.Namespace) -> int:
     except AnalyzerSelectionError as error:
         _print_checkout_error(error.code)
         return 2
-    except RepositorySourceError:
-        _print_checkout_error("SOURCE_VALIDATION_FAILED")
+    except RepositorySourceError as error:
+        # The validator's messages are closed, bounded strings carrying no
+        # repository content; without one, a symlink, an oversized blob, and a git
+        # stdout overflow are indistinguishable to the operator.
+        _print_checkout_error("SOURCE_VALIDATION_FAILED", reason=str(error)[:160])
         return 2
     except (TypeError, ValueError):
         _print_checkout_error("INVALID_CHECKOUT_DESCRIPTOR")
@@ -156,14 +159,11 @@ def _collect_checkout(args: argparse.Namespace) -> int:
         return 2
 
 
-def _print_checkout_error(code: str) -> None:
-    print(
-        json.dumps(
-            {"errorCode": code, "outcome": "INVALID"},
-            sort_keys=True,
-            separators=(",", ":"),
-        )
-    )
+def _print_checkout_error(code: str, *, reason: str | None = None) -> None:
+    payload: dict[str, str] = {"errorCode": code, "outcome": "INVALID"}
+    if reason:
+        payload["reason"] = reason
+    print(json.dumps(payload, sort_keys=True, separators=(",", ":")))
 
 
 def _validate_checkout_argument_bounds(args: argparse.Namespace) -> None:
