@@ -148,8 +148,14 @@ are common in long-lived migration histories.
 - The Python and SQL cells disagree on one transform's text (sqlglot renders `DATE(x)` as
   `CAST(x AS DATE)` under some dialects), so transform text — and therefore edge identity
   — is schema-profile dependent. Composition marks it `transformConflict`.
-- OTel span enrichment to interactions is designed but not built; outbound extraction
-  covers `@FeignClient` only.
+- OTel span enrichment to interactions is built at the adapter contract
+  (`runtime/adapters/otel.py` maps interaction-shaped spans onto the interactions plane
+  under an explicit `INTERACTION` profile granularity; unresolvable targets are typed
+  residue, never a connectivity downgrade). No enterprise collector feeds it yet
+  (CTX-12). Outbound extraction reads `@FeignClient`, plus `RestTemplate` and
+  `WebClient` call sites with literal URLs; a URL built from a variable remains
+  `dynamic-endpoint` residue, which is why the real microservices checkout still shows
+  one outbound call.
 
 New in this increment: `sql-transformation-v1`, `services/composition.py`,
 `services/impact_simulation.py`, `domain/product_confidence.py`, `services/liveness.py`,
