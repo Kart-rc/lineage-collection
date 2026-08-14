@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, StrictBool, field_validator, model_validator
 
 from lineage_api.application.models import parse_utc
 
@@ -35,6 +35,8 @@ class CollectionRequest(ApiModel):
     ruleset: str = Field(min_length=1, max_length=128)
     schemaProfile: str = Field(min_length=1, max_length=128)
     checkoutPath: str | None = Field(default=None, min_length=1, max_length=4_096)
+    # StrictBool keeps parity with the neutral parser, which rejects "true"/1 coercions.
+    runtimeVerification: StrictBool = False
 
     @model_validator(mode="after")
     def validate_source_mode(self) -> "CollectionRequest":

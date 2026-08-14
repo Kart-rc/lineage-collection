@@ -5,7 +5,7 @@ import re
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, Literal, Protocol
 from urllib.parse import urlsplit
 
 from lineage_api.application.repository_collection import (
@@ -70,12 +70,15 @@ class _RepositoryRequest:
     analyzer_pack: str
     ruleset: str
     schema_profile: str
+    runtime_verification: bool = field(default=False, kw_only=True)
 
     def __post_init__(self) -> None:
         self.repository_identity()
         self.analyzer_identity()
         if _EXACT_COMMIT.fullmatch(self.revision) is None:
             raise ValueError("revision must be an exact lowercase 40-hex commit")
+        if not isinstance(self.runtime_verification, bool):
+            raise ValueError("runtime verification must be boolean")
 
     def repository_identity(self) -> RepositoryIdentity:
         return RepositoryIdentity(
@@ -137,7 +140,15 @@ class RepositoryAcquisitionError(RuntimeError):
 
 LocalSnapshotProvider = Callable[[LocalCheckoutRequest], RepositorySnapshot]
 RemoteSnapshotProvider = Callable[[GitRepositoryRequest], RepositorySnapshot]
-CollectionCallback = Callable[[RepositoryCollectionDescriptor], dict[str, Any]]
+
+
+class CollectionCallback(Protocol):
+    def __call__(
+        self,
+        descriptor: RepositoryCollectionDescriptor,
+        *,
+        runtime_execution: bool = False,
+    ) -> dict[str, Any]: ...
 
 
 class RepositoryAcquisitionService:
@@ -187,4 +198,6 @@ class RepositoryAcquisitionService:
             analyzer=request.analyzer_identity(),
             snapshot=snapshot,
         )
-        return self._collect(descriptor)
+        return self._collect(
+            descriptor, runtime_execution=request.runtime_verification
+        )

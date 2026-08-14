@@ -48,6 +48,11 @@ def run(argv: Sequence[str] | None = None) -> int:
     checkout.add_argument("--analyzer-pack", required=True)
     checkout.add_argument("--ruleset", required=True)
     checkout.add_argument("--profile", required=True)
+    checkout.add_argument(
+        "--runtime-verification",
+        action="store_true",
+        help="Execute the in-process runtime stages to corroborate static edges",
+    )
     args = parser.parse_args(argv)
     if args.command == "collect-checkout":
         return _collect_checkout(args)
@@ -127,7 +132,8 @@ def _collect_checkout(args: argparse.Namespace) -> int:
             snapshot=snapshot,
         )
         result = build_repository_collection_service(settings).collect(
-            collection_descriptor
+            collection_descriptor,
+            runtime_execution=args.runtime_verification,
         )
         summary = {
             key: value
