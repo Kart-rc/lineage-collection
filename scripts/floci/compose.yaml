@@ -1,0 +1,63 @@
+# Self-contained dockerized stack: floci emulator + DynamoDB browser + product
+# API + control room UI.
+#
+#   docker compose -f scripts/floci/compose.yaml up -d --build
+#   uv run --project apps/api python scripts/floci/provision_floci.py   # once
+#   ./scripts/floci/run_floci_e2e.sh            # or seed_pending_proposal.py
+#
+#   UI http://localhost:5173 · API http://localhost:8000 · DynamoDB http://localhost:8001
+#
+# Note: this stack brings its OWN floci (fresh, empty). To visualize an
+# already-running emulator's state instead, use scripts/floci/serve_floci_ui.sh.
+name: lineage-floci
+services:
+  floci:
+    image: floci/floci:latest
+    ports:
+      - "4566:4566"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+  ddb-admin:
+    image: aaronshaf/dynamodb-admin
+    ports:
+      - "8001:8001"
+    environment:
+      DYNAMO_ENDPOINT: http://floci:4566
+      AWS_REGION: us-east-1
+      AWS_ACCESS_KEY_ID: test
+      AWS_SECRET_ACCESS_KEY: test
+    depends_on:
+      - floci
+  api:
+    build:
+      context: ../..
+      dockerfile: scripts/floci/Dockerfile.api
+    ports:
+      - "8000:8000"
+    environment:
+      AWS_ENDPOINT_URL: http://floci:4566
+      AWS_ACCESS_KEY_ID: test
+      AWS_SECRET_ACCESS_KEY: test
+      AWS_REGION: us-east-1
+      AWS_DEFAULT_REGION: us-east-1
+      LINEAGE_CONTROL_TABLE: lineage-control
+      LINEAGE_LEDGER_TABLE: lineage-ledger
+      LINEAGE_PROPOSAL_TABLE: lineage-proposal
+      LINEAGE_POINTER_TABLE: lineage-pointer
+      LINEAGE_EVIDENCE_BUCKET: lineage-evidence
+      LINEAGE_PACKAGE_BUCKET: lineage-packages
+      LINEAGE_RUNTIME_STREAM: lineage-runtime
+      LINEAGE_NEPTUNE_ENDPOINT: localhost
+      LINEAGE_ENTERPRISE_ENDPOINT: https://enterprise.invalid
+    volumes:
+      - ../../data/floci:/data/floci
+    depends_on:
+      - floci
+  web:
+    build:
+      context: ../..
+      dockerfile: scripts/floci/Dockerfile.web
+    ports:
+      - "5173:80"
+    depends_on:
+      - api
