@@ -1,0 +1,414 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,600&display=swap" rel="stylesheet">
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+  a { color: inherit; }
+  ::-webkit-scrollbar { width: 10px; height: 10px; }
+  ::-webkit-scrollbar-thumb { background: oklch(88% 0.006 262); border-radius: 6px; border: 2px solid transparent; background-clip: padding-box; }
+  @media print { .no-print { display: none !important; } .page { box-shadow: none !important; margin: 0 !important; } body { background: #fff !important; } }
+</style>
+</helmet>
+
+<div style="background:oklch(95.5% 0.004 262);min-height:100vh;font-family:'IBM Plex Sans',sans-serif;-webkit-font-smoothing:antialiased;color:oklch(30% 0.02 262)">
+  <div style="max-width:1300px;margin:0 auto;display:flex;gap:36px;padding:40px 28px 80px;align-items:flex-start">
+
+    <!-- TOC -->
+    <aside class="no-print" style="flex:none;width:204px;position:sticky;top:40px;display:flex;flex-direction:column;gap:3px">
+      <div style="display:flex;align-items:center;gap:9px;margin-bottom:14px">
+        <span style="width:22px;height:22px;border-radius:6px;background:oklch(52% 0.13 165);display:block"></span>
+        <span style="font:700 15px 'IBM Plex Sans';color:oklch(26% 0.02 262);letter-spacing:-0.01em">Throughline</span>
+      </div>
+      <div style="font:600 8.5px 'IBM Plex Mono';letter-spacing:.12em;text-transform:uppercase;color:oklch(60% 0.02 262);margin:0 0 8px 2px">Onboarding Estimator</div>
+      <sc-for list="{{ toc }}" as="t" hint-placeholder-count="6">
+        <a href="{{ t.href }}" style="display:flex;gap:9px;padding:5px 8px;border-radius:6px;text-decoration:none;font:500 12px 'IBM Plex Sans';color:oklch(46% 0.02 262)" style-hover="background:oklch(92% 0.01 262)"><span style="font:600 10px 'IBM Plex Mono';color:oklch(68% 0.02 262);width:14px;flex:none">{{ t.n }}</span><span>{{ t.label }}</span></a>
+      </sc-for>
+      <div style="margin-top:16px;padding-top:14px;border-top:1px solid oklch(90% 0.006 262);display:flex;flex-direction:column;gap:6px">
+        <div style="font:600 8.5px 'IBM Plex Mono';letter-spacing:.12em;text-transform:uppercase;color:oklch(60% 0.02 262);margin:0 0 2px 2px">Suite</div>
+        <a href="Index - Throughline PRDs.dc.html" style="font:500 11.5px 'IBM Plex Sans';color:oklch(50% 0.02 262);text-decoration:none;padding:3px 8px">Overview</a>
+        <a href="PRD 1 - Lineage Collection.dc.html" style="font:500 11.5px 'IBM Plex Sans';color:oklch(50% 0.02 262);text-decoration:none;padding:3px 8px">PRD 1 · Collection</a>
+        <a href="Roadmap & LOE.dc.html" style="font:500 11.5px 'IBM Plex Sans';color:oklch(50% 0.02 262);text-decoration:none;padding:3px 8px">Roadmap &amp; LOE</a>
+        <a href="Throughline - Final.dc.html" style="font:500 11.5px 'IBM Plex Sans';color:oklch(50% 0.02 262);text-decoration:none;padding:3px 8px">Prototype</a>
+      </div>
+    </aside>
+
+    <!-- PAGE -->
+    <main class="page" style="flex:1;min-width:0;max-width:1000px;background:#fff;border:1px solid oklch(91% 0.006 262);border-radius:3px;box-shadow:0 1px 3px rgba(20,30,50,.06);padding:56px 56px 72px">
+
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:24px">
+        <span style="font:600 9px 'IBM Plex Mono';letter-spacing:.14em;text-transform:uppercase;color:#fff;background:oklch(52% 0.13 165);padding:4px 9px;border-radius:4px">Estimation Model</span>
+        <span style="font:500 11px 'IBM Plex Mono';color:oklch(58% 0.02 262)">v0.9 · interactive</span>
+        <span style="font:500 11px 'IBM Plex Mono';color:oklch(58% 0.02 262);margin-left:auto">Unit: person-days → calendar weeks</span>
+      </div>
+      <h1 style="font:600 38px 'Newsreader',serif;color:oklch(22% 0.02 262);letter-spacing:-0.01em;line-height:1.1;margin:0 0 12px">Vertical-slice onboarding estimator</h1>
+      <p style="font:400 16px/1.6 'IBM Plex Sans';color:oklch(45% 0.02 262);margin:0 0 4px;max-width:66ch">A repeatable way to quote onboarding time for end-to-end, element-level lineage on a high-criticality vertical slice. It decomposes the slice into <strong style="font-weight:600">component archetypes</strong>, maps each to the <strong style="font-weight:600">collectors</strong> it needs (SCA+LLM, OTel, Spark, Dask, streaming), applies calibrated effort baselines with a connector-reuse learning curve, then adjusts for criticality and complexity — so the team can give a defensible estimate, not a guess.</p>
+
+      <!-- 1 APPROACH -->
+      <h2 id="s1" style="font:600 21px 'Newsreader',serif;color:oklch(24% 0.02 262);margin:42px 0 6px"><span style="font:600 13px 'IBM Plex Mono';color:oklch(48% 0.12 165);margin-right:10px">01</span>The approach — six steps</h2>
+      <p style="font:400 13px/1.6 'IBM Plex Sans';color:oklch(46% 0.02 262);margin:0 0 16px;max-width:66ch">Estimate bottom-up from components, not top-down from a gut feel. Each step is measurable and calibrates against real onboardings.</p>
+      <div style="display:flex;flex-direction:column;gap:8px">
+        <sc-for list="{{ approach }}" as="a" hint-placeholder-count="6">
+          <div style="display:flex;gap:13px;align-items:flex-start;border:1px solid oklch(92% 0.006 262);border-radius:10px;padding:13px 15px">
+            <span style="font:700 12px 'IBM Plex Mono';color:#fff;background:{{ a.color }};min-width:26px;height:26px;border-radius:7px;display:flex;align-items:center;justify-content:center;flex:none">{{ a.n }}</span>
+            <div><div style="font:600 12.5px 'IBM Plex Sans';color:oklch(30% 0.02 262)">{{ a.title }}</div><div style="font:400 12px/1.5 'IBM Plex Sans';color:oklch(48% 0.02 262);margin-top:2px">{{ a.body }}</div></div>
+          </div>
+        </sc-for>
+      </div>
+      <div style="margin-top:16px;background:oklch(22% 0.02 262);border-radius:10px;padding:15px 18px">
+        <div style="font:600 8.5px 'IBM Plex Mono';letter-spacing:.08em;text-transform:uppercase;color:oklch(70% 0.02 262);margin-bottom:8px">The formula</div>
+        <pre style="margin:0;font:500 12.5px/1.7 'IBM Plex Mono';color:oklch(88% 0.02 262);white-space:pre-wrap">Onboarding = Fixed setup
+           + Σ per collector [ first_of_type + (n−1) × repeat ] × Criticality × Code-health × Schema-volatility
+           + Passive catalog registration</pre>
+        <div style="font:400 10.5px/1.5 'IBM Plex Sans';color:oklch(72% 0.02 262);margin-top:9px">The <strong style="font-weight:600;color:oklch(85% 0.02 262)">first component of each collector type</strong> pays to stand up that connector; every later component of the same type reuses it — which is why a 2nd streaming service costs a fraction of the 1st. That learning curve is the single biggest lever on the number.</div>
+      </div>
+
+      <!-- 2 ARCHETYPES -->
+      <h2 id="s2" style="font:600 21px 'Newsreader',serif;color:oklch(24% 0.02 262);margin:44px 0 6px"><span style="font:600 13px 'IBM Plex Mono';color:oklch(48% 0.12 165);margin-right:10px">02</span>Component archetypes → collectors</h2>
+      <p style="font:400 13px/1.6 'IBM Plex Sans';color:oklch(46% 0.02 262);margin:0 0 14px;max-width:66ch">A slice is a mix of these archetypes. Each needs a specific set of collectors to reach element-level lineage — static for the shape, runtime to confirm it.</p>
+      <table style="width:100%;border-collapse:collapse;font-family:'IBM Plex Sans'">
+        <thead><tr style="background:oklch(97% 0.004 262)">
+          <th style="text-align:left;font:600 8.5px 'IBM Plex Mono';letter-spacing:.05em;text-transform:uppercase;color:oklch(58% 0.02 262);padding:9px 11px;border-bottom:1px solid oklch(91% 0.006 262)">Archetype</th>
+          <th style="text-align:left;font:600 8.5px 'IBM Plex Mono';letter-spacing:.05em;text-transform:uppercase;color:oklch(58% 0.02 262);padding:9px 11px;border-bottom:1px solid oklch(91% 0.006 262)">Example in the Orders slice</th>
+          <th style="text-align:left;font:600 8.5px 'IBM Plex Mono';letter-spacing:.05em;text-transform:uppercase;color:oklch(58% 0.02 262);padding:9px 11px;border-bottom:1px solid oklch(91% 0.006 262)">Collectors needed</th>
+        </tr></thead>
+        <tbody>
+          <sc-for list="{{ archMap }}" as="a" hint-placeholder-count="6">
+            <tr style="border-bottom:1px solid oklch(95.5% 0.004 262)">
+              <td style="padding:9px 11px;font:600 11.5px 'IBM Plex Sans';color:oklch(32% 0.02 262);vertical-align:top"><span style="display:inline-block;width:8px;height:8px;border-radius:2px;background:{{ a.color }};margin-right:7px"></span>{{ a.name }}</td>
+              <td style="padding:9px 11px;font:400 11px/1.45 'IBM Plex Sans';color:oklch(48% 0.02 262);vertical-align:top">{{ a.example }}</td>
+              <td style="padding:9px 11px;vertical-align:top"><div style="display:flex;gap:4px;flex-wrap:wrap"><sc-for list="{{ a.tags }}" as="t" hint-placeholder-count="2"><span style="font:600 8px 'IBM Plex Mono';color:{{ t.fg }};background:{{ t.bg }};padding:2px 7px;border-radius:4px">{{ t.label }}</span></sc-for></div></td>
+            </tr>
+          </sc-for>
+        </tbody>
+      </table>
+
+      <!-- 3 BASELINES -->
+      <h2 id="s3" style="font:600 21px 'Newsreader',serif;color:oklch(24% 0.02 262);margin:44px 0 6px"><span style="font:600 13px 'IBM Plex Mono';color:oklch(48% 0.12 165);margin-right:10px">03</span>Collector effort baselines</h2>
+      <p style="font:400 13px/1.6 'IBM Plex Sans';color:oklch(46% 0.02 262);margin:0 0 14px;max-width:66ch">Per-component effort in person-days, split by the four activities that every collector onboarding goes through. <strong style="font-weight:600">First-of-type</strong> includes standing up the connector; <strong style="font-weight:600">repeat</strong> is a like component once the connector exists.</p>
+      <table style="width:100%;border-collapse:collapse;font-family:'IBM Plex Sans'">
+        <thead><tr style="background:oklch(97% 0.004 262)">
+          <th style="text-align:left;font:600 8.5px 'IBM Plex Mono';letter-spacing:.05em;text-transform:uppercase;color:oklch(58% 0.02 262);padding:9px 10px;border-bottom:1px solid oklch(91% 0.006 262)">Collector</th>
+          <th style="text-align:left;font:600 8.5px 'IBM Plex Mono';letter-spacing:.05em;text-transform:uppercase;color:oklch(58% 0.02 262);padding:9px 10px;border-bottom:1px solid oklch(91% 0.006 262)">Activities covered</th>
+          <th style="text-align:center;font:600 8.5px 'IBM Plex Mono';letter-spacing:.05em;text-transform:uppercase;color:oklch(58% 0.02 262);padding:9px 8px;border-bottom:1px solid oklch(91% 0.006 262);width:88px">First-of-type</th>
+          <th style="text-align:center;font:600 8.5px 'IBM Plex Mono';letter-spacing:.05em;text-transform:uppercase;color:oklch(58% 0.02 262);padding:9px 8px;border-bottom:1px solid oklch(91% 0.006 262);width:70px">Repeat</th>
+        </tr></thead>
+        <tbody>
+          <sc-for list="{{ baselines }}" as="b" hint-placeholder-count="5">
+            <tr style="border-bottom:1px solid oklch(95.5% 0.004 262)">
+              <td style="padding:9px 10px;font:600 11.5px 'IBM Plex Sans';color:oklch(32% 0.02 262);vertical-align:top"><span style="display:inline-block;width:8px;height:8px;border-radius:2px;background:{{ b.color }};margin-right:7px"></span>{{ b.name }}</td>
+              <td style="padding:9px 10px;font:400 10.5px/1.45 'IBM Plex Sans';color:oklch(48% 0.02 262);vertical-align:top">{{ b.activities }}</td>
+              <td style="padding:9px 8px;text-align:center;font:700 12px 'IBM Plex Mono';color:oklch(34% 0.02 262);vertical-align:top">{{ b.first }}</td>
+              <td style="padding:9px 8px;text-align:center;font:600 11px 'IBM Plex Mono';color:oklch(48% 0.12 165);vertical-align:top">{{ b.repeat }}</td>
+            </tr>
+          </sc-for>
+          <tr style="background:oklch(98.5% 0.003 262)">
+            <td style="padding:9px 10px;font:600 11px 'IBM Plex Sans';color:oklch(34% 0.02 262)" colspan="2">Fixed per-slice setup — environment, identity resolution, merge/confidence calibration, end-to-end sign-off</td>
+            <td style="padding:9px 8px;text-align:center;font:700 12px 'IBM Plex Mono';color:oklch(34% 0.02 262)" colspan="2">14 pd</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div style="margin-top:14px;border-left:3px solid oklch(58% 0.16 330);background:oklch(98.5% 0.015 330);padding:13px 16px;border-radius:0 8px 8px 0">
+        <div style="font:600 11.5px 'IBM Plex Sans';color:oklch(48% 0.16 330);margin-bottom:5px">With OTel column-level decorators, streaming shrinks — but doesn't disappear</div>
+        <div style="font:400 12px/1.6 'IBM Plex Sans';color:oklch(46% 0.02 262)">When OTel uses <strong style="font-weight:600">runtime decorators to extract column-level attributes</strong>, the per-service field mapping at the producer and consumer rides on that same mechanism — so it's charged on the OTel line (which is why OTel here carries the heavier baseline). What decorators <strong style="font-weight:600">cannot</strong> do is join a producer's event fields to a consumer's across the async boundary: consumer groups, replay and late delivery break the single-trace assumption, so the edge is stitched on the <strong style="font-weight:600">event contract, not the trace</strong>. And because decorators only fire on executed paths, a critical app still needs the <strong style="font-weight:600">schema-registry join</strong> for completeness. That residual — cross-topic stitching + registry — is the Streaming (Δ) line, now the lightest of the runtime collectors. Drop it entirely and you silently assume decorators stitch producer→consumer for free; they don't.</div>
+      </div>
+
+      <!-- 4 FACTORS -->
+      <h2 id="s4" style="font:600 21px 'Newsreader',serif;color:oklch(24% 0.02 262);margin:44px 0 6px"><span style="font:600 13px 'IBM Plex Mono';color:oklch(48% 0.12 165);margin-right:10px">04</span>Adjustment factors</h2>
+      <p style="font:400 13px/1.6 'IBM Plex Sans';color:oklch(46% 0.02 262);margin:0 0 14px;max-width:66ch">Multipliers on the variable (collector) effort. High-criticality slices carry more validation rigor; legacy code and volatile schemas cost more to resolve.</p>
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px">
+        <sc-for list="{{ factorTable }}" as="f" hint-placeholder-count="3">
+          <div style="border:1px solid oklch(92% 0.006 262);border-radius:10px;padding:13px 15px">
+            <div style="font:600 12px 'IBM Plex Sans';color:oklch(30% 0.02 262);margin-bottom:8px">{{ f.name }}</div>
+            <div style="display:flex;flex-direction:column;gap:5px">
+              <sc-for list="{{ f.levels }}" as="l" hint-placeholder-count="3">
+                <div style="display:flex;align-items:center;gap:8px"><span style="font:500 11px 'IBM Plex Sans';color:oklch(46% 0.02 262);flex:1">{{ l.label }}</span><span style="font:600 10.5px 'IBM Plex Mono';color:{{ l.color }}">{{ l.mult }}</span></div>
+              </sc-for>
+            </div>
+          </div>
+        </sc-for>
+      </div>
+
+      <!-- 5 ESTIMATOR -->
+      <h2 id="s5" style="font:600 21px 'Newsreader',serif;color:oklch(24% 0.02 262);margin:44px 0 6px"><span style="font:600 13px 'IBM Plex Mono';color:oklch(48% 0.12 165);margin-right:10px">05</span>Interactive estimator</h2>
+      <p style="font:400 13px/1.6 'IBM Plex Sans';color:oklch(46% 0.02 262);margin:0 0 16px;max-width:66ch">Preloaded with the prototype's <strong style="font-weight:600">Orders → Partner Export</strong> slice. Adjust the composition and factors to quote any slice.</p>
+      <div style="display:flex;gap:16px;align-items:stretch;flex-wrap:wrap">
+
+        <!-- builder -->
+        <div style="flex:1;min-width:320px;border:1px solid oklch(91% 0.006 262);border-radius:13px;padding:18px 20px">
+          <div style="font:600 9px 'IBM Plex Mono';letter-spacing:.08em;text-transform:uppercase;color:oklch(58% 0.02 262);margin-bottom:11px">Compose the slice</div>
+          <div style="display:flex;flex-direction:column;gap:7px">
+            <sc-for list="{{ builderRows }}" as="r" hint-placeholder-count="6">
+              <div style="display:flex;align-items:center;gap:10px">
+                <span style="width:9px;height:9px;border-radius:2px;background:{{ r.color }};flex:none"></span>
+                <div style="flex:1;min-width:0"><div style="font:600 11.5px 'IBM Plex Sans';color:oklch(34% 0.02 262)">{{ r.name }}</div><div style="font:400 9px 'IBM Plex Mono';color:oklch(60% 0.02 262);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ r.desc }}</div></div>
+                <div style="display:flex;align-items:center;gap:0;flex:none;border:1px solid oklch(90% 0.006 262);border-radius:7px;overflow:hidden">
+                  <span onClick="{{ r.onDec }}" style="font:600 14px 'IBM Plex Sans';color:oklch(50% 0.02 262);width:26px;height:26px;display:flex;align-items:center;justify-content:center;cursor:pointer;background:oklch(98% 0.003 262)">−</span>
+                  <span style="font:700 12px 'IBM Plex Mono';color:oklch(30% 0.02 262);width:26px;text-align:center">{{ r.count }}</span>
+                  <span onClick="{{ r.onInc }}" style="font:600 14px 'IBM Plex Sans';color:oklch(50% 0.02 262);width:26px;height:26px;display:flex;align-items:center;justify-content:center;cursor:pointer;background:oklch(98% 0.003 262)">+</span>
+                </div>
+              </div>
+            </sc-for>
+          </div>
+
+          <div style="font:600 9px 'IBM Plex Mono';letter-spacing:.08em;text-transform:uppercase;color:oklch(58% 0.02 262);margin:18px 0 10px">Adjustments</div>
+          <div style="display:flex;flex-direction:column;gap:11px">
+            <sc-for list="{{ segControls }}" as="s" hint-placeholder-count="3">
+              <div>
+                <div style="font:500 10.5px 'IBM Plex Sans';color:oklch(46% 0.02 262);margin-bottom:5px">{{ s.label }}</div>
+                <div style="display:flex;gap:4px;background:oklch(96.5% 0.004 262);border-radius:8px;padding:3px">
+                  <sc-for list="{{ s.opts }}" as="o" hint-placeholder-count="3">
+                    <span onClick="{{ o.onClick }}" style="flex:1;text-align:center;font:600 10.5px 'IBM Plex Sans';color:{{ o.fg }};background:{{ o.bg }};padding:6px 4px;border-radius:6px;cursor:pointer">{{ o.label }}</span>
+                  </sc-for>
+                </div>
+              </div>
+            </sc-for>
+            <div style="display:flex;align-items:center;gap:10px;margin-top:2px">
+              <div style="flex:1"><div style="font:500 10.5px 'IBM Plex Sans';color:oklch(46% 0.02 262)">Onboarding pod</div><div style="font:400 9px 'IBM Plex Mono';color:oklch(60% 0.02 262)">people working in parallel</div></div>
+              <div style="display:flex;align-items:center;gap:0;flex:none;border:1px solid oklch(90% 0.006 262);border-radius:7px;overflow:hidden">
+                <span onClick="{{ onPodDec }}" style="font:600 14px 'IBM Plex Sans';color:oklch(50% 0.02 262);width:26px;height:26px;display:flex;align-items:center;justify-content:center;cursor:pointer;background:oklch(98% 0.003 262)">−</span>
+                <span style="font:700 12px 'IBM Plex Mono';color:oklch(30% 0.02 262);width:26px;text-align:center">{{ pod }}</span>
+                <span onClick="{{ onPodInc }}" style="font:600 14px 'IBM Plex Sans';color:oklch(50% 0.02 262);width:26px;height:26px;display:flex;align-items:center;justify-content:center;cursor:pointer;background:oklch(98% 0.003 262)">+</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- estimate output -->
+        <div style="flex:1;min-width:320px;border:1px solid oklch(91% 0.006 262);border-radius:13px;padding:18px 20px;background:oklch(98.7% 0.006 165);display:flex;flex-direction:column">
+          <div style="font:600 9px 'IBM Plex Mono';letter-spacing:.08em;text-transform:uppercase;color:oklch(45% 0.10 165);margin-bottom:12px">Estimate</div>
+          <div style="display:flex;gap:14px">
+            <div style="flex:1;background:#fff;border:1px solid oklch(90% 0.03 165);border-radius:11px;padding:14px 15px">
+              <div style="font:700 30px 'IBM Plex Sans';color:oklch(30% 0.02 262);line-height:1">{{ totalPd }}</div>
+              <div style="font:500 10px 'IBM Plex Mono';color:oklch(52% 0.02 262);margin-top:3px">person-days</div>
+              <div style="font:400 9.5px 'IBM Plex Mono';color:oklch(58% 0.02 262);margin-top:5px">band {{ pdBand }}</div>
+            </div>
+            <div style="flex:1;background:#fff;border:1px solid oklch(90% 0.03 165);border-radius:11px;padding:14px 15px">
+              <div style="font:700 30px 'IBM Plex Sans';color:oklch(42% 0.11 165);line-height:1">{{ weeks }}</div>
+              <div style="font:500 10px 'IBM Plex Mono';color:oklch(52% 0.02 262);margin-top:3px">calendar weeks</div>
+              <div style="font:400 9.5px 'IBM Plex Mono';color:oklch(58% 0.02 262);margin-top:5px">band {{ weeksBand }}</div>
+            </div>
+          </div>
+          <div style="display:flex;align-items:center;gap:8px;margin-top:12px;font:500 10px 'IBM Plex Mono';color:oklch(50% 0.02 262)">
+            <span>{{ compCount }} components</span><span style="color:oklch(78% 0.02 262)">·</span>
+            <span>complexity ×{{ multiplier }}</span><span style="color:oklch(78% 0.02 262)">·</span>
+            <span>pod of {{ pod }}</span>
+          </div>
+
+          <!-- stacked composition bar -->
+          <div style="margin-top:16px">
+            <div style="font:600 8.5px 'IBM Plex Mono';letter-spacing:.06em;text-transform:uppercase;color:oklch(58% 0.02 262);margin-bottom:7px">Where the effort goes</div>
+            <div style="display:flex;height:16px;border-radius:5px;overflow:hidden;border:1px solid oklch(93% 0.006 262)">
+              <sc-for list="{{ breakdown }}" as="b" hint-placeholder-count="6">
+                <span style="width:{{ b.pct }}%;background:{{ b.color }};height:100%"></span>
+              </sc-for>
+            </div>
+            <div style="display:flex;flex-direction:column;gap:4px;margin-top:10px">
+              <sc-for list="{{ breakdown }}" as="b" hint-placeholder-count="6">
+                <div style="display:flex;align-items:center;gap:8px">
+                  <span style="width:9px;height:9px;border-radius:2px;background:{{ b.color }};flex:none"></span>
+                  <span style="font:500 11px 'IBM Plex Sans';color:oklch(44% 0.02 262);flex:1">{{ b.label }}</span>
+                  <span style="font:400 9px 'IBM Plex Mono';color:oklch(62% 0.02 262)">{{ b.detail }}</span>
+                  <span style="font:600 10.5px 'IBM Plex Mono';color:oklch(38% 0.02 262);width:48px;text-align:right">{{ b.pd }} pd</span>
+                </div>
+              </sc-for>
+            </div>
+          </div>
+          <div style="font:400 9.5px/1.5 'IBM Plex Sans';color:oklch(56% 0.02 262);margin-top:14px;padding-top:12px;border-top:1px solid oklch(92% 0.02 165)">Calendar = person-days ÷ (pod × 0.8 focus) × 1.15 for sequencing (identity &amp; merge before components). Band is ±25% until the first slice calibrates the model.</div>
+        </div>
+      </div>
+
+      <!-- 6 WORKED EXAMPLE -->
+      <h2 id="s6" style="font:600 21px 'Newsreader',serif;color:oklch(24% 0.02 262);margin:46px 0 6px"><span style="font:600 13px 'IBM Plex Mono';color:oklch(48% 0.12 165);margin-right:10px">06</span>Worked example — the Orders slice</h2>
+      <p style="font:400 13px/1.6 'IBM Plex Sans';color:oklch(46% 0.02 262);margin:0 0 14px;max-width:66ch">The default above, itemized. A high-criticality slice: two event-publishing services, one sync service, a Spark analytical app, a Dask ML app, and an SFTP export — with S3 landing/file and cache stores registered passively.</p>
+      <div style="border:1px solid oklch(91% 0.006 262);border-radius:11px;overflow:hidden">
+        <sc-for list="{{ workedRows }}" as="w" hint-placeholder-count="6">
+          <div style="display:flex;align-items:center;gap:12px;padding:11px 15px;border-bottom:1px solid oklch(95.5% 0.004 262)">
+            <span style="font:600 11.5px 'IBM Plex Sans';color:oklch(34% 0.02 262);flex:none;width:150px">{{ w.comp }}</span>
+            <span style="font:400 10.5px 'IBM Plex Sans';color:oklch(52% 0.02 262);flex:1">{{ w.note }}</span>
+            <span style="font:600 10px 'IBM Plex Mono';color:oklch(48% 0.12 165);flex:none">{{ w.pd }}</span>
+          </div>
+        </sc-for>
+        <div style="display:flex;align-items:center;gap:12px;padding:12px 15px;background:oklch(98.5% 0.006 165)">
+          <span style="font:700 12px 'IBM Plex Sans';color:oklch(28% 0.02 262);flex:1">High-criticality Orders slice · end-to-end element-level lineage</span>
+          <span style="font:700 13px 'IBM Plex Mono';color:oklch(38% 0.11 165)">{{ workedTotal }}</span>
+        </div>
+      </div>
+
+      <!-- 7 USING IT -->
+      <h2 id="s7" style="font:600 21px 'Newsreader',serif;color:oklch(24% 0.02 262);margin:46px 0 12px"><span style="font:600 13px 'IBM Plex Mono';color:oklch(48% 0.12 165);margin-right:10px">07</span>Using it for future slices</h2>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:11px">
+        <sc-for list="{{ usage }}" as="u" hint-placeholder-count="4">
+          <div style="border:1px solid oklch(92% 0.006 262);border-radius:10px;padding:14px 16px">
+            <div style="display:flex;align-items:center;gap:8px"><span style="font:600 11px 'IBM Plex Mono';color:oklch(48% 0.12 165)">{{ u.glyph }}</span><span style="font:600 12.5px 'IBM Plex Sans';color:oklch(30% 0.02 262)">{{ u.title }}</span></div>
+            <div style="font:400 12px/1.55 'IBM Plex Sans';color:oklch(48% 0.02 262);margin-top:6px">{{ u.body }}</div>
+          </div>
+        </sc-for>
+      </div>
+
+      <div style="margin-top:44px;padding-top:18px;border-top:1px solid oklch(91% 0.006 262);display:flex;align-items:center;gap:10px">
+        <a href="Index - Throughline PRDs.dc.html" style="font:600 11.5px 'IBM Plex Sans';color:oklch(50% 0.02 262);text-decoration:none">← Overview</a>
+        <span style="font:500 11px 'IBM Plex Mono';color:oklch(60% 0.02 262);margin:0 auto">Throughline · Onboarding Estimator</span>
+        <a href="Roadmap & LOE.dc.html" style="font:600 11.5px 'IBM Plex Sans';color:oklch(50% 0.10 70);text-decoration:none">Roadmap &amp; LOE →</a>
+      </div>
+    </main>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+class Component extends DCLogic {
+  state = {
+    counts: { stream: 2, appsvc: 1, batch: 1, ml: 1, export: 1, store: 3 },
+    crit: 'high', code: 'mixed', schema: 'med', pod: 2,
+  };
+
+  // collector palette + baselines (person-days) { first-of-type, repeat }
+  COL() {
+    return {
+      sca:    { name: 'SCA + LLM',  color: 'oklch(55% 0.14 252)', first: 6.5, repeat: 3,   activities: 'Repo access · analyzer + LLM config · review candidate edges · reconcile' },
+      otel:   { name: 'OTel',       color: 'oklch(55% 0.15 300)', first: 6.5, repeat: 2.5, activities: 'Runtime decorators for column-level attribute extraction · span→edge mapping · validate caller/callee, endpoints + field lineage' },
+      spark:  { name: 'Spark',      color: 'oklch(52% 0.12 155)', first: 5,   repeat: 2,   activities: 'Cluster listener · column-lineage facet · reconcile with static' },
+      dask:   { name: 'Dask',       color: 'oklch(50% 0.12 195)', first: 5.5, repeat: 2.5, activities: 'Pipeline instrumentation · feature-derivation validation' },
+      stream: { name: 'Streaming (Δ)', color: 'oklch(58% 0.16 330)', first: 2,   repeat: 1, activities: 'Residual after OTel decorators: cross-topic stitching (producer↔consumer across the async boundary) + schema-registry join for completeness' },
+    };
+  }
+  ARCH() {
+    return [
+      { key: 'stream',  name: 'Streaming service',  desc: 'Publishes events (Kafka / CDC)', color: 'oklch(58% 0.16 330)', cols: ['sca', 'otel', 'stream'], example: 'Orders Service, Customer Service' },
+      { key: 'appsvc',  name: 'App service (sync)',  desc: 'REST / GraphQL, no publish',     color: 'oklch(55% 0.14 252)', cols: ['sca', 'otel'],           example: 'Payments Service' },
+      { key: 'batch',   name: 'Batch / analytical',  desc: 'Spark SQL / dbt rollups',         color: 'oklch(52% 0.12 155)', cols: ['sca', 'spark'],          example: 'Revenue Model' },
+      { key: 'ml',      name: 'ML / feature app',    desc: 'Dask feature & model pipelines',  color: 'oklch(50% 0.12 195)', cols: ['sca', 'dask'],           example: 'Churn Model' },
+      { key: 'export',  name: 'File transfer / export', desc: 'SFTP, fixed-width files',      color: 'oklch(62% 0.11 70)',  cols: ['sca'],                   example: 'Partner Export' },
+      { key: 'store',   name: 'Datastore / landing',  desc: 'S3, cache — passive',            color: 'oklch(60% 0.03 250)', cols: [],                        example: 'S3 landing/files, cache', passive: true },
+    ];
+  }
+  FIXED() { return 14; }
+  PASSIVE_EACH() { return 0.5; }
+  FACTORS() {
+    return {
+      crit:   { label: 'Criticality',       levels: [ { key: 'standard', label: 'Standard', mult: 1.0 }, { key: 'high', label: 'High', mult: 1.15 }, { key: 'critical', label: 'Critical', mult: 1.3 } ] },
+      code:   { label: 'Code health',       levels: [ { key: 'clean', label: 'Clean', mult: 1.0 }, { key: 'mixed', label: 'Mixed', mult: 1.2 }, { key: 'legacy', label: 'Legacy', mult: 1.45 } ] },
+      schema: { label: 'Schema volatility', levels: [ { key: 'low', label: 'Low', mult: 1.0 }, { key: 'med', label: 'Med', mult: 1.1 }, { key: 'high', label: 'High', mult: 1.25 } ] },
+    };
+  }
+
+  step(key, d) { this.setState(s => { const n = Math.max(0, (s.counts[key] || 0) + d); return { counts: { ...s.counts, [key]: n } }; }); }
+  setF(dim, key) { this.setState({ [dim]: key }); }
+  podStep(d) { this.setState(s => ({ pod: Math.min(6, Math.max(1, s.pod + d)) })); }
+
+  r1(n) { return Math.round(n * 10) / 10; }
+  rInt(n) { return Math.round(n); }
+
+  compute() {
+    const COL = this.COL(), ARCH = this.ARCH(), F = this.FACTORS();
+    const counts = this.state.counts;
+    // collector usage counts across active components
+    const use = {};
+    ARCH.forEach(a => { if (a.passive) return; const c = counts[a.key] || 0; a.cols.forEach(col => { use[col] = (use[col] || 0) + c; }); });
+    // variable effort per collector: first + (n-1)*repeat
+    const perCol = {};
+    let variableRaw = 0;
+    Object.keys(COL).forEach(col => { const n = use[col] || 0; if (n <= 0) { perCol[col] = 0; return; } const pd = COL[col].first + (n - 1) * COL[col].repeat; perCol[col] = pd; variableRaw += pd; });
+    const critM = F.crit.levels.find(l => l.key === this.state.crit).mult;
+    const codeM = F.code.levels.find(l => l.key === this.state.code).mult;
+    const schM = F.schema.levels.find(l => l.key === this.state.schema).mult;
+    const mult = critM * codeM * schM;
+    const variableAdj = variableRaw * mult;
+    const passive = (counts.store || 0) * this.PASSIVE_EACH();
+    const fixed = this.FIXED();
+    const total = fixed + variableAdj + passive;
+    const compCount = ARCH.reduce((a, x) => a + (x.passive ? 0 : (counts[x.key] || 0)), 0);
+    return { COL, perCol, use, variableRaw, variableAdj, mult, passive, fixed, total, compCount, critM, codeM, schM };
+  }
+
+  renderVals() {
+    const F = this.FACTORS(), ARCH = this.ARCH();
+    const cx = this.compute();
+    const S = this.state;
+    const ACC = 'oklch(52% 0.13 165)';
+
+    const toc = [['01','The approach','#s1'],['02','Archetypes','#s2'],['03','Baselines','#s3'],['04','Factors','#s4'],['05','Estimator','#s5'],['06','Worked example','#s6'],['07','Using it','#s7']].map(([n,label,href]) => ({ n, label, href }));
+
+    const approach = [
+      { n: '1', color: 'oklch(55% 0.14 252)', title: 'Decompose the slice', body: 'List every component end to end — services, batch apps, ML apps, exports, plus the datastores between them. The Orders slice is 6 active components + 3 passive stores.' },
+      { n: '2', color: 'oklch(55% 0.15 300)', title: 'Map components to collectors', body: 'Each archetype needs a fixed set of collectors to reach element-level lineage (§2). This is deterministic, not judgment.' },
+      { n: '3', color: 'oklch(52% 0.12 155)', title: 'Apply effort baselines', body: 'Use the calibrated per-collector person-days (§3), separating first-of-type from repeat.' },
+      { n: '4', color: 'oklch(50% 0.12 195)', title: 'Apply the learning curve', body: 'Charge the first component of each collector type at first-of-type; every later one reuses the connector at the repeat rate.' },
+      { n: '5', color: 'oklch(58% 0.16 330)', title: 'Adjust for complexity', body: 'Multiply variable effort by criticality, code health and schema volatility (§4). High-criticality slices validate harder.' },
+      { n: '6', color: 'oklch(62% 0.11 70)',  title: 'Parallelize to calendar time', body: 'Divide by the onboarding pod and a focus factor, add a sequencing premium for identity/merge going first, and report a band.' },
+    ];
+
+    const tag = col => ({ label: this.COL()[col].name, fg: '#fff', bg: this.COL()[col].color });
+    const archMap = ARCH.map(a => ({ name: a.name, color: a.color, example: a.example, tags: a.passive ? [{ label: 'Catalog only', fg: 'oklch(48% 0.02 262)', bg: 'oklch(94% 0.004 262)' }] : a.cols.map(tag) }));
+
+    const baselines = Object.keys(cx.COL).map(k => ({ name: cx.COL[k].name, color: cx.COL[k].color, activities: cx.COL[k].activities, first: cx.COL[k].first + ' pd', repeat: cx.COL[k].repeat + ' pd' }));
+
+    const factorTable = ['crit', 'code', 'schema'].map(dim => ({ name: F[dim].label, levels: F[dim].levels.map(l => ({ label: l.label, mult: '×' + l.mult, color: l.mult === 1 ? 'oklch(48% 0.12 155)' : 'oklch(50% 0.13 35)' })) }));
+
+    // builder rows
+    const builderRows = ARCH.map(a => ({ name: a.name, desc: a.desc, color: a.color, count: S.counts[a.key] || 0, onDec: () => this.step(a.key, -1), onInc: () => this.step(a.key, 1) }));
+
+    // segmented controls
+    const seg = dim => ({ label: F[dim].label, opts: F[dim].levels.map(l => { const on = S[dim] === l.key; return { label: l.label, fg: on ? '#fff' : 'oklch(48% 0.02 262)', bg: on ? ACC : 'transparent', onClick: () => this.setF(dim, l.key) }; }) });
+    const segControls = [seg('crit'), seg('code'), seg('schema')];
+
+    // outputs
+    const total = cx.total;
+    const effPerDay = S.pod * 0.8;
+    const calDays = total / effPerDay * 1.15;
+    const weeks = calDays / 5;
+
+    // breakdown segments
+    const segs = [];
+    segs.push({ label: 'Fixed setup', color: 'oklch(45% 0.03 250)', pd: this.r1(cx.fixed), raw: cx.fixed, detail: 'once / slice' });
+    Object.keys(cx.COL).forEach(k => { const raw = cx.perCol[k]; if (raw > 0) { const adj = raw * cx.mult; segs.push({ label: cx.COL[k].name, color: cx.COL[k].color, pd: this.r1(adj), raw: adj, detail: (cx.use[k]) + '\u00d7 comp' }); } });
+    if (cx.passive > 0) segs.push({ label: 'Passive stores', color: 'oklch(60% 0.03 250)', pd: this.r1(cx.passive), raw: cx.passive, detail: (this.state.counts.store || 0) + ' stores' });
+    const segTotal = segs.reduce((a, s) => a + s.raw, 0) || 1;
+    const breakdown = segs.map(s => ({ ...s, pct: this.r1(s.raw / segTotal * 100) }));
+
+    // worked example (static itemization of the default)
+    const wm = cx.mult;
+    const wpd = (raw) => this.r1(raw * wm) + ' pd';
+    const workedRows = [
+      { comp: 'Orders Service', note: 'Streaming service — SCA+LLM + OTel decorators first-of-type; Streaming Δ (stitching + registry) on top', pd: wpd(6.5 + 6.5 + 2) },
+      { comp: 'Customer Service', note: 'Streaming service — repeats SCA+LLM, OTel decorators; Streaming Δ repeat', pd: wpd(3 + 2.5 + 1) },
+      { comp: 'Payments Service', note: 'App service — repeats SCA+LLM + OTel decorators', pd: wpd(3 + 2.5) },
+      { comp: 'Revenue Model', note: 'Batch app — repeat SCA+LLM + first-of-type Spark', pd: wpd(3 + 5) },
+      { comp: 'Churn Model', note: 'ML app — repeat SCA+LLM + first-of-type Dask', pd: wpd(3 + 5.5) },
+      { comp: 'Partner Export', note: 'File transfer — repeat SCA+LLM only', pd: wpd(3) },
+      { comp: 'Stores (×3)', note: 'S3 landing/files + cache — passive catalog registration', pd: this.r1((this.state.counts.store || 0) * 0.5) + ' pd' },
+      { comp: 'Fixed setup', note: 'Environment · identity resolution · merge/confidence calibration · sign-off', pd: '14 pd' },
+    ];
+    const workedTotal = this.rInt(total) + ' pd  ·  ~' + (Math.round(weeks * 2) / 2) + ' wks';
+
+    const usage = [
+      { glyph: '\u25C8', title: 'Quote from composition, not vibes', body: 'Count the components by archetype, drop them into the estimator, set criticality — the number comes with a breakdown you can defend line by line.' },
+      { glyph: '\u25C8', title: 'The learning curve is the lever', body: 'The first slice of a new stack is the expensive one. Sequence slices so later ones reuse connectors — the repeat rate is roughly half the first-of-type.' },
+      { glyph: '\u25C8', title: 'Calibrate after slice one', body: 'Record actual person-days per collector on the first onboarding and replace the baselines. The ±25% band tightens as real data arrives.' },
+      { glyph: '\u25C8', title: 'Report a band, commit to the middle', body: 'Give leadership the low\u2013high range and staff to the midpoint; the band is the honest uncertainty, not padding.' },
+    ];
+
+    return {
+      toc, approach, archMap, baselines, factorTable,
+      builderRows, segControls, pod: S.pod, onPodDec: () => this.podStep(-1), onPodInc: () => this.podStep(1),
+      totalPd: this.rInt(total), pdBand: this.rInt(total * 0.75) + '\u2013' + this.rInt(total * 1.25) + ' pd',
+      weeks: (Math.round(weeks * 2) / 2), weeksBand: (Math.round(weeks * 0.75 * 2) / 2) + '\u2013' + (Math.round(weeks * 1.25 * 2) / 2) + ' wks',
+      multiplier: this.r1(cx.mult), compCount: cx.compCount, breakdown,
+      workedRows, workedTotal, usage,
+    };
+  }
+}
+</script>
+</body>
+</html>

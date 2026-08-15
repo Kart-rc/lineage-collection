@@ -1,0 +1,353 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,600&display=swap" rel="stylesheet">
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+  a { color: inherit; }
+  ::-webkit-scrollbar { width: 10px; height: 10px; }
+  ::-webkit-scrollbar-thumb { background: oklch(88% 0.006 262); border-radius: 6px; border: 2px solid transparent; background-clip: padding-box; }
+  @media print { .no-print { display: none !important; } .page { box-shadow: none !important; margin: 0 !important; } body { background: #fff !important; } }
+</style>
+</helmet>
+
+<div style="background:oklch(95.5% 0.004 262);min-height:100vh;font-family:'IBM Plex Sans',sans-serif;-webkit-font-smoothing:antialiased;color:oklch(30% 0.02 262)">
+  <div style="max-width:1200px;margin:0 auto;display:flex;gap:36px;padding:40px 28px 80px;align-items:flex-start">
+
+    <aside class="no-print" style="flex:none;width:210px;position:sticky;top:40px;display:flex;flex-direction:column;gap:3px">
+      <div style="display:flex;align-items:center;gap:9px;margin-bottom:14px">
+        <span style="width:22px;height:22px;border-radius:6px;background:oklch(57% 0.16 35);display:block"></span>
+        <span style="font:700 15px 'IBM Plex Sans';color:oklch(26% 0.02 262);letter-spacing:-0.01em">Throughline</span>
+      </div>
+      <div style="font:600 8.5px 'IBM Plex Mono';letter-spacing:.12em;text-transform:uppercase;color:oklch(60% 0.02 262);margin:0 0 8px 2px">PRD 2 · Impact</div>
+      <sc-for list="{{ toc }}" as="t" hint-placeholder-count="9">
+        <a href="{{ t.href }}" style="display:flex;gap:9px;padding:5px 8px;border-radius:6px;text-decoration:none;font:500 12px 'IBM Plex Sans';color:oklch(46% 0.02 262)" style-hover="background:oklch(92% 0.01 262)"><span style="font:600 10px 'IBM Plex Mono';color:oklch(68% 0.02 262);width:14px;flex:none">{{ t.n }}</span><span>{{ t.label }}</span></a>
+      </sc-for>
+      <div style="margin-top:16px;padding-top:14px;border-top:1px solid oklch(90% 0.006 262);display:flex;flex-direction:column;gap:6px">
+        <div style="font:600 8.5px 'IBM Plex Mono';letter-spacing:.12em;text-transform:uppercase;color:oklch(60% 0.02 262);margin:0 0 2px 2px">Suite</div>
+        <a href="Index - Throughline PRDs.dc.html" style="font:500 11.5px 'IBM Plex Sans';color:oklch(50% 0.02 262);text-decoration:none;padding:3px 8px">Overview</a>
+        <a href="PRD 1 - Lineage Collection.dc.html" style="font:500 11.5px 'IBM Plex Sans';color:oklch(50% 0.02 262);text-decoration:none;padding:3px 8px">PRD 1 · Collection</a>
+        <a href="PRD 3 - UI Representation.dc.html" style="font:500 11.5px 'IBM Plex Sans';color:oklch(50% 0.02 262);text-decoration:none;padding:3px 8px">PRD 3 · UI/UX</a>
+      </div>
+    </aside>
+
+    <main class="page" style="flex:1;min-width:0;max-width:860px;background:#fff;border:1px solid oklch(91% 0.006 262);border-radius:3px;box-shadow:0 1px 3px rgba(20,30,50,.06);padding:60px 64px 72px">
+
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:26px">
+        <span style="font:600 9px 'IBM Plex Mono';letter-spacing:.14em;text-transform:uppercase;color:#fff;background:oklch(57% 0.16 35);padding:4px 9px;border-radius:4px">Product Requirements</span>
+        <span style="font:500 11px 'IBM Plex Mono';color:oklch(58% 0.02 262)">v0.9 · Draft for review</span>
+        <span style="font:500 11px 'IBM Plex Mono';color:oklch(58% 0.02 262);margin-left:auto">Owner: Data Platform</span>
+      </div>
+      <h1 style="font:600 40px 'Newsreader',serif;color:oklch(22% 0.02 262);letter-spacing:-0.01em;line-height:1.1;margin:0 0 12px">Impact Analysis</h1>
+      <p style="font:400 16px/1.6 'IBM Plex Sans';color:oklch(45% 0.02 262);margin:0 0 4px;max-width:62ch">Given a proposed or detected change to any upstream element, Throughline computes the blast radius across the lineage graph — at service, dataset, and column level — and classifies each consumer by how badly it breaks.</p>
+
+      <div style="margin:34px 0 8px;border:1px solid oklch(88% 0.04 35);background:oklch(98.5% 0.018 38);border-radius:10px;padding:22px 24px">
+        <div style="font:600 9px 'IBM Plex Mono';letter-spacing:.12em;text-transform:uppercase;color:oklch(54% 0.13 35);margin-bottom:10px">Executive summary</div>
+        <p style="font:400 14.5px/1.6 'IBM Plex Sans';color:oklch(34% 0.02 262);margin:0 0 12px">A schema change in one service can silently break a partner export three hops away. Today that’s discovered in production. Throughline turns it into a <strong style="font-weight:600">pre-merge question</strong>: select a change, see exactly which applications, datasets, columns, and downstream contracts are affected — ranked <strong style="font-weight:600">breaking › warning › safe</strong> — and who owns each. The same engine runs three ways: an interactive <em>blast-radius</em> on the graph, a <em>simulation report</em> before you commit, and an automatic <em>CI/CD gate</em> on every PR.</p>
+        <div style="display:flex;flex-wrap:wrap;gap:10px">
+          <span style="font:500 12px 'IBM Plex Sans';color:oklch(40% 0.02 262);background:#fff;border:1px solid oklch(90% 0.01 262);border-radius:7px;padding:7px 11px">Three modes, one engine</span>
+          <span style="font:500 12px 'IBM Plex Sans';color:oklch(40% 0.02 262);background:#fff;border:1px solid oklch(90% 0.01 262);border-radius:7px;padding:7px 11px">Confidence-aware severity</span>
+          <span style="font:500 12px 'IBM Plex Sans';color:oklch(40% 0.02 262);background:#fff;border:1px solid oklch(90% 0.01 262);border-radius:7px;padding:7px 11px">Owner-routed alerts</span>
+        </div>
+      </div>
+
+      <!-- 1 GOALS -->
+      <h2 id="s1" style="font:600 22px 'Newsreader',serif;color:oklch(24% 0.02 262);margin:46px 0 14px"><span style="font:600 13px 'IBM Plex Mono';color:oklch(58% 0.15 35);margin-right:10px">01</span>Goals &amp; non-goals</h2>
+      <div style="display:flex;gap:20px">
+        <div style="flex:1">
+          <div style="font:600 9px 'IBM Plex Mono';letter-spacing:.1em;text-transform:uppercase;color:oklch(50% 0.10 155);margin-bottom:9px">Goals</div>
+          <ul style="margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:8px">
+            <li style="display:flex;gap:9px;font:400 13.5px/1.5 'IBM Plex Sans';color:oklch(38% 0.02 262)"><span style="color:oklch(55% 0.12 155);font-weight:600">✓</span>Answer “what breaks if I change X?” at column granularity in seconds.</li>
+            <li style="display:flex;gap:9px;font:400 13.5px/1.5 'IBM Plex Sans';color:oklch(38% 0.02 262)"><span style="color:oklch(55% 0.12 155);font-weight:600">✓</span>Classify every affected consumer by severity and route to its owner.</li>
+            <li style="display:flex;gap:9px;font:400 13.5px/1.5 'IBM Plex Sans';color:oklch(38% 0.02 262)"><span style="color:oklch(55% 0.12 155);font-weight:600">✓</span>Run before merge (simulation) and on merge (CI/CD gate).</li>
+            <li style="display:flex;gap:9px;font:400 13.5px/1.5 'IBM Plex Sans';color:oklch(38% 0.02 262)"><span style="color:oklch(55% 0.12 155);font-weight:600">✓</span>Reflect confidence — never block on an unverified inferred edge.</li>
+          </ul>
+        </div>
+        <div style="flex:1">
+          <div style="font:600 9px 'IBM Plex Mono';letter-spacing:.1em;text-transform:uppercase;color:oklch(56% 0.10 30);margin-bottom:9px">Non-goals (v1)</div>
+          <ul style="margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:8px">
+            <li style="display:flex;gap:9px;font:400 13.5px/1.5 'IBM Plex Sans';color:oklch(48% 0.02 262)"><span style="color:oklch(62% 0.10 30)">—</span>Auto-generating the fix or migration code.</li>
+            <li style="display:flex;gap:9px;font:400 13.5px/1.5 'IBM Plex Sans';color:oklch(48% 0.02 262)"><span style="color:oklch(62% 0.10 30)">—</span>Predicting data-quality / statistical drift (separate concern).</li>
+            <li style="display:flex;gap:9px;font:400 13.5px/1.5 'IBM Plex Sans';color:oklch(48% 0.02 262)"><span style="color:oklch(62% 0.10 30)">—</span>Cost/performance impact estimation in v1.</li>
+          </ul>
+        </div>
+      </div>
+
+      <!-- 2 MODES (exec, interactive tabs) -->
+      <h2 id="s2" style="font:600 22px 'Newsreader',serif;color:oklch(24% 0.02 262);margin:46px 0 8px"><span style="font:600 13px 'IBM Plex Mono';color:oklch(58% 0.15 35);margin-right:10px">02</span>Three modes of analysis</h2>
+      <p style="font:400 14px/1.6 'IBM Plex Sans';color:oklch(42% 0.02 262);margin:0 0 16px;max-width:62ch">One traversal engine, three surfaces for three moments. Select a mode:</p>
+      <div style="display:flex;gap:6px;margin-bottom:0">
+        <sc-for list="{{ modeTabs }}" as="m" hint-placeholder-count="3">
+          <span onClick="{{ m.onClick }}" style="flex:1;text-align:center;font:600 12.5px 'IBM Plex Sans';color:{{ m.fg }};background:{{ m.bg }};border:1px solid {{ m.border }};border-bottom:none;border-radius:9px 9px 0 0;padding:11px 8px;cursor:pointer">{{ m.label }}</span>
+        </sc-for>
+      </div>
+      <div style="border:1px solid oklch(91% 0.006 262);border-radius:0 0 11px 11px;padding:20px 22px;background:oklch(98.6% 0.003 262)">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:9px">
+          <span style="font:600 9px 'IBM Plex Mono';letter-spacing:.08em;text-transform:uppercase;color:{{ activeColor }};background:{{ activeBg }};padding:4px 9px;border-radius:4px">{{ activeWhen }}</span>
+          <span style="font:600 15px 'IBM Plex Sans';color:oklch(28% 0.02 262)">{{ activeTitle }}</span>
+        </div>
+        <p style="font:400 13.5px/1.6 'IBM Plex Sans';color:oklch(42% 0.02 262);margin:0 0 12px">{{ activeBody }}</p>
+        <div style="display:flex;flex-direction:column;gap:6px">
+          <sc-for list="{{ activePoints }}" as="p" hint-placeholder-count="3">
+            <div style="display:flex;gap:9px;font:400 12.5px/1.5 'IBM Plex Sans';color:oklch(40% 0.02 262)"><span style="color:{{ activeColor }};font-weight:600">›</span>{{ p.t }}</div>
+          </sc-for>
+        </div>
+      </div>
+
+      <!-- engineering divider -->
+      <div style="display:flex;align-items:center;gap:14px;margin:40px 0 6px">
+        <span style="font:600 10px 'IBM Plex Mono';letter-spacing:.14em;text-transform:uppercase;color:oklch(48% 0.02 262);background:oklch(94% 0.006 262);padding:6px 12px;border-radius:5px">Engineering specification</span>
+        <span style="flex:1;height:1px;background:oklch(91% 0.006 262)"></span>
+      </div>
+
+      <!-- 3 TRAVERSAL LOGIC -->
+      <h2 id="s3" style="font:600 22px 'Newsreader',serif;color:oklch(24% 0.02 262);margin:34px 0 8px"><span style="font:600 13px 'IBM Plex Mono';color:oklch(58% 0.15 35);margin-right:10px">03</span>Traversal &amp; impact logic</h2>
+      <p style="font:400 14px/1.6 'IBM Plex Sans';color:oklch(42% 0.02 262);margin:0 0 16px;max-width:62ch">Impact is a directed downstream traversal from the changed element, pruned by what the change actually touches. The algorithm:</p>
+      <div style="display:flex;flex-direction:column;gap:0">
+        <sc-for list="{{ algo }}" as="a" hint-placeholder-count="5">
+          <div style="display:flex;gap:14px">
+            <div style="flex:none;display:flex;flex-direction:column;align-items:center">
+              <span style="width:26px;height:26px;border-radius:50%;background:oklch(97% 0.03 35);border:1.5px solid oklch(80% 0.08 35);display:flex;align-items:center;justify-content:center;font:600 11px 'IBM Plex Mono';color:oklch(52% 0.15 35);flex:none">{{ a.n }}</span>
+              <span style="width:2px;flex:1;background:oklch(93% 0.006 262);min-height:8px"></span>
+            </div>
+            <div style="padding-bottom:16px;flex:1">
+              <div style="font:600 13.5px 'IBM Plex Sans';color:oklch(30% 0.02 262)">{{ a.title }}</div>
+              <div style="font:400 12.5px/1.55 'IBM Plex Sans';color:oklch(46% 0.02 262);margin-top:3px">{{ a.body }}</div>
+            </div>
+          </div>
+        </sc-for>
+      </div>
+
+      <!-- 4 CHANGE TYPES x SEVERITY MATRIX -->
+      <h2 id="s4" style="font:600 22px 'Newsreader',serif;color:oklch(24% 0.02 262);margin:40px 0 8px"><span style="font:600 13px 'IBM Plex Mono';color:oklch(58% 0.15 35);margin-right:10px">04</span>Change types &amp; severity model</h2>
+      <p style="font:400 14px/1.6 'IBM Plex Sans';color:oklch(42% 0.02 262);margin:0 0 16px;max-width:62ch">Severity is a function of <strong style="font-weight:600">change type</strong> × <strong style="font-weight:600">how the consumer uses the element</strong>. Hover any cell for the rule.</p>
+      <div style="border:1px solid oklch(91% 0.006 262);border-radius:11px;overflow:hidden">
+        <div style="display:grid;grid-template-columns:150px 1fr 1fr 1fr">
+          <div style="padding:11px 13px;font:600 8px 'IBM Plex Mono';letter-spacing:.06em;text-transform:uppercase;color:oklch(60% 0.02 262);background:oklch(97% 0.004 262);border-bottom:1px solid oklch(92% 0.006 262)">change ↓ / use →</div>
+          <div style="padding:11px 13px;font:600 10px 'IBM Plex Sans';color:oklch(40% 0.02 262);background:oklch(97% 0.004 262);border-bottom:1px solid oklch(92% 0.006 262);border-left:1px solid oklch(95% 0.004 262)">Read / passthrough</div>
+          <div style="padding:11px 13px;font:600 10px 'IBM Plex Sans';color:oklch(40% 0.02 262);background:oklch(97% 0.004 262);border-bottom:1px solid oklch(92% 0.006 262);border-left:1px solid oklch(95% 0.004 262)">Transform / join key</div>
+          <div style="padding:11px 13px;font:600 10px 'IBM Plex Sans';color:oklch(40% 0.02 262);background:oklch(97% 0.004 262);border-bottom:1px solid oklch(92% 0.006 262);border-left:1px solid oklch(95% 0.004 262)">Contract / export</div>
+        </div>
+        <sc-for list="{{ sevMatrix }}" as="row" hint-placeholder-count="5">
+          <div style="display:grid;grid-template-columns:150px 1fr 1fr 1fr;border-top:1px solid oklch(95.5% 0.004 262)">
+            <div style="padding:11px 13px;font:600 11.5px 'IBM Plex Mono';color:oklch(34% 0.02 262);display:flex;align-items:center">{{ row.change }}</div>
+            <sc-for list="{{ row.cells }}" as="c" hint-placeholder-count="3">
+              <div title="{{ c.rule }}" style="padding:11px 13px;border-left:1px solid oklch(95% 0.004 262);display:flex;align-items:center;justify-content:center;background:{{ c.bg }}">
+                <span style="font:600 9px 'IBM Plex Mono';letter-spacing:.04em;color:{{ c.fg }};background:{{ c.chipBg }};padding:3px 9px;border-radius:4px">{{ c.label }}</span>
+              </div>
+            </sc-for>
+          </div>
+        </sc-for>
+      </div>
+      <div style="display:flex;gap:16px;margin-top:12px">
+        <span style="display:flex;align-items:center;gap:7px;font:500 11px 'IBM Plex Sans';color:oklch(48% 0.02 262)"><span style="width:11px;height:11px;border-radius:3px;background:oklch(55% 0.17 30)"></span>Breaking</span>
+        <span style="display:flex;align-items:center;gap:7px;font:500 11px 'IBM Plex Sans';color:oklch(48% 0.02 262)"><span style="width:11px;height:11px;border-radius:3px;background:oklch(72% 0.13 75)"></span>Warning</span>
+        <span style="display:flex;align-items:center;gap:7px;font:500 11px 'IBM Plex Sans';color:oklch(48% 0.02 262)"><span style="width:11px;height:11px;border-radius:3px;background:oklch(70% 0.10 155)"></span>Safe</span>
+      </div>
+
+      <!-- 5 CONFIDENCE-AWARE -->
+      <h2 id="s5" style="font:600 22px 'Newsreader',serif;color:oklch(24% 0.02 262);margin:46px 0 8px"><span style="font:600 13px 'IBM Plex Mono';color:oklch(58% 0.15 35);margin-right:10px">05</span>Confidence-aware severity</h2>
+      <p style="font:400 14px/1.6 'IBM Plex Sans';color:oklch(42% 0.02 262);margin:0 0 14px;max-width:62ch">Impact rides on lineage edges, and edges carry confidence (PRD 1). The blast radius is therefore reported in two tiers so an inferred edge never silently blocks a deploy.</p>
+      <div style="display:flex;gap:12px">
+        <div style="flex:1;border:1px solid oklch(86% 0.05 155);background:oklch(98.5% 0.015 155);border-radius:10px;padding:16px 18px">
+          <div style="font:600 9px 'IBM Plex Mono';letter-spacing:.08em;text-transform:uppercase;color:oklch(48% 0.12 155);margin-bottom:8px">Confirmed impact</div>
+          <p style="font:400 12.5px/1.55 'IBM Plex Sans';color:oklch(42% 0.02 262);margin:0">Reached only via <strong style="font-weight:600">Verified / Probable</strong> edges. Counts toward the CI/CD gate; can block a merge.</p>
+        </div>
+        <div style="flex:1;border:1px dashed oklch(80% 0.07 30);background:oklch(98.5% 0.015 32);border-radius:10px;padding:16px 18px">
+          <div style="font:600 9px 'IBM Plex Mono';letter-spacing:.08em;text-transform:uppercase;color:oklch(54% 0.13 30);margin-bottom:8px">Possible impact</div>
+          <p style="font:400 12.5px/1.55 'IBM Plex Sans';color:oklch(42% 0.02 262);margin:0">Reached via at least one <strong style="font-weight:600">Inferred</strong> edge. Surfaced for review, shown dashed, never auto-blocks.</p>
+        </div>
+      </div>
+
+      <!-- 6 CODE-PATH COVERAGE -->
+      <h2 id="s6" style="font:600 22px 'Newsreader',serif;color:oklch(24% 0.02 262);margin:46px 0 8px"><span style="font:600 13px 'IBM Plex Mono';color:oklch(58% 0.15 35);margin-right:10px">06</span>Code-path coverage</h2>
+      <p style="font:400 14px/1.6 'IBM Plex Sans';color:oklch(42% 0.02 262);margin:0 0 14px;max-width:62ch">A change to a column affects <strong style="font-weight:600">every code path that reads it</strong> — not just the common one. Impact starts from the static <strong style="font-weight:600">superset</strong> of paths (PRD 1) and tiers each by how often it actually executes. The execution class maps directly onto Confirmed vs Possible impact.</p>
+      <div style="border:1px solid oklch(91% 0.006 262);border-radius:11px;overflow:hidden">
+        <div style="display:grid;grid-template-columns:120px 1fr 130px;background:oklch(97% 0.004 262);border-bottom:1px solid oklch(92% 0.006 262)">
+          <div style="padding:9px 13px;font:600 8px 'IBM Plex Mono';letter-spacing:.06em;text-transform:uppercase;color:oklch(60% 0.02 262)">Path class</div>
+          <div style="padding:9px 13px;font:600 8px 'IBM Plex Mono';letter-spacing:.06em;text-transform:uppercase;color:oklch(60% 0.02 262);border-left:1px solid oklch(95% 0.004 262)">Meaning</div>
+          <div style="padding:9px 13px;font:600 8px 'IBM Plex Mono';letter-spacing:.06em;text-transform:uppercase;color:oklch(60% 0.02 262);border-left:1px solid oklch(95% 0.004 262)">Impact tier</div>
+        </div>
+        <sc-for list="{{ pathTiers }}" as="p" hint-placeholder-count="4">
+          <div style="display:grid;grid-template-columns:120px 1fr 130px;border-top:1px solid oklch(95.5% 0.004 262)">
+            <div style="padding:11px 13px;display:flex;align-items:center"><span style="font:600 9px 'IBM Plex Mono';letter-spacing:.04em;color:{{ p.fg }};background:{{ p.bg }};padding:3px 9px;border-radius:4px">{{ p.label }}</span></div>
+            <div style="padding:11px 13px;border-left:1px solid oklch(95% 0.004 262);font:400 12px/1.5 'IBM Plex Sans';color:oklch(44% 0.02 262)">{{ p.meaning }}</div>
+            <div style="padding:11px 13px;border-left:1px solid oklch(95% 0.004 262);display:flex;align-items:center"><span style="font:600 10px 'IBM Plex Sans';color:{{ p.tierColor }}">{{ p.tier }}</span></div>
+          </div>
+        </sc-for>
+      </div>
+      <div style="margin-top:13px;border-left:3px solid oklch(58% 0.15 35);background:oklch(98.5% 0.018 38);padding:12px 15px;border-radius:0 8px 8px 0">
+        <span style="font:600 11px 'IBM Plex Sans';color:oklch(48% 0.12 35)">Branch coverage is the risk surface.</span>
+        <span style="font:400 12.5px/1.55 'IBM Plex Sans';color:oklch(42% 0.02 262)"> An impact report states it explicitly — e.g. <span style="font-family:'IBM Plex Mono';font-size:11px">9 / 12 paths runtime-confirmed</span>. The 3 unconfirmed branches are exactly where an undetected break can hide, so they are surfaced as Possible impact rather than silently dropped.</span>
+      </div>
+
+      <!-- 7 FUNCTIONAL REQ -->
+      <h2 id="s7" style="font:600 22px 'Newsreader',serif;color:oklch(24% 0.02 262);margin:46px 0 14px"><span style="font:600 13px 'IBM Plex Mono';color:oklch(58% 0.15 35);margin-right:10px">07</span>Functional requirements</h2>
+      <div style="display:flex;flex-direction:column;gap:8px">
+        <sc-for list="{{ reqs }}" as="r" hint-placeholder-count="8">
+          <div style="display:flex;gap:13px;padding:11px 14px;border:1px solid oklch(92% 0.006 262);border-radius:9px">
+            <span style="font:600 10px 'IBM Plex Mono';color:oklch(57% 0.16 35);flex:none;width:50px">{{ r.id }}</span>
+            <span style="font:400 13px/1.5 'IBM Plex Sans';color:oklch(38% 0.02 262);flex:1">{{ r.text }}</span>
+            <span style="font:600 8px 'IBM Plex Mono';letter-spacing:.04em;text-transform:uppercase;color:{{ r.pFg }};background:{{ r.pBg }};padding:3px 7px;border-radius:4px;height:fit-content;flex:none">{{ r.pri }}</span>
+          </div>
+        </sc-for>
+      </div>
+
+      <!-- 8 METRICS -->
+      <h2 id="s8" style="font:600 22px 'Newsreader',serif;color:oklch(24% 0.02 262);margin:46px 0 14px"><span style="font:600 13px 'IBM Plex Mono';color:oklch(58% 0.15 35);margin-right:10px">08</span>Success criteria</h2>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+        <sc-for list="{{ metrics }}" as="m" hint-placeholder-count="4">
+          <div style="border:1px solid oklch(92% 0.006 262);border-radius:9px;padding:14px 16px">
+            <div style="font:600 12px 'IBM Plex Sans';color:oklch(30% 0.02 262)">{{ m.name }}</div>
+            <div style="font:400 12px/1.5 'IBM Plex Sans';color:oklch(48% 0.02 262);margin-top:5px">{{ m.body }}</div>
+          </div>
+        </sc-for>
+      </div>
+
+      <!-- 9 ROLLOUT -->
+      <h2 id="s9" style="font:600 22px 'Newsreader',serif;color:oklch(24% 0.02 262);margin:46px 0 10px"><span style="font:600 13px 'IBM Plex Mono';color:oklch(58% 0.15 35);margin-right:10px">09</span>Rollout &amp; phasing</h2>
+      <div style="display:flex;gap:10px">
+        <sc-for list="{{ rollout }}" as="r" hint-placeholder-count="3">
+          <div style="flex:1;border:1px solid oklch(92% 0.006 262);border-radius:10px;padding:14px;border-top:3px solid {{ r.color }}">
+            <div style="font:600 9px 'IBM Plex Mono';letter-spacing:.06em;text-transform:uppercase;color:{{ r.color }}">{{ r.tag }}</div>
+            <div style="font:600 13px 'IBM Plex Sans';color:oklch(30% 0.02 262);margin:6px 0 5px">{{ r.title }}</div>
+            <div style="font:400 11.5px/1.5 'IBM Plex Sans';color:oklch(48% 0.02 262)">{{ r.body }}</div>
+          </div>
+        </sc-for>
+      </div>
+
+      <!-- 10 RISKS -->
+      <h2 id="s10" style="font:600 22px 'Newsreader',serif;color:oklch(24% 0.02 262);margin:46px 0 14px"><span style="font:600 13px 'IBM Plex Mono';color:oklch(58% 0.15 35);margin-right:10px">10</span>Risks &amp; open questions</h2>
+      <div style="display:flex;flex-direction:column;gap:9px">
+        <sc-for list="{{ risks }}" as="r" hint-placeholder-count="4">
+          <div style="display:flex;gap:12px;padding:11px 14px;border:1px solid oklch(92% 0.006 262);border-radius:9px;background:{{ r.bg }}">
+            <span style="font:600 9px 'IBM Plex Mono';letter-spacing:.04em;text-transform:uppercase;color:{{ r.tagColor }};flex:none;width:62px">{{ r.tag }}</span>
+            <div style="flex:1"><div style="font:600 12.5px 'IBM Plex Sans';color:oklch(32% 0.02 262)">{{ r.title }}</div><div style="font:400 12px/1.5 'IBM Plex Sans';color:oklch(48% 0.02 262);margin-top:3px">{{ r.body }}</div></div>
+          </div>
+        </sc-for>
+      </div>
+
+      <div style="margin-top:46px;padding-top:18px;border-top:1px solid oklch(91% 0.006 262);display:flex;align-items:center;gap:10px">
+        <a href="PRD 1 - Lineage Collection.dc.html" style="font:600 11.5px 'IBM Plex Sans';color:oklch(50% 0.02 262);text-decoration:none">← PRD 1: Collection</a>
+        <span style="font:500 11px 'IBM Plex Mono';color:oklch(60% 0.02 262);margin:0 auto">Throughline · PRD 2 of 3</span>
+        <a href="PRD 3 - UI Representation.dc.html" style="font:600 11.5px 'IBM Plex Sans';color:oklch(50% 0.13 252);text-decoration:none">Next: UI/UX →</a>
+      </div>
+    </main>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+class Component extends DCLogic {
+  state = { mode: 0 };
+
+  modes() {
+    return [
+      { label: 'Blast radius', when: 'Explore', color: 'oklch(52% 0.16 252)', bg: 'oklch(96% 0.03 252)',
+        title: 'Interactive blast radius on the graph', body: 'Pick any element on the lineage canvas; downstream nodes and edges light up by severity, unaffected ones dim. For ad-hoc \u201Cwho depends on this?\u201D investigation.',
+        points: ['Origin highlighted; downstream traversal animated outward', 'Severity coloring on nodes and edges live', 'Drill an impacted app \u2192 dataset \u2192 column without leaving the view'] },
+      { label: 'Simulation report', when: 'Pre-merge', color: 'oklch(52% 0.14 300)', bg: 'oklch(96% 0.03 300)',
+        title: 'Change simulation before you commit', body: 'Describe a hypothetical change in a form (asset \u00b7 column \u00b7 change type \u00b7 new value). Throughline returns a ranked report of affected assets grouped by severity, each with its owner.',
+        points: ['No code required \u2014 model a change to assess it', 'Affected consumers grouped Breaking / Warning / Info', 'Shareable report artifact for change review'] },
+      { label: 'CI/CD gate', when: 'On-merge', color: 'oklch(50% 0.13 155)', bg: 'oklch(96% 0.03 155)',
+        title: 'Automatic gate on every pull request', body: 'The CI/CD diff (PRD 1) detects schema changes in the PR, runs impact automatically, and posts the blast radius as a status check \u2014 blocking only on confirmed breaking impact.',
+        points: ['Runs headless in the pipeline; posts a PR comment', 'Blocks merge on confirmed-breaking; warns otherwise', 'Links straight to the interactive blast radius'] },
+    ];
+  }
+
+  sevColor(s) {
+    return { break: { fg: '#fff', chipBg: 'oklch(55% 0.17 30)', bg: 'oklch(97.5% 0.03 32)', label: 'BREAKING' },
+      warn: { fg: 'oklch(42% 0.10 70)', chipBg: 'oklch(94% 0.07 80)', bg: 'oklch(98.5% 0.02 80)', label: 'WARNING' },
+      safe: { fg: 'oklch(40% 0.08 155)', chipBg: 'oklch(93% 0.06 155)', bg: 'oklch(98.5% 0.015 155)', label: 'SAFE' } }[s];
+  }
+
+  renderVals() {
+    const toc = [
+      ['01', 'Goals & non-goals', '#s1'], ['02', 'Three modes', '#s2'], ['03', 'Traversal logic', '#s3'], ['04', 'Severity model', '#s4'],
+      ['05', 'Confidence-aware', '#s5'], ['06', 'Code-path coverage', '#s6'], ['07', 'Requirements', '#s7'], ['08', 'Success criteria', '#s8'], ['09', 'Rollout', '#s9'], ['10', 'Risks', '#s10'],
+    ].map(([n, label, href]) => ({ n, label, href }));
+
+    const pathTiers = [
+      { label: 'HOT', fg: '#fff', bg: 'oklch(55% 0.17 30)', meaning: 'Executes constantly, runtime-confirmed recently. The common path.', tier: 'Confirmed', tierColor: 'oklch(48% 0.12 155)' },
+      { label: 'WARM', fg: 'oklch(42% 0.10 70)', bg: 'oklch(94% 0.07 80)', meaning: 'Fires periodically \u2014 a scheduled job, a less common event type.', tier: 'Confirmed', tierColor: 'oklch(48% 0.12 155)' },
+      { label: 'COLD', fg: 'oklch(42% 0.08 250)', bg: 'oklch(94% 0.04 250)', meaning: 'Rarely taken \u2014 a specific tenant, region, or error branch; seen long ago.', tier: 'Possible', tierColor: 'oklch(54% 0.13 30)' },
+      { label: 'DEAD?', fg: 'oklch(46% 0.02 262)', bg: 'oklch(94% 0.006 262)', meaning: 'In code (static/LLM) but never observed at runtime. Reachable or dead code.', tier: 'Possible', tierColor: 'oklch(54% 0.13 30)' },
+    ];
+
+    const M = this.modes();
+    const modeTabs = M.map((m, i) => {
+      const on = this.state.mode === i;
+      return { label: m.label, fg: on ? m.color : 'oklch(52% 0.02 262)', bg: on ? '#fff' : 'oklch(97% 0.004 262)',
+        border: on ? 'oklch(91% 0.006 262)' : 'oklch(94% 0.006 262)', onClick: () => this.setState({ mode: i }) };
+    });
+    const am = M[this.state.mode];
+
+    const algo = [
+      { n: '1', title: 'Anchor on the changed element', body: 'Resolve the change to a node: a column, dataset, endpoint, or service. CI/CD supplies this automatically from the PR diff; simulation from the form.' },
+      { n: '2', title: 'Downstream traversal', body: 'BFS over outbound lineage edges. At column level, follow only edges that carry the changed column; roll results up to dataset and app for the higher altitudes.' },
+      { n: '3', title: 'Prune by change semantics', body: 'A widening type change does not propagate the same as a drop. Each edge\u2019s transform decides whether the change passes through, is absorbed, or amplifies.' },
+      { n: '4', title: 'Classify each consumer', body: 'Apply the change-type \u00d7 usage severity model at every reached node. Carry the worst severity along each path.' },
+      { n: '5', title: 'Tier by confidence & route', body: 'Split into Confirmed vs Possible by edge confidence; attach owners; emit the report / graph overlay / PR status.' },
+    ];
+
+    const mk = (s, rule) => ({ ...this.sevColor(s), rule });
+    const sevMatrix = [
+      { change: 'Type widen', cells: [mk('safe', 'Wider type is read-compatible.'), mk('warn', 'Join/cast may need review.'), mk('warn', 'Export width/precision may shift.')] },
+      { change: 'Type narrow', cells: [mk('warn', 'Possible truncation on read.'), mk('break', 'Join keys / casts can fail.'), mk('break', 'Fixed-width contract violated.')] },
+      { change: 'Rename', cells: [mk('break', 'Field no longer resolves.'), mk('break', 'Transform reference breaks.'), mk('break', 'Contract field missing.')] },
+      { change: 'Drop column', cells: [mk('break', 'Missing field on read.'), mk('break', 'Transform input gone.'), mk('break', 'Contract field removed.')] },
+      { change: 'Add column', cells: [mk('safe', 'Additive \u2014 ignored by readers.'), mk('safe', 'No effect unless referenced.'), mk('warn', 'Schema-strict consumers may reject.')] },
+      { change: 'Nullability +', cells: [mk('warn', 'Nulls may appear unexpectedly.'), mk('break', 'Null in join/derivation.'), mk('warn', 'Downstream NOT NULL contract.')] },
+    ];
+
+    const reqs = [
+      ['FR-I1', 'Compute downstream impact from any node (column, dataset, endpoint, service) using confidence-weighted lineage edges.', 'P0'],
+      ['FR-I2', 'Classify each affected consumer as Breaking / Warning / Safe via the change-type \u00d7 usage model, carrying worst-severity per path.', 'P0'],
+      ['FR-I3', 'Simulation mode: model a change via form input without any code change and return a ranked, owner-attributed report.', 'P0'],
+      ['FR-I4', 'Blast-radius mode: render impacted subgraph on the canvas with severity coloring and drill-down to column level.', 'P0'],
+      ['FR-I5', 'CI/CD gate: run automatically on PR schema deltas, post a status check + comment, block only on confirmed-breaking.', 'P0'],
+      ['FR-I6', 'Split results into Confirmed (Verified/Probable edges) vs Possible (any Inferred edge); only Confirmed can block.', 'P0'],
+      ['FR-I7', 'Resolve and display the owning team/app for every impacted asset; support routing notifications to owners.', 'P1'],
+      ['FR-I8', 'Produce a before/after schema diff for the changed asset and per-consumer break reasons.', 'P1'],
+      ['FR-I9', 'Cross-channel impact: propagate through batch, streaming, REST/GraphQL contract, and file-transfer edges alike.', 'P1'],
+      ['FR-I10', 'Path-aware impact: traverse the static superset of code paths and report branch coverage (paths confirmed vs inferred) per affected service.', 'P1'],
+    ].map(([id, text, pri]) => ({ id, text, pri, pFg: pri === 'P0' ? '#fff' : 'oklch(48% 0.02 262)', pBg: pri === 'P0' ? 'oklch(57% 0.16 35)' : 'oklch(95% 0.004 262)' }));
+
+    const metrics = [
+      { name: 'Prevention', body: 'Breaking schema changes are caught pre-merge rather than discovered in production.' },
+      { name: 'Precision', body: 'Reports are trusted \u2014 low false-positive noise, so teams act on warnings instead of ignoring them.' },
+      { name: 'Coverage', body: 'Impact reaches across all channel types, including streaming and partner file exports.' },
+      { name: 'Latency', body: 'Simulation and the CI/CD gate return within a single review/pipeline cycle.' },
+    ];
+
+    const rollout = [
+      { tag: 'Slice', title: 'Simulation first', color: 'oklch(52% 0.14 300)', body: 'Ship the simulation report on the vertical slice; validate severity rules against real past incidents.' },
+      { tag: 'Widen', title: 'Blast radius + gate', color: 'oklch(57% 0.16 35)', body: 'Add the interactive overlay and a non-blocking CI/CD check across the domain; tune thresholds.' },
+      { tag: 'Scale', title: 'Enforce + route', color: 'oklch(50% 0.13 155)', body: 'Turn on blocking gates on critical paths org-wide; route owner notifications; track prevention.' },
+    ];
+
+    const risks = [
+      { tag: 'Risk', title: 'Alert fatigue from over-flagging', body: 'If everything is \u201Cbreaking\u201D, teams disable the gate. Mitigation: confidence tiering, worst-severity pruning, and calibrated rules from real incidents.', bg: 'oklch(98.5% 0.02 32)', tagColor: 'oklch(56% 0.13 30)' },
+      { tag: 'Risk', title: 'Missed impact via low-confidence edges', body: 'A real dependency on an Inferred edge won\u2019t block. Mitigation: surface as Possible impact prominently; promote edges as runtime confirms them.', bg: 'oklch(98.5% 0.02 32)', tagColor: 'oklch(56% 0.13 30)' },
+      { tag: 'Open', title: 'Severity rule ownership', body: 'Should severity rules be global, or overridable per domain/contract? Affects governance and how the matrix is maintained.', bg: 'oklch(98.5% 0.012 252)', tagColor: 'oklch(50% 0.10 252)' },
+      { tag: 'Open', title: 'Gate enforcement policy', body: 'Where to block vs warn \u2014 by criticality tier, by domain, or by consumer SLA? Needs a policy framework with stakeholders.', bg: 'oklch(98.5% 0.012 252)', tagColor: 'oklch(50% 0.10 252)' },
+    ];
+
+    return { toc, modeTabs,
+      activeColor: am.color, activeBg: am.bg, activeWhen: am.when, activeTitle: am.title, activeBody: am.body,
+      activePoints: am.points.map(t => ({ t })),
+      algo, sevMatrix, pathTiers, reqs, metrics, rollout, risks };
+  }
+}
+</script>
+</body>
+</html>

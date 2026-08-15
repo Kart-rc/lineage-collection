@@ -1,0 +1,282 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,600&display=swap" rel="stylesheet">
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+  a { color: inherit; }
+  ::-webkit-scrollbar { width: 10px; height: 10px; }
+  ::-webkit-scrollbar-thumb { background: oklch(88% 0.006 262); border-radius: 6px; border: 2px solid transparent; background-clip: padding-box; }
+  @media print { .no-print { display: none !important; } .page { box-shadow: none !important; margin: 0 !important; } body { background: #fff !important; } }
+</style>
+</helmet>
+
+<div style="background:oklch(95.5% 0.004 262);min-height:100vh;font-family:'IBM Plex Sans',sans-serif;-webkit-font-smoothing:antialiased;color:oklch(30% 0.02 262)">
+  <div style="max-width:1280px;margin:0 auto;display:flex;gap:36px;padding:40px 28px 80px;align-items:flex-start">
+
+    <!-- TOC -->
+    <aside class="no-print" style="flex:none;width:204px;position:sticky;top:40px;display:flex;flex-direction:column;gap:3px">
+      <div style="display:flex;align-items:center;gap:9px;margin-bottom:14px">
+        <span style="width:22px;height:22px;border-radius:6px;background:oklch(50% 0.16 25);display:block"></span>
+        <span style="font:700 15px 'IBM Plex Sans';color:oklch(26% 0.02 262);letter-spacing:-0.01em">Throughline</span>
+      </div>
+      <div style="font:600 8.5px 'IBM Plex Mono';letter-spacing:.12em;text-transform:uppercase;color:oklch(60% 0.02 262);margin:0 0 8px 2px">Adversarial Review</div>
+      <sc-for list="{{ toc }}" as="t" hint-placeholder-count="7">
+        <a href="{{ t.href }}" style="display:flex;gap:9px;padding:5px 8px;border-radius:6px;text-decoration:none;font:500 12px 'IBM Plex Sans';color:oklch(46% 0.02 262)" style-hover="background:oklch(92% 0.01 262)"><span style="font:600 10px 'IBM Plex Mono';color:oklch(68% 0.02 262);width:14px;flex:none">{{ t.n }}</span><span>{{ t.label }}</span></a>
+      </sc-for>
+      <div style="margin-top:16px;padding-top:14px;border-top:1px solid oklch(90% 0.006 262);display:flex;flex-direction:column;gap:6px">
+        <div style="font:600 8.5px 'IBM Plex Mono';letter-spacing:.12em;text-transform:uppercase;color:oklch(60% 0.02 262);margin:0 0 2px 2px">Suite</div>
+        <a href="Index - Throughline PRDs.dc.html" style="font:500 11.5px 'IBM Plex Sans';color:oklch(50% 0.02 262);text-decoration:none;padding:3px 8px">Overview</a>
+        <a href="Roadmap & LOE.dc.html" style="font:500 11.5px 'IBM Plex Sans';color:oklch(50% 0.02 262);text-decoration:none;padding:3px 8px">Roadmap &amp; LOE</a>
+        <a href="Throughline - Final.dc.html" style="font:500 11.5px 'IBM Plex Sans';color:oklch(50% 0.02 262);text-decoration:none;padding:3px 8px">Prototype</a>
+      </div>
+    </aside>
+
+    <!-- PAGE -->
+    <main class="page" style="flex:1;min-width:0;max-width:980px;background:#fff;border:1px solid oklch(91% 0.006 262);border-radius:3px;box-shadow:0 1px 3px rgba(20,30,50,.06);padding:56px 56px 72px">
+
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:24px">
+        <span style="font:600 9px 'IBM Plex Mono';letter-spacing:.14em;text-transform:uppercase;color:#fff;background:oklch(50% 0.16 25);padding:4px 9px;border-radius:4px">Red-Team Review</span>
+        <span style="font:500 11px 'IBM Plex Mono';color:oklch(58% 0.02 262)">v0.9 · Pre-leadership</span>
+        <span style="font:500 11px 'IBM Plex Mono';color:oklch(58% 0.02 262);margin-left:auto">Read against: prototype · roadmap · PRDs</span>
+      </div>
+      <h1 style="font:600 38px 'Newsreader',serif;color:oklch(22% 0.02 262);letter-spacing:-0.01em;line-height:1.1;margin:0 0 12px">Critical review &amp; path to buy-in</h1>
+      <p style="font:400 16px/1.6 'IBM Plex Sans';color:oklch(45% 0.02 262);margin:0 0 4px;max-width:64ch">An adversarial read of Throughline before it goes to senior leadership — judged on three axes: <strong style="font-weight:600">ease of use</strong> for the actual audience, <strong style="font-weight:600">scalability</strong> at enterprise size, and the credibility of the <strong style="font-weight:600">24-month plan</strong>. The goal is to surface what a skeptical CFO, CTO, or VP will challenge — and to fix it first.</p>
+
+      <!-- verdict band -->
+      <div style="display:flex;gap:10px;margin:30px 0 8px;flex-wrap:wrap">
+        <sc-for list="{{ verdict }}" as="v" hint-placeholder-count="4">
+          <div style="flex:1;min-width:170px;border:1px solid oklch(92% 0.006 262);border-radius:10px;padding:13px 15px;border-top:3px solid {{ v.color }}">
+            <div style="font:600 9px 'IBM Plex Mono';letter-spacing:.05em;text-transform:uppercase;color:oklch(58% 0.02 262)">{{ v.axis }}</div>
+            <div style="font:700 15px 'IBM Plex Sans';color:{{ v.color }};margin-top:5px">{{ v.grade }}</div>
+            <div style="font:400 10.5px/1.45 'IBM Plex Sans';color:oklch(50% 0.02 262);margin-top:4px">{{ v.line }}</div>
+          </div>
+        </sc-for>
+      </div>
+      <div style="margin-top:14px;border-left:3px solid oklch(50% 0.16 25);background:oklch(98.5% 0.012 25);padding:13px 16px;border-radius:0 8px 8px 0">
+        <span style="font:600 11.5px 'IBM Plex Sans';color:oklch(45% 0.13 25)">Bottom line.</span>
+        <span style="font:400 13px/1.6 'IBM Plex Sans';color:oklch(42% 0.02 262)"> The concept and the prototype are strong and well ahead of a typical pitch. But three things will draw fire in the room: a <strong style="font-weight:600">build-vs-buy</strong> question that isn't pre-empted, an <strong style="font-weight:600">estimate-vs-staffing</strong> mismatch that looks inconsistent, and a <strong style="font-weight:600">24-month time-to-value</strong> with no early business win. None are fatal; all are fixable before the meeting.</span>
+      </div>
+
+      <!-- legend -->
+      <div style="display:flex;align-items:center;gap:16px;margin:26px 0 0">
+        <span style="font:600 8.5px 'IBM Plex Mono';letter-spacing:.06em;text-transform:uppercase;color:oklch(60% 0.02 262)">Severity</span>
+        <sc-for list="{{ sevLegend }}" as="s" hint-placeholder-count="3">
+          <span style="display:flex;align-items:center;gap:7px;font:500 11px 'IBM Plex Sans';color:oklch(46% 0.02 262)"><span style="width:10px;height:10px;border-radius:3px;background:{{ s.color }}"></span>{{ s.label }} — {{ s.note }}</span>
+        </sc-for>
+      </div>
+
+      <!-- ISSUE SECTIONS -->
+      <sc-for list="{{ sections }}" as="sec" hint-placeholder-count="4">
+        <h2 id="{{ sec.id }}" style="font:600 21px 'Newsreader',serif;color:oklch(24% 0.02 262);margin:42px 0 4px"><span style="font:600 13px 'IBM Plex Mono';color:oklch(50% 0.14 25);margin-right:10px">{{ sec.num }}</span>{{ sec.title }}</h2>
+        <p style="font:400 13px/1.6 'IBM Plex Sans';color:oklch(48% 0.02 262);margin:0 0 16px;max-width:66ch">{{ sec.intro }}</p>
+        <div style="display:flex;flex-direction:column;gap:11px">
+          <sc-for list="{{ sec.issues }}" as="i" hint-placeholder-count="4">
+            <div style="border:1px solid oklch(92% 0.006 262);border-radius:11px;padding:15px 17px;border-left:4px solid {{ i.sevColor }}">
+              <div style="display:flex;align-items:baseline;gap:10px;margin-bottom:7px">
+                <span style="font:700 9px 'IBM Plex Mono';color:#fff;background:{{ i.sevColor }};padding:3px 7px;border-radius:4px;flex:none">{{ i.sev }}</span>
+                <span style="font:600 14px 'IBM Plex Sans';color:oklch(28% 0.02 262)">{{ i.title }}</span>
+                <span style="font:500 9px 'IBM Plex Mono';color:oklch(60% 0.02 262);margin-left:auto;flex:none">{{ i.tag }}</span>
+              </div>
+              <div style="display:flex;gap:14px;flex-wrap:wrap">
+                <div style="flex:1;min-width:240px">
+                  <div style="font:600 8px 'IBM Plex Mono';letter-spacing:.08em;text-transform:uppercase;color:oklch(55% 0.13 25);margin-bottom:3px">The challenge</div>
+                  <div style="font:400 12px/1.55 'IBM Plex Sans';color:oklch(44% 0.02 262)">{{ i.problem }}</div>
+                </div>
+                <div style="flex:1;min-width:240px">
+                  <div style="font:600 8px 'IBM Plex Mono';letter-spacing:.08em;text-transform:uppercase;color:oklch(48% 0.12 155);margin-bottom:3px">Remedial action</div>
+                  <div style="font:400 12px/1.55 'IBM Plex Sans';color:oklch(40% 0.02 262)">{{ i.fix }}</div>
+                </div>
+              </div>
+            </div>
+          </sc-for>
+        </div>
+      </sc-for>
+
+      <!-- REMEDIATION CHECKLIST -->
+      <h2 id="s5" style="font:600 21px 'Newsreader',serif;color:oklch(24% 0.02 262);margin:46px 0 4px"><span style="font:600 13px 'IBM Plex Mono';color:oklch(50% 0.14 25);margin-right:10px">05</span>Before the meeting — remediation checklist</h2>
+      <p style="font:400 13px/1.6 'IBM Plex Sans';color:oklch(48% 0.02 262);margin:0 0 16px;max-width:66ch">Ordered by what protects the funding decision. The first five are must-fix; the rest strengthen the case.</p>
+      <table style="width:100%;border-collapse:collapse;font-family:'IBM Plex Sans'">
+        <thead><tr style="background:oklch(97% 0.004 262)">
+          <th style="text-align:left;font:600 8.5px 'IBM Plex Mono';letter-spacing:.05em;text-transform:uppercase;color:oklch(58% 0.02 262);padding:9px 11px;border-bottom:1px solid oklch(91% 0.006 262);width:30px">#</th>
+          <th style="text-align:left;font:600 8.5px 'IBM Plex Mono';letter-spacing:.05em;text-transform:uppercase;color:oklch(58% 0.02 262);padding:9px 11px;border-bottom:1px solid oklch(91% 0.006 262)">Action</th>
+          <th style="text-align:left;font:600 8.5px 'IBM Plex Mono';letter-spacing:.05em;text-transform:uppercase;color:oklch(58% 0.02 262);padding:9px 11px;border-bottom:1px solid oklch(91% 0.006 262)">Addresses</th>
+          <th style="text-align:center;font:600 8.5px 'IBM Plex Mono';letter-spacing:.05em;text-transform:uppercase;color:oklch(58% 0.02 262);padding:9px 11px;border-bottom:1px solid oklch(91% 0.006 262);width:90px">Priority</th>
+        </tr></thead>
+        <tbody>
+          <sc-for list="{{ checklist }}" as="c" hint-placeholder-count="8">
+            <tr style="border-bottom:1px solid oklch(95.5% 0.004 262)">
+              <td style="padding:9px 11px;font:600 11px 'IBM Plex Mono';color:oklch(60% 0.02 262);vertical-align:top">{{ c.n }}</td>
+              <td style="padding:9px 11px;vertical-align:top"><div style="font:600 11.5px 'IBM Plex Sans';color:oklch(32% 0.02 262)">{{ c.action }}</div><div style="font:400 10.5px/1.45 'IBM Plex Sans';color:oklch(52% 0.02 262);margin-top:2px">{{ c.detail }}</div></td>
+              <td style="padding:9px 11px;font:400 10.5px 'IBM Plex Sans';color:oklch(50% 0.02 262);vertical-align:top">{{ c.addresses }}</td>
+              <td style="padding:9px 11px;text-align:center;vertical-align:top"><span style="font:600 8.5px 'IBM Plex Mono';color:{{ c.pFg }};background:{{ c.pBg }};padding:3px 8px;border-radius:4px">{{ c.priority }}</span></td>
+            </tr>
+          </sc-for>
+        </tbody>
+      </table>
+
+      <!-- WHAT'S STRONG -->
+      <h2 id="s6" style="font:600 21px 'Newsreader',serif;color:oklch(24% 0.02 262);margin:46px 0 4px"><span style="font:600 13px 'IBM Plex Mono';color:oklch(48% 0.12 155);margin-right:10px">06</span>What's already strong — lead with these</h2>
+      <p style="font:400 13px/1.6 'IBM Plex Sans';color:oklch(48% 0.02 262);margin:0 0 14px;max-width:66ch">A red-team read should also name the assets. These are genuine differentiators; open the pitch with them.</p>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+        <sc-for list="{{ strengths }}" as="s" hint-placeholder-count="4">
+          <div style="border:1px solid oklch(92% 0.006 262);border-radius:10px;padding:13px 15px;background:oklch(99% 0.008 155)">
+            <div style="display:flex;align-items:center;gap:8px"><span style="font:600 11px 'IBM Plex Mono';color:oklch(48% 0.12 155)">✓</span><span style="font:600 12.5px 'IBM Plex Sans';color:oklch(30% 0.02 262)">{{ s.title }}</span></div>
+            <div style="font:400 11.5px/1.5 'IBM Plex Sans';color:oklch(48% 0.02 262);margin-top:5px">{{ s.body }}</div>
+          </div>
+        </sc-for>
+      </div>
+
+      <div style="margin-top:44px;padding-top:18px;border-top:1px solid oklch(91% 0.006 262);display:flex;align-items:center;gap:10px">
+        <a href="Index - Throughline PRDs.dc.html" style="font:600 11.5px 'IBM Plex Sans';color:oklch(50% 0.02 262);text-decoration:none">← Overview</a>
+        <span style="font:500 11px 'IBM Plex Mono';color:oklch(60% 0.02 262);margin:0 auto">Throughline · Critical Review</span>
+        <a href="Roadmap & LOE.dc.html" style="font:600 11.5px 'IBM Plex Sans';color:oklch(50% 0.10 70);text-decoration:none">Roadmap &amp; LOE →</a>
+      </div>
+    </main>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+class Component extends DCLogic {
+  renderVals() {
+    const RED = 'oklch(50% 0.16 25)';
+    const SEV = {
+      crit: 'oklch(53% 0.18 28)',   // critical
+      high: 'oklch(64% 0.14 65)',   // high
+      med: 'oklch(58% 0.03 250)',   // medium
+    };
+
+    const toc = [
+      ['01', 'UI & ease of use', '#s1'], ['02', 'Scalability', '#s2'], ['03', '24-month plan', '#s3'],
+      ['04', 'Strategic & org', '#s4'], ['05', 'Remediation checklist', '#s5'], ['06', "What's strong", '#s6'],
+    ].map(([n, label, href]) => ({ n, label, href }));
+
+    const verdict = [
+      { axis: 'Ease of use', grade: 'Promising, unproven', color: SEV.high, line: 'Rich, but dense for non-technical execs. Needs role-based entry.' },
+      { axis: 'Scalability', grade: 'Architecturally sound', color: 'oklch(48% 0.12 155)', line: 'Right patterns; the hard parts (identity, coverage) are under-specified.' },
+      { axis: '24-month plan', grade: 'Credible, inconsistent', color: SEV.high, line: 'Good structure; estimate vs. staffing and time-to-value need reconciling.' },
+      { axis: 'Buy-in risk', grade: 'Medium', color: SEV.crit, line: 'Build-vs-buy and early-ROI gaps are the likeliest objections.' },
+    ];
+
+    const sevLegend = [
+      { label: 'Critical', color: SEV.crit, note: 'will block or derail buy-in' },
+      { label: 'High', color: SEV.high, note: 'will draw hard questions' },
+      { label: 'Medium', color: SEV.med, note: 'polish / credibility' },
+    ];
+
+    const mk = (sev, title, tag, problem, fix) => ({ sev: sev === 'crit' ? 'CRITICAL' : sev === 'high' ? 'HIGH' : 'MEDIUM', sevColor: SEV[sev], title, tag, problem, fix });
+
+    const sections = [
+      { id: 's1', num: '01', title: 'UI & ease of use', intro: 'Audience is mixed — exec/leadership, data governance, analysts, and platform engineers. The prototype is built for the engineer end of that range; the others will struggle to self-serve.', issues: [
+        mk('high', 'Cognitive load: 4 lenses × 4 altitudes × progressive disclosure', 'Exec / analyst',
+          'A first-time exec lands on a domain graph and must learn altitude switching, four lenses, expand-to-disclose, and a right-rail inspector before getting an answer. That is a power-user tool, not a leadership dashboard.',
+          'Add role-based default landings: governance/exec get a saved "answer" view (e.g. "what is high-risk this week"); engineers get the full canvas. Ship a 60-second guided first-run.'),
+        mk('crit', 'Browse-first, but at 10k assets nobody browses', 'All users',
+          'The PRDs say "search-first / anchor on an entity", but the prototype opens on a browsable domain overview. At enterprise scale the overview is noise; users arrive knowing the asset they care about.',
+          'Make global search the landing surface; the graph renders the ego-network around the searched entity. Demote the domain overview to a secondary "explore" entry.'),
+        mk('high', 'Confidence score reads as false precision', 'Governance / exec',
+          'A two-decimal 0–100 score with three weighted factors invites "why 0.91 and not 0.88?" debates from non-technical users and implies more rigor than a partly-LLM signal warrants.',
+          'Lead with the three bands (Verified / Probable / Inferred); show the number only on drill-in. State plainly that the score is a trust signal, not a measurement. Never show two decimals.'),
+        mk('med', 'No empty / unknown / error states shown', 'All users',
+          'Enterprise lineage is incomplete by definition. The prototype never shows "no lineage captured" vs. "no dependency" — a dangerous ambiguity. Absence of an edge could mean safe, or blind.',
+          'Design explicit "unknown / not yet observed" treatment distinct from "no dependency". Surface coverage gaps as first-class, so users never mistake a blind spot for safety.'),
+        mk('med', 'Accessibility: dense mono type + color-only encoding', 'All users',
+          'Channel, severity, and confidence are encoded largely by color, and labels run to 8–9px mono. This fails colorblind users and WCAG contrast/size for an enterprise rollout.',
+          'Add a non-color cue (shape/label) to every encoded dimension; raise minimum type size; run a contrast + colorblind audit before GA. Cheap now, expensive to retrofit.'),
+      ]},
+      { id: 's2', num: '02', title: 'Scalability', intro: 'The architecture uses the right moves — partitioning, streaming upserts, scoped fetch, precomputed impact. The risk is not the happy-path graph size; it is the messy inputs and the long tail.', issues: [
+        mk('crit', 'Identity resolution is the real hard problem — and it is hand-waved', 'Collection',
+          'Unifying the same entity across static, Spark, Dask, and OTel relies on a "canonical ID scheme". Services rename, redeploy, share names across domains, and emit inconsistent identifiers. Get this wrong and the graph silently mis-joins or fragments.',
+          'Pull identity resolution forward into a P0 spike with a measured accuracy target on the vertical slice. Treat it as the make-or-break technical risk, not an implementation detail.'),
+        mk('crit', 'Four collectors will not cover a real enterprise stack', 'Coverage',
+          'Spark + Dask + OTel + static cover a fraction of a 10k-service estate. Snowflake, dbt, Airflow, Flink, Kafka Streams, stored procedures, and legacy ETL are not addressed. Uncovered systems become invisible edges — and the UI will imply confidence where there is none.',
+          'Publish a coverage map: what % of the estate the four collectors reach, and the plan for the gap. Make "uncovered" a visible state. Sequence connectors by estate share, not by ease.'),
+        mk('high', 'Cold / never-run paths stay Inferred forever — exactly the risky tail', 'Confidence',
+          'Confidence leans on runtime observation. Quarter-end jobs, error branches, and rarely-hit paths may never be seen, so they sit at low confidence permanently — and those are often where breaking changes hide.',
+          'Define an explicit cold-path policy: static-only edges are surfaced in impact as "possible" regardless of runtime, and never silently dropped. Document that low confidence ≠ low risk.'),
+        mk('high', 'LLM extraction: accuracy, cost, drift, and non-determinism at 10k services', 'Collection',
+          'Re-inferring lineage with an LLM across thousands of services raises hallucinated edges, model-version drift, and cost. "LLM edges start as candidates" is a control, but the validation rate and spend are unquantified.',
+          'Commit to a measured precision/recall target for LLM edges on the slice, cache by code-hash, and budget LLM spend explicitly. Show leadership the cost-per-service curve.'),
+        mk('med', 'Conflict resolution between signals is underspecified', 'Graph core',
+          'When static asserts an edge, runtime never sees it, and OTel contradicts a channel — who wins? The merge policy is implied, not defined. Inconsistent merges erode trust fast.',
+          'Write the conflict-resolution matrix into PRD 1: precedence per attribute, how disagreement affects the score, and how it surfaces to the user.'),
+        mk('med', 'Hot-node traversal fan-out', 'Serving',
+          'A shared key (e.g. customer_id) can sit on a huge fan-out. "Depth bounds + precompute" helps, but a few super-connected nodes can dominate cost and produce unreadable blast radii.',
+          'Identify hub nodes explicitly; cap and summarize their fan-out in both traversal and UI ("+340 more downstream"). Test impact latency against the worst hub, not the average.'),
+      ]},
+      { id: 's3', num: '03', title: 'The 24-month plan', intro: 'The roadmap is unusually well-structured for a pitch — explicit dependencies, three staffing scenarios, a sizing methodology. The exposure is in internal consistency and in time-to-value.', issues: [
+        mk('crit', 'Estimate vs. staffing looks inconsistent', 'Credibility',
+          'The LOE totals ≈145–205 eng-weeks (~1.5–2 eng-years), yet the recommendation is two teams (~10 engineers) funded for 24 months (~20 eng-years). A sharp CFO will ask why 10× the estimated effort is staffed — or conclude the estimate is wrong.',
+          'Reconcile explicitly: the eng-week figure is net build of listed workstreams; the rest is hardening, scale-out, adoption, run, and iteration. Show the full 24-month capacity accounted for, or cut staffing.'),
+        mk('crit', '24 months to value, with no early business win', 'Funding',
+          'A vertical slice in P0 is good engineering, but leadership funds outcomes. There is no milestone tied to a business result (an incident prevented, an audit passed) before month ~6, and nothing material before 24.',
+          'Define a 90-day demonstrable win on the slice (e.g. "block one real breaking change in a pilot repo") and a P1 value milestone with a named partner team. Fund in stages against those, not one 24-month bet.'),
+        mk('high', 'The whole plan hangs on one fragile spine', 'Schedule risk',
+          'Collection → merge → impact → everything is a serial critical path. If identity resolution or collector coverage slips, the entire timeline slips — and both are the least-certain items.',
+          'Add explicit schedule buffer on the critical chain, and a fallback: ship impact on the static baseline alone if runtime confirmation lags, upgrading confidence later.'),
+        mk('high', 'AI productivity uplift is baked into the estimates', 'Credibility',
+          'Folding an AI-assisted speedup into the baseline makes the plan look aggressive and risks double-counting. If the uplift under-delivers, every date moves.',
+          'Re-baseline without the uplift; present AI assist as upside / sensitivity, not as the committed plan. Leadership rewards a plan that beats its date, not one that misses an optimistic one.'),
+        mk('med', 'Success is measured qualitatively', 'Funding',
+          'Qualitative metrics were a deliberate early choice, but a funding decision needs leading indicators with targets — coverage %, adoption, time-to-impact-answer, changes caught.',
+          'Add 3–4 leading indicators with phase targets, even if directional. "Coverage of the slice estate" and "breaking changes caught pre-merge" are the two execs will want.'),
+      ]},
+      { id: 's4', num: '04', title: 'Strategic & organizational', intro: 'The largest risks are not in the code — they are the questions a strategy-minded executive asks about why and how this lands in the org.', issues: [
+        mk('crit', 'Build-vs-buy is not pre-empted', 'Strategy',
+          'DataHub, Atlan, Collibra, OpenMetadata, and others exist. The first question in the room is "why build this?" The materials never answer it. Silence here reads as a blind spot.',
+          'Add a one-page build-vs-buy: what off-the-shelf tools do and do not do (notably code-path-level impact + CI/CD gating + confidence), and where Throughline could integrate rather than replace. Win this argument before it is asked.'),
+        mk('crit', 'Adoption is an org-change program, not just a build', 'Delivery',
+          'Value requires every app team to instrument collectors and accept a CI/CD gate on their PRs. That is behavior change across the org, with political resistance — and there is no adoption / change-management workstream or exec sponsor named.',
+          'Add an explicit adoption workstream (enablement, golden-path docs, incentives) and secure a named exec sponsor. Budget it; do not assume teams adopt because the platform exists.'),
+        mk('high', 'Gating PRs on lineage will erode trust if it false-positives', 'Adoption',
+          'Blocking a merge on predicted impact is powerful and dangerous. A few wrong blocks and engineers route around the gate or lobby to disable it. Trust, once lost, is hard to recover.',
+          'Commit to an observe → warn → block rollout per team, with a published false-positive budget and an easy, audited override. Earn the right to block; do not start there.'),
+        mk('med', 'Vertical-slice representativeness is a named risk without criteria', 'Delivery',
+          'The plan rightly bets on one end-to-end slice, but if the slice is too clean it will not surface the messy patterns (legacy ETL, shared keys) that break at scale.',
+          'Publish selection criteria for the slice: must include a multi-signal flow, a cross-domain dependency, and at least one uncovered/legacy system. Choose for difficulty, not convenience.'),
+      ]},
+    ];
+
+    const pr = { done: { label: 'RESOLVED', pFg: 'oklch(45% 0.13 165)', pBg: 'oklch(95% 0.04 165)' }, planned: { label: 'PLANNED', pFg: '#fff', pBg: 'oklch(48% 0.13 165)' }, must: { label: 'MUST-FIX', pFg: '#fff', pBg: SEV.crit }, should: { label: 'SHOULD', pFg: 'oklch(48% 0.10 65)', pBg: 'oklch(95% 0.05 70)' }, nice: { label: 'NICE', pFg: 'oklch(48% 0.02 262)', pBg: 'oklch(95% 0.004 262)' } };
+    const ck = (action, detail, addresses, p) => ({ action, detail, addresses, priority: pr[p].label, pFg: pr[p].pFg, pBg: pr[p].pBg });
+    const checklist = [
+      ck('Build-vs-buy — resolved', 'Consensus reached: integrate where off-the-shelf fits, build the wedge — code-path impact, CI/CD gating, confidence.', '§4 strategy', 'done'),
+      ck('Reconcile LOE vs. 24-month staffing', 'Done — full ~780 net eng-weeks accounted: build + harden + scale + adopt + run + buffer.', 'Remediation §A2', 'planned'),
+      ck('Value milestone every PI (6 weeks)', 'Done — stage-gated value at each 6-week PI, not just a 90-day win; re-funded per phase.', 'Remediation §A3', 'planned'),
+      ck('Add an adoption / change-management workstream + exec sponsor', 'Enablement, golden paths, incentives, observe→warn→block rollout.', '§4 org', 'must'),
+      ck('Adoption / change-management workstream + sponsor', 'Done — funded workstream, named exec sponsor, observe→warn→block trust ramp.', 'Remediation §A4', 'planned'),
+      ck('De-risk identity resolution as a P0 spike', 'Done — PI 1 timeboxed spike with measured GO/PIVOT/STOP exit on slice ground truth.', 'Remediation §A5', 'planned'),
+      ck('Role-based UI entry + search-first landing', 'Done — per-role landings; global search becomes the front door for all roles.', 'Remediation §A8', 'planned'),
+      ck('Leading indicators with targets', 'Done — 6 directional indicators with per-phase targets, reviewed each PI.', 'Remediation §A10', 'planned'),
+      ck('Publish a collector coverage map', 'What % of the estate the 4 collectors reach; plan + sequence for the gap; make "uncovered" visible.', '§2 coverage', 'should'),
+      ck('Re-baseline estimates without AI uplift', 'Present AI assist as upside / sensitivity, not the committed date.', '§3 credibility', 'should'),
+      ck('Define cold-path & conflict-resolution policy', 'Static-only edges always surface in impact; precedence matrix per attribute.', '§2 confidence', 'should'),
+      ck('Design unknown / coverage-gap UI states', 'Distinguish "no dependency" from "not yet observed" everywhere.', '§1 usability', 'nice'),
+      ck('Accessibility pass', 'Non-color cues, larger type, contrast + colorblind audit.', '§1 a11y', 'nice'),
+    ].map((c, i) => ({ ...c, n: String(i + 1) }));
+
+    const strengths = [
+      { title: 'Multi-signal + confidence is a real wedge', body: 'Fusing static/LLM with Spark/Dask/OTel and scoring every edge is genuinely beyond most off-the-shelf catalogs. Lead with it.' },
+      { title: 'Code-path-level impact', body: 'Branch-qualified edges and hot/cold path coverage answer "what could break" far better than table-level lineage. Distinctive.' },
+      { title: 'CI/CD gating closes the loop', body: 'Catching a breaking change before merge — not after an incident — is the outcome leadership actually buys. Tie funding to it.' },
+      { title: 'Altitude model handles scale conceptually', body: 'Domain → app → service → column with scoped fetch is the correct answer to "how does this not melt at 10k assets".' },
+      { title: 'The plan is unusually rigorous', body: 'Explicit dependencies, three staffing scenarios, and a stated sizing method already beat most funding pitches. Fix the consistency and it is strong.' },
+      { title: 'A working prototype de-risks the vision', body: 'Walking into the room with an interactive artifact, not slides, is a major credibility asset. Demo the impact flow live.' },
+    ];
+
+    return { toc, verdict, sevLegend, sections, checklist, strengths };
+  }
+}
+</script>
+</body>
+</html>

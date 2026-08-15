@@ -1,0 +1,288 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600;700&family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,600&display=swap" rel="stylesheet">
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+  a { color: inherit; text-decoration: none; }
+  a:hover { color: oklch(45% 0.10 252); }
+</style>
+</helmet>
+
+<div style="min-height:100vh;background:oklch(96% 0.004 262);font-family:'IBM Plex Sans',sans-serif;-webkit-font-smoothing:antialiased;color:oklch(30% 0.02 262)">
+  <div style="max-width:1060px;margin:0 auto;padding:56px 32px 90px">
+
+    <!-- header -->
+    <div style="display:flex;align-items:center;gap:12px;margin-bottom:28px">
+      <span style="width:30px;height:30px;border-radius:8px;background:oklch(55% 0.14 252);display:block"></span>
+      <span style="font:700 22px 'IBM Plex Sans';color:oklch(24% 0.02 262);letter-spacing:-0.02em">Throughline</span>
+      <span style="font:500 11px 'IBM Plex Mono';color:oklch(58% 0.02 262);border:1px solid oklch(90% 0.006 262);padding:4px 9px;border-radius:5px;margin-left:6px">Agentic layer · exploration</span>
+      <a href="Index - Throughline PRDs.dc.html" style="margin-left:auto;font:500 12px 'IBM Plex Sans';color:oklch(50% 0.02 262)">← All documents</a>
+    </div>
+
+    <h1 style="font:600 42px 'Newsreader',serif;color:oklch(20% 0.02 262);letter-spacing:-0.01em;line-height:1.1;margin:0 0 16px;max-width:24ch">From system of record to system of action</h1>
+    <p style="font:400 16.5px/1.6 'IBM Plex Sans';color:oklch(44% 0.02 262);margin:0;max-width:68ch">The graph already captures lineage, impact cones, PR diffs, attribute usage and service interactions. Agents turn that record into behavior: they review changes before merge, watch the graph at runtime, assemble the incident case file, and curate trust — each grounded in evidence the platform already holds.</p>
+
+    <!-- objective tiles -->
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin:32px 0 0">
+      <sc-for list="{{ objTiles }}" as="o" hint-placeholder-count="4">
+        <div onClick="{{ o.onClick }}" style="background:{{ o.tileBg }};border:1.5px solid {{ o.tileBorder }};border-radius:11px;padding:14px 15px;cursor:pointer" style-hover="box-shadow:0 3px 12px rgba(20,30,50,.08)">
+          <div style="display:flex;align-items:center;gap:8px">
+            <span style="width:10px;height:10px;border-radius:3px;background:{{ o.color }};flex:none"></span>
+            <span style="font:600 13px 'IBM Plex Sans';color:oklch(26% 0.02 262)">{{ o.label }}</span>
+            <span style="margin-left:auto;font:600 12px 'IBM Plex Mono';color:{{ o.color }}">{{ o.count }}</span>
+          </div>
+          <div style="font:500 10.5px 'IBM Plex Mono';color:oklch(52% 0.02 262);margin-top:8px">{{ o.metric }}</div>
+        </div>
+      </sc-for>
+    </div>
+
+    <!-- autonomy legend -->
+    <div style="display:flex;align-items:center;gap:16px;margin:18px 0 36px;flex-wrap:wrap">
+      <span style="font:600 9px 'IBM Plex Mono';letter-spacing:.12em;text-transform:uppercase;color:oklch(58% 0.02 262)">Autonomy ladder</span>
+      <span style="font:500 11px 'IBM Plex Sans';color:oklch(46% 0.02 262);display:flex;align-items:center;gap:6px"><span style="font:600 10px 'IBM Plex Mono';color:oklch(50% 0.02 262)">●○○</span>Recommends — human decides</span>
+      <span style="font:500 11px 'IBM Plex Sans';color:oklch(46% 0.02 262);display:flex;align-items:center;gap:6px"><span style="font:600 10px 'IBM Plex Mono';color:oklch(50% 0.02 262)">●●○</span>Acts with approval</span>
+      <span style="font:500 11px 'IBM Plex Sans';color:oklch(46% 0.02 262);display:flex;align-items:center;gap:6px"><span style="font:600 10px 'IBM Plex Mono';color:oklch(50% 0.02 262)">●●●</span>Autonomous, audited</span>
+      <sc-if value="{{ isFiltered }}" hint-placeholder-val="{{ false }}">
+        <span onClick="{{ clearFilter }}" style="margin-left:auto;font:600 11px 'IBM Plex Sans';color:oklch(45% 0.10 252);cursor:pointer;border:1px solid oklch(88% 0.03 252);background:#fff;border-radius:6px;padding:5px 10px">Show all objectives ×</span>
+      </sc-if>
+    </div>
+
+    <!-- featured: Ask Throughline -->
+    <div style="display:flex;gap:22px;background:linear-gradient(150deg, oklch(28% 0.05 275), oklch(34% 0.07 285));border:1px solid oklch(40% 0.06 275);border-radius:14px;padding:24px 26px;box-shadow:0 2px 10px rgba(30,25,60,.14);margin-bottom:40px">
+      <div style="flex:none;width:54px;height:54px;border-radius:13px;background:oklch(85% 0.09 280);display:flex;align-items:center;justify-content:center;font:600 22px 'IBM Plex Mono';color:oklch(32% 0.08 278)">?</div>
+      <div style="flex:1;min-width:0">
+        <div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap">
+          <span style="font:600 9px 'IBM Plex Mono';letter-spacing:.12em;text-transform:uppercase;color:oklch(85% 0.09 280)">Cross-cutting · every objective</span>
+          <span style="font:600 19px 'IBM Plex Sans';color:#fff">Ask Throughline — conversational interface over the graph</span>
+        </div>
+        <p style="font:400 13.5px/1.55 'IBM Plex Sans';color:oklch(88% 0.03 280);margin:7px 0 12px;max-width:70ch">Natural-language questions answered with graph evidence, cited back to nodes and edges: <em>"What breaks if I drop currency_code?"</em> · <em>"Why did yesterday's revenue dip?"</em> · <em>"Who owns the true source of this field, and how fresh is it?"</em> Every agent below is this same reasoning loop, given a standing job.</p>
+        <div style="display:flex;gap:7px;flex-wrap:wrap">
+          <sc-for list="{{ askTags }}" as="t" hint-placeholder-count="4">
+            <span style="font:500 10.5px 'IBM Plex Mono';color:oklch(88% 0.03 280);background:oklch(38% 0.05 278);border:1px solid oklch(48% 0.06 278);padding:3px 8px;border-radius:5px">{{ t.t }}</span>
+          </sc-for>
+        </div>
+      </div>
+    </div>
+
+    <!-- sections -->
+    <sc-for list="{{ sections }}" as="sec" hint-placeholder-count="4">
+      <div style="margin-bottom:42px">
+        <div style="display:flex;align-items:baseline;gap:12px;margin-bottom:6px">
+          <span style="width:11px;height:11px;border-radius:3px;background:{{ sec.color }};flex:none;align-self:center"></span>
+          <span style="font:600 21px 'Newsreader',serif;color:oklch(22% 0.02 262)">{{ sec.label }}</span>
+          <span style="font:600 10px 'IBM Plex Mono';color:{{ sec.color }};border:1px solid {{ sec.chipBorder }};background:{{ sec.chipBg }};padding:3px 9px;border-radius:5px">{{ sec.metric }}</span>
+        </div>
+        <p style="font:400 13px/1.55 'IBM Plex Sans';color:oklch(48% 0.02 262);margin:0 0 16px;max-width:70ch">{{ sec.desc }}</p>
+
+        <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:12px">
+          <sc-for list="{{ sec.items }}" as="e" hint-placeholder-count="3">
+            <div style="background:#fff;border:1px solid oklch(91% 0.006 262);border-left:4px solid {{ sec.color }};border-radius:12px;padding:18px 20px;box-shadow:0 1px 3px rgba(20,30,50,.05);display:flex;flex-direction:column;gap:10px">
+              <div style="display:flex;align-items:center;gap:10px">
+                <span style="flex:none;width:32px;height:32px;border-radius:8px;background:{{ sec.chipBg }};display:flex;align-items:center;justify-content:center;font:600 14px 'IBM Plex Mono';color:{{ sec.color }}">{{ e.glyph }}</span>
+                <span style="font:600 15px 'IBM Plex Sans';color:oklch(24% 0.02 262)">{{ e.name }}</span>
+                <span title="{{ e.autonomyLabel }}" style="margin-left:auto;flex:none;font:600 10px 'IBM Plex Mono';color:oklch(50% 0.02 262);border:1px solid oklch(92% 0.006 262);background:oklch(97.5% 0.003 262);border-radius:5px;padding:3px 7px;display:flex;align-items:center;gap:6px"><span>{{ e.dots }}</span><span style="font:500 9px 'IBM Plex Mono'">{{ e.autonomyLabel }}</span></span>
+              </div>
+              <p style="font:400 12.5px/1.55 'IBM Plex Sans';color:oklch(44% 0.02 262);margin:0">{{ e.body }}</p>
+              <sc-if value="{{ showSignals }}" hint-placeholder-val="{{ true }}">
+                <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
+                  <span style="font:600 8px 'IBM Plex Mono';letter-spacing:.1em;text-transform:uppercase;color:oklch(64% 0.02 262)">Uses</span>
+                  <sc-for list="{{ e.signals }}" as="s" hint-placeholder-count="3">
+                    <span style="font:500 10px 'IBM Plex Mono';color:oklch(50% 0.02 262);background:oklch(97% 0.004 262);border:1px solid oklch(93% 0.006 262);padding:2px 7px;border-radius:4px">{{ s.t }}</span>
+                  </sc-for>
+                </div>
+              </sc-if>
+              <div style="font:500 10.5px 'IBM Plex Mono';color:oklch(56% 0.02 262);border-top:1px solid oklch(95% 0.004 262);padding-top:9px;margin-top:auto"><span style="color:oklch(64% 0.02 262)">Surfaces in</span> · {{ e.surface }}</div>
+            </div>
+          </sc-for>
+        </div>
+      </div>
+    </sc-for>
+
+    <!-- build order -->
+    <sc-if value="{{ showBuildOrder }}" hint-placeholder-val="{{ true }}">
+      <div style="margin-top:8px">
+        <div style="font:600 9px 'IBM Plex Mono';letter-spacing:.14em;text-transform:uppercase;color:oklch(58% 0.02 262);margin:0 0 6px">Sequencing</div>
+        <div style="font:600 21px 'Newsreader',serif;color:oklch(22% 0.02 262);margin-bottom:6px">Build order follows the data, not the ambition</div>
+        <p style="font:400 13px/1.55 'IBM Plex Sans';color:oklch(48% 0.02 262);margin:0 0 16px;max-width:70ch">Horizon 1 agents read signals the graph already captures — they are prompt-and-plumbing work. Later horizons need new signal (payload sampling, run history) or write access to external systems.</p>
+        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px">
+          <sc-for list="{{ horizons }}" as="h" hint-placeholder-count="3">
+            <div style="background:#fff;border:1px solid oklch(91% 0.006 262);border-radius:12px;padding:16px 18px">
+              <div style="display:flex;align-items:baseline;gap:8px;margin-bottom:4px">
+                <span style="font:700 11px 'IBM Plex Mono';color:oklch(40% 0.02 262)">{{ h.num }}</span>
+                <span style="font:600 14px 'IBM Plex Sans';color:oklch(26% 0.02 262)">{{ h.label }}</span>
+              </div>
+              <div style="font:500 10px 'IBM Plex Mono';color:oklch(58% 0.02 262);margin-bottom:11px">{{ h.why }}</div>
+              <div style="display:flex;flex-direction:column;gap:6px">
+                <sc-for list="{{ h.items }}" as="i" hint-placeholder-count="4">
+                  <div style="display:flex;align-items:center;gap:8px">
+                    <span style="width:7px;height:7px;border-radius:2px;background:{{ i.color }};flex:none"></span>
+                    <span style="font:500 12px 'IBM Plex Sans';color:oklch(40% 0.02 262)">{{ i.name }}</span>
+                  </div>
+                </sc-for>
+              </div>
+            </div>
+          </sc-for>
+        </div>
+      </div>
+    </sc-if>
+
+    <!-- footer -->
+    <div style="margin-top:44px;padding-top:18px;border-top:1px solid oklch(91% 0.006 262);display:flex;align-items:baseline;gap:14px;flex-wrap:wrap">
+      <span style="font:400 12px 'IBM Plex Sans';color:oklch(52% 0.02 262)">Each experience extends an existing PRD surface — none require a new product.</span>
+      <a href="Throughline - Final.dc.html" style="margin-left:auto;font:600 12px 'IBM Plex Sans';color:oklch(45% 0.10 252)">Open the prototype →</a>
+    </div>
+
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{
+  &quot;showSignals&quot;: { &quot;editor&quot;: &quot;boolean&quot;, &quot;default&quot;: true, &quot;tsType&quot;: &quot;boolean&quot;, &quot;section&quot;: &quot;Content&quot; },
+  &quot;showBuildOrder&quot;: { &quot;editor&quot;: &quot;boolean&quot;, &quot;default&quot;: true, &quot;tsType&quot;: &quot;boolean&quot;, &quot;section&quot;: &quot;Content&quot; }
+}">
+class Component extends DCLogic {
+  state = { filter: 'all' };
+
+  data() {
+    const OBJ = [
+      { id: 'prevent', label: 'Prevent issues', metric: 'change-failure rate ↓',
+        color: 'oklch(55% 0.14 252)', chipBg: 'oklch(95.5% 0.025 252)', chipBorder: 'oklch(88% 0.05 252)',
+        desc: 'The cheapest incident is the one that never merges. These agents sit in the change path — the PR — where the CI lineage diff already knows the blast radius.' },
+      { id: 'detect', label: 'Detect faster', metric: 'time to detect ↓',
+        color: 'oklch(58% 0.12 70)', chipBg: 'oklch(96% 0.04 80)', chipBorder: 'oklch(88% 0.06 80)',
+        desc: 'The graph knows where to look and what normal looks like. Detection agents watch topology-chosen points and speak in root causes, not symptom storms.' },
+      { id: 'resolve', label: 'Resolve faster', metric: 'time to resolve ↓',
+        color: 'oklch(55% 0.15 25)', chipBg: 'oklch(96% 0.02 25)', chipBorder: 'oklch(90% 0.04 25)',
+        desc: 'Most resolution time is spent finding who, what and how far. Agents assemble the case file, run the comms, and plan the backfill from the lineage DAG.' },
+      { id: 'trust', label: 'Grow trust', metric: 'graph confidence ↑',
+        color: 'oklch(52% 0.12 155)', chipBg: 'oklch(95.5% 0.03 155)', chipBorder: 'oklch(88% 0.05 155)',
+        desc: 'Trust is earned edge by edge. These agents raise confidence scores, keep metadata honest, and shrink the surface that can break at all.' },
+    ];
+    const EXP = [
+      { obj: 'prevent', glyph: '⇄', name: 'Pre-merge Impact Reviewer', a: 3,
+        body: 'Reviews every PR that touches a schema, query or contract: column-level blast radius, breaking vs. compatible classification, and the exact consumers affected — with a required-ack checklist on breaking edges.',
+        signals: ['CI lineage diff', 'impact cone', 'ownership'], surface: 'PR checks · CI/CD diff panel' },
+      { obj: 'prevent', glyph: '⇋', name: 'Change Negotiator', a: 2,
+        body: 'For a confirmed breaking change, opens a thread with each downstream owner, proposes a migration window, tracks acknowledgements, and drafts the dual-write / dual-read compatibility plan.',
+        signals: ['impact cone', 'ownership', 'PR history'], surface: 'Impact tab · Slack / Jira' },
+      { obj: 'prevent', glyph: '§', name: 'Contract Proposer', a: 1,
+        body: 'Mines observed attribute usage to find high-traffic edges with no contract, then drafts one — the fields actually consumed, the freshness actually observed, a breaking-change policy — for both owners to sign.',
+        signals: ['attribute usage', 'runtime traces', 'lineage graph'], surface: 'Dataset detail panel' },
+      { obj: 'prevent', glyph: '≈', name: 'Semantic Change Simulator', a: 1,
+        body: 'Goes beyond schema diffs: replays sampled production payloads through the changed transformation and diffs the values — catching unit, currency and enum shifts that type checks pass silently.',
+        signals: ['sampled payloads', 'transform code', 'PR diff'], surface: 'PR checks' },
+
+      { obj: 'detect', glyph: '◉', name: 'Lineage-placed Sentinels', a: 3,
+        body: 'Places freshness, volume and distribution monitors at graph choke points — the few edges whose failure covers the most consumers — and re-places them as topology changes, instead of hand-configured per table.',
+        signals: ['graph topology', 'runtime traces'], surface: 'Graph overlay' },
+      { obj: 'detect', glyph: '⌖', name: 'Root-only Alerting', a: 3,
+        body: 'When a break cascades, correlates anomalies along the lineage cone and opens one incident at the root — suppressing the forty duplicate alerts downstream teams would otherwise chase.',
+        signals: ['anomaly stream', 'lineage cone'], surface: 'Incidents feed' },
+      { obj: 'detect', glyph: '∅', name: 'Silent-edge Watch', a: 3,
+        body: 'Learns each edge\u2019s flow rhythm from service interactions and flags edges that quietly stopped — the pipeline failing softly for three days with no error thrown anywhere.',
+        signals: ['service interactions', 'edge baselines'], surface: 'Graph overlay · daily digest' },
+
+      { obj: 'resolve', glyph: '↯', name: 'Root-cause Triage', a: 2,
+        body: 'On incident, walks the upstream cone and ranks probable causes — the deploy, PR or config change nearest the anomaly onset — then pages the owning team with the case file already assembled.',
+        signals: ['lineage cone', 'PR / deploy history', 'incident timeline'], surface: 'Incident view' },
+      { obj: 'resolve', glyph: '⇢', name: 'Blast-radius Communicator', a: 2,
+        body: 'Drafts per-consumer notifications the moment impact is confirmed — which dashboards, models and reports are affected, how badly, the ETA — and keeps every one updated until recovery.',
+        signals: ['impact cone', 'consumer registry', 'incident state'], surface: 'Incident view · email / Slack' },
+      { obj: 'resolve', glyph: '⟳', name: 'Backfill Planner', a: 2,
+        body: 'Once the fix lands, computes the minimal reprocessing DAG — exactly which partitions, in which order — sequences the backfill, and verifies each downstream recovered before closing the incident.',
+        signals: ['lineage DAG', 'partition metadata', 'run history'], surface: 'Incident view' },
+
+      { obj: 'trust', glyph: '✓', name: 'Confidence Curator', a: 3,
+        body: 'Hunts the lowest-confidence edges that consumers actually rely on, verifies them against runtime observation — and when it can\u2019t, asks the owner one targeted yes/no question. Confidence rises edge by edge.',
+        signals: ['confidence scores', 'runtime traces', 'usage'], surface: 'Provenance tab' },
+      { obj: 'trust', glyph: '✎', name: 'Steward Agent', a: 1,
+        body: 'Fills metadata gaps from code context — ownership, descriptions, PII classification — and flags claims the graph contradicts, like a \u201cdeprecated\u201d dataset with twelve live consumers.',
+        signals: ['code context', 'lineage graph', 'usage'], surface: 'Dataset detail panel' },
+      { obj: 'trust', glyph: '◆', name: 'Trust Certifier', a: 3,
+        body: 'A continuous per-dataset scorecard — lineage completeness, contract coverage, incident history, freshness SLO — that certifies and, crucially, de-certifies with stated reasons.',
+        signals: ['all graph signals', 'incident history'], surface: 'Badges across the UI' },
+      { obj: 'trust', glyph: '⌫', name: 'Deprecation Sweeper', a: 2,
+        body: 'Finds columns and datasets with zero downstream reads over a window and runs the deprecation campaign — notice, grace period, removal PR — shrinking the surface that can break at all.',
+        signals: ['attribute usage', 'lineage graph'], surface: 'Daily digest · removal PRs' },
+    ];
+    return { OBJ, EXP };
+  }
+
+  renderVals() {
+    const { OBJ, EXP } = this.data();
+    const filter = this.state.filter;
+    const showSignals = this.props.showSignals ?? true;
+    const showBuildOrder = this.props.showBuildOrder ?? true;
+    const dots = ['●○○', '●●○', '●●●'];
+    const aLabel = ['Recommends', 'Acts w/ approval', 'Autonomous'];
+    const colorOf = id => OBJ.find(o => o.id === id).color;
+
+    const objTiles = OBJ.map(o => {
+      const active = filter === o.id;
+      return {
+        label: o.label, metric: o.metric, color: o.color,
+        count: String(EXP.filter(e => e.obj === o.id).length),
+        tileBg: active ? o.chipBg : '#fff',
+        tileBorder: active ? o.color : 'oklch(91% 0.006 262)',
+        onClick: () => this.setState({ filter: active ? 'all' : o.id }),
+      };
+    });
+
+    const sections = OBJ.filter(o => filter === 'all' || filter === o.id).map(o => ({
+      label: o.label, metric: o.metric, desc: o.desc,
+      color: o.color, chipBg: o.chipBg, chipBorder: o.chipBorder,
+      items: EXP.filter(e => e.obj === o.id).map(e => ({
+        glyph: e.glyph, name: e.name, body: e.body, surface: e.surface,
+        dots: dots[e.a - 1], autonomyLabel: aLabel[e.a - 1],
+        signals: e.signals.map(t => ({ t })),
+      })),
+    }));
+
+    const horizons = [
+      { num: 'H1', label: 'Now', why: 'Signal already in the graph — prompt & plumbing',
+        items: [
+          { name: 'Pre-merge Impact Reviewer', color: colorOf('prevent') },
+          { name: 'Root-only Alerting', color: colorOf('detect') },
+          { name: 'Blast-radius Communicator', color: colorOf('resolve') },
+          { name: 'Confidence Curator', color: colorOf('trust') },
+          { name: 'Ask Throughline (read-only)', color: 'oklch(45% 0.07 280)' },
+        ] },
+      { num: 'H2', label: 'Next', why: 'Needs baselines, scoring & incident plumbing',
+        items: [
+          { name: 'Lineage-placed Sentinels', color: colorOf('detect') },
+          { name: 'Silent-edge Watch', color: colorOf('detect') },
+          { name: 'Root-cause Triage', color: colorOf('resolve') },
+          { name: 'Trust Certifier', color: colorOf('trust') },
+          { name: 'Steward Agent', color: colorOf('trust') },
+        ] },
+      { num: 'H3', label: 'Later', why: 'Needs payload sampling or write access to systems',
+        items: [
+          { name: 'Change Negotiator', color: colorOf('prevent') },
+          { name: 'Semantic Change Simulator', color: colorOf('prevent') },
+          { name: 'Contract Proposer', color: colorOf('prevent') },
+          { name: 'Backfill Planner', color: colorOf('resolve') },
+          { name: 'Deprecation Sweeper', color: colorOf('trust') },
+        ] },
+    ];
+
+    return {
+      objTiles, sections, horizons, showSignals, showBuildOrder,
+      isFiltered: filter !== 'all',
+      clearFilter: () => this.setState({ filter: 'all' }),
+      askTags: [{ t: 'grounded answers' }, { t: 'graph citations' }, { t: 'impact queries' }, { t: 'why-did-this-change' }],
+    };
+  }
+}
+</script>
+</body>
+</html>

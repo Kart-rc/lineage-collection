@@ -1,0 +1,644 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,600&display=swap" rel="stylesheet">
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+  a { color: inherit; }
+  ::-webkit-scrollbar { width: 10px; height: 10px; }
+  ::-webkit-scrollbar-thumb { background: oklch(88% 0.006 262); border-radius: 6px; border: 2px solid transparent; background-clip: padding-box; }
+  @media print { .no-print { display: none !important; } .page { box-shadow: none !important; margin: 0 !important; } body { background: #fff !important; } }
+</style>
+</helmet>
+
+<div style="background:oklch(95.5% 0.004 262);min-height:100vh;font-family:'IBM Plex Sans',sans-serif;-webkit-font-smoothing:antialiased;color:oklch(30% 0.02 262)">
+  <div style="max-width:1280px;margin:0 auto;display:flex;gap:36px;padding:40px 28px 80px;align-items:flex-start">
+
+    <!-- TOC -->
+    <aside class="no-print" style="flex:none;width:200px;position:sticky;top:40px;display:flex;flex-direction:column;gap:3px">
+      <div style="display:flex;align-items:center;gap:9px;margin-bottom:14px">
+        <span style="width:22px;height:22px;border-radius:6px;background:oklch(48% 0.10 220);display:block"></span>
+        <span style="font:700 15px 'IBM Plex Sans';color:oklch(26% 0.02 262);letter-spacing:-0.01em">Throughline</span>
+      </div>
+      <div style="font:600 8.5px 'IBM Plex Mono';letter-spacing:.12em;text-transform:uppercase;color:oklch(60% 0.02 262);margin:0 0 8px 2px">Architecture &amp; Scale</div>
+      <sc-for list="{{ toc }}" as="t" hint-placeholder-count="8">
+        <a href="{{ t.href }}" style="display:flex;gap:9px;padding:5px 8px;border-radius:6px;text-decoration:none;font:500 12px 'IBM Plex Sans';color:oklch(46% 0.02 262)" style-hover="background:oklch(92% 0.01 262)"><span style="font:600 10px 'IBM Plex Mono';color:oklch(68% 0.02 262);width:14px;flex:none">{{ t.n }}</span><span>{{ t.label }}</span></a>
+      </sc-for>
+      <div style="margin-top:16px;padding-top:14px;border-top:1px solid oklch(90% 0.006 262);display:flex;flex-direction:column;gap:6px">
+        <div style="font:600 8.5px 'IBM Plex Mono';letter-spacing:.12em;text-transform:uppercase;color:oklch(60% 0.02 262);margin:0 0 2px 2px">Suite</div>
+        <a href="Index - Throughline PRDs.dc.html" style="font:500 11.5px 'IBM Plex Sans';color:oklch(50% 0.02 262);text-decoration:none;padding:3px 8px">Overview</a>
+        <a href="PRD 1 - Lineage Collection.dc.html" style="font:500 11.5px 'IBM Plex Sans';color:oklch(50% 0.02 262);text-decoration:none;padding:3px 8px">PRD 1 · Collection</a>
+        <a href="PRD 2 - Impact Analysis.dc.html" style="font:500 11.5px 'IBM Plex Sans';color:oklch(50% 0.02 262);text-decoration:none;padding:3px 8px">PRD 2 · Impact</a>
+        <a href="PRD 3 - UI Representation.dc.html" style="font:500 11.5px 'IBM Plex Sans';color:oklch(50% 0.02 262);text-decoration:none;padding:3px 8px">PRD 3 · UI/UX</a>
+        <a href="Roadmap & LOE.dc.html" style="font:500 11.5px 'IBM Plex Sans';color:oklch(50% 0.02 262);text-decoration:none;padding:3px 8px">Roadmap &amp; LOE</a>
+      </div>
+    </aside>
+
+    <!-- PAGE -->
+    <main class="page" style="flex:1;min-width:0;max-width:980px;background:#fff;border:1px solid oklch(91% 0.006 262);border-radius:3px;box-shadow:0 1px 3px rgba(20,30,50,.06);padding:56px 56px 72px">
+
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:24px">
+        <span style="font:600 9px 'IBM Plex Mono';letter-spacing:.14em;text-transform:uppercase;color:#fff;background:oklch(48% 0.10 220);padding:4px 9px;border-radius:4px">Technical Reference</span>
+        <span style="font:500 11px 'IBM Plex Mono';color:oklch(58% 0.02 262)">v0.9 · Draft for review</span>
+        <span style="font:500 11px 'IBM Plex Mono';color:oklch(58% 0.02 262);margin-left:auto">Owner: Data Platform</span>
+      </div>
+      <h1 style="font:600 38px 'Newsreader',serif;color:oklch(22% 0.02 262);letter-spacing:-0.01em;line-height:1.1;margin:0 0 12px">Architecture &amp; Scale</h1>
+      <p style="font:400 16px/1.6 'IBM Plex Sans';color:oklch(45% 0.02 262);margin:0 0 4px;max-width:64ch">The system design behind the three PRDs: services and their APIs, the end-to-end process flows, the entity &amp; API schemas, and a back-of-the-envelope sizing for tens of thousands of services across domains.</p>
+
+      <!-- stat band -->
+      <div style="display:flex;gap:10px;margin:30px 0 8px;flex-wrap:wrap">
+        <sc-for list="{{ statBand }}" as="s" hint-placeholder-count="4">
+          <div style="flex:1;min-width:150px;border:1px solid oklch(92% 0.006 262);border-radius:10px;padding:13px 15px;border-top:3px solid {{ s.color }}">
+            <div style="font:700 20px 'IBM Plex Sans';color:oklch(28% 0.02 262)">{{ s.value }}</div>
+            <div style="font:500 10px 'IBM Plex Mono';letter-spacing:.04em;text-transform:uppercase;color:oklch(58% 0.02 262);margin-top:3px">{{ s.label }}</div>
+          </div>
+        </sc-for>
+      </div>
+
+      <!-- 1 SYSTEM ARCHITECTURE -->
+      <h2 id="s1" style="font:600 21px 'Newsreader',serif;color:oklch(24% 0.02 262);margin:42px 0 6px"><span style="font:600 13px 'IBM Plex Mono';color:oklch(48% 0.12 220);margin-right:10px">01</span>System architecture</h2>
+      <p style="font:400 13.5px/1.6 'IBM Plex Sans';color:oklch(44% 0.02 262);margin:0 0 16px;max-width:64ch">Four planes: <strong style="font-weight:600">collection</strong> (signals in), <strong style="font-weight:600">graph core</strong> (reconcile, store, score), <strong style="font-weight:600">serving</strong> (impact, query APIs), and <strong style="font-weight:600">experience</strong> (the four-lens UI). Each box is an independently scalable service.</p>
+      <div style="border:1px solid oklch(91% 0.006 262);border-radius:11px;padding:20px;background:oklch(98.6% 0.003 262);display:flex;flex-direction:column;gap:12px">
+        <sc-for list="{{ archPlanes }}" as="p" hint-placeholder-count="4">
+          <div style="display:flex;align-items:stretch;gap:12px">
+            <div style="flex:none;width:96px;display:flex;flex-direction:column;justify-content:center;background:{{ p.bg }};border:1px solid {{ p.border }};border-radius:9px;padding:9px 10px">
+              <span style="font:700 8px 'IBM Plex Mono';letter-spacing:.06em;text-transform:uppercase;color:{{ p.fg }}">{{ p.tag }}</span>
+              <span style="font:600 11px 'IBM Plex Sans';color:oklch(30% 0.02 262);margin-top:3px;line-height:1.2">{{ p.name }}</span>
+            </div>
+            <div style="flex:1;display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+              <sc-for list="{{ p.boxes }}" as="b" hint-placeholder-count="4">
+                <div style="flex:1;min-width:120px;background:#fff;border:1px solid oklch(91% 0.006 262);border-radius:8px;padding:9px 11px">
+                  <div style="font:600 11px 'IBM Plex Sans';color:oklch(32% 0.02 262)">{{ b.name }}</div>
+                  <div style="font:400 9px/1.4 'IBM Plex Mono';color:oklch(58% 0.02 262);margin-top:2px">{{ b.tech }}</div>
+                </div>
+              </sc-for>
+            </div>
+          </div>
+        </sc-for>
+        <div style="display:flex;align-items:center;gap:10px;padding-top:4px">
+          <span style="font:600 8px 'IBM Plex Mono';letter-spacing:.06em;text-transform:uppercase;color:oklch(60% 0.02 262)">Backbone</span>
+          <span style="flex:1;height:1px;background:oklch(92% 0.006 262)"></span>
+          <span style="font:500 10px 'IBM Plex Mono';color:oklch(50% 0.02 262)">Event bus (Kafka) · Object store (S3) · Graph DB · Search index · Blob/metrics</span>
+        </div>
+      </div>
+
+      <!-- 2 PROCESS FLOWS -->
+      <h2 id="s2" style="font:600 21px 'Newsreader',serif;color:oklch(24% 0.02 262);margin:44px 0 6px"><span style="font:600 13px 'IBM Plex Mono';color:oklch(48% 0.12 220);margin-right:10px">02</span>Process flows</h2>
+      <p style="font:400 13.5px/1.6 'IBM Plex Sans';color:oklch(44% 0.02 262);margin:0 0 16px;max-width:64ch">Three core flows move data through the system. Each is a pipeline of stages with a clear trigger and output.</p>
+      <div style="display:flex;flex-direction:column;gap:16px">
+        <sc-for list="{{ flows }}" as="f" hint-placeholder-count="3">
+          <div style="border:1px solid oklch(91% 0.006 262);border-radius:11px;padding:16px 18px;border-left:4px solid {{ f.color }}">
+            <div style="display:flex;align-items:center;gap:10px;margin-bottom:13px">
+              <span style="font:600 13px 'IBM Plex Sans';color:oklch(28% 0.02 262)">{{ f.name }}</span>
+              <span style="font:500 9px 'IBM Plex Mono';color:{{ f.color }};background:{{ f.bg }};padding:3px 8px;border-radius:4px">{{ f.trigger }}</span>
+              <span style="font:500 10px 'IBM Plex Mono';color:oklch(58% 0.02 262);margin-left:auto">{{ f.cadence }}</span>
+            </div>
+            <div style="display:flex;align-items:stretch;gap:0;flex-wrap:wrap">
+              <sc-for list="{{ f.stages }}" as="st" hint-placeholder-count="5">
+                <div style="display:flex;align-items:center;gap:0">
+                  <div style="background:oklch(98.5% 0.004 262);border:1px solid oklch(92% 0.006 262);border-radius:8px;padding:8px 11px;min-width:96px">
+                    <div style="font:600 10.5px 'IBM Plex Sans';color:oklch(34% 0.02 262)">{{ st.name }}</div>
+                    <div style="font:400 8.5px/1.3 'IBM Plex Mono';color:oklch(60% 0.02 262);margin-top:2px">{{ st.detail }}</div>
+                  </div>
+                  <span style="font:400 13px 'IBM Plex Sans';color:{{ f.color }};margin:0 7px">{{ st.arrow }}</span>
+                </div>
+              </sc-for>
+            </div>
+          </div>
+        </sc-for>
+      </div>
+
+      <!-- 3 API ENDPOINTS -->
+      <h2 id="s3" style="font:600 21px 'Newsreader',serif;color:oklch(24% 0.02 262);margin:44px 0 6px"><span style="font:600 13px 'IBM Plex Mono';color:oklch(48% 0.12 220);margin-right:10px">03</span>API endpoints</h2>
+      <p style="font:400 13.5px/1.6 'IBM Plex Sans';color:oklch(44% 0.02 262);margin:0 0 16px;max-width:64ch">A REST + GraphQL surface over the graph core. Ingestion is write-heavy (OpenLineage-compatible); query and impact are read-heavy and cached. Click any endpoint for its inputs, outputs and an example exchange.</p>
+      <div style="display:flex;flex-direction:column;gap:14px">
+        <sc-for list="{{ apiGroups }}" as="g" hint-placeholder-count="4">
+          <div>
+            <div style="display:flex;align-items:center;gap:9px;margin-bottom:8px">
+              <span style="font:600 9px 'IBM Plex Mono';letter-spacing:.08em;text-transform:uppercase;color:{{ g.color }}">{{ g.name }}</span>
+              <span style="flex:1;height:1px;background:oklch(93% 0.006 262)"></span>
+            </div>
+            <div style="display:flex;flex-direction:column;gap:7px">
+              <sc-for list="{{ g.rows }}" as="e" hint-placeholder-count="3">
+                <div style="border:1px solid {{ e.cardBorder }};border-radius:9px;overflow:hidden">
+                  <div onClick="{{ e.onToggle }}" style="display:flex;align-items:center;gap:11px;padding:9px 12px;cursor:pointer;background:{{ e.headBg }}">
+                    <span style="font:600 8px 'IBM Plex Mono';color:#fff;background:{{ e.verbColor }};padding:3px 7px;border-radius:3px;flex:none;width:48px;text-align:center">{{ e.verb }}</span>
+                    <span style="font:600 11px 'IBM Plex Mono';color:oklch(30% 0.02 262);flex:none;width:206px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ e.path }}</span>
+                    <span style="font:400 11px/1.4 'IBM Plex Sans';color:oklch(48% 0.02 262);flex:1">{{ e.desc }}</span>
+                    <span style="font:400 11px 'IBM Plex Mono';color:oklch(64% 0.02 262);flex:none">{{ e.caret }}</span>
+                  </div>
+                  <sc-if value="{{ e.open }}" hint-placeholder-val="{{ true }}">
+                    <div style="border-top:1px solid oklch(94% 0.006 262);padding:14px 14px 16px;background:oklch(98.8% 0.003 262)">
+                      <div style="display:flex;align-items:center;gap:7px;margin-bottom:13px">
+                        <span style="font:600 8px 'IBM Plex Mono';letter-spacing:.06em;text-transform:uppercase;color:oklch(60% 0.02 262)">Used by</span>
+                        <span style="font:500 10.5px 'IBM Plex Sans';color:oklch(42% 0.02 262)">{{ e.usedBy }}</span>
+                      </div>
+                      <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">
+                        <div>
+                          <div style="font:600 8.5px 'IBM Plex Mono';letter-spacing:.06em;text-transform:uppercase;color:{{ e.verbColor }};margin-bottom:7px">Input · {{ e.inKind }}</div>
+                          <div style="display:flex;flex-direction:column;gap:4px;margin-bottom:10px">
+                            <sc-for list="{{ e.inDef }}" as="d" hint-placeholder-count="3">
+                              <div style="display:flex;gap:8px;align-items:baseline">
+                                <span style="font:600 10px 'IBM Plex Mono';color:oklch(36% 0.02 262);flex:none">{{ d.f }}</span>
+                                <span style="font:400 9.5px/1.4 'IBM Plex Sans';color:oklch(54% 0.02 262)">{{ d.t }}</span>
+                              </div>
+                            </sc-for>
+                          </div>
+                          <div style="background:oklch(22% 0.02 262);border-radius:8px;padding:11px 12px;overflow:auto">
+                            <div style="font:500 8px 'IBM Plex Mono';color:oklch(68% 0.02 262);margin-bottom:6px">{{ e.inExLabel }}</div>
+                            <pre style="margin:0;font:400 10px/1.55 'IBM Plex Mono';color:oklch(86% 0.02 262);white-space:pre">{{ e.inEx }}</pre>
+                          </div>
+                        </div>
+                        <div>
+                          <div style="font:600 8.5px 'IBM Plex Mono';letter-spacing:.06em;text-transform:uppercase;color:oklch(52% 0.10 155);margin-bottom:7px">Output · {{ e.outKind }}</div>
+                          <div style="display:flex;flex-direction:column;gap:4px;margin-bottom:10px">
+                            <sc-for list="{{ e.outDef }}" as="d" hint-placeholder-count="3">
+                              <div style="display:flex;gap:8px;align-items:baseline">
+                                <span style="font:600 10px 'IBM Plex Mono';color:oklch(36% 0.02 262);flex:none">{{ d.f }}</span>
+                                <span style="font:400 9.5px/1.4 'IBM Plex Sans';color:oklch(54% 0.02 262)">{{ d.t }}</span>
+                              </div>
+                            </sc-for>
+                          </div>
+                          <div style="background:oklch(22% 0.02 262);border-radius:8px;padding:11px 12px;overflow:auto">
+                            <div style="font:500 8px 'IBM Plex Mono';color:oklch(68% 0.02 262);margin-bottom:6px">{{ e.outExLabel }}</div>
+                            <pre style="margin:0;font:400 10px/1.55 'IBM Plex Mono';color:oklch(86% 0.02 262);white-space:pre">{{ e.outEx }}</pre>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </sc-if>
+                </div>
+              </sc-for>
+            </div>
+          </div>
+        </sc-for>
+      </div>
+
+      <!-- 4 SCHEMAS -->
+      <h2 id="s4" style="font:600 21px 'Newsreader',serif;color:oklch(24% 0.02 262);margin:44px 0 6px"><span style="font:600 13px 'IBM Plex Mono';color:oklch(48% 0.12 220);margin-right:10px">04</span>Schemas</h2>
+      <p style="font:400 13.5px/1.6 'IBM Plex Sans';color:oklch(44% 0.02 262);margin:0 0 16px;max-width:64ch">The graph entity schema (canonical store) and the key API payloads. Shown as illustrative JSON; the wire format is OpenLineage-compatible for ingestion.</p>
+      <div style="display:flex;gap:6px;margin-bottom:14px">
+        <sc-for list="{{ schemaTabs }}" as="t" hint-placeholder-count="4">
+          <span onClick="{{ t.onClick }}" style="font:600 11px 'IBM Plex Mono';color:{{ t.fg }};background:{{ t.bg }};border:1px solid {{ t.border }};padding:7px 13px;border-radius:7px;cursor:pointer">{{ t.label }}</span>
+        </sc-for>
+      </div>
+      <div style="background:oklch(22% 0.02 262);border-radius:11px;padding:18px 20px;overflow:auto">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:11px">
+          <span style="width:9px;height:9px;border-radius:50%;background:oklch(60% 0.13 25)"></span>
+          <span style="width:9px;height:9px;border-radius:50%;background:oklch(72% 0.13 75)"></span>
+          <span style="width:9px;height:9px;border-radius:50%;background:oklch(62% 0.12 155)"></span>
+          <span style="font:500 10px 'IBM Plex Mono';color:oklch(72% 0.02 262);margin-left:6px">{{ schemaTitle }}</span>
+        </div>
+        <pre style="margin:0;font:400 12px/1.65 'IBM Plex Mono';color:oklch(86% 0.02 262);white-space:pre;word-break:normal">{{ schemaBody }}</pre>
+      </div>
+
+      <!-- 5 BACK OF ENVELOPE -->
+      <h2 id="s5" style="font:600 21px 'Newsreader',serif;color:oklch(24% 0.02 262);margin:44px 0 6px"><span style="font:600 13px 'IBM Plex Mono';color:oklch(48% 0.12 220);margin-right:10px">05</span>Back-of-the-envelope: scale</h2>
+      <p style="font:400 13.5px/1.6 'IBM Plex Sans';color:oklch(44% 0.02 262);margin:0 0 14px;max-width:64ch">Sizing for the steady state. Drag the slider to scale the org; everything recomputes from a few assumptions stated below.</p>
+
+      <div style="border:1px solid oklch(91% 0.006 262);border-radius:11px;overflow:hidden">
+        <div style="display:flex;align-items:center;gap:14px;padding:15px 18px;background:oklch(98.6% 0.003 262);border-bottom:1px solid oklch(92% 0.006 262)">
+          <span style="font:600 10px 'IBM Plex Mono';letter-spacing:.06em;text-transform:uppercase;color:oklch(50% 0.02 262);flex:none">Services</span>
+          <input type="range" min="1000" max="50000" step="1000" value="{{ svcCount }}" onInput="{{ onScale }}" style="flex:1;accent-color:oklch(48% 0.12 220)" />
+          <span style="font:700 18px 'IBM Plex Sans';color:oklch(30% 0.02 262);flex:none;width:96px;text-align:right">{{ svcCountStr }}</span>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:0">
+          <sc-for list="{{ scaleStats }}" as="s" hint-placeholder-count="6">
+            <div style="padding:15px 18px;border-right:1px solid oklch(95% 0.004 262);border-bottom:1px solid oklch(95% 0.004 262)">
+              <div style="font:600 8.5px 'IBM Plex Mono';letter-spacing:.06em;text-transform:uppercase;color:oklch(60% 0.02 262)">{{ s.label }}</div>
+              <div style="font:700 19px 'IBM Plex Sans';color:{{ s.color }};margin-top:5px">{{ s.value }}</div>
+              <div style="font:400 9.5px/1.4 'IBM Plex Mono';color:oklch(58% 0.02 262);margin-top:3px">{{ s.note }}</div>
+            </div>
+          </sc-for>
+        </div>
+      </div>
+      <div style="margin-top:13px;border-left:3px solid oklch(48% 0.12 220);background:oklch(98.5% 0.01 220);padding:12px 15px;border-radius:0 8px 8px 0">
+        <span style="font:600 11px 'IBM Plex Sans';color:oklch(42% 0.10 220)">Assumptions.</span>
+        <span style="font:400 12px/1.6 'IBM Plex Sans';color:oklch(44% 0.02 262)"> {{ assumptionLine }}</span>
+      </div>
+
+      <!-- 6 SCALING STRATEGY -->
+      <h2 id="s6" style="font:600 21px 'Newsreader',serif;color:oklch(24% 0.02 262);margin:44px 0 12px"><span style="font:600 13px 'IBM Plex Mono';color:oklch(48% 0.12 220);margin-right:10px">06</span>Scaling strategy</h2>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:11px">
+        <sc-for list="{{ scaleStrategy }}" as="s" hint-placeholder-count="6">
+          <div style="border:1px solid oklch(92% 0.006 262);border-radius:10px;padding:14px 16px">
+            <div style="display:flex;align-items:center;gap:8px"><span style="font:600 11px 'IBM Plex Mono';color:{{ s.color }}">{{ s.glyph }}</span><span style="font:600 12.5px 'IBM Plex Sans';color:oklch(30% 0.02 262)">{{ s.title }}</span></div>
+            <div style="font:400 12px/1.55 'IBM Plex Sans';color:oklch(48% 0.02 262);margin-top:6px">{{ s.body }}</div>
+          </div>
+        </sc-for>
+      </div>
+
+      <!-- 7 BOTTLENECKS -->
+      <h2 id="s7" style="font:600 21px 'Newsreader',serif;color:oklch(24% 0.02 262);margin:44px 0 12px"><span style="font:600 13px 'IBM Plex Mono';color:oklch(48% 0.12 220);margin-right:10px">07</span>Bottlenecks &amp; mitigations</h2>
+      <table style="width:100%;border-collapse:collapse;font-family:'IBM Plex Sans'">
+        <thead><tr style="background:oklch(97% 0.004 262)">
+          <th style="text-align:left;font:600 8.5px 'IBM Plex Mono';letter-spacing:.05em;text-transform:uppercase;color:oklch(58% 0.02 262);padding:9px 11px;border-bottom:1px solid oklch(91% 0.006 262)">At 10k+ scale</th>
+          <th style="text-align:left;font:600 8.5px 'IBM Plex Mono';letter-spacing:.05em;text-transform:uppercase;color:oklch(58% 0.02 262);padding:9px 11px;border-bottom:1px solid oklch(91% 0.006 262)">Pressure</th>
+          <th style="text-align:left;font:600 8.5px 'IBM Plex Mono';letter-spacing:.05em;text-transform:uppercase;color:oklch(58% 0.02 262);padding:9px 11px;border-bottom:1px solid oklch(91% 0.006 262)">Mitigation</th>
+        </tr></thead>
+        <tbody>
+          <sc-for list="{{ bottlenecks }}" as="b" hint-placeholder-count="5">
+            <tr style="border-bottom:1px solid oklch(95.5% 0.004 262)">
+              <td style="padding:9px 11px;font:600 11.5px 'IBM Plex Sans';color:oklch(34% 0.02 262);vertical-align:top">{{ b.area }}</td>
+              <td style="padding:9px 11px;font:400 11.5px/1.5 'IBM Plex Sans';color:oklch(48% 0.02 262);vertical-align:top">{{ b.pressure }}</td>
+              <td style="padding:9px 11px;font:400 11.5px/1.5 'IBM Plex Sans';color:oklch(44% 0.02 262);vertical-align:top">{{ b.fix }}</td>
+            </tr>
+          </sc-for>
+        </tbody>
+      </table>
+
+      <div style="margin-top:44px;padding-top:18px;border-top:1px solid oklch(91% 0.006 262);display:flex;align-items:center;gap:10px">
+        <a href="Index - Throughline PRDs.dc.html" style="font:600 11.5px 'IBM Plex Sans';color:oklch(50% 0.02 262);text-decoration:none">← Overview</a>
+        <span style="font:500 11px 'IBM Plex Mono';color:oklch(60% 0.02 262);margin:0 auto">Throughline · Architecture &amp; Scale</span>
+        <a href="Roadmap & LOE.dc.html" style="font:600 11.5px 'IBM Plex Sans';color:oklch(50% 0.10 70);text-decoration:none">Roadmap &amp; LOE →</a>
+      </div>
+    </main>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+class Component extends DCLogic {
+  state = { schema: 0, svc: 10000, api: '0-0' };
+
+  fmt(n) {
+    if (n >= 1e9) return (n / 1e9).toFixed(n >= 1e10 ? 0 : 1) + 'B';
+    if (n >= 1e6) return (n / 1e6).toFixed(n >= 1e7 ? 0 : 1) + 'M';
+    if (n >= 1e3) return (n / 1e3).toFixed(n >= 1e4 ? 0 : 1) + 'K';
+    return String(Math.round(n));
+  }
+
+  schemas() {
+    return [
+      { label: 'Entity', title: 'graph/entity.json', body:
+`{
+  "id": "svc:orders-svc",          // canonical, collector-agnostic
+  "kind": "service",               // domain|app|service|dataset|job|column
+  "name": "Orders Service",
+  "parent": "app:order-management",
+  "domain": "ORD",
+  "owner": "orders-team",
+  "attrs": {
+    "role": "service",
+    "endpoints": 14,
+    "classification": null
+  },
+  "confidence": 0.94,
+  "signals": ["static", "otel"],
+  "firstSeenAt": "2026-01-12T09:00:00Z",
+  "lastObservedAt": "2026-06-20T14:32:00Z"
+}` },
+      { label: 'Edge', title: 'graph/edge.json', body:
+`{
+  "id": "edge:ce91a2f7",
+  "source": "col:customer_raw.email",
+  "target": "col:cust_360.email_hash",
+  "level": "column",               // system|dataset|column
+  "transform": "sha256(lower(trim($)))",
+  "channel": "batch",              // batch|stream|rest|graphql|grpc|async
+  "path": {
+    "pathId": "rev_model#dailyRollup",
+    "guard": "run.mode == 'incremental'",
+    "codeRef": "revenue.sql:48",
+    "frequency": "hot"             // hot|warm|cold|never
+  },
+  "confidence": 0.91,
+  "signals": ["static", "llm", "spark"],
+  "lastObservedAt": "2026-06-20T06:14:00Z"
+}` },
+      { label: 'Ingest', title: 'POST /v1/lineage/events  (OpenLineage-compatible)', body:
+`{
+  "eventType": "COMPLETE",
+  "eventTime": "2026-06-20T06:14:00Z",
+  "run":   { "runId": "a1b2...", "facets": { "engine": "spark" } },
+  "job":   { "namespace": "rev_model", "name": "dailyRollup" },
+  "inputs":  [
+    { "namespace": "s3.landing", "name": "customer_raw",
+      "facets": { "schema": { "fields": [ { "name": "email", "type": "string" } ] } } }
+  ],
+  "outputs": [
+    { "namespace": "s3.files", "name": "cust_360",
+      "facets": { "columnLineage": { "fields": {
+        "email_hash": { "inputFields": [
+          { "namespace": "s3.landing", "name": "customer_raw", "field": "email" } ] } } } } }
+  ]
+}` },
+      { label: 'Impact', title: 'POST /v1/impact/simulate  →  200 OK', body:
+`// request
+{
+  "target": "col:customer_raw.email",
+  "change": { "type": "type_change", "from": "string", "to": "varchar(320)" },
+  "depth": "downstream",
+  "minConfidence": 0.65
+}
+// response
+{
+  "summary": { "services": 5, "datasets": 3, "breaking": 2 },
+  "confirmed": [
+    { "asset": "cust_360.parquet", "severity": "breaking",
+      "reason": "email_hash length contract", "owner": "data-platform",
+      "viaPaths": ["rev_model#dailyRollup"] }
+  ],
+  "possible": [
+    { "asset": "SFTP->Partner", "severity": "breaking",
+      "reason": "fixed-width export", "minPathFrequency": "cold" }
+  ],
+  "coverage": { "pathsConfirmed": 9, "pathsTotal": 12 }
+}` },
+    ];
+  }
+
+  renderVals() {
+    const toc = [
+      ['01', 'Architecture', '#s1'], ['02', 'Process flows', '#s2'], ['03', 'API endpoints', '#s3'], ['04', 'Schemas', '#s4'],
+      ['05', 'Scale estimate', '#s5'], ['06', 'Scaling strategy', '#s6'], ['07', 'Bottlenecks', '#s7'],
+    ].map(([n, label, href]) => ({ n, label, href }));
+
+    const C = { collect: 'oklch(55% 0.14 252)', core: 'oklch(55% 0.13 300)', serve: 'oklch(57% 0.16 35)', exp: 'oklch(48% 0.12 190)' };
+
+    const statBand = [
+      { value: '4 planes', label: 'Collection · core · serve · UI', color: C.collect },
+      { value: 'REST + GraphQL', label: 'API surface', color: C.serve },
+      { value: '10k\u201350k', label: 'Services modeled', color: C.core },
+      { value: 'OpenLineage', label: 'Ingest standard', color: C.exp },
+    ];
+
+    const archPlanes = [
+      { tag: 'Plane 1', name: 'Collection', bg: 'oklch(97% 0.02 252)', border: 'oklch(90% 0.04 252)', fg: 'oklch(45% 0.14 252)', boxes: [
+        { name: 'Static + LLM analyzer', tech: 'batch workers · LLM endpoint' },
+        { name: 'Runtime collectors', tech: 'Spark/Dask OpenLineage' },
+        { name: 'OTel ingester', tech: 'trace consumer' },
+        { name: 'CI/CD hook', tech: 'PR diff service' },
+      ]},
+      { tag: 'Plane 2', name: 'Graph core', bg: 'oklch(97% 0.02 300)', border: 'oklch(90% 0.04 300)', fg: 'oklch(45% 0.13 300)', boxes: [
+        { name: 'Merge & reconcile', tech: 'identity resolver' },
+        { name: 'Confidence scorer', tech: 'stream processor' },
+        { name: 'Graph store', tech: 'graph DB + partitions' },
+      ]},
+      { tag: 'Plane 3', name: 'Serving', bg: 'oklch(97% 0.025 35)', border: 'oklch(90% 0.05 35)', fg: 'oklch(50% 0.15 35)', boxes: [
+        { name: 'Impact engine', tech: 'traversal · cache' },
+        { name: 'Query / lineage API', tech: 'REST + GraphQL' },
+        { name: 'Search service', tech: 'inverted index' },
+      ]},
+      { tag: 'Plane 4', name: 'Experience', bg: 'oklch(97% 0.02 190)', border: 'oklch(90% 0.04 190)', fg: 'oklch(44% 0.12 190)', boxes: [
+        { name: 'Four-lens web UI', tech: 'altitude nav · scoped fetch' },
+        { name: 'Notifications', tech: 'owner routing' },
+      ]},
+    ];
+
+    const flows = [
+      { name: 'Baseline build', color: C.collect, bg: 'oklch(96% 0.03 252)', trigger: 'on code change', cadence: 'per PR + nightly', stages: [
+        { name: 'Parse', detail: 'AST · SQL · DAG', arrow: '\u2192' }, { name: 'LLM infer', detail: 'resolve transforms', arrow: '\u2192' },
+        { name: 'Candidate edges', detail: 'superset', arrow: '\u2192' }, { name: 'CI/CD diff', detail: 'vs baseline', arrow: '\u2192' }, { name: 'Merge queue', detail: 'to core', arrow: '' } ] },
+      { name: 'Runtime confirm', color: C.core, bg: 'oklch(96% 0.03 300)', trigger: 'on job run', cadence: 'continuous', stages: [
+        { name: 'Collector', detail: 'Spark/Dask/OTel', arrow: '\u2192' }, { name: 'Normalize', detail: 'OpenLineage', arrow: '\u2192' },
+        { name: 'Reconcile', detail: 'canonical IDs', arrow: '\u2192' }, { name: 'Score', detail: 'agreement \u00d7 recency', arrow: '\u2192' }, { name: 'Upsert graph', detail: 'partitioned', arrow: '' } ] },
+      { name: 'Impact query', color: C.serve, bg: 'oklch(96% 0.035 35)', trigger: 'on request / PR', cadence: 'sub-second p50', stages: [
+        { name: 'Anchor', detail: 'changed element', arrow: '\u2192' }, { name: 'Traverse', detail: 'downstream BFS', arrow: '\u2192' },
+        { name: 'Classify', detail: 'severity \u00d7 path', arrow: '\u2192' }, { name: 'Tier', detail: 'confirmed/possible', arrow: '\u2192' }, { name: 'Respond', detail: 'report / gate', arrow: '' } ] },
+    ];
+
+    const verbC = { GET: 'oklch(55% 0.10 252)', POST: 'oklch(55% 0.13 155)', QUERY: 'oklch(54% 0.18 300)' };
+    const apiBase = [
+      { name: 'Ingestion', color: C.collect, rows: [
+        { verb: 'POST', verbColor: verbC.POST, path: '/v1/lineage/events', desc: 'Submit an OpenLineage run event.',
+          usedBy: 'Spark / Dask / OTel runtime collectors — fired on every job run.',
+          inKind: 'request body', inDef: [ {f:'eventType', t:'START | COMPLETE | FAIL'}, {f:'job', t:'namespace + name of the run'}, {f:'inputs[] / outputs[]', t:'datasets, with optional columnLineage facet'} ],
+          inExLabel: 'POST /v1/lineage/events', inEx:
+`{ "eventType":"COMPLETE",
+  "job":{"namespace":"rev_model","name":"dailyRollup"},
+  "inputs":[{"namespace":"s3.landing","name":"orders_raw"}],
+  "outputs":[{"namespace":"s3.files","name":"fct_orders",
+    "facets":{"columnLineage":{"fields":{
+      "net_amount":{"inputFields":[
+        {"name":"orders_raw","field":"total_amount"}]}}}}}] }`,
+          outKind: '202 Accepted', outDef: [ {f:'accepted', t:'event passed validation'}, {f:'edgesUpserted', t:'count of edges created/updated'}, {f:'runId', t:'server-assigned run identifier'} ],
+          outExLabel: '202 Accepted', outEx:
+`{ "accepted": true,
+  "edgesUpserted": 3,
+  "runId": "run_a1b2c3",
+  "signalsApplied": ["spark"] }` },
+        { verb: 'POST', verbColor: verbC.POST, path: '/v1/baseline/edges', desc: 'Bulk-load static / LLM candidate edges.',
+          usedBy: 'Static + LLM analyzer — full scan nightly, changed files per PR.',
+          inKind: 'request body', inDef: [ {f:'service', t:'canonical service id'}, {f:'edges[]', t:'source, target, transform, confidence, path'} ],
+          inExLabel: 'POST /v1/baseline/edges', inEx:
+`{ "service":"svc:orders-svc",
+  "edges":[
+    { "source":"col:order.total_amount",
+      "target":"col:orders.events.total_amount",
+      "transform":"identity", "confidence":0.61,
+      "path":{"codeRef":"OrderService.java:88"} }] }`,
+          outKind: '200 OK', outDef: [ {f:'ingested', t:'edges received'}, {f:'merged', t:'reconciled into the graph'}, {f:'conflicts', t:'edges needing review'} ],
+          outExLabel: '200 OK', outEx:
+`{ "ingested": 42,
+  "merged": 39,
+  "conflicts": 3,
+  "baselineVersion": "v128" }` },
+        { verb: 'POST', verbColor: verbC.POST, path: '/v1/cicd/diff', desc: 'Diff a PR\u2019s lineage vs baseline.',
+          usedBy: 'CI hook on PR open / update — posts the impact preview comment.',
+          inKind: 'request body', inDef: [ {f:'repo / prId', t:'pull request reference'}, {f:'baseSha / headSha', t:'commits to diff'}, {f:'changedFiles[]', t:'paths changed in the PR'} ],
+          inExLabel: 'POST /v1/cicd/diff', inEx:
+`{ "repo":"orders-svc", "prId":482,
+  "baseSha":"9f2a", "headSha":"c7e1",
+  "changedFiles":["OrderService.java"] }`,
+          outKind: '200 OK', outDef: [ {f:'added / changed / removed', t:'edge deltas vs baseline'}, {f:'impactPreviewUrl', t:'link to the rendered blast radius'} ],
+          outExLabel: '200 OK', outEx:
+`{ "changed":[
+    {"edge":"orders.events.total_amount","from":"int","to":"decimal"}],
+  "added":[{"edge":"orders.events.currency"}],
+  "removed":[],
+  "impactPreviewUrl":"/impact/chg_77a2" }` },
+      ]},
+      { name: 'Graph query', color: C.core, rows: [
+        { verb: 'GET', verbColor: verbC.GET, path: '/v1/entities/{id}', desc: 'Fetch one entity with metadata.',
+          usedBy: 'Inspector entity detail; shareable deep links.',
+          inKind: 'path + query', inDef: [ {f:'{id}', t:'canonical entity id (path)'}, {f:'include', t:'attrs,confidence,signals (query)'} ],
+          inExLabel: 'GET /v1/entities/svc:orders-svc?include=signals', inEx:
+`GET /v1/entities/svc:orders-svc
+    ?include=attrs,confidence,signals`,
+          outKind: '200 OK', outDef: [ {f:'id / kind / name', t:'identity + tier'}, {f:'parent', t:'owning app / domain'}, {f:'confidence / signals', t:'trust on the entity'} ],
+          outExLabel: '200 OK', outEx:
+`{ "id":"svc:orders-svc", "kind":"service",
+  "name":"Orders Service", "parent":"app:order-management",
+  "domain":"ORD", "owner":"orders-team",
+  "confidence":0.94, "signals":["static","otel"] }` },
+        { verb: 'GET', verbColor: verbC.GET, path: '/v1/entities/{id}/lineage', desc: 'k-hop neighborhood of an entity.',
+          usedBy: 'Lineage canvas — scoped fetch as you expand / drill.',
+          inKind: 'path + query', inDef: [ {f:'{id}', t:'anchor entity'}, {f:'direction', t:'up | down | both'}, {f:'depth', t:'hops (default 1)'}, {f:'minConfidence', t:'edge filter, 0\u20131'} ],
+          inExLabel: 'GET .../lineage?direction=down&depth=2', inEx:
+`GET /v1/entities/col:orders_raw.total_amount/lineage
+    ?direction=down&depth=2&minConfidence=0.6`,
+          outKind: '200 OK', outDef: [ {f:'nodes[]', t:'entities in the neighborhood'}, {f:'edges[]', t:'lineage edges with confidence + channel'}, {f:'truncated', t:'true if depth/size capped'} ],
+          outExLabel: '200 OK', outEx:
+`{ "nodes":[{"id":"col:fct_orders.net_amount","kind":"column"}],
+  "edges":[{"source":"col:orders_raw.total_amount",
+    "target":"col:fct_orders.net_amount",
+    "transform":"cast→decimal","confidence":0.9}],
+  "truncated": false }` },
+        { verb: 'QUERY', verbColor: verbC.QUERY, path: '/graphql', desc: 'Altitude-scoped graph + matrix in one round-trip.',
+          usedBy: 'The UI — domain/app/service views and interaction matrix.',
+          inKind: 'GraphQL query', inDef: [ {f:'altitude', t:'domain | app | service'}, {f:'scope', t:'id to expand within'}, {f:'lens', t:'lineage | interactions'} ],
+          inExLabel: 'POST /graphql', inEx:
+`query {
+  view(altitude: APP, scope:"domain:ORD", lens: INTERACTIONS) {
+    nodes { id name rollup { services datasets } }
+    edges { from to channel callCount }
+  }
+}`,
+          outKind: '200 OK', outDef: [ {f:'data.view.nodes', t:'aggregated nodes for the altitude'}, {f:'data.view.edges', t:'roll-up edges with counts'} ],
+          outExLabel: '200 OK', outEx:
+`{ "data":{"view":{
+  "nodes":[{"id":"app:order-management","name":"Order Mgmt",
+    "rollup":{"services":48,"datasets":210}}],
+  "edges":[{"from":"app:order-management",
+    "to":"app:payment-processing","channel":"rest","callCount":12}] }}}` },
+        { verb: 'GET', verbColor: verbC.GET, path: '/v1/search', desc: 'Faceted search to anchor a view.',
+          usedBy: 'Global search bar — entry point at enterprise scale.',
+          inKind: 'query params', inDef: [ {f:'q', t:'free text (name, column, owner)'}, {f:'facets', t:'owner, domain, pii, criticality, env'} ],
+          inExLabel: 'GET /v1/search?q=email&facets=pii:true', inEx:
+`GET /v1/search?q=email
+    &facets=pii:true,domain:CUS`,
+          outKind: '200 OK', outDef: [ {f:'results[]', t:'ranked entities (id, kind, name, score)'}, {f:'total', t:'match count before paging'} ],
+          outExLabel: '200 OK', outEx:
+`{ "results":[
+    {"id":"col:customer_raw.email","kind":"column",
+     "name":"email","score":0.97,"tags":["PII"]}],
+  "total": 14 }` },
+      ]},
+      { name: 'Impact', color: C.serve, rows: [
+        { verb: 'POST', verbColor: verbC.POST, path: '/v1/impact/simulate', desc: 'Model a hypothetical change.',
+          usedBy: 'Impact lens \u201Csimulate\u201D; the PR impact preview.',
+          inKind: 'request body', inDef: [ {f:'target', t:'entity/column being changed'}, {f:'change', t:'type_change | rename | drop, with from/to'}, {f:'depth', t:'downstream | both'}, {f:'minConfidence', t:'path filter'} ],
+          inExLabel: 'POST /v1/impact/simulate', inEx:
+`{ "target":"col:customer_raw.email",
+  "change":{"type":"type_change","from":"string","to":"varchar(320)"},
+  "depth":"downstream", "minConfidence":0.65 }`,
+          outKind: '200 OK', outDef: [ {f:'summary', t:'counts: services, datasets, breaking'}, {f:'confirmed[]', t:'runtime-observed impact'}, {f:'possible[]', t:'static-only, surfaced not blocked'}, {f:'coverage', t:'paths confirmed / total'} ],
+          outExLabel: '200 OK', outEx:
+`{ "summary":{"services":5,"datasets":3,"breaking":2},
+  "confirmed":[{"asset":"cust_360.email_hash",
+    "severity":"breaking","via":["rev_model#daily"],"freq":"hot"}],
+  "possible":[{"asset":"SFTP→Partner","severity":"breaking",
+    "minFreq":"cold"}],
+  "coverage":{"pathsConfirmed":9,"pathsTotal":12} }` },
+        { verb: 'GET', verbColor: verbC.GET, path: '/v1/impact/{changeId}', desc: 'Retrieve a cached blast radius.',
+          usedBy: 'Shareable / linkable impact results across teams.',
+          inKind: 'path param', inDef: [ {f:'{changeId}', t:'id returned by a prior simulate / diff'} ],
+          inExLabel: 'GET /v1/impact/chg_77a2', inEx:
+`GET /v1/impact/chg_77a2`,
+          outKind: '200 OK', outDef: [ {f:'(same shape as simulate)', t:'summary, confirmed, possible, coverage'}, {f:'computedAt', t:'when it was materialized'} ],
+          outExLabel: '200 OK', outEx:
+`{ "changeId":"chg_77a2",
+  "summary":{"services":5,"breaking":2},
+  "computedAt":"2026-06-20T14:02:00Z",
+  "stale": false }` },
+        { verb: 'POST', verbColor: verbC.POST, path: '/v1/impact/gate', desc: 'CI/CD merge gate decision.',
+          usedBy: 'Branch protection check — blocks merges on confirmed breaks.',
+          inKind: 'request body', inDef: [ {f:'repo / prId', t:'pull request reference'}, {f:'policy', t:'block_on: breaking | breaking+warning'} ],
+          inExLabel: 'POST /v1/impact/gate', inEx:
+`{ "repo":"orders-svc", "prId":482,
+  "policy":{"block_on":"breaking"} }`,
+          outKind: '200 OK', outDef: [ {f:'decision', t:'pass | block'}, {f:'breaking / warnings', t:'counts feeding the decision'}, {f:'statusCheck', t:'payload for the SCM status API'} ],
+          outExLabel: '200 OK', outEx:
+`{ "decision":"block",
+  "breaking":2, "warnings":4,
+  "statusCheck":{"state":"failure",
+    "description":"2 breaking downstream consumers"} }` },
+      ]},
+      { name: 'Admin', color: C.exp, rows: [
+        { verb: 'GET', verbColor: verbC.GET, path: '/v1/collectors/health', desc: 'Collector connectivity & coverage.',
+          usedBy: 'Ops dashboard; freshness / coverage SLOs.',
+          inKind: 'query params', inDef: [ {f:'window', t:'lookback, e.g. 24h'} ],
+          inExLabel: 'GET /v1/collectors/health?window=24h', inEx:
+`GET /v1/collectors/health?window=24h`,
+          outKind: '200 OK', outDef: [ {f:'collectors[]', t:'name, lastIngest, status'}, {f:'coverage', t:'% of services with runtime signal'} ],
+          outExLabel: '200 OK', outEx:
+`{ "collectors":[
+    {"name":"spark-ol","status":"healthy","lastIngest":"38s"}],
+  "coverage":{"runtimeBacked":0.72} }` },
+        { verb: 'POST', verbColor: verbC.POST, path: '/v1/owners/notify', desc: 'Route an impact alert to owners.',
+          usedBy: 'Notification fan-out when impact crosses a team boundary.',
+          inKind: 'request body', inDef: [ {f:'changeId', t:'impact result to notify on'}, {f:'severity', t:'minimum severity to alert'}, {f:'channels', t:'slack | email | webhook'} ],
+          inExLabel: 'POST /v1/owners/notify', inEx:
+`{ "changeId":"chg_77a2",
+  "severity":"breaking",
+  "channels":["slack","email"] }`,
+          outKind: '200 OK', outDef: [ {f:'notified[]', t:'team, channel, delivery status'} ],
+          outExLabel: '200 OK', outEx:
+`{ "notified":[
+    {"team":"data-platform","channel":"slack","status":"sent"},
+    {"team":"integrations","channel":"email","status":"sent"}] }` },
+      ]},
+    ];
+    const apiGroups = apiBase.map((g, gi) => ({ name: g.name, color: g.color,
+      rows: g.rows.map((e, ri) => { const key = gi + '-' + ri; const open = this.state.api === key;
+        return { ...e, open, caret: open ? '▾' : '▸',
+          cardBorder: open ? 'oklch(86% 0.03 220)' : 'oklch(92% 0.006 262)',
+          headBg: open ? 'oklch(98.5% 0.012 220)' : '#fff',
+          onToggle: () => this.setState({ api: open ? '' : key }) };
+      }) }));
+
+    const sc = this.schemas();
+    const schemaTabs = sc.map((s, i) => {
+      const on = this.state.schema === i;
+      return { label: s.label, fg: on ? '#fff' : 'oklch(48% 0.02 262)', bg: on ? 'oklch(48% 0.12 220)' : '#fff',
+        border: on ? 'oklch(48% 0.12 220)' : 'oklch(91% 0.006 262)', onClick: () => this.setState({ schema: i }) };
+    });
+
+    // ---- back of envelope ----
+    const svc = this.state.svc;
+    const datasets = svc * 5;          // ~5 datasets per service
+    const columns = datasets * 20;     // ~20 columns per dataset
+    const edges = columns * 3;         // ~3 lineage edges per column
+    const jobRunsDay = svc * 24;       // ~hourly job per service avg
+    const olEventsDay = jobRunsDay * 2;
+    const bytesPerNode = 1500, bytesPerEdge = 800;
+    const graphBytes = (svc + datasets + columns) * bytesPerNode + edges * bytesPerEdge;
+    const eventsBytesDay = olEventsDay * 4000; // ~4KB/event
+    const reingestYear = eventsBytesDay * 365;
+
+    const scaleStats = [
+      { label: 'Graph nodes', value: this.fmt(svc + datasets + columns), color: C.core, note: 'services + datasets + columns' },
+      { label: 'Lineage edges', value: this.fmt(edges), color: C.core, note: '~3 per column' },
+      { label: 'Graph store', value: this.fmt(graphBytes) + 'B', color: C.collect, note: 'nodes + edges, pre-replication' },
+      { label: 'Runtime events / day', value: this.fmt(olEventsDay), color: C.serve, note: 'OpenLineage run events' },
+      { label: 'Ingest volume / day', value: this.fmt(eventsBytesDay) + 'B', color: C.serve, note: '~4KB per event' },
+      { label: 'Event store / year', value: this.fmt(reingestYear) + 'B', color: C.exp, note: 'raw events, before compaction' },
+    ];
+    const assumptionLine = '~5 datasets/service, ~20 columns/dataset, ~3 edges/column, ~24 job runs/service/day, ~4KB/event, ~1.5KB/node + 0.8KB/edge. Read traffic is impact + UI queries (cache-served); write traffic is collectors. Numbers are order-of-magnitude, not capacity-planned.';
+
+    const scaleStrategy = [
+      { glyph: '\u25C8', color: C.core, title: 'Partition the graph by domain', body: 'Shard the store on domain/app so scoped queries hit one partition. Cross-domain edges are the minority and indexed separately.' },
+      { glyph: '\u25C8', color: C.collect, title: 'Stream, never batch-rebuild', body: 'Edges upsert incrementally from collector events; the full graph is never recomputed. CI/CD only diffs changed services.' },
+      { glyph: '\u25C8', color: C.serve, title: 'Precompute + cache impact', body: 'Blast radius for hot/critical assets is materialized and invalidated on edge change; ad-hoc queries are depth-bounded.' },
+      { glyph: '\u25C8', color: C.exp, title: 'Never ship the whole graph', body: 'The UI fetches only the scoped neighborhood per altitude; roll-up edges are pre-aggregated server-side.' },
+      { glyph: '\u25C8', color: C.core, title: 'Tier storage by recency', body: 'Hot graph in the serving store; raw events compacted to object storage after the confidence window. Decay prunes stale edges.' },
+      { glyph: '\u25C8', color: C.serve, title: 'Async, idempotent collectors', body: 'Ingestion is append + idempotent upsert, so collectors scale horizontally and back-pressure via the event bus.' },
+    ];
+
+    const bottlenecks = [
+      { area: 'Identity resolution', pressure: 'Matching entities across static / Spark / OTel dominates merge CPU as services grow.', fix: 'Deterministic canonical-ID scheme + cached resolution; reconcile incrementally, not globally.' },
+      { area: 'LLM inference cost', pressure: 'Re-inferring every service is expensive at 10k+.', fix: 'Only run LLM on changed/ambiguous code (CI/CD-triggered); cache by code hash.' },
+      { area: 'Deep impact traversal', pressure: 'Long downstream chains explode fan-out on hot columns.', fix: 'Depth + confidence bounds, precomputed blast radius for critical assets, materialized roll-ups.' },
+      { area: 'Graph write throughput', pressure: 'Continuous edge upserts from thousands of collectors.', fix: 'Event-bus buffering, batched idempotent upserts, domain-partitioned writers.' },
+      { area: 'UI render at scale', pressure: 'No view can draw 10k+ nodes.', fix: 'Altitude scoping + server-side roll-up + virtualization; ego-graph on search.' },
+    ];
+
+    return { toc, statBand, archPlanes, flows, apiGroups,
+      schemaTabs, schemaTitle: sc[this.state.schema].title, schemaBody: sc[this.state.schema].body,
+      svcCount: svc, svcCountStr: this.fmt(svc), onScale: (e) => this.setState({ svc: +e.target.value }),
+      scaleStats, assumptionLine, scaleStrategy, bottlenecks };
+  }
+}
+</script>
+</body>
+</html>

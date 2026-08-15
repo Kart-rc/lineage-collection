@@ -1,0 +1,395 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,600&display=swap" rel="stylesheet">
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+  a { color: inherit; }
+  ::-webkit-scrollbar { width: 10px; height: 10px; }
+  ::-webkit-scrollbar-thumb { background: oklch(88% 0.006 262); border-radius: 6px; border: 2px solid transparent; background-clip: padding-box; }
+  @media print { .no-print { display: none !important; } .page { box-shadow: none !important; margin: 0 !important; } body { background: #fff !important; } }
+</style>
+</helmet>
+
+<div style="background:oklch(95.5% 0.004 262);min-height:100vh;font-family:'IBM Plex Sans',sans-serif;-webkit-font-smoothing:antialiased;color:oklch(30% 0.02 262)">
+  <div style="max-width:1300px;margin:0 auto;display:flex;gap:36px;padding:40px 28px 80px;align-items:flex-start">
+
+    <!-- TOC -->
+    <aside class="no-print" style="flex:none;width:210px;position:sticky;top:40px;display:flex;flex-direction:column;gap:3px">
+      <div style="display:flex;align-items:center;gap:9px;margin-bottom:14px">
+        <span style="width:22px;height:22px;border-radius:6px;background:oklch(52% 0.13 155);display:block"></span>
+        <span style="font:700 15px 'IBM Plex Sans';color:oklch(26% 0.02 262);letter-spacing:-0.01em">Throughline</span>
+      </div>
+      <div style="font:600 8.5px 'IBM Plex Mono';letter-spacing:.12em;text-transform:uppercase;color:oklch(60% 0.02 262);margin:0 0 8px 2px">Worked Example</div>
+      <sc-for list="{{ toc }}" as="t" hint-placeholder-count="6">
+        <a href="{{ t.href }}" style="display:flex;gap:9px;padding:5px 8px;border-radius:6px;text-decoration:none;font:500 12px 'IBM Plex Sans';color:{{ t.color }}" style-hover="background:oklch(92% 0.01 262)"><span style="font:600 10px 'IBM Plex Mono';color:oklch(68% 0.02 262);width:16px;flex:none">{{ t.n }}</span><span>{{ t.label }}</span></a>
+      </sc-for>
+      <div style="margin-top:16px;padding-top:14px;border-top:1px solid oklch(90% 0.006 262);display:flex;flex-direction:column;gap:5px">
+        <div style="font:600 8.5px 'IBM Plex Mono';letter-spacing:.12em;text-transform:uppercase;color:oklch(60% 0.02 262);margin:0 0 2px 2px">Suite</div>
+        <a href="Index - Throughline PRDs.dc.html" style="font:500 11.5px 'IBM Plex Sans';color:oklch(50% 0.02 262);text-decoration:none;padding:3px 8px">Overview</a>
+        <a href="PRD 1 - Lineage Collection.dc.html" style="font:500 11.5px 'IBM Plex Sans';color:oklch(50% 0.02 262);text-decoration:none;padding:3px 8px">PRD 1 · Collection</a>
+        <a href="PRD 2 - Impact Analysis.dc.html" style="font:500 11.5px 'IBM Plex Sans';color:oklch(50% 0.02 262);text-decoration:none;padding:3px 8px">PRD 2 · Impact</a>
+        <a href="PRD 3 - UI Representation.dc.html" style="font:500 11.5px 'IBM Plex Sans';color:oklch(50% 0.02 262);text-decoration:none;padding:3px 8px">PRD 3 · UI/UX</a>
+        <a href="Architecture & Scale.dc.html" style="font:500 11.5px 'IBM Plex Sans';color:oklch(50% 0.02 262);text-decoration:none;padding:3px 8px">Architecture</a>
+        <a href="Throughline - Final.dc.html" style="font:500 11.5px 'IBM Plex Sans';color:oklch(50% 0.02 262);text-decoration:none;padding:3px 8px">Prototype</a>
+      </div>
+    </aside>
+
+    <!-- PAGE -->
+    <main class="page" style="flex:1;min-width:0;max-width:1000px;background:#fff;border:1px solid oklch(91% 0.006 262);border-radius:3px;box-shadow:0 1px 3px rgba(20,30,50,.06);padding:56px 56px 72px">
+
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:24px">
+        <span style="font:600 9px 'IBM Plex Mono';letter-spacing:.14em;text-transform:uppercase;color:#fff;background:oklch(52% 0.13 155);padding:4px 9px;border-radius:4px">Worked Example</span>
+        <span style="font:500 11px 'IBM Plex Mono';color:oklch(58% 0.02 262)">End-to-end walkthrough</span>
+      </div>
+      <h1 style="font:600 38px 'Newsreader',serif;color:oklch(22% 0.02 262);letter-spacing:-0.01em;line-height:1.1;margin:0 0 12px">One column, traced end to end</h1>
+      <p style="font:400 16px/1.6 'IBM Plex Sans';color:oklch(45% 0.02 262);margin:0 0 4px;max-width:66ch">Two real scenarios, each walked through all five capabilities — <strong style="font-weight:600">collection → CI/CD → OTel runtime → impact → UI</strong>. They chain: a single money column captured in Use Case A propagates into the ML features of Use Case B, and one schema change ripples the whole way.</p>
+
+      <!-- legend -->
+      <div style="display:flex;gap:8px;margin:26px 0 6px;flex-wrap:wrap">
+        <sc-for list="{{ legend }}" as="l" hint-placeholder-count="5">
+          <div style="display:flex;align-items:center;gap:8px;border:1px solid oklch(92% 0.006 262);border-radius:8px;padding:8px 12px;flex:1;min-width:150px">
+            <span style="width:22px;height:22px;border-radius:6px;background:{{ l.bg }};color:{{ l.fg }};font:600 11px 'IBM Plex Mono';display:flex;align-items:center;justify-content:center;flex:none">{{ l.k }}</span>
+            <div style="min-width:0"><div style="font:600 11px 'IBM Plex Sans';color:oklch(32% 0.02 262)">{{ l.name }}</div><div style="font:400 9px 'IBM Plex Mono';color:oklch(58% 0.02 262)">{{ l.sub }}</div></div>
+          </div>
+        </sc-for>
+      </div>
+
+      <!-- ============ USE CASE A ============ -->
+      <div id="ucA" style="margin-top:40px;border-top:2px solid oklch(52% 0.13 155);padding-top:20px">
+        <div style="display:flex;align-items:baseline;gap:12px">
+          <span style="font:600 11px 'IBM Plex Mono';letter-spacing:.1em;text-transform:uppercase;color:#fff;background:oklch(52% 0.13 155);padding:4px 9px;border-radius:4px">Use Case A</span>
+          <h2 style="font:600 23px 'Newsreader',serif;color:oklch(24% 0.02 262);margin:0">Order capture → stream → S3 landing</h2>
+        </div>
+        <p style="font:400 13.5px/1.6 'IBM Plex Sans';color:oklch(46% 0.02 262);margin:10px 0 18px;max-width:66ch">The Orders Service calls Customer and Payments synchronously, publishes an <span style="font-family:'IBM Plex Mono';font-size:12px">orders.events</span> Avro record to Kafka, and a streaming landing job writes it to <span style="font-family:'IBM Plex Mono';font-size:12px">s3://landing/orders_raw</span>.</p>
+
+        <!-- topology A -->
+        <div style="border:1px solid oklch(91% 0.006 262);border-radius:11px;padding:18px;background:oklch(98.6% 0.003 262);display:flex;align-items:center;gap:0;flex-wrap:wrap;margin-bottom:8px">
+          <sc-for list="{{ topoA }}" as="n" hint-placeholder-count="5">
+            <div style="display:flex;align-items:center;gap:0">
+              <div style="background:#fff;border:1px solid {{ n.border }};border-left:3px solid {{ n.color }};border-radius:8px;padding:9px 12px;min-width:104px">
+                <div style="font:600 8px 'IBM Plex Mono';letter-spacing:.04em;text-transform:uppercase;color:{{ n.color }}">{{ n.kind }}</div>
+                <div style="font:600 11px 'IBM Plex Sans';color:oklch(30% 0.02 262);margin-top:2px">{{ n.name }}</div>
+                <div style="font:400 8.5px 'IBM Plex Mono';color:oklch(58% 0.02 262);margin-top:1px">{{ n.sub }}</div>
+              </div>
+              <span style="font:400 9px 'IBM Plex Mono';color:oklch(60% 0.02 262);margin:0 7px;white-space:nowrap">{{ n.arrow }}</span>
+            </div>
+          </sc-for>
+        </div>
+
+        <!-- steps A -->
+        <div style="display:flex;flex-direction:column;gap:12px;margin-top:18px">
+          <sc-for list="{{ stepsA }}" as="s" hint-placeholder-count="5">
+            <div style="display:flex;gap:0;border:1px solid oklch(92% 0.006 262);border-radius:12px;overflow:hidden">
+              <div style="flex:none;width:128px;background:{{ s.capBg }};padding:16px 14px;display:flex;flex-direction:column;gap:7px;border-right:1px solid oklch(94% 0.006 262)">
+                <span style="width:30px;height:30px;border-radius:8px;background:{{ s.capColor }};color:#fff;font:600 13px 'IBM Plex Mono';display:flex;align-items:center;justify-content:center">{{ s.k }}</span>
+                <span style="font:600 10px 'IBM Plex Sans';color:{{ s.capFg }};line-height:1.25">{{ s.cap }}</span>
+                <span style="font:600 8px 'IBM Plex Mono';letter-spacing:.06em;text-transform:uppercase;color:oklch(60% 0.02 262);margin-top:auto">Step {{ s.n }}</span>
+              </div>
+              <div style="flex:1;min-width:0;padding:16px 18px">
+                <div style="font:600 13.5px 'IBM Plex Sans';color:oklch(28% 0.02 262)">{{ s.title }}</div>
+                <p style="font:400 12.5px/1.6 'IBM Plex Sans';color:oklch(46% 0.02 262);margin:7px 0 0;max-width:62ch">{{ s.body }}</p>
+                <sc-if value="{{ s.hasCode }}" hint-placeholder-val="{{ true }}">
+                  <div style="background:oklch(22% 0.02 262);border-radius:9px;padding:13px 15px;margin-top:12px;overflow:auto">
+                    <div style="font:500 9px 'IBM Plex Mono';color:oklch(70% 0.02 262);margin-bottom:8px">{{ s.codeLabel }}</div>
+                    <pre style="margin:0;font:400 11px/1.6 'IBM Plex Mono';color:oklch(86% 0.02 262);white-space:pre">{{ s.code }}</pre>
+                  </div>
+                </sc-if>
+                <sc-if value="{{ s.isUI }}" hint-placeholder-val="{{ true }}">
+                  <div style="display:flex;flex-direction:column;gap:6px;margin-top:12px">
+                    <sc-for list="{{ s.lenses }}" as="ln" hint-placeholder-count="4">
+                      <div style="display:flex;align-items:center;gap:10px;border:1px solid oklch(93% 0.006 262);border-radius:8px;padding:8px 11px">
+                        <span style="font:600 8.5px 'IBM Plex Mono';letter-spacing:.04em;color:#fff;background:{{ ln.color }};padding:3px 8px;border-radius:4px;flex:none;width:88px;text-align:center">{{ ln.lens }}</span>
+                        <span style="font:400 11.5px/1.45 'IBM Plex Sans';color:oklch(44% 0.02 262)">{{ ln.shows }}</span>
+                      </div>
+                    </sc-for>
+                  </div>
+                </sc-if>
+              </div>
+            </div>
+          </sc-for>
+        </div>
+      </div>
+
+      <!-- ============ USE CASE B ============ -->
+      <div id="ucB" style="margin-top:48px;border-top:2px solid oklch(56% 0.16 300);padding-top:20px">
+        <div style="display:flex;align-items:baseline;gap:12px">
+          <span style="font:600 11px 'IBM Plex Mono';letter-spacing:.1em;text-transform:uppercase;color:#fff;background:oklch(56% 0.16 300);padding:4px 9px;border-radius:4px">Use Case B</span>
+          <h2 style="font:600 23px 'Newsreader',serif;color:oklch(24% 0.02 262);margin:0">S3 → analytical normalize → ML features</h2>
+        </div>
+        <p style="font:400 13.5px/1.6 'IBM Plex Sans';color:oklch(46% 0.02 262);margin:10px 0 18px;max-width:66ch">A Spark job reads <span style="font-family:'IBM Plex Mono';font-size:12px">orders_raw</span> + <span style="font-family:'IBM Plex Mono';font-size:12px">customer_raw</span> and writes the normalized <span style="font-family:'IBM Plex Mono';font-size:12px">fct_orders</span>. A Dask feature job derives <span style="font-family:'IBM Plex Mono';font-size:12px">churn_features</span>, which trains the Churn Model.</p>
+
+        <!-- topology B -->
+        <div style="border:1px solid oklch(91% 0.006 262);border-radius:11px;padding:18px;background:oklch(98.6% 0.003 262);display:flex;align-items:center;gap:0;flex-wrap:wrap;margin-bottom:8px">
+          <sc-for list="{{ topoB }}" as="n" hint-placeholder-count="5">
+            <div style="display:flex;align-items:center;gap:0">
+              <div style="background:#fff;border:1px solid {{ n.border }};border-left:3px solid {{ n.color }};border-radius:8px;padding:9px 12px;min-width:104px">
+                <div style="font:600 8px 'IBM Plex Mono';letter-spacing:.04em;text-transform:uppercase;color:{{ n.color }}">{{ n.kind }}</div>
+                <div style="font:600 11px 'IBM Plex Sans';color:oklch(30% 0.02 262);margin-top:2px">{{ n.name }}</div>
+                <div style="font:400 8.5px 'IBM Plex Mono';color:oklch(58% 0.02 262);margin-top:1px">{{ n.sub }}</div>
+              </div>
+              <span style="font:400 9px 'IBM Plex Mono';color:oklch(60% 0.02 262);margin:0 7px;white-space:nowrap">{{ n.arrow }}</span>
+            </div>
+          </sc-for>
+        </div>
+
+        <!-- steps B -->
+        <div style="display:flex;flex-direction:column;gap:12px;margin-top:18px">
+          <sc-for list="{{ stepsB }}" as="s" hint-placeholder-count="5">
+            <div style="display:flex;gap:0;border:1px solid oklch(92% 0.006 262);border-radius:12px;overflow:hidden">
+              <div style="flex:none;width:128px;background:{{ s.capBg }};padding:16px 14px;display:flex;flex-direction:column;gap:7px;border-right:1px solid oklch(94% 0.006 262)">
+                <span style="width:30px;height:30px;border-radius:8px;background:{{ s.capColor }};color:#fff;font:600 13px 'IBM Plex Mono';display:flex;align-items:center;justify-content:center">{{ s.k }}</span>
+                <span style="font:600 10px 'IBM Plex Sans';color:{{ s.capFg }};line-height:1.25">{{ s.cap }}</span>
+                <span style="font:600 8px 'IBM Plex Mono';letter-spacing:.06em;text-transform:uppercase;color:oklch(60% 0.02 262);margin-top:auto">Step {{ s.n }}</span>
+              </div>
+              <div style="flex:1;min-width:0;padding:16px 18px">
+                <div style="font:600 13.5px 'IBM Plex Sans';color:oklch(28% 0.02 262)">{{ s.title }}</div>
+                <p style="font:400 12.5px/1.6 'IBM Plex Sans';color:oklch(46% 0.02 262);margin:7px 0 0;max-width:62ch">{{ s.body }}</p>
+                <sc-if value="{{ s.hasCode }}" hint-placeholder-val="{{ true }}">
+                  <div style="background:oklch(22% 0.02 262);border-radius:9px;padding:13px 15px;margin-top:12px;overflow:auto">
+                    <div style="font:500 9px 'IBM Plex Mono';color:oklch(70% 0.02 262);margin-bottom:8px">{{ s.codeLabel }}</div>
+                    <pre style="margin:0;font:400 11px/1.6 'IBM Plex Mono';color:oklch(86% 0.02 262);white-space:pre">{{ s.code }}</pre>
+                  </div>
+                </sc-if>
+                <sc-if value="{{ s.isUI }}" hint-placeholder-val="{{ true }}">
+                  <div style="display:flex;flex-direction:column;gap:6px;margin-top:12px">
+                    <sc-for list="{{ s.lenses }}" as="ln" hint-placeholder-count="4">
+                      <div style="display:flex;align-items:center;gap:10px;border:1px solid oklch(93% 0.006 262);border-radius:8px;padding:8px 11px">
+                        <span style="font:600 8.5px 'IBM Plex Mono';letter-spacing:.04em;color:#fff;background:{{ ln.color }};padding:3px 8px;border-radius:4px;flex:none;width:88px;text-align:center">{{ ln.lens }}</span>
+                        <span style="font:400 11.5px/1.45 'IBM Plex Sans';color:oklch(44% 0.02 262)">{{ ln.shows }}</span>
+                      </div>
+                    </sc-for>
+                  </div>
+                </sc-if>
+              </div>
+            </div>
+          </sc-for>
+        </div>
+      </div>
+
+      <!-- ============ CHAINED IMPACT ============ -->
+      <div id="chain" style="margin-top:48px;border:1px solid oklch(88% 0.05 35);background:oklch(98.7% 0.012 38);border-radius:14px;padding:24px 26px">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px">
+          <span style="font:600 10px 'IBM Plex Mono';letter-spacing:.1em;text-transform:uppercase;color:#fff;background:oklch(57% 0.16 35);padding:4px 9px;border-radius:4px">The payoff</span>
+          <h2 style="font:600 21px 'Newsreader',serif;color:oklch(24% 0.02 262);margin:0">One change, six hops, two teams</h2>
+        </div>
+        <p style="font:400 13px/1.6 'IBM Plex Sans';color:oklch(46% 0.02 262);margin:6px 0 16px;max-width:70ch">PR&nbsp;#482 turns <span style="font-family:'IBM Plex Mono';font-size:12px">total_amount</span> from <span style="font-family:'IBM Plex Mono';font-size:12px">int</span> to <span style="font-family:'IBM Plex Mono';font-size:12px">decimal</span> in the Orders Service. Because both use cases are one graph, Throughline traces it the whole way into a live ML feature — across an app boundary the Orders team can't see from their repo.</p>
+        <div style="display:flex;align-items:stretch;gap:0;flex-wrap:wrap">
+          <sc-for list="{{ chain }}" as="c" hint-placeholder-count="6">
+            <div style="display:flex;align-items:center;gap:0">
+              <div style="background:#fff;border:1px solid {{ c.border }};border-radius:8px;padding:9px 11px;min-width:118px">
+                <div style="font:600 10px 'IBM Plex Mono';color:oklch(32% 0.02 262)">{{ c.col }}</div>
+                <div style="font:400 8.5px 'IBM Plex Mono';color:oklch(58% 0.02 262);margin-top:2px">{{ c.where }}</div>
+                <div style="display:flex;align-items:center;gap:5px;margin-top:6px"><span style="width:6px;height:6px;border-radius:50%;background:{{ c.sevColor }}"></span><span style="font:600 7.5px 'IBM Plex Mono';color:{{ c.sevColor }}">{{ c.sev }}</span></div>
+              </div>
+              <span style="font:400 13px 'IBM Plex Sans';color:oklch(57% 0.12 35);margin:0 6px">{{ c.arrow }}</span>
+            </div>
+          </sc-for>
+        </div>
+        <div style="display:flex;gap:18px;margin-top:18px;flex-wrap:wrap">
+          <div style="display:flex;align-items:center;gap:8px"><span style="font:600 9px 'IBM Plex Mono';color:#fff;background:oklch(55% 0.17 30);padding:3px 7px;border-radius:4px">CONFIRMED</span><span style="font:400 11.5px 'IBM Plex Sans';color:oklch(46% 0.02 262)">runtime-observed paths — Orders landing + Spark normalize (hot)</span></div>
+          <div style="display:flex;align-items:center;gap:8px"><span style="font:600 9px 'IBM Plex Mono';color:oklch(45% 0.10 75);background:oklch(95% 0.05 80);padding:3px 7px;border-radius:4px">POSSIBLE</span><span style="font:400 11.5px 'IBM Plex Sans';color:oklch(46% 0.02 262)">static-only feature edge — flagged, never auto-blocked</span></div>
+        </div>
+      </div>
+
+      <div style="margin-top:40px;padding-top:18px;border-top:1px solid oklch(91% 0.006 262);display:flex;align-items:center;gap:10px">
+        <a href="Index - Throughline PRDs.dc.html" style="font:600 11.5px 'IBM Plex Sans';color:oklch(50% 0.02 262);text-decoration:none">← Overview</a>
+        <span style="font:500 11px 'IBM Plex Mono';color:oklch(60% 0.02 262);margin:0 auto">Throughline · Worked Example</span>
+        <a href="Throughline - Final.dc.html" style="font:600 11.5px 'IBM Plex Sans';color:oklch(50% 0.12 155);text-decoration:none">Open the prototype →</a>
+      </div>
+    </main>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+class Component extends DCLogic {
+  renderVals() {
+    const CAP = {
+      collect: { k: '{ }', color: 'oklch(55% 0.14 252)', bg: 'oklch(97% 0.02 252)', fg: 'oklch(42% 0.13 252)', name: 'Collection', sub: 'static + LLM' },
+      cicd:    { k: '⌥',  color: 'oklch(58% 0.12 70)',  bg: 'oklch(97% 0.03 75)',  fg: 'oklch(45% 0.10 70)',  name: 'CI/CD diff', sub: 'PR vs baseline' },
+      runtime: { k: '≋',  color: 'oklch(55% 0.16 300)', bg: 'oklch(97% 0.02 300)', fg: 'oklch(46% 0.14 300)', name: 'OTel runtime', sub: 'Spark · Dask · traces' },
+      impact:  { k: '⚠',  color: 'oklch(57% 0.16 35)',  bg: 'oklch(97.5% 0.02 38)', fg: 'oklch(48% 0.13 35)', name: 'Impact', sub: 'blast radius' },
+      ui:      { k: '◧',  color: 'oklch(50% 0.12 190)', bg: 'oklch(97% 0.02 190)', fg: 'oklch(42% 0.11 190)', name: 'UI / UX', sub: 'four lenses' },
+    };
+    const toc = [
+      { n: 'A', label: 'Order → stream → S3', href: '#ucA', color: 'oklch(40% 0.10 155)' },
+      { n: 'B', label: 'S3 → analytics → ML', href: '#ucB', color: 'oklch(42% 0.13 300)' },
+      { n: '↯', label: 'Chained impact', href: '#chain', color: 'oklch(48% 0.13 35)' },
+    ];
+    const legend = Object.values(CAP).map(c => ({ k: c.k, bg: c.bg, fg: c.color, name: c.name, sub: c.sub }));
+
+    const kindC = {
+      service: 'oklch(55% 0.14 252)', stream: 'oklch(56% 0.14 300)', s3land: 'oklch(52% 0.12 155)',
+      analytic: 'oklch(60% 0.12 70)', s3file: 'oklch(55% 0.11 210)', feature: 'oklch(52% 0.12 165)', ml: 'oklch(58% 0.17 350)',
+    };
+    const node = (kind, name, sub, arrow) => ({ kind: kind.toUpperCase().replace(/_/g,' '), name, sub, arrow: arrow || '', color: kindC[kind], border: 'oklch(91% 0.006 262)' });
+
+    const topoA = [
+      node('service', 'Orders Service', 'app·REST', '→ calls'),
+      node('service', 'Customer + Payments', '2 services', '→ publish'),
+      node('stream', 'orders.events', 'Kafka·Avro', '→ land'),
+      node('s3land', 'orders_raw', 's3://landing', ''),
+    ];
+    const topoB = [
+      node('s3land', 'orders_raw', 's3://landing', '+'),
+      node('s3land', 'customer_raw', 's3://landing', '→ Spark'),
+      node('analytic', 'fct_orders', 'normalized', '→ Dask'),
+      node('feature', 'churn_features', 'feature store', '→ train'),
+      node('ml', 'Churn Model', 'XGBoost', ''),
+    ];
+
+    const mk = (cap, n, title, body, codeLabel, code, lenses) => ({
+      k: CAP[cap].k, cap: CAP[cap].name, capColor: CAP[cap].color, capBg: CAP[cap].bg, capFg: CAP[cap].fg,
+      n, title, body, hasCode: !!code, codeLabel: codeLabel || '', code: code || '',
+      isUI: !!lenses, lenses: lenses || [],
+    });
+
+    const stepsA = [
+      mk('collect', 1, 'Static + LLM extract the candidate edges',
+        'The analyzer parses the Orders Service repo — REST clients, the Kafka producer, the Avro schema. The LLM resolves the in-code mapping from the domain object to the event field. Edges are emitted with a single-signal confidence and an unobserved code path.',
+        'OrderService.java  →  candidate edge',
+`producer.send("orders.events", OrderEvent.newBuilder()
+    .setTotalAmount(order.totalAmount())   // ← LLM: → event.total_amount
+    .setCurrency(order.currency())
+    .build());                              //   guard: order.status == 'CONFIRMED'
+
+{ "source":"col:orders_svc.order.total_amount",
+  "target":"col:orders.events.total_amount",
+  "channel":"stream", "transform":"identity",
+  "signals":["static","llm"], "confidence":0.61,
+  "path":{ "codeRef":"OrderService.java:88", "frequency":"unobserved" } }`),
+      mk('cicd', 2, 'A PR changes the money type — CI/CD diffs it',
+        'PR #482 makes total_amount a Decimal and adds a currency field. The CI hook re-runs static + LLM on only the changed files and diffs against the stored baseline. It posts a non-blocking impact preview — downstream is still "possible" because runtime hasn’t confirmed it yet.',
+        'PR #482 diff  +  Throughline bot comment',
+`- setTotalAmount(int totalAmountCents)
++ setTotalAmount(BigDecimal totalAmount)
++ setCurrency(String currency)
+
+🔎 Throughline impact preview · non-blocking
+  changed  orders.events.total_amount   int → decimal
+  added    orders.events.currency       string
+  downstream (possible): orders_raw · revenue.fct_orders
+  note: static-only — runtime will confirm post-merge`),
+      mk('runtime', 3, 'OTel + the stream collector confirm reality',
+        'In staging, OTel traces show the Orders Service actually calling Customer and Payments on every checkout (hot). The streaming landing job emits an OpenLineage event with column lineage from the topic to S3. Two independent signals now agree, so confidence jumps and the path is marked hot.',
+        'OTel span  +  OpenLineage (stream → S3)',
+`span POST /checkout                      orders-svc
+ ├─ GET  /customers/{id}   customer-svc   12ms  ✓ hot
+ └─ POST /payments         payments-svc   28ms  ✓ hot
+
+{ "job":"stream.orders-landing", "eventType":"COMPLETE",
+  "inputs":[{"namespace":"kafka","name":"orders.events"}],
+  "outputs":[{"namespace":"s3.landing","name":"orders_raw",
+    "facets":{"columnLineage":{"fields":{
+      "total_amount":{"inputFields":[
+        {"name":"orders.events","field":"total_amount"}]}}}}}] }
+// → confidence 0.96  signals[static,llm,otel,spark]  freq:hot`),
+      mk('impact', 4, 'Simulate the change → blast radius',
+        'Ask the impact engine what the type change touches. It traverses downstream and tiers the result: the S3 landing column is runtime-confirmed (a safe widening — warning), while the analytics column is static-only and surfaced as possible. Coverage tells you how much is runtime-backed.',
+        'POST /v1/impact/simulate  →  200 OK',
+`{ "target":"col:orders.events.total_amount",
+  "change":{"type":"type_change","from":"int","to":"decimal"} }
+→
+{ "summary":{"services":3,"datasets":2,"breaking":1},
+  "confirmed":[
+    {"asset":"orders_raw.total_amount","severity":"warning",
+     "via":["stream.orders-landing"],"freq":"hot"}],
+  "possible":[
+    {"asset":"revenue.fct_orders.net_amount","severity":"breaking",
+     "minFreq":"cold"}],
+  "coverage":{"pathsConfirmed":1,"pathsTotal":2} }`),
+      mk('ui', 5, 'How it shows up across the four lenses', 'The same captured graph drives every view — no separate dashboards.', null, null, [
+        { lens: 'Lineage', color: CAP.ui.color, shows: 'Orders Service expands to its outputs — orders.events (stream) and orders_raw (S3 landing) — with the column drill on total_amount.' },
+        { lens: 'Interactions', color: 'oklch(52% 0.13 190)', shows: 'The app matrix shows Order Management → Customer and → Payments as hot REST calls; click a cell for the contract.' },
+        { lens: 'Impact', color: 'oklch(57% 0.16 35)', shows: 'Blast radius lights orders_raw amber (confirmed) and fct_orders dashed (possible), unaffected nodes dimmed.' },
+        { lens: 'Provenance', color: 'oklch(56% 0.16 300)', shows: 'The edge carries 4 signal dots, confidence 0.96 and a hot frequency badge — you see why it’s trusted.' },
+      ]),
+    ];
+
+    const stepsB = [
+      mk('collect', 1, 'Column lineage from the transform SQL',
+        'The analyzer parses the normalize job. Static SQL parsing gives exact column lineage; the LLM annotates the semantic role. Each output column gets an edge back to its S3 source, including the money column carried over from Use Case A.',
+        'normalize_orders.sql  →  column edges',
+`select
+  o.order_id,
+  o.total_amount   as net_amount,   -- ← orders_raw.total_amount
+  o.currency,
+  c.country
+from orders_raw o
+join customer_raw c using (customer_id)
+
+{ "source":"col:orders_raw.total_amount",
+  "target":"col:fct_orders.net_amount",
+  "level":"column", "transform":"cast→decimal",
+  "signals":["static","llm"], "confidence":0.64 }`),
+      mk('cicd', 2, 'A rename PR — caught before merge',
+        'PR #515 renames net_amount → net_revenue. The CI diff sees the output column rename and walks the baseline graph forward: the Dask feature job reads the old name. It flags a breaking downstream and names the owning team, so the analytics author knows before merging.',
+        'PR #515 diff  +  bot comment',
+`- o.total_amount as net_amount
++ o.total_amount as net_revenue
+
+🔎 Throughline impact preview · ⚠ breaking
+  renamed  fct_orders.net_amount → net_revenue
+  downstream: churn_features.avg_order_value  (reads old name)
+  owner: ml-platform · coordinate before merge`),
+      mk('runtime', 3, 'Spark + Dask confirm the lineage',
+        'The Spark normalize job and the Dask feature job both emit OpenLineage with column-level facets. Runtime confirms the exact chain fct_orders.net_amount → churn_features.avg_order_value, and OTel marks the feature pipeline as a hot daily run. Confidence rises across the chain.',
+        'OpenLineage — Spark normalize + Dask features',
+`{ "job":"spark.normalize-orders", "eventType":"COMPLETE",
+  "outputs":[{"name":"fct_orders","facets":{"columnLineage":{
+    "fields":{"net_amount":{"inputFields":[
+      {"name":"orders_raw","field":"total_amount"}]}}}}}] }
+
+{ "job":"dask.build-churn-features", "eventType":"COMPLETE",
+  "outputs":[{"name":"churn_features","facets":{"columnLineage":{
+    "fields":{"avg_order_value":{"inputFields":[
+      {"name":"fct_orders","field":"net_amount"}]}}}}}] }
+// → chain runtime-confirmed  freq:hot`),
+      mk('impact', 4, 'Impact reaches the ML feature',
+        'Now the upstream type change from Use Case A is traced into Use Case B. The engine walks the runtime-confirmed chain all the way to a live model feature and reports which training input is affected — the kind of cross-team blast radius no single repo reveals.',
+        'POST /v1/impact/simulate  (chained from A)',
+`{ "target":"col:orders_raw.total_amount",
+  "change":{"type":"type_change","from":"int","to":"decimal"},
+  "depth":"downstream" }
+→
+{ "confirmed":[
+    {"asset":"fct_orders.net_amount","severity":"warning","freq":"hot"},
+    {"asset":"churn_features.avg_order_value","severity":"warning","freq":"hot"}],
+  "possible":[
+    {"asset":"ChurnModel.feature:avg_order_value","severity":"review",
+     "note":"retrain recommended — feature distribution shift"}],
+  "coverage":{"pathsConfirmed":3,"pathsTotal":4} }`),
+      mk('ui', 5, 'How it shows up across the four lenses', 'The drill goes from dataset to column to model feature — same graph, deeper altitude.', null, null, [
+        { lens: 'Lineage', color: CAP.ui.color, shows: 'Column lineage panel for net_amount traces back to orders_raw.total_amount and forward to the feature column.' },
+        { lens: 'Interactions', color: 'oklch(52% 0.13 190)', shows: 'Revenue Analytics → Churn Intelligence shows as a batch (data) dependency, not an API call — different channel encoding.' },
+        { lens: 'Impact', color: 'oklch(57% 0.16 35)', shows: 'Blast radius extends through fct_orders to churn_features and surfaces the Churn Model card with the affected feature.' },
+        { lens: 'Provenance', color: 'oklch(56% 0.16 300)', shows: 'Each hop shows its collector (Spark / Dask) and confidence; the static-only feature edge is visibly lower-trust.' },
+      ]),
+    ];
+
+    const sev = { warn: 'oklch(70% 0.13 75)', brk: 'oklch(57% 0.16 35)', ok: 'oklch(60% 0.12 155)', rev: 'oklch(56% 0.14 300)' };
+    const chain = [
+      { col: 'total_amount', where: 'Orders Service', sev: 'SOURCE', sevColor: 'oklch(55% 0.14 252)', arrow: '→', border: 'oklch(85% 0.04 252)' },
+      { col: 'total_amount', where: 'orders.events', sev: 'CONFIRMED', sevColor: sev.ok, arrow: '→', border: 'oklch(91% 0.006 262)' },
+      { col: 'total_amount', where: 'orders_raw (S3)', sev: 'CONFIRMED', sevColor: sev.ok, arrow: '→', border: 'oklch(91% 0.006 262)' },
+      { col: 'net_amount', where: 'fct_orders', sev: 'WARNING', sevColor: sev.warn, arrow: '→', border: 'oklch(90% 0.04 75)' },
+      { col: 'avg_order_value', where: 'churn_features', sev: 'WARNING', sevColor: sev.warn, arrow: '→', border: 'oklch(90% 0.04 75)' },
+      { col: 'avg_order_value', where: 'Churn Model', sev: 'REVIEW', sevColor: sev.rev, arrow: '', border: 'oklch(89% 0.05 300)' },
+    ];
+
+    return { toc, legend, topoA, topoB, stepsA, stepsB, chain };
+  }
+}
+</script>
+</body>
+</html>
