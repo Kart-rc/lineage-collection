@@ -410,6 +410,10 @@
   color: oklch(50% 0.11 75);
 }
 
+.canvas-row__conf--inferred {
+  color: var(--inferred-deep, oklch(46% 0.015 262));
+}
+
 /* ---- floating legend (prototype's bottom-left card) ---- */
 
 .explorer-legend-float {
@@ -551,6 +555,11 @@
   background: oklch(89% 0.08 85);
 }
 
+.rail-node-edge__band--inferred {
+  color: var(--inferred-deep, oklch(46% 0.015 262));
+  background: var(--inferred-bg, oklch(95% 0.006 262));
+}
+
 
 /* ---- evidence rail ----------------------------------------------------- */
 
@@ -672,6 +681,11 @@
   border-color: var(--probable-border, oklch(89% 0.05 80));
 }
 
+.lineage-conf--inferred {
+  background: var(--inferred-bg, oklch(95% 0.006 262));
+  border-color: var(--inferred-border, oklch(88% 0.008 262));
+}
+
 .lineage-conf__head {
   display: flex;
   align-items: baseline;
@@ -690,6 +704,10 @@
   color: oklch(42% 0.09 75);
 }
 
+.lineage-conf--inferred .lineage-conf__head strong {
+  color: var(--inferred-deep, oklch(46% 0.015 262));
+}
+
 .lineage-conf__head span {
   font: 400 9.5px var(--font-mono, "IBM Plex Mono", monospace);
 }
@@ -700,6 +718,10 @@
 
 .lineage-conf--probable .lineage-conf__head span {
   color: oklch(50% 0.07 75);
+}
+
+.lineage-conf--inferred .lineage-conf__head span {
+  color: var(--n64, oklch(64% 0.02 262));
 }
 
 .lineage-conf__track {
@@ -717,6 +739,10 @@
   background: oklch(90% 0.05 85);
 }
 
+.lineage-conf--inferred .lineage-conf__track {
+  background: var(--n91, oklch(91% 0.006 262));
+}
+
 .lineage-conf__fill {
   display: block;
   height: 100%;
@@ -731,6 +757,10 @@
   background: oklch(65% 0.12 80);
 }
 
+.lineage-conf--inferred .lineage-conf__fill {
+  background: var(--n70, oklch(70% 0.02 262));
+}
+
 .lineage-conf > p {
   font: 400 10px/1.55 var(--font-sans, "IBM Plex Sans", sans-serif);
   margin-top: 7px;
@@ -742,6 +772,10 @@
 
 .lineage-conf--probable > p {
   color: oklch(45% 0.06 75);
+}
+
+.lineage-conf--inferred > p {
+  color: var(--n56, oklch(56% 0.02 262));
 }
 
 .lineage-rail__transform {

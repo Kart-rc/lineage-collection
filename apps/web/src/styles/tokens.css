@@ -46,6 +46,14 @@
   --probable-border: oklch(89% 0.05 80);
   --probable-tint: oklch(99% 0.015 80);
 
+  /* Inferred — the weakest tier (LOWEST band): muted, low-chroma, neutral-hued
+     so it reads as lower-emphasis than probable rather than as a fourth alarm color. */
+  --inferred: oklch(56% 0.015 262);
+  --inferred-deep: oklch(46% 0.015 262);
+  --inferred-bg: oklch(95% 0.006 262);
+  --inferred-border: oklch(88% 0.008 262);
+  --inferred-tint: oklch(99% 0.004 262);
+
   --break: oklch(55% 0.17 30);
   --break-text: oklch(50% 0.13 30);
   --break-bg: oklch(96% 0.04 33);

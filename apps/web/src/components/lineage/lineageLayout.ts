@@ -1,4 +1,5 @@
 import type { ConfidenceBand, LineageEdge, LineageResponse } from "../../api/types";
+import { isRuntimeVerified } from "../review/reviewMeta";
 
 
 export type NodeRole = "service" | "element" | "dataset";
@@ -15,8 +16,6 @@ export const GEOM = {
   PADB: 10,
   COLLAPSED: 44,
 } as const;
-
-const VERIFIED_BANDS: ReadonlySet<string> = new Set(["HIGH", "HIGHEST"]);
 
 const BAND_ORDER: Record<string, number> = {
   LOWEST: 0,
@@ -201,7 +200,7 @@ export function buildCanvas(
   }
   let verifiedEdges = 0;
   for (const edge of orderedEdges) {
-    if (VERIFIED_BANDS.has(edge.band)) verifiedEdges += 1;
+    if (isRuntimeVerified(edge)) verifiedEdges += 1;
     for (const urn of [...edge.from, edge.to]) {
       const row = rowIndex.get(urn);
       if (row) row.weakestBand = weakest(row.weakestBand, edge.band);
@@ -381,7 +380,7 @@ export function buildCanvas(
     edgeGeoms.push({
       edge,
       path,
-      verified: VERIFIED_BANDS.has(edge.band),
+      verified: isRuntimeVerified(edge),
       fromCard: fromCard.id,
       toCard: toCard.id,
     });

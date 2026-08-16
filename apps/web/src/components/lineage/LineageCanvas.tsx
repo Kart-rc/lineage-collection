@@ -18,10 +18,12 @@ interface LineageCanvasProps {
 
 
 /** Weakest-band percentage shown at the end of a member row, prototype-style. */
-function rowConfidence(band: string | null): { pct: string; tone: "verified" | "probable" } | null {
+function rowConfidence(
+  band: string | null,
+): { pct: string; tone: "verified" | "probable" | "inferred" } | null {
   if (!band) return null;
   const projection = bandDisplay(band);
-  return { pct: `${/\d+/.exec(projection.label)?.[0] ?? ""}%`, tone: projection.tone };
+  return { pct: `${projection.percent}%`, tone: projection.tone };
 }
 
 

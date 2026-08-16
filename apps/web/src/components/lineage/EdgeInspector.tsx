@@ -1,10 +1,8 @@
 import type { LineageEdge, LineageResponse, Provenance } from "../../api/types";
 import { Link } from "../../routing";
-import { bandDisplay, urnShort } from "../review/reviewMeta";
+import { bandDisplay, isRuntimeVerified, urnShort } from "../review/reviewMeta";
 import { nodeRole, nodeTitle } from "./lineageLayout";
 
-
-const RUNTIME_BANDS: ReadonlySet<string> = new Set(["HIGH", "HIGHEST"]);
 
 const RECEIPT_KIND: Record<Provenance["mechanism"], { label: string; mod: string }> = {
   RUNTIME: { label: "RUNTIME", mod: "runtime" },
@@ -40,7 +38,7 @@ function nodeCategory(node: LineageResponse["nodes"][number]): "service" | "elem
 
 
 function trustLine(edge: LineageEdge): string {
-  if (RUNTIME_BANDS.has(edge.band)) {
+  if (isRuntimeVerified(edge)) {
     const scope = edge.corroboration === "ELEMENT" ? "element" : "dataset";
     return `Static analysis and the runtime harness agree at ${scope} level.`;
   }
@@ -153,7 +151,7 @@ function WalkSummary({ data, onToggle }: { data?: LineageResponse; onToggle: () 
   }
   const counts = { dataset: 0, element: 0, service: 0 };
   for (const node of data.nodes) counts[nodeCategory(node)] += 1;
-  const verified = data.edges.filter((edge) => RUNTIME_BANDS.has(edge.band)).length;
+  const verified = data.edges.filter(isRuntimeVerified).length;
   const staticOnly = data.edges.length - verified;
   const total = data.edges.length;
   return (
@@ -201,11 +199,11 @@ function WalkSummary({ data, onToggle }: { data?: LineageResponse; onToggle: () 
           <ul className="rail-band-counts">
             <li data-band="verified">
               <span className="rail-band-dot" aria-hidden="true" />
-              {verified} runtime-verified · VERIFIED 92
+              {verified} runtime-verified · {bandDisplay("HIGH").label}
             </li>
             <li data-band="static">
               <span className="rail-band-dot" aria-hidden="true" />
-              {staticOnly} static-only · PROBABLE 70
+              {staticOnly} static-only · {bandDisplay("SINGLE").label}
             </li>
           </ul>
         </>
@@ -307,7 +305,7 @@ export function EdgeInspector({
   }
 
   const projection = bandDisplay(edge.band);
-  const score = Number(/\d+/.exec(projection.label)?.[0] ?? 0);
+  const score = projection.percent;
   const bundleRunId = edge.provenance[0]?.runId ?? null;
   const endpoints = [...edge.from.filter((urn) => urn !== edge.to), edge.to];
   const receiptCount = edge.provenance.length;

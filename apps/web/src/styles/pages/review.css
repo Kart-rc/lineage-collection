@@ -367,6 +367,11 @@
   background: var(--probable-bg, oklch(96% 0.05 80));
 }
 
+.band-pill--inferred {
+  color: var(--inferred, oklch(56% 0.015 262));
+  background: var(--inferred-bg, oklch(95% 0.006 262));
+}
+
 .review-edge__evidence {
   display: flex;
   align-items: center;

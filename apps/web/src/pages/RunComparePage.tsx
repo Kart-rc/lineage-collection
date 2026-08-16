@@ -5,7 +5,7 @@ import { Link, usePathname } from "../routing";
 import { api } from "../api/client";
 import type { LineageEdge, Proposal, Run } from "../api/types";
 import { runStatusTone } from "../components/operations/StageRail";
-import { bandDisplay, edgeLabel } from "../components/review/reviewMeta";
+import { bandDisplay, edgeLabel, isRuntimeVerified } from "../components/review/reviewMeta";
 import {
   classifyRunState,
   formatWhen,
@@ -49,15 +49,9 @@ const EVIDENCE_LABELS: Record<EvidenceClass, string> = {
   llm: "LLM-ASSISTED",
 };
 
-/** Evidence class from what the edge actually carries — corroboration and mechanisms. */
+/** Evidence class from what the edge actually carries — the canonical runtime-verified predicate. */
 function evidenceClass(edge: LineageEdge): EvidenceClass {
-  if (
-    edge.corroboration === "ELEMENT" ||
-    edge.corroboration === "DATASET" ||
-    edge.provenance.some((item) => item.mechanism === "RUNTIME")
-  ) {
-    return "runtime";
-  }
+  if (isRuntimeVerified(edge)) return "runtime";
   if (edge.provenance.some((item) => item.mechanism === "LLM")) return "llm";
   return "static";
 }
