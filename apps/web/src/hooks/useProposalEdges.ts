@@ -7,7 +7,7 @@ import type { LineageEdge, Proposal } from "../api/types";
 export interface ProposalEdgesResult {
   /** Resolved edge bodies: the proposal's hydrated diff arrays, or the /edges fan-out. */
   readonly edges: LineageEdge[];
-  /** How many of the proposal's diff edge ids failed to resolve (0 while not yet ready). */
+  /** How many of the proposal's diff edge ids failed to resolve. Only meaningful once `edgesReady` is true. */
   readonly missing: number;
   /** True once the proposal payload itself carried every diff edge body — no fan-out needed. */
   readonly hydrationComplete: boolean;

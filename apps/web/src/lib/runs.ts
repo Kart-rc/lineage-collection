@@ -1,8 +1,8 @@
 /**
  * The run-state vocabulary and six-macro-phase pipeline engine — moved out
- * of RunsPage.tsx (which used to own it) so RunComparePage, StageRail and
- * StageTimeline can consume the same durable-state classification without
- * importing a page module.
+ * of RunsPage.tsx (which used to own it) so RunComparePage and StageTimeline
+ * can consume the same durable-state classification without importing a
+ * page module.
  */
 import type { Proposal, Run } from "../api/types";
 
@@ -179,7 +179,7 @@ export function stageTone(status: string): "done" | "active" | "failed" | "pendi
   return "pending";
 }
 
-/** Tone for a run's overall durable state (ledger rows, status pills, StageRail). */
+/** Tone for a run's overall durable state (ledger rows, status pills). */
 export function runStatusTone(
   status: string,
 ): "trusted" | "attention" | "blocked" | "neutral" {

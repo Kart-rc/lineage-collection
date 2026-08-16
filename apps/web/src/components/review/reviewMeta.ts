@@ -21,7 +21,7 @@ export function bandDisplay(band: ConfidenceBand | string): {
 }
 
 /** Bands whose display projection lands in the VERIFIED tier (band-only call sites). */
-export const VERIFIED_BANDS: ReadonlySet<string> = new Set(["HIGH", "HIGHEST"]);
+const VERIFIED_BANDS: ReadonlySet<string> = new Set(["HIGH", "HIGHEST"]);
 
 /** Last URN segment, with element suffix kept: owners#last_name. */
 export function urnShort(urn: string): string {
