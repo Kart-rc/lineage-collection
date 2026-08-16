@@ -2,10 +2,8 @@ from __future__ import annotations
 
 import hashlib
 import json
-from collections import Counter
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from enum import StrEnum
 from typing import Literal
 
 
@@ -21,12 +19,6 @@ def parse_utc(value: str) -> datetime:
 
 def _canonical(value: object) -> str:
     return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
-
-
-class CoverageState(StrEnum):
-    PLANNED = "PLANNED"
-    COMPLETE = "COMPLETE"
-    INCOMPLETE = "INCOMPLETE"
 
 
 @dataclass(frozen=True, slots=True)
@@ -97,58 +89,6 @@ class StageResult:
     output_checksum: str
     lease_epoch: int
     completed_at: datetime
-
-
-@dataclass(frozen=True, slots=True)
-class CoverageManifest:
-    manifest_id: str
-    workflow_kind: WorkflowKind
-    scope: str
-    artifact_digest: str
-    determinant_digest: str
-    state: CoverageState
-    expected_scope: tuple[str, ...] = ()
-    completed_scope: tuple[str, ...] = ()
-    reused_scope: tuple[str, ...] = ()
-    skipped_scope: tuple[str, ...] = ()
-    unsupported_scope: tuple[str, ...] = ()
-    quarantined_scope: tuple[str, ...] = ()
-    failed_scope: tuple[str, ...] = ()
-
-    def accounting_errors(self) -> tuple[str, ...]:
-        if self.state is CoverageState.PLANNED:
-            return ()
-
-        expected = Counter(self.expected_scope)
-        accounted = Counter(
-            self.completed_scope
-            + self.reused_scope
-            + self.skipped_scope
-            + self.unsupported_scope
-            + self.quarantined_scope
-            + self.failed_scope
-        )
-        errors: list[str] = []
-        for item in sorted(expected.keys() | accounted.keys()):
-            difference = accounted[item] - expected[item]
-            if difference < 0:
-                errors.append(f"scope is unaccounted: {item}")
-            elif difference > 0:
-                errors.append(f"scope is accounted more than once: {item}")
-
-        if self.state is CoverageState.COMPLETE:
-            for label, values in (
-                ("unsupported", self.unsupported_scope),
-                ("quarantined", self.quarantined_scope),
-                ("failed", self.failed_scope),
-            ):
-                if values:
-                    errors.append(f"COMPLETE coverage contains {label} scope")
-        return tuple(errors)
-
-    @property
-    def is_complete(self) -> bool:
-        return self.state is CoverageState.COMPLETE and not self.accounting_errors()
 
 
 @dataclass(frozen=True, slots=True)

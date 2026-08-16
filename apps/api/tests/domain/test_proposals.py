@@ -16,12 +16,18 @@ def _proposal_functions():
 def test_proposal_transition_graph_is_server_owned_and_explicit() -> None:
     _, allowed_transitions = _proposal_functions()
 
-    assert allowed_transitions("DRAFT") == {"IN_REVIEW"}
     assert allowed_transitions("IN_REVIEW") == {"APPROVED", "REJECTED", "SUPERSEDED"}
     assert allowed_transitions("APPROVED") == {"FINALIZED"}
     assert allowed_transitions("REJECTED") == set()
     assert allowed_transitions("SUPERSEDED") == set()
     assert allowed_transitions("FINALIZED") == set()
+
+
+def test_unknown_proposal_state_raises_value_error() -> None:
+    _, allowed_transitions = _proposal_functions()
+
+    with pytest.raises(ValueError, match="Unknown proposal state: DRAFT"):
+        allowed_transitions("DRAFT")
 
 
 def test_illegal_transition_raises_typed_domain_error() -> None:

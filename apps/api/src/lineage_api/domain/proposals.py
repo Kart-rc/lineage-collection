@@ -8,7 +8,6 @@ from lineage_api.domain.evidence import EvidenceRef
 
 
 TRANSITIONS = {
-    "DRAFT": {"IN_REVIEW"},
     "IN_REVIEW": {"APPROVED", "REJECTED", "SUPERSEDED"},
     "APPROVED": {"FINALIZED"},
     "REJECTED": set(),
