@@ -360,6 +360,17 @@ class AwsProductQueryProjection:
             raise ProductApiError(404, "PROPOSAL_NOT_FOUND", "proposal does not exist")
         return _document(item, "proposal")
 
+    def interactions(
+        self, *, system: str | None = None, **_audit: str
+    ) -> dict[str, Any]:
+        # The interactions plane is projected by deployments that collect it
+        # (the floci cell overrides this); claiming an empty plane would be a lie.
+        raise ProductApiError(
+            501,
+            "NOT_IMPLEMENTED",
+            "the interactions projection is not available on this deployment",
+        )
+
     def lineage(
         self,
         *,

@@ -333,3 +333,49 @@ def test_a_request_mapping_without_a_method_defaults_to_all_verbs_and_is_residue
 
     assert analysis.inbound == ()
     assert "ambiguous-http-method" in {r.code for r in analysis.residue}
+
+
+def test_the_analysis_serializes_to_a_metadata_only_document() -> None:
+    """The persisted interactions document carries structure and citations, never values."""
+    from lineage_api.services.java_interaction_sca import interaction_analysis_document
+
+    analysis = analyze_java_interactions(
+        {
+            "OwnerController.java": (
+                "package example;\n"
+                "import org.springframework.web.bind.annotation.GetMapping;\n"
+                "import org.springframework.web.bind.annotation.RestController;\n"
+                "@RestController\n"
+                "public class OwnerController {\n"
+                '  @GetMapping("/owners/{id}")\n'
+                "  public String find(int id) { return null; }\n"
+                "}\n"
+            )
+        },
+        service="spring-petclinic",
+    )
+    document = interaction_analysis_document(
+        analysis,
+        system="petclinic",
+        service="spring-petclinic",
+        revision="e9b54f91836d6716650db48fb55f17aec00af86f",
+        command_id="cmd-1",
+        correlation_id="corr-1",
+    )
+
+    assert document["schemaVersion"] == "1.0.0"
+    assert document["mechanism"] == "SCA"
+    assert document["system"] == "petclinic"
+    inbound = document["inbound"]
+    assert [item["operation"] for item in inbound] == ["GET /owners/{id}"]
+    assert inbound[0]["handler"] == "OwnerController#find"
+    assert inbound[0]["citation"] == {"file": "OwnerController.java", "line": 6}
+    assert inbound[0]["requestFields"] == [
+        {"name": "id", "type": "int", "classification": "NONE"}
+    ]
+    assert document["outbound"] == []
+    assert document["residue"] == []
+    # Metadata-only: no field may carry a value anywhere in the document.
+    import json
+
+    assert '"value"' not in json.dumps(document)

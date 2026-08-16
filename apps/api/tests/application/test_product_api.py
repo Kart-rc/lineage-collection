@@ -97,6 +97,7 @@ def test_product_api_has_closed_route_parity_without_demo_mutations() -> None:
             "lineage",
         ),
         ("GET", "/api/edges/edge-1", {"version": "graph-v1"}, None, "edge_detail"),
+        ("GET", "/api/interactions", {"system": "petclinic"}, None, "interactions"),
         (
             "POST",
             "/api/impact",
@@ -221,6 +222,86 @@ def test_product_api_uses_the_existing_impact_change_vocabulary(
 def test_product_api_rejects_encoded_path_separators(path: str) -> None:
     with pytest.raises(ProductApiError, match="unsupported characters"):
         _call(ProductApiService(Port()), "GET", path)
+
+
+@pytest.mark.parametrize(
+    "subject",
+    [
+        # Element URNs carry the dataset#element separator.
+        "urn:ldp:staging:mysql:petclinic-rest:owners#id",
+        # Java analyzer service endpoints use '#' for Type#method.
+        "service://spring-petclinic/OwnerRepository#findById",
+    ],
+)
+def test_product_api_walks_element_and_service_subjects(subject: str) -> None:
+    from urllib.parse import quote
+
+    port = Port()
+    _call(
+        ProductApiService(port),
+        "GET",
+        f"/api/lineage/{quote(subject, safe='')}",
+        query={"direction": "both", "depth": "3"},
+    )
+    operation, kwargs = port.calls[-1]
+    assert operation == "lineage"
+    assert kwargs["subject"] == subject
+
+
+def test_product_api_interactions_route_passes_optional_system() -> None:
+    port = Port()
+    api = ProductApiService(port)
+    _call(api, "GET", "/api/interactions")
+    operation, kwargs = port.calls[-1]
+    assert operation == "interactions"
+    assert kwargs["system"] is None
+
+    _call(api, "GET", "/api/interactions", query={"system": "petclinic-rest"})
+    operation, kwargs = port.calls[-1]
+    assert kwargs["system"] == "petclinic-rest"
+
+    with pytest.raises(ProductApiError, match="unexpected fields"):
+        _call(api, "GET", "/api/interactions", query={"bogus": "1"})
+
+
+def test_product_api_impact_accepts_element_subject() -> None:
+    port = Port()
+    _call(
+        ProductApiService(port),
+        "POST",
+        "/api/impact",
+        body={
+            "subject": "urn:ldp:staging:mysql:petclinic-rest:owners#id",
+            "changeType": "COLUMN_DROP",
+            "depth": 3,
+        },
+    )
+    operation, kwargs = port.calls[-1]
+    assert operation == "impact"
+    assert kwargs["subject"] == "urn:ldp:staging:mysql:petclinic-rest:owners#id"
+
+
+@pytest.mark.parametrize(
+    "subject",
+    [
+        # More than one '#' is never a valid subject in any URN scheme here.
+        "urn:ldp:staging:mysql:petclinic-rest:owners#id#extra",
+        # A trailing separator with no element is incomplete.
+        "urn:ldp:staging:mysql:petclinic-rest:owners#",
+        # The subject must not start at the separator.
+        "#id",
+    ],
+)
+def test_product_api_rejects_malformed_element_subjects(subject: str) -> None:
+    from urllib.parse import quote
+
+    with pytest.raises(ProductApiError, match="unsupported characters"):
+        _call(
+            ProductApiService(Port()),
+            "GET",
+            f"/api/lineage/{quote(subject, safe='')}",
+            query={"direction": "both", "depth": "3"},
+        )
 
 
 def test_product_api_passes_principal_correlation_and_optimistic_version_to_review() -> None:

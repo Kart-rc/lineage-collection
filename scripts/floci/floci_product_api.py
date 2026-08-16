@@ -53,17 +53,14 @@ def _projection_path() -> Path:
     override = os.environ.get("LINEAGE_FLOCI_PROJECTION_DB")
     if override:
         return Path(override)
-    candidates = sorted(
-        (ROOT / "data" / "floci").glob("projection-*.db"),
-        key=lambda p: p.stat().st_mtime,
-    )
-    if not candidates:
-        LOG.warning("no projection DB found under data/floci — lineage/impact will be empty")
-        return ROOT / "data" / "floci" / "projection-empty.db"
-    return candidates[-1]
+    from collection_runner import bootstrap_live_projection
+
+    # One persistent graph store (the Neptune stand-in): every historical run DB
+    # is merged in once, and all future publications land here too.
+    return bootstrap_live_projection(ROOT / "data" / "floci" / "projection-live.db")
 
 
-def build() -> tuple[Any, Any, Any]:
+def build() -> tuple[Any, Any, Any, Any]:
     import os
 
     import boto3
@@ -110,9 +107,72 @@ def build() -> tuple[Any, Any, Any]:
     )
     artifacts = S3ArtifactStore(s3, config.evidence_bucket)
     packages = S3ArtifactStore(s3, config.package_bucket)
-    projection = SqliteStageProjection(_projection_path())
+    projection_db = _projection_path()
+    projection = SqliteStageProjection(projection_db)
+
+    from collection_runner import CollectionRunner, CollectionRunnerError
+
+    runner = CollectionRunner(
+        environment_variables=dict(os.environ),
+        endpoint=endpoint,
+        projection_path=projection_db,
+    )
+
+    class FlociQueryProjection(AwsProductQueryProjection):
+        """The AWS projection plus an honest local acquisition/execution stage.
+
+        In AWS the Fargate acquisition stage would enqueue the durable command;
+        here the runner's worker thread plays that role against the emulator, so
+        the UI's submit → poll → review → approve loop is the real mechanism.
+        """
+
+        def submit_collection(
+            self, *, body: object, principal: str, correlation_id: str
+        ) -> dict[str, object]:
+            from lineage_api.application.collections import CollectionError
+            from lineage_api.application.product_api import ProductApiError
+
+            try:
+                return runner.submit_collection(
+                    body if isinstance(body, dict) else None,
+                    principal=principal,
+                    correlation_id=correlation_id,
+                )
+            except CollectionError as error:
+                raise ProductApiError(
+                    error.status_code, error.code, str(error)
+                ) from None
+            except CollectionRunnerError as error:
+                status = {
+                    "ANALYZER_NOT_SUPPORTED": 422,
+                    "SOURCE_ACQUISITION_FAILED": 502,
+                    "NO_PUBLISHED_PACKAGE": 409,
+                }.get(error.code, 500)
+                raise ProductApiError(status, error.code, str(error)) from None
+
+        def get_proposal(
+            self, *, proposal_id: str, version: object = None, **audit: str
+        ) -> dict[str, object]:
+            from collection_runner import hydrate_proposal_edges
+
+            document = super().get_proposal(
+                proposal_id=proposal_id, version=version, **audit
+            )
+            # Review must be possible BEFORE publication: hydrate the diff with
+            # full edge bodies from the proposal's consolidated edge set (a
+            # first-time system has nothing in the active projection namespace).
+            return hydrate_proposal_edges(document, artifacts)
+
+        def interactions(
+            self, *, system: object = None, **audit: str
+        ) -> dict[str, object]:
+            # The second lineage plane, collected per system by the runner's
+            # SCA interactions step and projected into the local graph store.
+            items = projection.interactions(system if isinstance(system, str) else None)
+            return {"schemaVersion": "1.0.0", "items": items}
+
     service = ProductApiService(
-        AwsProductQueryProjection(
+        FlociQueryProjection(
             ddb,
             control,
             artifacts,
@@ -147,10 +207,12 @@ def build() -> tuple[Any, Any, Any]:
         packages=packages,
         dispatcher=StageDispatcher(registry),
     )
-    return service, executor, (ddb, config.ledger_table)
+    return service, executor, (ddb, config.ledger_table), runner
 
 
 def drain_publication_outbox(executor: Any, ddb: Any, ledger_table: str) -> list[str]:
+    from collection_runner import STALE_BASE_MARKER, mark_publication_stale
+
     published: list[str] = []
     paginator = ddb.get_paginator("scan")
     for page in paginator.paginate(TableName=ledger_table):
@@ -161,7 +223,26 @@ def drain_publication_outbox(executor: Any, ddb: Any, ledger_table: str) -> list
             ):
                 envelope = json.loads(item["payload"]["S"])
                 envelope["outboxId"] = item["pk"]["S"].removeprefix("OUTBOX#")
-                result = executor.execute("publication", envelope)
+                try:
+                    result = executor.execute("publication", envelope)
+                except Exception as error:
+                    if STALE_BASE_MARKER in str(error):
+                        # Correct fencing refusal — settle it honestly instead of
+                        # leaving a zombie PENDING row and a forever-awaiting
+                        # collection. A resubmission rebases on the current graph.
+                        mark_publication_stale(
+                            ddb,
+                            ledger_table,
+                            outbox_pk=item["pk"]["S"],
+                            outbox_sk=item["sk"]["S"],
+                            command_id=envelope.get("commandId"),
+                            message=str(error),
+                        )
+                        published.append(
+                            f"{envelope.get('commandId')}:STALE_PROPOSAL_BASE"
+                        )
+                        continue
+                    raise
                 published.append(
                     f"{envelope['commandId']}:{result.get('terminalOutcome') or result['outcome']}"
                 )
@@ -169,7 +250,7 @@ def drain_publication_outbox(executor: Any, ddb: Any, ledger_table: str) -> list
 
 
 def create_app() -> Any:
-    service, executor, (ddb, ledger_table) = build()
+    service, executor, (ddb, ledger_table), runner = build()
     app = FastAPI(title="lineage product API · floci-backed")
     app.add_middleware(
         CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"]
@@ -178,6 +259,52 @@ def create_app() -> Any:
     @app.get("/healthz")
     def healthz() -> dict[str, str]:
         return {"status": "ok", "backend": "floci"}
+
+    @app.post("/api/deployments")
+    async def submit_deployment(request: Request) -> Response:
+        from collection_runner import CollectionRunnerError
+
+        correlation_id = request.headers.get("x-correlation-id") or f"ui-{uuid.uuid4().hex[:12]}"
+        raw = await request.body()
+        body = json.loads(raw) if raw else {}
+        system = body.get("system")
+        environment = body.get("environment")
+        digest = body.get("artifactDigest")
+        if not isinstance(system, str) or not system or not isinstance(environment, str) or not environment:
+            return Response(
+                content=json.dumps(
+                    {
+                        "error": {
+                            "code": "INVALID_REQUEST",
+                            "message": "system and environment are required",
+                        },
+                        "correlationId": correlation_id,
+                    }
+                ),
+                status_code=400,
+                media_type="application/json",
+            )
+        try:
+            document = runner.submit_deployment(
+                system=system,
+                environment=environment,
+                artifact_digest=digest if isinstance(digest, str) and digest else None,
+                correlation_id=correlation_id,
+            )
+        except CollectionRunnerError as error:
+            return Response(
+                content=json.dumps(
+                    {
+                        "error": {"code": error.code, "message": str(error)},
+                        "correlationId": correlation_id,
+                    }
+                ),
+                status_code=409 if error.code == "NO_PUBLISHED_PACKAGE" else 500,
+                media_type="application/json",
+            )
+        return Response(
+            content=json.dumps(document), status_code=202, media_type="application/json"
+        )
 
     @app.api_route("/api/{rest:path}", methods=["GET", "POST"])
     async def api(rest: str, request: Request) -> Response:

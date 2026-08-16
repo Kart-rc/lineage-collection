@@ -40,7 +40,53 @@ class SqliteStageProjection:
             )
             """
         )
+        # The interactions plane — one document per system, latest collection wins.
+        self._connection.execute(
+            """
+            CREATE TABLE IF NOT EXISTS interactions (
+                system TEXT NOT NULL PRIMARY KEY,
+                command_id TEXT NOT NULL,
+                revision TEXT NOT NULL,
+                document TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            )
+            """
+        )
         self._connection.commit()
+
+    def upsert_interactions(
+        self,
+        system: str,
+        *,
+        command_id: str,
+        revision: str,
+        document: dict[str, Any],
+        updated_at: str,
+    ) -> None:
+        self._connection.execute(
+            """
+            INSERT INTO interactions (system, command_id, revision, document, updated_at)
+            VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT (system) DO UPDATE SET
+                command_id = excluded.command_id,
+                revision = excluded.revision,
+                document = excluded.document,
+                updated_at = excluded.updated_at
+            """,
+            (system, command_id, revision, json.dumps(document), updated_at),
+        )
+        self._connection.commit()
+
+    def interactions(self, system: str | None = None) -> list[dict[str, Any]]:
+        if system is None:
+            rows = self._connection.execute(
+                "SELECT document FROM interactions ORDER BY system"
+            ).fetchall()
+        else:
+            rows = self._connection.execute(
+                "SELECT document FROM interactions WHERE system = ?", (system,)
+            ).fetchall()
+        return [json.loads(row[0]) for row in rows]
 
     def merge_edges(
         self, namespace: str, edges: list[dict[str, Any]], *, fence: int
