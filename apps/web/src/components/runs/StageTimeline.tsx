@@ -1,27 +1,16 @@
 import type { RunStage } from "../../api/types";
-
-
-function stageTone(status: string): "done" | "active" | "failed" | "pending" {
-  if (status === "COMPLETED" || status === "SUCCEEDED") return "done";
-  if (status === "RUNNING" || status === "IN_PROGRESS" || status === "STARTED") return "active";
-  if (status === "FAILED" || status === "ERROR") return "failed";
-  return "pending";
-}
-
-function shortDigest(value: unknown): string | null {
-  return typeof value === "string" && value.length > 14
-    ? `${value.slice(0, 14)}…`
-    : typeof value === "string"
-      ? value
-      : null;
-}
+import { shortDigest } from "../../lib/format";
+import { stageTone } from "../../lib/runs";
 
 
 export function StageTimeline({ stages }: { stages: RunStage[] }) {
   return (
     <ol className="stage-timeline">
       {stages.map((stage) => {
-        const sha = shortDigest(stage.detail.sha256);
+        const sha =
+          typeof stage.detail.sha256 === "string"
+            ? shortDigest(stage.detail.sha256, 14)
+            : null;
         const key = typeof stage.detail.key === "string" ? stage.detail.key : null;
         return (
           <li key={stage.sequence} data-tone={stageTone(stage.status)}>

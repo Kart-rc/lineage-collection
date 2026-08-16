@@ -9,15 +9,12 @@ import { ProvenancePanel } from "../components/review/ProvenancePanel";
 import { ReviewEdgeRow } from "../components/review/ReviewEdgeRow";
 import { isRuntimeVerified } from "../components/review/reviewMeta";
 import { readRuntimeConfig } from "../config/runtime";
+import { useProposalEdges } from "../hooks/useProposalEdges";
+import { shortDigest, statePillClass } from "../lib/format";
 import "../styles/pages/review.css";
 
 function shortSha(digest: string | undefined): string {
-  if (!digest) return "unavailable";
-  return digest.replace(/^sha256:/, "").slice(0, 12);
-}
-
-function statePillClass(state: string): string {
-  return `state-pill state-pill--${state.toLowerCase().replace(/_/g, "-")}`;
+  return shortDigest(digest, 12, false) ?? "unavailable";
 }
 
 function titleFor(state: string): string {
@@ -96,26 +93,18 @@ function ProposalReview({ proposal }: { proposal: Proposal }) {
   const addedIds = proposal.diff.addedEdgeIds;
   const removedIds = proposal.diff.removedEdgeIds;
   const bandChangedIds = proposal.diff.bandChangedEdgeIds;
-  const allIds = useMemo(
-    () => [...addedIds, ...removedIds, ...bandChangedIds],
-    [addedIds, removedIds, bandChangedIds],
-  );
 
   // The API hydrates diff edge bodies from the proposal's edge-set for
   // pre-publication review; the per-edge fan-out is the fallback for older
   // payloads whose diff carries only ids.
-  const hydrated = useMemo(
-    () => [...proposal.diff.added, ...proposal.diff.removed, ...proposal.diff.bandChanged],
-    [proposal.diff],
-  );
-  const hydrationComplete = allIds.length > 0 && hydrated.length >= allIds.length;
-
-  const resolved = useQuery({
-    queryKey: ["proposal-edges", proposal.proposalId, proposal.version],
-    queryFn: ({ signal }) => api.edges(allIds, signal),
-    enabled: allIds.length > 0 && !hydrationComplete,
-    staleTime: Infinity,
-  });
+  const {
+    edges,
+    missing,
+    edgesReady,
+    isPending: edgesPending,
+    isError: edgesError,
+    total: allIdsTotal,
+  } = useProposalEdges(proposal);
 
   const approve = useMutation({
     mutationFn: () =>
@@ -144,11 +133,6 @@ function ProposalReview({ proposal }: { proposal: Proposal }) {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["proposals"] }),
   });
 
-  const edges = useMemo(
-    () => (hydrationComplete ? hydrated : resolved.data ?? []),
-    [hydrationComplete, hydrated, resolved.data],
-  );
-  const edgesReady = hydrationComplete || resolved.isSuccess;
   const addedSet = useMemo(() => new Set(addedIds), [addedIds]);
   const removedSet = useMemo(() => new Set(removedIds), [removedIds]);
   const bandSet = useMemo(() => new Set(bandChangedIds), [bandChangedIds]);
@@ -163,7 +147,6 @@ function ProposalReview({ proposal }: { proposal: Proposal }) {
   const checkedCount = staticOnly.filter((edge) => checked[edge.edgeKey]).length;
   const allChecked = staticOnly.length === 0 || checkedCount === staticOnly.length;
   const identityReady = actor.trim().length > 0 && rationale.trim().length > 0;
-  const missing = allIds.length - edges.length;
   const canApprove =
     inReview &&
     allChecked &&
@@ -237,17 +220,17 @@ function ProposalReview({ proposal }: { proposal: Proposal }) {
         </div>
       </dl>
 
-      {!edgesReady && resolved.isPending && allIds.length ? (
-        <p className="empty-state">Resolving {allIds.length} edges from the ledger…</p>
+      {!edgesReady && edgesPending && allIdsTotal ? (
+        <p className="empty-state">Resolving {allIdsTotal} edges from the ledger…</p>
       ) : null}
-      {resolved.isError ? (
+      {edgesError ? (
         <p className="inline-error" role="alert">
           Proposal edges could not be resolved from the ledger.
         </p>
       ) : null}
       {edgesReady && missing > 0 ? (
         <p className="inline-error" role="alert">
-          {missing} of {allIds.length} edges could not be resolved — approval stays locked
+          {missing} of {allIdsTotal} edges could not be resolved — approval stays locked
           until every proposed edge is reviewable.
         </p>
       ) : null}

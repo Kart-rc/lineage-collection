@@ -3,9 +3,10 @@ import { Link } from "../routing";
 
 import { api } from "../api/client";
 import { DeploymentControl } from "../components/operations/DeploymentControl";
-import { runStatusTone } from "../components/operations/StageRail";
 import { StatusPill } from "../components/shared/StatusPill";
 import type { OperationalStatus, Run } from "../api/types";
+import { formatDurationSeconds } from "../lib/format";
+import { runStatusTone } from "../lib/runs";
 import "../styles/pages/operations.css";
 
 
@@ -21,13 +22,11 @@ const statusTone = (status: OperationalStatus): Tone => {
 const displayStatus = (status: OperationalStatus) =>
   status === "NOT_AVAILABLE" ? "Not available" : status.replaceAll("_", " ").toLowerCase();
 
-const formatDuration = (seconds: number | null) => {
-  if (seconds === null) return "no observation";
-  if (seconds < 60) return `${seconds}s`;
-  if (seconds < 3600) return `${Math.floor(seconds / 60)}m ${seconds % 60}s`;
-  return `${Math.floor(seconds / 3600)}h ${Math.floor((seconds % 3600) / 60)}m`;
-};
+const formatDuration = formatDurationSeconds;
 
+// Not a shortDigest call site: this strips a "graph-" version prefix (not
+// "sha256:"), never adds an ellipsis, and falls back to "—" — a genuinely
+// different transform from the shared digest shortener, kept local.
 const shortVersion = (version: string | null | undefined) =>
   version ? version.replace(/^graph-/, "").slice(0, 8) : "—";
 

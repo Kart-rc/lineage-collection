@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 
 import { ApiError, api } from "../../api/client";
 import type { RepositoryCollection } from "../../api/types";
+import { formatDurationCompact } from "../../lib/format";
 import { Link } from "../../routing";
 import { StatusPill } from "../shared/StatusPill";
 
@@ -29,12 +30,6 @@ export function collectionQueryOptions(commandId: string) {
 }
 
 
-function formatDuration(ms: number): string {
-  if (ms < 1000) return `${ms} ms`;
-  return `${(ms / 1000).toFixed(ms < 10_000 ? 1 : 0)} s`;
-}
-
-
 function TimingRail({ collection }: { collection: RepositoryCollection }) {
   const timings = collection.timings ?? [];
   if (!timings.length) return null;
@@ -43,7 +38,7 @@ function TimingRail({ collection }: { collection: RepositoryCollection }) {
   return (
     <div className="collection-timings" aria-label="Pipeline step timings">
       <p className="eyebrow">
-        Pipeline timings · {formatDuration(total)} wall clock
+        Pipeline timings · {formatDurationCompact(total)} wall clock
       </p>
       <ol>
         {timings.map((timing) => (
@@ -54,7 +49,7 @@ function TimingRail({ collection }: { collection: RepositoryCollection }) {
                 style={{ width: `${Math.max(2, Math.round((timing.durationMs / max) * 100))}%` }}
               />
             </span>
-            <span className="collection-timings__value">{formatDuration(timing.durationMs)}</span>
+            <span className="collection-timings__value">{formatDurationCompact(timing.durationMs)}</span>
             {timing.detail ? (
               <span className="collection-timings__detail">{timing.detail}</span>
             ) : null}

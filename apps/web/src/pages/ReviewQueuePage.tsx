@@ -4,6 +4,7 @@ import { Link } from "../routing";
 
 import { api } from "../api/client";
 import type { Proposal } from "../api/types";
+import { statePillClass } from "../lib/format";
 import "../styles/pages/review.css";
 
 const STATES = ["IN_REVIEW", "APPROVED", "REJECTED", "FINALIZED"] as const;
@@ -22,11 +23,6 @@ const EMPTY_COPY: Record<ProposalState, string> = {
   REJECTED: "No rejected proposals in this window.",
   FINALIZED: "No finalized proposals in this window.",
 };
-
-function statePillClass(state: string): string {
-  const suffix = state.toLowerCase().replace(/_/g, "-");
-  return `state-pill state-pill--${suffix}`;
-}
 
 function readableTime(iso: string): string {
   if (!iso) return "time unavailable";

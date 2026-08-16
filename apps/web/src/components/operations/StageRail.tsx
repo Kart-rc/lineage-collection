@@ -1,4 +1,8 @@
 import type { Run } from "../../api/types";
+import { stageNumber } from "../../lib/runs";
+
+// Re-exported so existing consumers of this module keep working unchanged.
+export { runStatusTone } from "../../lib/runs";
 
 
 const TERMINAL_STATUSES = new Set([
@@ -12,20 +16,6 @@ const TERMINAL_STATUSES = new Set([
 
 export function isTerminalStatus(status: string): boolean {
   return TERMINAL_STATUSES.has(status);
-}
-
-export function runStatusTone(
-  status: string,
-): "trusted" | "attention" | "blocked" | "neutral" {
-  if (status === "PUBLISHED" || status === "PROMOTED") return "trusted";
-  if (status === "BLOCK" || status === "FAILED") return "blocked";
-  if (status === "NO_LINEAGE_IMPACT") return "neutral";
-  return "attention";
-}
-
-function stageNumber(stage: string): number {
-  const match = /^[A-Z]+(\d+)$/.exec(stage);
-  return match ? Number(match[1]) : 0;
 }
 
 export interface StageRailProps {

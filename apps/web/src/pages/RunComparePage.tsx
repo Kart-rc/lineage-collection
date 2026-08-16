@@ -4,15 +4,10 @@ import { Link, usePathname } from "../routing";
 
 import { api } from "../api/client";
 import type { LineageEdge, Proposal, Run } from "../api/types";
-import { runStatusTone } from "../components/operations/StageRail";
 import { bandDisplay, edgeLabel, isRuntimeVerified } from "../components/review/reviewMeta";
-import {
-  classifyRunState,
-  formatWhen,
-  matchProposal,
-  runEdgeCount,
-  shortDigest,
-} from "./RunsPage";
+import { useProposalEdges } from "../hooks/useProposalEdges";
+import { shortDigest } from "../lib/format";
+import { classifyRunState, formatWhen, matchProposal, runEdgeCount, runStatusTone } from "../lib/runs";
 import "../styles/pages/runs.css";
 
 
@@ -151,34 +146,13 @@ export function RunComparePage() {
 
   // Diff bodies: prefer the hydrated arrays on the proposal; fan out over
   // /edges/{key} only when the payload carries ids without bodies.
-  const allIds = useMemo(
-    () =>
-      proposal
-        ? [
-            ...proposal.diff.addedEdgeIds,
-            ...proposal.diff.removedEdgeIds,
-            ...proposal.diff.bandChangedEdgeIds,
-          ]
-        : [],
-    [proposal],
-  );
-  const hydrated = useMemo(
-    () =>
-      proposal
-        ? [...proposal.diff.added, ...proposal.diff.removed, ...proposal.diff.bandChanged]
-        : [],
-    [proposal],
-  );
-  const hydrationComplete = allIds.length > 0 && hydrated.length >= allIds.length;
-  const resolved = useQuery({
-    queryKey: ["proposal-edges", proposal?.proposalId, proposal?.version],
-    queryFn: ({ signal }) => api.edges(allIds, signal),
-    enabled: Boolean(proposal) && allIds.length > 0 && !hydrationComplete,
-    staleTime: Infinity,
-  });
-  const edges = hydrationComplete ? hydrated : resolved.data ?? [];
-  const edgesReady = Boolean(proposal) && (hydrationComplete || resolved.isSuccess);
-  const missing = edgesReady ? allIds.length - edges.length : 0;
+  const {
+    edges,
+    missing,
+    edgesReady,
+    isError: edgesError,
+    total: allIdsTotal,
+  } = useProposalEdges(proposal ?? undefined);
 
   const rows: DiffRow[] = useMemo(() => {
     if (!proposal) return [];
@@ -390,19 +364,19 @@ export function RunComparePage() {
               {proposals.isPending && candidate ? (
                 <p className="empty-state">Looking up the run’s proposal…</p>
               ) : null}
-              {proposal && !edgesReady && allIds.length > 0 ? (
+              {proposal && !edgesReady && allIdsTotal > 0 ? (
                 <p className="empty-state">
-                  Resolving {allIds.length} diff edges from the ledger…
+                  Resolving {allIdsTotal} diff edges from the ledger…
                 </p>
               ) : null}
-              {resolved.isError ? (
+              {edgesError ? (
                 <p className="inline-error" role="alert">
                   Diff edges could not be resolved from the ledger.
                 </p>
               ) : null}
               {edgesReady && missing > 0 ? (
                 <p className="inline-error" role="alert">
-                  {missing} of {allIds.length} diff edges could not be resolved and are not
+                  {missing} of {allIdsTotal} diff edges could not be resolved and are not
                   shown.
                 </p>
               ) : null}

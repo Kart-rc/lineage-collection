@@ -1,5 +1,6 @@
 import type { LineageEdge, LineageResponse, Provenance } from "../../api/types";
 import { Link } from "../../routing";
+import { shortDigest } from "../../lib/format";
 import { bandDisplay, isRuntimeVerified, urnShort } from "../review/reviewMeta";
 import { nodeRole, nodeTitle } from "./lineageLayout";
 
@@ -12,7 +13,7 @@ const RECEIPT_KIND: Record<Provenance["mechanism"], { label: string; mod: string
 
 
 function shortChecksum(value: string): string {
-  return value.length > 14 ? `${value.slice(0, 14)}…` : value;
+  return shortDigest(value, 14) ?? value;
 }
 
 
