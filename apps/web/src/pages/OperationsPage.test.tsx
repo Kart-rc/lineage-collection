@@ -40,6 +40,8 @@ test("operations stays read-only and routes collection to onboarding", async () 
       }
       if (url === "/api/runs?limit=25") return ok({ items: [], nextCursor: null });
       if (url === "/api/operations/resilience") {
+        // A legacy backend that never learned the snapshot shape — the client
+        // must fall back to the honest all-NOT_AVAILABLE snapshot.
         return ok({
           environment: "production",
           activeGraph: { graphVersion: "graph-v7", fence: 42 },
@@ -72,6 +74,70 @@ test("operations stays read-only and routes collection to onboarding", async () 
     "href",
     "/onboard",
   );
+});
+
+test("operations renders live signals from the standalone resilience route", async () => {
+  // The shape the AWS projection emits when overview does not embed a snapshot.
+  const snapshot = {
+    schemaVersion: "1.0.0",
+    capturedAt: "2026-08-06T12:00:00Z",
+    status: "HEALTHY",
+    correlation: { status: "COMPLETE", trackedCount: 3, missingCount: 0 },
+    queue: {
+      status: "HEALTHY",
+      depth: 2,
+      oldestAgeSeconds: 12,
+      saturation: { status: "NOT_CONFIGURED", observedDepth: 2, capacity: null },
+      retryCount: 0,
+      deadLetterCount: 0,
+      leaseStealCount: 0,
+    },
+    coverage: {
+      status: "COMPLETE",
+      incompleteCount: 0,
+      runtimeJoin: { status: "COMPLETE", joined: 2, eligible: 2, rate: 1 },
+      baseline: { status: "CURRENT", ageSeconds: 1800, maxAgeSeconds: 86400 },
+    },
+    review: { status: "HEALTHY", oldestApprovalAgeSeconds: null },
+    publication: {
+      status: "HEALTHY",
+      publishLagSeconds: null,
+      pointerPackage: { status: "IN_SYNC", activeVersion: "graph-v7", packageVersion: "graph-v7" },
+      watermark: { status: "CURRENT", version: "graph-v7", updatedAt: "2026-08-06T11:58:00Z", ageSeconds: 120 },
+    },
+    productionSignals: {
+      replication: { status: "NOT_CONFIGURED", value: null },
+      errorBudgetBurn: { status: "NOT_CONFIGURED", value: null },
+      unitCost: { status: "NOT_CONFIGURED", value: null },
+    },
+  };
+  vi.stubGlobal(
+    "fetch",
+    vi.fn((input: string | URL) => {
+      const url = String(input);
+      if (url === "/api/overview") {
+        return ok({
+          environment: "staging",
+          activeVersion: "graph-v7",
+          fencingToken: 42,
+          recentRuns: [],
+          inReviewSample: [],
+          countsAreComplete: false,
+        });
+      }
+      if (url === "/api/runs?limit=25") return ok({ items: [], nextCursor: null });
+      if (url === "/api/operations/resilience") return ok(snapshot);
+      throw new Error(`Unexpected fetch ${url}`);
+    }),
+  );
+  renderApp("/");
+
+  expect(
+    await screen.findByRole("heading", { name: "The plane is healthy" }),
+  ).toBeVisible();
+  expect(screen.getByText(/All six signals nominal/)).toBeVisible();
+  expect(screen.queryByText("Not available")).toBeNull();
+  expect(screen.getByText(/3 tracked · 0 missing/)).toBeVisible();
 });
 
 test("operations leads with a verdict, honest signals and a derived triage queue", async () => {

@@ -3,12 +3,14 @@ import {
   Stack,
   type StackProps,
   aws_apigateway as apigateway,
+  aws_iam as iam,
   aws_logs as logs,
 } from "aws-cdk-lib";
 import { Construct } from "constructs";
 
 import type { PlatformConfig } from "./config.js";
 import type { DataStack } from "./data-stack.js";
+import type { IntakeStack } from "./intake-stack.js";
 import type { NetworkStack } from "./network-stack.js";
 import { RuntimeTarget, lambdaTarget } from "./runtime-assets.js";
 
@@ -16,6 +18,7 @@ export interface ApiStackProps extends StackProps {
   readonly config: PlatformConfig;
   readonly network: NetworkStack;
   readonly data: DataStack;
+  readonly intake: IntakeStack;
 }
 
 export class ApiStack extends Stack {
@@ -24,13 +27,37 @@ export class ApiStack extends Stack {
 
   constructor(scope: Construct, id: string, props: ApiStackProps) {
     super(scope, id, props);
+    // The resilience snapshot reads lane depth and dead-letter counts, so the
+    // product API gets the queue URLs and attribute reads — nothing more.
+    const lanes = ["interactive", "events", "batch"] as const;
+    const queueEnvironment = Object.fromEntries(
+      lanes.flatMap((lane) => [
+        [
+          `LINEAGE_${lane.toUpperCase()}_QUEUE_URL`,
+          props.intake.queues[lane].queueUrl,
+        ],
+        [
+          `LINEAGE_${lane.toUpperCase()}_DLQ_URL`,
+          props.intake.deadLetterQueues[lane].queueUrl,
+        ],
+      ]),
+    );
     this.product = new RuntimeTarget(this, "ProductApiTarget", {
       config: props.config,
       network: props.network,
       imageRepository: props.data.lambdaImageRepository,
       target: lambdaTarget("product-api"),
-      environment: props.data.runtimeEnvironment(),
-      policyStatements: props.data.dataPlaneStatements("product-api"),
+      environment: { ...props.data.runtimeEnvironment(), ...queueEnvironment },
+      policyStatements: [
+        ...props.data.dataPlaneStatements("product-api"),
+        new iam.PolicyStatement({
+          actions: ["sqs:GetQueueAttributes"],
+          resources: lanes.flatMap((lane) => [
+            props.intake.queues[lane].queueArn,
+            props.intake.deadLetterQueues[lane].queueArn,
+          ]),
+        }),
+      ],
     });
     const accessLogs = new logs.LogGroup(this, "AccessLogs", {
       retention: props.config.logRetention,

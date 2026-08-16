@@ -98,6 +98,19 @@ def build() -> tuple[Any, Any, Any, Any]:
 
     config = AwsRuntimeConfig.from_env(os.environ)
     ddb, s3, kin = client("dynamodb"), client("s3"), client("kinesis")
+    queue_urls = tuple(
+        os.environ[name]
+        for name in sorted(os.environ)
+        if name.startswith("LINEAGE_")
+        and name.endswith("_QUEUE_URL")
+        and os.environ[name]
+    )
+    dead_letter_queue_urls = tuple(
+        os.environ[name]
+        for name in sorted(os.environ)
+        if name.startswith("LINEAGE_") and name.endswith("_DLQ_URL") and os.environ[name]
+    )
+    sqs = client("sqs") if queue_urls else None
     control = DynamoDbControlAdapter(
         ddb,
         config.control_table,
@@ -180,6 +193,9 @@ def build() -> tuple[Any, Any, Any, Any]:
             control_table=config.control_table,
             ledger_table=config.ledger_table,
             proposal_table=config.proposal_table,
+            sqs=sqs,
+            queue_urls=queue_urls,
+            dead_letter_queue_urls=dead_letter_queue_urls,
         )
     )
     # Publication executor (plays the DynamoDB-stream → publication-Lambda role).

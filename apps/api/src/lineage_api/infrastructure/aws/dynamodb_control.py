@@ -888,6 +888,8 @@ class DynamoDbControlAdapter:
             pointer["graphChecksum"] = item["graphChecksum"]["S"]
         if "packageReference" in item:
             pointer["package"] = json.loads(item["packageReference"]["S"])
+        if "activatedAt" in item:
+            pointer["activatedAt"] = item["activatedAt"]["S"]
         return pointer
 
     def activate_pointer(

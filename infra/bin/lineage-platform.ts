@@ -74,7 +74,7 @@ const orchestration = new OrchestrationStack(app, "LineageOrchestration", {
   stackName: `${config.resourcePrefix}-orchestration`,
   env,
 });
-new IntakeStack(app, "LineageIntake", {
+const intake = new IntakeStack(app, "LineageIntake", {
   config,
   network,
   data,
@@ -86,6 +86,7 @@ const api = new ApiStack(app, "LineageApi", {
   config,
   network,
   data,
+  intake,
   stackName: `${config.resourcePrefix}-api`,
   env,
 });

@@ -4,7 +4,7 @@ import base64
 import hashlib
 import json
 import os
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
 from datetime import UTC, datetime
 from typing import Any
 
@@ -13,6 +13,7 @@ from lineage_api.application.product_api import (
     ProductApiService,
 )
 from lineage_api.application.consolidation import edge_key_for
+from lineage_api.application.models import parse_utc
 from lineage_api.domain.urns import LineageUrn
 from lineage_api.infrastructure.aws.config import AwsRuntimeConfig
 from lineage_api.infrastructure.aws.dynamodb_control import DynamoDbControlAdapter
@@ -25,6 +26,15 @@ RUN_INDEX = "RunsByUpdatedAt"
 PROPOSAL_INDEX = "ProposalsByState"
 MAX_RUN_STAGES = 64
 _REFERENCE_KEYS = frozenset({"bucket", "key", "versionId", "sha256", "sizeBytes"})
+
+_SNAPSHOT_PAGE_LIMIT = 25
+_BASELINE_SEARCH_LIMIT = 100
+_MAX_COVERAGE_RUNS = 8
+_QUEUE_AGE_LIMIT_SECONDS = 60
+_BASELINE_AGE_LIMIT_SECONDS = 86_400
+_APPROVAL_AGE_LIMIT_SECONDS = 300
+_RUNTIME_VALIDATION_STAGES = frozenset({"B6", "I6"})
+_CONSOLIDATION_STAGES = frozenset({"B7", "B8", "I7"})
 
 
 def _canonical(value: object) -> str:
@@ -155,6 +165,9 @@ class AwsProductQueryProjection:
         proposal_table: str,
         default_environment: str = "staging",
         clock: Callable[[], datetime] | None = None,
+        sqs: Any | None = None,
+        queue_urls: Sequence[str] = (),
+        dead_letter_queue_urls: Sequence[str] = (),
     ) -> None:
         self._client = client
         self._control = control
@@ -167,6 +180,9 @@ class AwsProductQueryProjection:
             "default environment", default_environment, 256
         )
         self._clock = clock or (lambda: datetime.now(UTC))
+        self._sqs = sqs
+        self._queue_urls = tuple(queue_urls)
+        self._dead_letter_queue_urls = tuple(dead_letter_queue_urls)
 
     def list_runs(
         self,
@@ -442,27 +458,350 @@ class AwsProductQueryProjection:
             "recentRuns": runs["items"],
             "inReviewSample": proposals["items"],
             "countsAreComplete": False,
+            "resilience": self.resilience(
+                environment=selected,
+                principal=principal,
+                correlation_id=correlation_id,
+            ),
         }
 
     def resilience(
         self, *, environment: str | None, principal: str, correlation_id: str
     ) -> dict[str, object]:
         selected = environment or self._default_environment
+        now = self._clock().astimezone(UTC)
         pointer = self._control.active_pointer(selected)
-        controls = self.runtime_admin(
-            limit=25,
+        runs = self.list_runs(
+            limit=_SNAPSHOT_PAGE_LIMIT,
             cursor=None,
-            scope_type=None,
-            scope_value=None,
+            workflow=None,
+            status=None,
+            environment=selected,
             principal=principal,
             correlation_id=correlation_id,
+        )["items"]
+        proposals = self.list_proposals(
+            limit=_SNAPSHOT_PAGE_LIMIT,
+            cursor=None,
+            state="IN_REVIEW",
+            principal=principal,
+            correlation_id=correlation_id,
+        )["items"]
+
+        correlation = self._correlation_signal(runs, proposals)
+        coverage = self._coverage_signal(now, selected, runs)
+        review = self._review_signal(now, proposals)
+        publication = self._publication_signal(now, pointer)
+        queue = self._queue_signal()
+
+        degraded = {
+            queue["status"],
+            coverage["status"],
+            coverage["runtimeJoin"]["status"],
+            coverage["baseline"]["status"],
+            review["status"],
+            publication["status"],
+            publication["watermark"]["status"],
+            correlation["status"],
+        }
+        observed = (
+            queue["status"] != "NOT_AVAILABLE"
+            or correlation["status"] != "NOT_AVAILABLE"
+            or coverage["status"] != "NOT_AVAILABLE"
+            or publication["status"] != "NOT_AVAILABLE"
+            or review["oldestApprovalAgeSeconds"] is not None
+        )
+        if publication["status"] == "OUT_OF_SYNC":
+            overall = "OUT_OF_SYNC"
+        elif degraded & {"DEGRADED", "INCOMPLETE", "STALE"}:
+            overall = "DEGRADED"
+        elif not observed:
+            # A plane with no observable signal must not claim health.
+            overall = "NOT_AVAILABLE"
+        else:
+            overall = "HEALTHY"
+        not_configured = {"status": "NOT_CONFIGURED", "value": None}
+        return {
+            "schemaVersion": "1.0.0",
+            "capturedAt": _timestamp(now),
+            "status": overall,
+            "correlation": correlation,
+            "queue": queue,
+            "coverage": coverage,
+            "review": review,
+            "publication": publication,
+            "productionSignals": {
+                "replication": dict(not_configured),
+                "errorBudgetBurn": dict(not_configured),
+                "unitCost": dict(not_configured),
+            },
+        }
+
+    @staticmethod
+    def _age(now: datetime, timestamp: object) -> int | None:
+        if not isinstance(timestamp, str) or not timestamp:
+            return None
+        return max(0, int((now - parse_utc(timestamp)).total_seconds()))
+
+    @staticmethod
+    def _correlation_signal(
+        runs: list[dict[str, object]], proposals: list[dict[str, Any]]
+    ) -> dict[str, object]:
+        values = [item.get("correlationId") for item in (*runs, *proposals)]
+        tracked = sum(1 for value in values if isinstance(value, str) and value)
+        missing = len(values) - tracked
+        return {
+            "status": (
+                "NOT_AVAILABLE"
+                if tracked == 0
+                else "INCOMPLETE" if missing else "COMPLETE"
+            ),
+            "trackedCount": tracked,
+            "missingCount": missing,
+        }
+
+    def _coverage_signal(
+        self, now: datetime, environment: str, runs: list[dict[str, object]]
+    ) -> dict[str, object]:
+        baseline = self._baseline_signal(now, environment)
+        rows = []
+        lineage_runs = [
+            run for run in runs if run.get("workflowKind") in {"BASELINE", "INCREMENTAL"}
+        ]
+        for run in lineage_runs[:_MAX_COVERAGE_RUNS]:
+            row = self._coverage_row(str(run["runId"]))
+            if row is not None:
+                rows.append(row)
+        incomplete = sum(1 for row in rows if row["state"] != "COMPLETE")
+        joined = sum(1 for row in rows if row["runtimeStatus"] == "VALIDATED")
+        if not rows:
+            runtime_join: dict[str, object] = {
+                "status": "NOT_AVAILABLE",
+                "joined": 0,
+                "eligible": 0,
+                "rate": None,
+            }
+        else:
+            runtime_join = {
+                "status": "COMPLETE" if joined == len(rows) else "INCOMPLETE",
+                "joined": joined,
+                "eligible": len(rows),
+                "rate": joined / len(rows),
+            }
+        return {
+            "status": (
+                "NOT_AVAILABLE"
+                if not rows
+                else "INCOMPLETE" if incomplete else "COMPLETE"
+            ),
+            "incompleteCount": incomplete,
+            "runtimeJoin": runtime_join,
+            "baseline": baseline,
+        }
+
+    def _coverage_row(self, run_id: str) -> dict[str, object] | None:
+        # Coverage facts live only in the run's stage artifacts; a run whose
+        # evidence is missing or unreadable yields no row rather than failing
+        # the whole health snapshot.
+        try:
+            timeline = aws_call(
+                "dynamodb.coverage_timeline",
+                self._client.query,
+                TableName=self._ledger_table,
+                KeyConditionExpression="pk = :pk AND begins_with(sk, :stage)",
+                ExpressionAttributeValues={
+                    ":pk": {"S": f"COMMAND#{run_id}"},
+                    ":stage": {"S": "STAGE#"},
+                },
+                ScanIndexForward=True,
+                Limit=MAX_RUN_STAGES,
+            )
+            runtime_ref = consolidation_ref = None
+            for item in timeline.get("Items", []):
+                stage_id = _string(item, "stageId")
+                reference = _json_string(item, "output")
+                if reference is None:
+                    continue
+                if stage_id in _RUNTIME_VALIDATION_STAGES:
+                    runtime_ref = reference
+                elif stage_id in _CONSOLIDATION_STAGES:
+                    consolidation_ref = reference
+            runtime_status = None
+            if runtime_ref is not None:
+                runtime_document = self._artifacts.get(runtime_ref)
+                if isinstance(runtime_document, Mapping):
+                    runtime_coverage = runtime_document.get("runtimeCoverage")
+                    if isinstance(runtime_coverage, Mapping):
+                        runtime_status = runtime_coverage.get("status")
+            if consolidation_ref is None:
+                return None
+            document = self._artifacts.get(consolidation_ref)
+            if not isinstance(document, Mapping):
+                return None
+            coverage = document.get("coverage")
+            if not isinstance(coverage, Mapping) or coverage.get("state") not in {
+                "COMPLETE",
+                "INCOMPLETE",
+            }:
+                return None
+            return {"state": coverage["state"], "runtimeStatus": runtime_status}
+        except Exception:
+            return None
+
+    def _baseline_signal(self, now: datetime, environment: str) -> dict[str, object]:
+        response = aws_call(
+            "dynamodb.latest_baseline_run",
+            self._client.query,
+            TableName=self._ledger_table,
+            IndexName=RUN_INDEX,
+            KeyConditionExpression="queryPk = :run",
+            FilterExpression="workflowKind = :baseline AND environment = :environment",
+            ExpressionAttributeValues={
+                ":run": {"S": "RUN"},
+                ":baseline": {"S": "BASELINE"},
+                ":environment": {"S": environment},
+            },
+            ScanIndexForward=False,
+            Limit=_BASELINE_SEARCH_LIMIT,
+        )
+        items = response.get("Items", [])
+        if not isinstance(items, list) or not items:
+            return {
+                "status": "NOT_AVAILABLE",
+                "ageSeconds": None,
+                "maxAgeSeconds": _BASELINE_AGE_LIMIT_SECONDS,
+            }
+        latest = items[0]
+        age = self._age(now, _string(latest, "updatedAt"))
+        if _string(latest, "terminalOutcome") != "PUBLISHED":
+            status = "INCOMPLETE"
+        elif age is not None and age > _BASELINE_AGE_LIMIT_SECONDS:
+            status = "STALE"
+        else:
+            status = "CURRENT"
+        return {
+            "status": status,
+            "ageSeconds": age,
+            "maxAgeSeconds": _BASELINE_AGE_LIMIT_SECONDS,
+        }
+
+    def _review_signal(
+        self, now: datetime, proposals: list[dict[str, Any]]
+    ) -> dict[str, object]:
+        # The IN_REVIEW page is queried ascending by createdAt, so the first
+        # item is the oldest waiting approval.
+        age = self._age(now, proposals[0].get("createdAt")) if proposals else None
+        return {
+            "status": (
+                "DEGRADED"
+                if age is not None and age > _APPROVAL_AGE_LIMIT_SECONDS
+                else "HEALTHY"
+            ),
+            "oldestApprovalAgeSeconds": age,
+        }
+
+    def _publication_signal(
+        self, now: datetime, pointer: Mapping[str, Any]
+    ) -> dict[str, object]:
+        version = pointer.get("graphVersion")
+        active_version = version if isinstance(version, str) and version != "NONE" else None
+        package = pointer.get("package")
+        if active_version is None:
+            pointer_package_status = "NOT_AVAILABLE"
+        elif package:
+            pointer_package_status = "IN_SYNC"
+        else:
+            pointer_package_status = "OUT_OF_SYNC"
+        activated_at = pointer.get("activatedAt")
+        watermark_age = self._age(now, activated_at)
+        # The pointer's activation IS the watermark on this path: the graph
+        # projection is swapped in the same fenced transaction, so an existing
+        # activation timestamp means the projection is current with the pointer.
+        watermark = {
+            "status": "CURRENT" if watermark_age is not None else "NOT_AVAILABLE",
+            "version": active_version if watermark_age is not None else None,
+            "updatedAt": activated_at if watermark_age is not None else None,
+            "ageSeconds": watermark_age,
+        }
+        if pointer_package_status == "OUT_OF_SYNC":
+            status = "OUT_OF_SYNC"
+        elif active_version is None:
+            status = "NOT_AVAILABLE"
+        else:
+            status = "HEALTHY"
+        return {
+            "status": status,
+            # There is no publication-operations ledger on this path, so the
+            # lag is honestly unobserved rather than derived from run spans.
+            "publishLagSeconds": None,
+            "pointerPackage": {
+                "status": pointer_package_status,
+                "activeVersion": active_version,
+                "packageVersion": active_version if package else None,
+            },
+            "watermark": watermark,
+        }
+
+    def _queue_signal(self) -> dict[str, object]:
+        if self._sqs is None or not self._queue_urls:
+            return {
+                "status": "NOT_AVAILABLE",
+                "depth": 0,
+                "oldestAgeSeconds": None,
+                "saturation": {
+                    "status": "NOT_CONFIGURED",
+                    "observedDepth": 0,
+                    "capacity": None,
+                },
+                "retryCount": 0,
+                "deadLetterCount": 0,
+                "leaseStealCount": 0,
+            }
+        depth = 0
+        oldest: int | None = None
+        for url in self._queue_urls:
+            attributes = self._queue_attributes(url)
+            messages = int(attributes.get("ApproximateNumberOfMessages", "0"))
+            depth += messages
+            age = attributes.get("ApproximateAgeOfOldestMessage")
+            if messages > 0 and age is not None:
+                oldest = max(oldest or 0, int(age))
+        dead_letters = sum(
+            int(self._queue_attributes(url).get("ApproximateNumberOfMessages", "0"))
+            for url in self._dead_letter_queue_urls
+        )
+        degraded = dead_letters > 0 or (
+            oldest is not None and oldest > _QUEUE_AGE_LIMIT_SECONDS
         )
         return {
-            "environment": selected,
-            "activeGraph": pointer,
-            "runtimeControls": controls["items"],
-            "controlPlaneStatus": "AVAILABLE",
+            "status": "DEGRADED" if degraded else "HEALTHY",
+            "depth": depth,
+            "oldestAgeSeconds": oldest,
+            "saturation": {
+                "status": "NOT_CONFIGURED",
+                "observedDepth": depth,
+                "capacity": None,
+            },
+            # Retries and lease steals are per-command attributes with no
+            # index on this path; the dead-letter queues are the durable
+            # failure signal.
+            "retryCount": 0,
+            "deadLetterCount": dead_letters,
+            "leaseStealCount": 0,
         }
+
+    def _queue_attributes(self, url: str) -> Mapping[str, str]:
+        response = aws_call(
+            "sqs.queue_attributes",
+            self._sqs.get_queue_attributes,
+            QueueUrl=url,
+            AttributeNames=[
+                "ApproximateNumberOfMessages",
+                "ApproximateAgeOfOldestMessage",
+            ],
+        )
+        attributes = response.get("Attributes", {})
+        return attributes if isinstance(attributes, Mapping) else {}
 
     def runtime_admin(
         self,
@@ -1184,6 +1523,16 @@ def build_product_api(
 ) -> ProductApiService:
     values = os.environ if env is None else env
     config = AwsRuntimeConfig.from_env(values)
+    queue_urls = tuple(
+        values[name]
+        for name in sorted(values)
+        if name.startswith("LINEAGE_") and name.endswith("_QUEUE_URL") and values[name]
+    )
+    dead_letter_queue_urls = tuple(
+        values[name]
+        for name in sorted(values)
+        if name.startswith("LINEAGE_") and name.endswith("_DLQ_URL") and values[name]
+    )
     if clients is None:
         try:
             import boto3
@@ -1193,6 +1542,7 @@ def build_product_api(
         sdk = {
             "dynamodb": session.client("dynamodb"),
             "s3": session.client("s3"),
+            "sqs": session.client("sqs"),
             "neptunedata": session.client(
                 "neptunedata", endpoint_url=f"https://{config.neptune_endpoint}:8182"
             ),
@@ -1216,5 +1566,8 @@ def build_product_api(
             ledger_table=config.ledger_table,
             proposal_table=config.proposal_table,
             default_environment=values.get("LINEAGE_ENVIRONMENT", "staging"),
+            sqs=sdk.get("sqs") if queue_urls else None,
+            queue_urls=queue_urls,
+            dead_letter_queue_urls=dead_letter_queue_urls,
         )
     )

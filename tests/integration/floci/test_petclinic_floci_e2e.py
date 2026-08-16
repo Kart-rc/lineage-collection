@@ -207,6 +207,12 @@ class E2ESession:
             control_table=self.config.control_table,
             ledger_table=self.config.ledger_table,
             proposal_table=self.config.proposal_table,
+            sqs=self.sqs,
+            queue_urls=(
+                os.environ["LINEAGE_INTERACTIVE_QUEUE_URL"],
+                os.environ["LINEAGE_EVENTS_QUEUE_URL"],
+                os.environ["LINEAGE_BATCH_QUEUE_URL"],
+            ),
         )
 
         catalog_body = json.loads(
@@ -893,7 +899,35 @@ def test_04_pr_gate_blocks_a_destructive_change_against_the_live_graph(
     sess.pr_gate["commandId"] = command_id
 
 
-def test_05_capture_run_evidence(sess: E2ESession) -> None:
+def test_05_resilience_snapshot_reports_real_control_plane_signals(
+    sess: E2ESession,
+) -> None:
+    snapshot = sess.product.resilience(
+        environment="staging", principal="test", correlation_id="corr-resilience"
+    )
+
+    # Every stage of the finished paths shares one correlation identity.
+    assert snapshot["correlation"]["trackedCount"] > 0
+    assert snapshot["correlation"]["missingCount"] == 0
+    # The baseline just published, so coverage evidence is fresh and complete.
+    assert snapshot["coverage"]["baseline"]["status"] == "CURRENT"
+    assert snapshot["coverage"]["runtimeJoin"]["eligible"] > 0
+    # The pointer, its registered package and activation watermark are in sync.
+    publication = snapshot["publication"]
+    assert publication["pointerPackage"]["status"] == "IN_SYNC"
+    assert (
+        publication["pointerPackage"]["activeVersion"]
+        == sess.control.active_pointer("staging")["graphVersion"]
+    )
+    assert publication["watermark"]["status"] == "CURRENT"
+    # Lanes drained during the run; nothing is dead-lettered (floci has no DLQs).
+    assert snapshot["queue"]["status"] in {"HEALTHY", "DEGRADED"}
+    assert snapshot["queue"]["deadLetterCount"] == 0
+    assert snapshot["status"] in {"HEALTHY", "DEGRADED"}
+    sess.pr_gate["resilience"] = snapshot
+
+
+def test_06_capture_run_evidence(sess: E2ESession) -> None:
     from lineage_api.domain.product_confidence import project_confidence
 
     assert sess.pr_gate.get("check"), "all paths must complete first"
@@ -908,6 +942,9 @@ def test_05_capture_run_evidence(sess: E2ESession) -> None:
     )
     (out / "pointer.json").write_text(
         json.dumps(sess.control.active_pointer("staging"), indent=2)
+    )
+    (out / "resilience.json").write_text(
+        json.dumps(sess.pr_gate.get("resilience"), indent=2)
     )
     (out / "edge-set.json").write_text(json.dumps(sess.baseline["edges"], indent=2))
     confidence = [
