@@ -123,6 +123,7 @@ _JPA_INHERITED_ARITIES = {
     "saveAllAndFlush": frozenset({1}),
     "saveAndFlush": frozenset({1}),
 }
+_JPQL_FETCH_JOIN = re.compile(r"(?i)\b(join)\s+fetch\b")
 _DYNAMIC_BUILD_TOKEN = re.compile(r"(?:\$\{|\$[A-Za-z_]|\+)")
 _SEMANTIC_VERSION = re.compile(r"([0-9]+)\.([0-9]+)\.([0-9]+)")
 _EVIDENCE_JAVA_IDENTIFIER = re.compile(r"[A-Za-z_$][A-Za-z0-9_$]{0,127}")
@@ -165,6 +166,7 @@ _RESIDUE_CODES = frozenset(
         "missing-jpa-dependency",
         "missing-jpa-version",
         "missing-sql-dialect",
+        "ignored-repository-operation",
         "ignored-schema-statement",
         "shadowed-framework-symbol",
         "shadowed-repository-receiver",
@@ -184,6 +186,7 @@ _RESIDUE_CODES = frozenset(
         # Migration-replay vocabulary: `_ingest_migrations` forwards residue produced
         # by `schema_migrations` verbatim, so that closed set is part of this one.
         "ambiguous-migration-version",
+        "ignored-changelog-change",
         "malformed-changelog",
         "malformed-migration-sql",
         "missing-changelog-include",
@@ -567,6 +570,9 @@ class _Operation:
     # declared over — Petclinic's PetRepository reads PetType. The edge then belongs to
     # that entity's table, which is more precise than refusing it as a conflict.
     entity_override: str | None = None
+    # When a default method resolved through its delegate, element grounding must
+    # look up the delegate's `spring.query-element` facts, not the wrapper's name.
+    element_method: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -604,7 +610,13 @@ class _QualifiedTableIdentity:
 class JavaSpringEvidenceCompiler:
     """Compiles only complete Spring Data call-site proof chains into static edges."""
 
-    _NONBLOCKING_ANALYSIS_RESIDUE = frozenset({"ignored-schema-statement"})
+    _NONBLOCKING_ANALYSIS_RESIDUE = frozenset(
+        {
+            "ignored-schema-statement",
+            "ignored-changelog-change",
+            "ignored-repository-operation",
+        }
+    )
 
     def compile(
         self,
@@ -780,7 +792,6 @@ class JavaSpringEvidenceCompiler:
                 context.schema_profile,
             )
             if operation is None:
-                unresolved += 1
                 code = operation_error or "unsupported-operation"
                 residue.append(
                     JavaSpringCompilationResidue(
@@ -794,6 +805,11 @@ class JavaSpringEvidenceCompiler:
                         ),
                     )
                 )
+                if code in self._NONBLOCKING_ANALYSIS_RESIDUE:
+                    # Fully understood non-lineage operations (e.g. flush) are
+                    # evidence, not unresolved calls, and never gate completion.
+                    continue
+                unresolved += 1
                 status_reasons.add(code)
                 continue
 
@@ -886,7 +902,7 @@ class JavaSpringEvidenceCompiler:
             # than the entity the query actually targets) must never element-scope a
             # candidate it does not describe; that stays an honest wall.
             for element_table, column in elements_by_method.get(
-                (repository.subject, called), ()
+                (repository.subject, operation.element_method or called), ()
             ):
                 if element_table != table_name:
                     continue
@@ -1170,6 +1186,56 @@ def _resolve_operation(
         return None, "ambiguous-operation-overload"
     method = matching_methods[0] if matching_methods else None
     if method is not None and _optional_attribute(method, "declarationMode") != "abstract-interface":
+        # A `default` interface method whose body is exactly `return this.x(...);`
+        # (the jhipster-generated wrapper pattern) resolves through its delegate,
+        # provided the delegate is a single unambiguous abstract declaration.
+        if _optional_attribute(method, "declarationMode") == "default":
+            delegation_candidates = (
+                (
+                    _optional_attribute(method, "delegatesTo"),
+                    _optional_attribute(method, "delegateArity"),
+                ),
+                (
+                    _optional_attribute(method, "delegatesToInner"),
+                    _optional_attribute(method, "delegateInnerArity"),
+                ),
+            )
+            for delegate_name, delegate_arity in delegation_candidates:
+                if not isinstance(delegate_name, str) or not isinstance(
+                    delegate_arity, str
+                ):
+                    continue
+                delegates = tuple(
+                    candidate
+                    for candidate_facts in methods.values()
+                    for candidate in candidate_facts
+                    if candidate.subject.startswith(
+                        f"{repository.subject}#{delegate_name}("
+                    )
+                    and _optional_attribute(candidate, "name") == delegate_name
+                    and _optional_attribute(candidate, "arity") == delegate_arity
+                    and _optional_attribute(candidate, "declarationMode")
+                    == "abstract-interface"
+                )
+                if len(delegates) == 1:
+                    delegated, delegated_error = _resolve_operation(
+                        repository,
+                        entity,
+                        table,
+                        delegate_name,
+                        int(delegate_arity),
+                        table_identity,
+                        queries,
+                        query_annotations,
+                        methods,
+                        schema_profile,
+                    )
+                    if delegated is not None:
+                        return (
+                            replace(delegated, element_method=delegate_name),
+                            delegated_error,
+                        )
+                    return delegated, delegated_error
         return None, "unsupported-operation"
     inherited = (
         repository.attribute("baseFqn") == _JPA_REPOSITORY_FQN
@@ -1222,6 +1288,13 @@ def _resolve_operation(
         )
 
     if method is None and not inherited:
+        if (
+            called == "flush"
+            and invocation_arity == 0
+            and repository.attribute("baseFqn") == _JPA_REPOSITORY_FQN
+        ):
+            # JpaRepository#flush moves no table data — it is inventory, not lineage.
+            return None, "ignored-repository-operation"
         return None, "unsupported-operation"
     lower = called.casefold()
     if lower.startswith(("find", "get", "read", "count", "exists")):
@@ -1280,6 +1353,11 @@ def _parse_explicit_query(
 ]:
     statement = str(query.attribute("query"))
     native = _optional_attribute(query, "nativeQuery") == "true"
+    if not native:
+        # JPQL `join fetch` is a join with eager loading; sqlglot cannot tokenize
+        # the FETCH keyword there, and the fetch marker changes nothing about
+        # which relations the query reads.
+        statement = _JPQL_FETCH_JOIN.sub(r"\1", statement)
     dialect_name = _SQLGLOT_DIALECTS[schema_profile]
     try:
         dialect = Dialect.get_or_raise(dialect_name if native else "postgres")
@@ -1356,10 +1434,32 @@ def _jpql_query_operation(
 ) -> tuple[str, exp.Table] | None:
     if any(
         expression.find(kind) is not None
-        for kind in (exp.Join, exp.Subquery, exp.Union, exp.With)
+        for kind in (exp.Subquery, exp.Union, exp.With)
     ):
         return None
     tables = tuple(expression.find_all(exp.Table))
+    joins = tuple(expression.find_all(exp.Join))
+    if joins:
+        # Only association-path joins (`alias.attribute` rooted at the query's own
+        # range variable) are modelled: they traverse from the root entity, exactly
+        # like derived-method association traversal. A join that ranges over an
+        # independent entity stays fail-closed.
+        root: exp.Table | None = None
+        if isinstance(expression, exp.Select):
+            source = expression.args.get("from")
+            if isinstance(source, exp.From) and isinstance(source.this, exp.Table):
+                root = source.this
+        if root is None or not root.alias:
+            return None
+        for join in joins:
+            target = join.this
+            if (
+                not isinstance(target, exp.Table)
+                or target.db != root.alias
+                or target.catalog
+            ):
+                return None
+        tables = (root,)
     if len(tables) != 1:
         return None
     table = tables[0]
@@ -2948,22 +3048,40 @@ class JavaSpringScaAnalyzer:
                 declaration_mode = _method_declaration_mode(
                     declaration, member, parsed.source.content
                 )
-                self._add_fact(
-                    "java.method",
-                    subject,
+                delegation = (
+                    _default_method_delegation(member, parsed.source.content)
+                    if declaration_mode == "default"
+                    else ()
+                )
+                method_attributes: list[tuple[str, FactValue]] = [
                     (
-                        (
-                            "returnType",
-                            _node_text(return_type, parsed.source.content)
-                            if return_type is not None
-                            else "void",
-                        ),
-                        ("arity", str(len(parameter_types))),
-                        ("declarationMode", declaration_mode),
+                        "returnType",
+                        _node_text(return_type, parsed.source.content)
+                        if return_type is not None
+                        else "void",
+                    ),
+                    ("arity", str(len(parameter_types))),
+                    ("declarationMode", declaration_mode),
+                ]
+                if delegation:
+                    method_attributes.append(("delegateArity", str(delegation[0][1])))
+                    method_attributes.append(("delegatesTo", delegation[0][0]))
+                if len(delegation) > 1:
+                    method_attributes.append(
+                        ("delegateInnerArity", str(delegation[1][1]))
+                    )
+                    method_attributes.append(("delegatesToInner", delegation[1][0]))
+                method_attributes.extend(
+                    (
                         ("name", method_name),
                         ("parameterTypes", parameter_types),
                         ("parameters", _parameter_signature(member, parsed.source.content)),
-                    ),
+                    )
+                )
+                self._add_fact(
+                    "java.method",
+                    subject,
+                    tuple(method_attributes),
                     self._node_location(parsed.source.path, member),
                 )
                 annotations = self._emit_annotations(
@@ -4226,6 +4344,63 @@ def _method_declaration_mode(
     return "concrete"
 
 
+def _default_method_delegation(
+    declaration: Node, content: bytes
+) -> tuple[tuple[str, int], ...]:
+    """The (name, arity) candidates a `default` interface method delegates to.
+
+    jhipster-generated repositories wrap ``@Query`` methods either directly —
+    ``return this.name(...);`` — or through a bag-relationship hydrator —
+    ``return this.outer(this.inner(...));``. Candidates are returned outermost
+    first. Any richer body is not modelled and stays fail-closed as
+    `unsupported-operation`.
+    """
+    body = declaration.child_by_field_name("body")
+    if body is None:
+        return ()
+    statements = [
+        child
+        for child in body.named_children
+        if child.type not in {"line_comment", "block_comment"}
+    ]
+    if len(statements) != 1 or statements[0].type != "return_statement":
+        return ()
+    expressions = statements[0].named_children
+    if len(expressions) != 1 or expressions[0].type != "method_invocation":
+        return ()
+    invocation = expressions[0]
+    receiver = invocation.child_by_field_name("object")
+    if receiver is not None and receiver.type != "this":
+        return ()
+    name = invocation.child_by_field_name("name")
+    arguments = invocation.child_by_field_name("arguments")
+    if name is None or arguments is None:
+        return ()
+    candidates: list[tuple[str, int]] = [
+        (_node_text(name, content), len(arguments.named_children))
+    ]
+    nested = [
+        child for child in arguments.named_children if child.type == "method_invocation"
+    ]
+    if len(arguments.named_children) == 1 and len(nested) == 1:
+        inner = nested[0]
+        inner_receiver = inner.child_by_field_name("object")
+        inner_name = inner.child_by_field_name("name")
+        inner_arguments = inner.child_by_field_name("arguments")
+        if (
+            (inner_receiver is None or inner_receiver.type == "this")
+            and inner_name is not None
+            and inner_arguments is not None
+        ):
+            candidates.append(
+                (
+                    _node_text(inner_name, content),
+                    len(inner_arguments.named_children),
+                )
+            )
+    return tuple(candidates)
+
+
 def _parameters(declaration: Node, content: bytes) -> dict[str, str]:
     parameters = declaration.child_by_field_name("parameters")
     if parameters is None:
@@ -4887,6 +5062,10 @@ _DERIVED_SUBJECTS = (
     "countBy", "existsBy", "deleteBy", "removeBy",
 )
 _DERIVED_WRITE_SUBJECTS = ("deleteBy", "removeBy")
+_DERIVED_VERBS = (
+    "find", "read", "get", "query", "search", "stream",
+    "count", "exists", "delete", "remove",
+)
 # Trailing operator keywords that qualify a property rather than name one.
 _DERIVED_KEYWORDS = (
     "IsStartingWith", "IsEndingWith", "IsNotContaining", "IsContaining", "StartingWith",
@@ -4906,7 +5085,19 @@ def _derived_properties(method: str) -> tuple[str, ...] | None:
     """
     subject = next((item for item in _DERIVED_SUBJECTS if method.startswith(item)), None)
     if subject is None:
-        return None
+        # Spring Data's grammar allows limiter/projection words between the verb and
+        # `By` (`findOneByLogin`, `findAllByActivatedIsTrue`, `findOneWithAuthoritiesBy
+        # Login`). The predicate list always starts after the first `By` that opens a
+        # capitalised property, so anything before it belongs to the subject.
+        verb = next((item for item in _DERIVED_VERBS if method.startswith(item)), None)
+        if verb is None:
+            return None
+        index = method.find("By", len(verb))
+        while index > 0 and index + 2 < len(method) and not method[index + 2].isupper():
+            index = method.find("By", index + 2)
+        if index <= 0:
+            return None
+        subject = method[: index + 2]
     remainder = method[len(subject):]
     if not remainder:
         return ()

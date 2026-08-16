@@ -83,9 +83,8 @@ class _SnapshotWithUnmodelledChange(_Snapshot):
     <dropColumn tableName="invoices" columnName="draft_note"/>
   </changeSet>
   <changeSet id="4" author="billing">
-    <addForeignKeyConstraint baseTableName="invoices" baseColumnNames="account_id"
-      referencedTableName="accounts" referencedColumnNames="id"
-      constraintName="fk_invoices_account"/>
+    <renameColumn tableName="invoices" oldColumnName="account_id"
+      newColumnName="customer_account_id"/>
   </changeSet>
 </databaseChangeLog>
 """

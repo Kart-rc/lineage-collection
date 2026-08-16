@@ -270,12 +270,18 @@ def generate_stub_sources() -> dict[str, str]:
         "org/springframework/data/jpa/repository/JpaRepository.java": (
             "package org.springframework.data.jpa.repository;\n"
             "import java.util.List;\nimport java.util.Optional;\n"
+            "import org.springframework.data.domain.Page;\n"
+            "import org.springframework.data.domain.Pageable;\n"
             "public interface JpaRepository<T, ID> {\n"
             "    Optional<T> findById(ID id);\n"
+            "    boolean existsById(ID id);\n"
             "    List<T> findAll();\n"
+            "    Page<T> findAll(Pageable pageable);\n"
             "    T save(T entity);\n"
             "    T saveAndFlush(T entity);\n"
+            "    void delete(T entity);\n"
             "    void deleteById(ID id);\n"
+            "    void flush();\n"
             "}\n"
         ),
         "org/springframework/data/jpa/repository/Query.java": (
@@ -313,7 +319,10 @@ def generate_stub_sources() -> dict[str, str]:
             "package jakarta.persistence;\n"
             "import java.lang.annotation.*;\n"
             "@Retention(RetentionPolicy.RUNTIME)\n"
-            "public @interface Column { String name() default \"\"; int length() default 255; String columnDefinition() default \"\"; }\n"
+            "public @interface Column { String name() default \"\"; int length() default 255; "
+            "int precision() default 0; int scale() default 0; String columnDefinition() default \"\"; "
+            "boolean nullable() default true; boolean unique() default false; "
+            "boolean updatable() default true; boolean insertable() default true; }\n"
         ),
         "jakarta/persistence/TemporalType.java": (
             "package jakarta.persistence;\n"
@@ -346,7 +355,9 @@ def generate_stub_sources() -> dict[str, str]:
         "org/springframework/http/HttpStatus.java": (
             "package org.springframework.http;\n"
             "public enum HttpStatus { OK, CREATED, NO_CONTENT, BAD_REQUEST, NOT_FOUND, "
-            "INTERNAL_SERVER_ERROR }\n"
+            "INTERNAL_SERVER_ERROR;\n"
+            "    public int value() { return ordinal(); }\n"
+            "}\n"
         ),
         "org/springframework/web/bind/annotation/RestController.java": (
             "package org.springframework.web.bind.annotation;\n"
@@ -359,6 +370,120 @@ def generate_stub_sources() -> dict[str, str]:
             "import java.lang.annotation.*;\n"
             "@Retention(RetentionPolicy.RUNTIME)\n"
             "public @interface RequestMapping { String[] value() default {}; }\n"
+        ),
+        "org/springframework/web/bind/annotation/PatchMapping.java": (
+            "package org.springframework.web.bind.annotation;\n"
+            "import java.lang.annotation.*;\n"
+            "@Retention(RetentionPolicy.RUNTIME)\n"
+            "public @interface PatchMapping { String[] value() default {}; String[] path() default {}; "
+            "String[] consumes() default {}; String[] produces() default {}; }\n"
+        ),
+        "org/springframework/data/annotation/Transient.java": (
+            "package org.springframework.data.annotation;\n"
+            "import java.lang.annotation.*;\n"
+            "@Retention(RetentionPolicy.RUNTIME)\n"
+            "public @interface Transient {}\n"
+        ),
+        "org/springdoc/core/annotations/ParameterObject.java": (
+            "package org.springdoc.core.annotations;\n"
+            "import java.lang.annotation.*;\n"
+            "@Retention(RetentionPolicy.RUNTIME)\n"
+            "public @interface ParameterObject {}\n"
+        ),
+        "org/springframework/cache/Cache.java": (
+            "package org.springframework.cache;\n"
+            "public interface Cache {\n"
+            "    default void evict(Object key) {}\n"
+            "    default boolean evictIfPresent(Object key) { return false; }\n"
+            "    default void clear() {}\n"
+            "}\n"
+        ),
+        "org/springframework/cache/CacheManager.java": (
+            "package org.springframework.cache;\n"
+            "public interface CacheManager {\n"
+            "    default Cache getCache(String name) { return new Cache() {}; }\n"
+            "}\n"
+        ),
+        "org/springframework/scheduling/annotation/Scheduled.java": (
+            "package org.springframework.scheduling.annotation;\n"
+            "import java.lang.annotation.*;\n"
+            "@Retention(RetentionPolicy.RUNTIME)\n"
+            "public @interface Scheduled { String cron() default \"\"; long fixedRate() default 0; long fixedDelay() default 0; }\n"
+        ),
+        "org/springframework/security/crypto/password/PasswordEncoder.java": (
+            "package org.springframework.security.crypto.password;\n"
+            "public interface PasswordEncoder {\n"
+            "    default String encode(CharSequence rawPassword) { return String.valueOf(rawPassword); }\n"
+            "    default boolean matches(CharSequence rawPassword, String encodedPassword) { return false; }\n"
+            "}\n"
+        ),
+        "org/springframework/validation/annotation/Validated.java": (
+            "package org.springframework.validation.annotation;\n"
+            "import java.lang.annotation.*;\n"
+            "@Retention(RetentionPolicy.RUNTIME)\n"
+            "public @interface Validated {}\n"
+        ),
+        "org/springframework/security/access/prepost/PreAuthorize.java": (
+            "package org.springframework.security.access.prepost;\n"
+            "import java.lang.annotation.*;\n"
+            "@Retention(RetentionPolicy.RUNTIME)\n"
+            "public @interface PreAuthorize { String value(); }\n"
+        ),
+        "org/springframework/security/core/GrantedAuthority.java": (
+            "package org.springframework.security.core;\n"
+            "public interface GrantedAuthority { String getAuthority(); }\n"
+        ),
+        "org/springframework/security/core/Authentication.java": (
+            "package org.springframework.security.core;\n"
+            "import java.util.Collection;\n"
+            "public interface Authentication {\n"
+            "    default Object getPrincipal() { return null; }\n"
+            "    default Object getCredentials() { return null; }\n"
+            "    default String getName() { return null; }\n"
+            "    default Collection<? extends GrantedAuthority> getAuthorities() { return java.util.List.of(); }\n"
+            "}\n"
+        ),
+        "org/springframework/security/core/context/SecurityContext.java": (
+            "package org.springframework.security.core.context;\n"
+            "import org.springframework.security.core.Authentication;\n"
+            "public interface SecurityContext { Authentication getAuthentication(); }\n"
+        ),
+        "org/springframework/security/core/context/SecurityContextHolder.java": (
+            "package org.springframework.security.core.context;\n"
+            "public final class SecurityContextHolder {\n"
+            "    private SecurityContextHolder() {}\n"
+            "    public static SecurityContext getContext() { return () -> null; }\n"
+            "}\n"
+        ),
+        "org/springframework/security/core/userdetails/UserDetails.java": (
+            "package org.springframework.security.core.userdetails;\n"
+            "public interface UserDetails { String getUsername(); }\n"
+        ),
+        "org/springframework/security/oauth2/core/ClaimAccessor.java": (
+            "package org.springframework.security.oauth2.core;\n"
+            "public interface ClaimAccessor {\n"
+            "    default <T> T getClaim(String claim) { return null; }\n"
+            "}\n"
+        ),
+        "org/springframework/security/oauth2/jose/jws/MacAlgorithm.java": (
+            "package org.springframework.security.oauth2.jose.jws;\n"
+            "public enum MacAlgorithm { HS256, HS384, HS512 }\n"
+        ),
+        "org/springframework/security/oauth2/jwt/Jwt.java": (
+            "package org.springframework.security.oauth2.jwt;\n"
+            "public class Jwt {\n"
+            "    public String getSubject() { return null; }\n"
+            "    public String getTokenValue() { return null; }\n"
+            "}\n"
+        ),
+        "tech/jhipster/security/RandomUtil.java": (
+            "package tech.jhipster.security;\n"
+            "public final class RandomUtil {\n"
+            "    private RandomUtil() {}\n"
+            "    public static String generatePassword() { return \"generated\"; }\n"
+            "    public static String generateActivationKey() { return \"generated\"; }\n"
+            "    public static String generateResetKey() { return \"generated\"; }\n"
+            "}\n"
         ),
         "org/springframework/web/bind/annotation/GetMapping.java": (
             "package org.springframework.web.bind.annotation;\n"
@@ -411,27 +536,6 @@ def generate_stub_sources() -> dict[str, str]:
             "import org.springframework.http.HttpStatus;\n"
             "@Retention(RetentionPolicy.RUNTIME)\n"
             "public @interface ResponseStatus { HttpStatus value() default HttpStatus.OK; }\n"
-        ),
-        "org/slf4j/Logger.java": (
-            "package org.slf4j;\n"
-            "public interface Logger {\n"
-            "    void info(String format, Object... arguments);\n"
-            "    void warn(String format, Object... arguments);\n"
-            "    void error(String format, Object... arguments);\n"
-            "    void debug(String format, Object... arguments);\n"
-            "}\n"
-        ),
-        "org/slf4j/LoggerFactory.java": (
-            "package org.slf4j;\n"
-            "public final class LoggerFactory {\n"
-            "    private static final Logger NOOP = new Logger() {\n"
-            "        public void info(String format, Object... arguments) {}\n"
-            "        public void warn(String format, Object... arguments) {}\n"
-            "        public void error(String format, Object... arguments) {}\n"
-            "        public void debug(String format, Object... arguments) {}\n"
-            "    };\n"
-            "    public static Logger getLogger(Class<?> type) { return NOOP; }\n"
-            "}\n"
         ),
         "io/micrometer/core/annotation/Timed.java": (
             "package io.micrometer.core.annotation;\n"
@@ -539,6 +643,251 @@ def generate_stub_sources() -> dict[str, str]:
             "@Retention(RetentionPolicy.RUNTIME)\n"
             "public @interface Transient {}\n"
         ),
+        # The stubs below are the additional surface jhipster-generated entities and
+        # repositories import (Hibernate cache hints, Jackson view markers, Spring
+        # Data auditing, sequence identity, second-level cache config). Annotations
+        # and markers only — no behaviour — except StringUtils, whose lower-casing
+        # the User entity's setter genuinely executes inside the harness JVM.
+        "jakarta/persistence/EntityListeners.java": (
+            "package jakarta.persistence;\n"
+            "import java.lang.annotation.*;\n"
+            "@Retention(RetentionPolicy.RUNTIME) @Target(ElementType.TYPE)\n"
+            "public @interface EntityListeners { Class<?>[] value(); }\n"
+        ),
+        "jakarta/persistence/SequenceGenerator.java": (
+            "package jakarta.persistence;\n"
+            "import java.lang.annotation.*;\n"
+            "@Retention(RetentionPolicy.RUNTIME)\n"
+            "public @interface SequenceGenerator { String name(); String sequenceName() default \"\"; "
+            "int allocationSize() default 50; int initialValue() default 1; }\n"
+        ),
+        "jakarta/persistence/PostLoad.java": (
+            "package jakarta.persistence;\n"
+            "import java.lang.annotation.*;\n"
+            "@Retention(RetentionPolicy.RUNTIME) @Target(ElementType.METHOD)\n"
+            "public @interface PostLoad {}\n"
+        ),
+        "jakarta/persistence/PostPersist.java": (
+            "package jakarta.persistence;\n"
+            "import java.lang.annotation.*;\n"
+            "@Retention(RetentionPolicy.RUNTIME) @Target(ElementType.METHOD)\n"
+            "public @interface PostPersist {}\n"
+        ),
+        "jakarta/validation/constraints/Email.java": (
+            "package jakarta.validation.constraints;\n"
+            "import java.lang.annotation.*;\n"
+            "@Retention(RetentionPolicy.RUNTIME)\n"
+            "public @interface Email { String message() default \"\"; }\n"
+        ),
+        "org/hibernate/annotations/Cache.java": (
+            "package org.hibernate.annotations;\n"
+            "import java.lang.annotation.*;\n"
+            "@Retention(RetentionPolicy.RUNTIME) @Target({ElementType.TYPE, ElementType.FIELD})\n"
+            "public @interface Cache { CacheConcurrencyStrategy usage(); String region() default \"\"; }\n"
+        ),
+        "org/hibernate/annotations/CacheConcurrencyStrategy.java": (
+            "package org.hibernate.annotations;\n"
+            "public enum CacheConcurrencyStrategy { NONE, READ_ONLY, NONSTRICT_READ_WRITE, READ_WRITE, TRANSACTIONAL }\n"
+        ),
+        "org/hibernate/annotations/BatchSize.java": (
+            "package org.hibernate.annotations;\n"
+            "import java.lang.annotation.*;\n"
+            "@Retention(RetentionPolicy.RUNTIME)\n"
+            "public @interface BatchSize { int size(); }\n"
+        ),
+        "com/fasterxml/jackson/annotation/JsonIgnore.java": (
+            "package com.fasterxml.jackson.annotation;\n"
+            "import java.lang.annotation.*;\n"
+            "@Retention(RetentionPolicy.RUNTIME)\n"
+            "public @interface JsonIgnore { boolean value() default true; }\n"
+        ),
+        "com/fasterxml/jackson/annotation/JsonIgnoreProperties.java": (
+            "package com.fasterxml.jackson.annotation;\n"
+            "import java.lang.annotation.*;\n"
+            "@Retention(RetentionPolicy.RUNTIME)\n"
+            "public @interface JsonIgnoreProperties { String[] value() default {}; "
+            "boolean allowGetters() default false; boolean allowSetters() default false; "
+            "boolean ignoreUnknown() default false; }\n"
+        ),
+        "org/springframework/data/annotation/CreatedBy.java": (
+            "package org.springframework.data.annotation;\n"
+            "import java.lang.annotation.*;\n"
+            "@Retention(RetentionPolicy.RUNTIME)\n"
+            "public @interface CreatedBy {}\n"
+        ),
+        "org/springframework/data/annotation/CreatedDate.java": (
+            "package org.springframework.data.annotation;\n"
+            "import java.lang.annotation.*;\n"
+            "@Retention(RetentionPolicy.RUNTIME)\n"
+            "public @interface CreatedDate {}\n"
+        ),
+        "org/springframework/data/annotation/LastModifiedBy.java": (
+            "package org.springframework.data.annotation;\n"
+            "import java.lang.annotation.*;\n"
+            "@Retention(RetentionPolicy.RUNTIME)\n"
+            "public @interface LastModifiedBy {}\n"
+        ),
+        "org/springframework/data/annotation/LastModifiedDate.java": (
+            "package org.springframework.data.annotation;\n"
+            "import java.lang.annotation.*;\n"
+            "@Retention(RetentionPolicy.RUNTIME)\n"
+            "public @interface LastModifiedDate {}\n"
+        ),
+        "org/springframework/data/domain/Persistable.java": (
+            "package org.springframework.data.domain;\n"
+            "public interface Persistable<ID> { ID getId(); boolean isNew(); }\n"
+        ),
+        "org/springframework/data/jpa/domain/support/AuditingEntityListener.java": (
+            "package org.springframework.data.jpa.domain.support;\n"
+            "public class AuditingEntityListener {}\n"
+        ),
+        "org/springframework/cache/annotation/Cacheable.java": (
+            "package org.springframework.cache.annotation;\n"
+            "import java.lang.annotation.*;\n"
+            "@Retention(RetentionPolicy.RUNTIME)\n"
+            "public @interface Cacheable { String[] value() default {}; String[] cacheNames() default {}; "
+            "String unless() default \"\"; String key() default \"\"; }\n"
+        ),
+        "org/slf4j/Logger.java": (
+            "package org.slf4j;\n"
+            "public interface Logger {\n"
+            "    default void trace(String message, Object... arguments) {}\n"
+            "    default void debug(String message, Object... arguments) {}\n"
+            "    default void info(String message, Object... arguments) {}\n"
+            "    default void warn(String message, Object... arguments) {}\n"
+            "    default void error(String message, Object... arguments) {}\n"
+            "}\n"
+        ),
+        "org/slf4j/LoggerFactory.java": (
+            "package org.slf4j;\n"
+            "public final class LoggerFactory {\n"
+            "    private LoggerFactory() {}\n"
+            "    public static Logger getLogger(Class<?> type) { return new Logger() {}; }\n"
+            "    public static Logger getLogger(String name) { return new Logger() {}; }\n"
+            "}\n"
+        ),
+        "org/springframework/beans/factory/annotation/Value.java": (
+            "package org.springframework.beans.factory.annotation;\n"
+            "import java.lang.annotation.*;\n"
+            "@Retention(RetentionPolicy.RUNTIME)\n"
+            "public @interface Value { String value(); }\n"
+        ),
+        "org/springframework/data/jpa/repository/EntityGraph.java": (
+            "package org.springframework.data.jpa.repository;\n"
+            "import java.lang.annotation.*;\n"
+            "@Retention(RetentionPolicy.RUNTIME) @Target(ElementType.METHOD)\n"
+            "public @interface EntityGraph { String value() default \"\"; String[] attributePaths() default {}; }\n"
+        ),
+        "org/springframework/http/HttpHeaders.java": (
+            "package org.springframework.http;\n"
+            "import java.util.ArrayList;\nimport java.util.HashMap;\nimport java.util.List;\nimport java.util.Map;\n"
+            "public class HttpHeaders {\n"
+            "    private final Map<String, List<String>> values = new HashMap<>();\n"
+            "    public void add(String name, String value) {\n"
+            "        values.computeIfAbsent(name, key -> new ArrayList<>()).add(value);\n"
+            "    }\n"
+            "}\n"
+        ),
+        "org/springframework/http/ResponseEntity.java": (
+            "package org.springframework.http;\n"
+            "import java.net.URI;\n"
+            "public class ResponseEntity<T> {\n"
+            "    private final T value;\n"
+            "    public ResponseEntity(T value) { this.value = value; }\n"
+            "    public T getBody() { return value; }\n"
+            "    public static BodyBuilder ok() { return new BodyBuilder(); }\n"
+            "    public static <T> ResponseEntity<T> ok(T body) { return new ResponseEntity<>(body); }\n"
+            "    public static BodyBuilder created(URI location) { return new BodyBuilder(); }\n"
+            "    public static BodyBuilder noContent() { return new BodyBuilder(); }\n"
+            "    public static class BodyBuilder {\n"
+            "        public BodyBuilder headers(HttpHeaders headers) { return this; }\n"
+            "        public <T> ResponseEntity<T> body(T body) { return new ResponseEntity<>(body); }\n"
+            "        public ResponseEntity<Void> build() { return new ResponseEntity<>(null); }\n"
+            "    }\n"
+            "}\n"
+        ),
+        "org/springframework/web/ErrorResponseException.java": (
+            "package org.springframework.web;\n"
+            "import org.springframework.http.HttpStatus;\n"
+            "public class ErrorResponseException extends RuntimeException {\n"
+            "    private final Object body;\n"
+            "    public ErrorResponseException(HttpStatus status, Object body, Throwable cause) {\n"
+            "        super(String.valueOf(status), cause);\n"
+            "        this.body = body;\n"
+            "    }\n"
+            "    public Object getBody() { return body; }\n"
+            "}\n"
+        ),
+        "org/springframework/web/servlet/support/ServletUriComponentsBuilder.java": (
+            "package org.springframework.web.servlet.support;\n"
+            "public class ServletUriComponentsBuilder {\n"
+            "    public static ServletUriComponentsBuilder fromCurrentRequest() {\n"
+            "        return new ServletUriComponentsBuilder();\n"
+            "    }\n"
+            "}\n"
+        ),
+        "tech/jhipster/web/rest/errors/ProblemDetailWithCause.java": (
+            "package tech.jhipster.web.rest.errors;\n"
+            "import java.net.URI;\n"
+            "public class ProblemDetailWithCause {\n"
+            "    public static class ProblemDetailWithCauseBuilder {\n"
+            "        public static ProblemDetailWithCauseBuilder instance() { return new ProblemDetailWithCauseBuilder(); }\n"
+            "        public ProblemDetailWithCauseBuilder withStatus(int status) { return this; }\n"
+            "        public ProblemDetailWithCauseBuilder withType(URI type) { return this; }\n"
+            "        public ProblemDetailWithCauseBuilder withTitle(String title) { return this; }\n"
+            "        public ProblemDetailWithCauseBuilder withProperty(String name, Object value) { return this; }\n"
+            "        public ProblemDetailWithCause build() { return new ProblemDetailWithCause(); }\n"
+            "    }\n"
+            "}\n"
+        ),
+        "tech/jhipster/web/util/HeaderUtil.java": (
+            "package tech.jhipster.web.util;\n"
+            "import org.springframework.http.HttpHeaders;\n"
+            "public final class HeaderUtil {\n"
+            "    private HeaderUtil() {}\n"
+            "    public static HttpHeaders createEntityCreationAlert(String application, boolean translated, String entity, String param) { return new HttpHeaders(); }\n"
+            "    public static HttpHeaders createEntityUpdateAlert(String application, boolean translated, String entity, String param) { return new HttpHeaders(); }\n"
+            "    public static HttpHeaders createEntityDeletionAlert(String application, boolean translated, String entity, String param) { return new HttpHeaders(); }\n"
+            "    public static HttpHeaders createFailureAlert(String application, boolean translated, String entity, String errorKey, String message) { return new HttpHeaders(); }\n"
+            "}\n"
+        ),
+        "tech/jhipster/web/util/ResponseUtil.java": (
+            "package tech.jhipster.web.util;\n"
+            "import java.util.Optional;\n"
+            "import org.springframework.http.HttpHeaders;\n"
+            "import org.springframework.http.ResponseEntity;\n"
+            "public final class ResponseUtil {\n"
+            "    private ResponseUtil() {}\n"
+            "    public static <X> ResponseEntity<X> wrapOrNotFound(Optional<X> response) {\n"
+            "        return ResponseEntity.ok(response.orElse(null));\n"
+            "    }\n"
+            "    public static <X> ResponseEntity<X> wrapOrNotFound(Optional<X> response, HttpHeaders headers) {\n"
+            "        return ResponseEntity.ok(response.orElse(null));\n"
+            "    }\n"
+            "}\n"
+        ),
+        "tech/jhipster/web/util/PaginationUtil.java": (
+            "package tech.jhipster.web.util;\n"
+            "import org.springframework.data.domain.Page;\n"
+            "import org.springframework.http.HttpHeaders;\n"
+            "import org.springframework.web.servlet.support.ServletUriComponentsBuilder;\n"
+            "public final class PaginationUtil {\n"
+            "    private PaginationUtil() {}\n"
+            "    public static <T> HttpHeaders generatePaginationHttpHeaders(ServletUriComponentsBuilder builder, Page<T> page) {\n"
+            "        return new HttpHeaders();\n"
+            "    }\n"
+            "}\n"
+        ),
+        "org/apache/commons/lang3/StringUtils.java": (
+            "package org.apache.commons.lang3;\n"
+            "import java.util.Locale;\n"
+            "public final class StringUtils {\n"
+            "    private StringUtils() {}\n"
+            "    public static String lowerCase(String value, Locale locale) {\n"
+            "        return value == null ? null : value.toLowerCase(locale);\n"
+            "    }\n"
+            "}\n"
+        ),
         "jakarta/validation/constraints/NotBlank.java": (
             "package jakarta.validation.constraints;\n"
             "import java.lang.annotation.*;\n"
@@ -610,16 +959,35 @@ def generate_stub_sources() -> dict[str, str]:
         "org/springframework/data/domain/Page.java": (
             "package org.springframework.data.domain;\n"
             "import java.util.List;\n"
+            "import java.util.function.Function;\n"
             "public interface Page<T> extends Iterable<T> {\n"
             "    List<T> getContent();\n"
             "    int getTotalPages();\n"
             "    long getTotalElements();\n"
             "    boolean isEmpty();\n"
+            "    default <U> Page<U> map(Function<? super T, ? extends U> converter) { return null; }\n"
             "}\n"
         ),
         "org/springframework/data/domain/Pageable.java": (
             "package org.springframework.data.domain;\n"
-            "public interface Pageable {}\n"
+            "public interface Pageable {\n"
+            "    default Sort getSort() { return Sort.unsorted(); }\n"
+            "}\n"
+        ),
+        "org/springframework/data/domain/Sort.java": (
+            "package org.springframework.data.domain;\n"
+            "import java.util.List;\n"
+            "import java.util.stream.Stream;\n"
+            "public class Sort {\n"
+            "    public static class Order {\n"
+            "        private final String property;\n"
+            "        public Order(String property) { this.property = property; }\n"
+            "        public String getProperty() { return property; }\n"
+            "    }\n"
+            "    public static Sort unsorted() { return new Sort(); }\n"
+            "    public static Sort by(String... properties) { return new Sort(); }\n"
+            "    public Stream<Order> stream() { return List.<Order>of().stream(); }\n"
+            "}\n"
         ),
         "org/springframework/data/domain/PageRequest.java": (
             "package org.springframework.data.domain;\n"
@@ -756,12 +1124,6 @@ def generate_stub_sources() -> dict[str, str]:
             "    RedirectAttributes addFlashAttribute(String name, Object value);\n"
             "}\n"
         ),
-        "org/springframework/cache/annotation/Cacheable.java": (
-            "package org.springframework.cache.annotation;\n"
-            "import java.lang.annotation.*;\n"
-            "@Retention(RetentionPolicy.RUNTIME)\n"
-            "public @interface Cacheable { String[] value() default {}; }\n"
-        ),
         "org/springframework/dao/DataAccessException.java": (
             "package org.springframework.dao;\n"
             "public class DataAccessException extends RuntimeException {\n"
@@ -798,12 +1160,6 @@ def generate_stub_sources() -> dict[str, str]:
             "import java.lang.annotation.*;\n"
             "@Retention(RetentionPolicy.RUNTIME)\n"
             "public @interface UniqueConstraint { String[] columnNames(); }\n"
-        ),
-        "com/fasterxml/jackson/annotation/JsonIgnore.java": (
-            "package com.fasterxml.jackson.annotation;\n"
-            "import java.lang.annotation.*;\n"
-            "@Retention(RetentionPolicy.RUNTIME)\n"
-            "public @interface JsonIgnore {}\n"
         ),
         "org/springframework/dao/EmptyResultDataAccessException.java": (
             "package org.springframework.dao;\n"
@@ -963,13 +1319,45 @@ def generate_test_source(
         ctor_var = f"ctor{site_index}"
         obj_var = f"site{site_index}"
         lines.append(f"            Class<?> {site_class_var} = Class.forName(\"{fqcn(site.type_name)}\");")
+        # A real injection site's constructor often mixes repository parameters with
+        # collaborators this harness does not provide (a PasswordEncoder, a
+        # CacheManager). Choose the widest constructor, satisfy each parameter with
+        # the first unused repository proxy it can accept, and pass null for the
+        # rest — a method that dereferences a null collaborator throws inside
+        # invokeQuiet, while every repository call made before that still records.
         lines.append(
-            f"            Constructor<?> {ctor_var} = {site_class_var}.getDeclaredConstructor("
-            + ", ".join(ctor_class_vars) + ");"
+            f"            Class<?>[] declared{site_index} = new Class<?>[]{{"
+            + ", ".join(ctor_class_vars) + "};"
         )
-        lines.append(f"            {ctor_var}.setAccessible(true);")
         lines.append(
-            f"            Object {obj_var} = {ctor_var}.newInstance(" + ", ".join(proxy_vars) + ");"
+            f"            Object[] proxies{site_index} = new Object[]{{"
+            + ", ".join(proxy_vars) + "};"
+        )
+        lines.append(f"            Constructor<?> {ctor_var} = null;")
+        lines.append(
+            f"            for (Constructor<?> candidate : {site_class_var}.getDeclaredConstructors()) {{"
+        )
+        lines.append(
+            f"                if ({ctor_var} == null || candidate.getParameterCount() > {ctor_var}.getParameterCount()) {ctor_var} = candidate;"
+        )
+        lines.append("            }")
+        lines.append(f"            {ctor_var}.setAccessible(true);")
+        lines.append(f"            Class<?>[] ptypes{site_index} = {ctor_var}.getParameterTypes();")
+        lines.append(f"            Object[] args{site_index} = new Object[ptypes{site_index}.length];")
+        lines.append(f"            boolean[] used{site_index} = new boolean[proxies{site_index}.length];")
+        lines.append(f"            for (int i = 0; i < ptypes{site_index}.length; i++) {{")
+        lines.append(f"                for (int j = 0; j < proxies{site_index}.length; j++) {{")
+        lines.append(
+            f"                    if (!used{site_index}[j] && ptypes{site_index}[i].isAssignableFrom(declared{site_index}[j])) {{"
+        )
+        lines.append(
+            f"                        args{site_index}[i] = proxies{site_index}[j]; used{site_index}[j] = true; break;"
+        )
+        lines.append("                    }")
+        lines.append("                }")
+        lines.append("            }")
+        lines.append(
+            f"            Object {obj_var} = {ctor_var}.newInstance(args{site_index});"
         )
         for method in site.methods:
             # A generated call must never fail the harness; a throwing method is still

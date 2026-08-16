@@ -309,6 +309,31 @@ def _apply_alter(
 
 _CHANGELOG_SUFFIXES = frozenset({".yaml", ".yml", ".json"})
 
+# Liquibase change types that can never alter the relational inventory (tables or
+# columns): data loads, constraint marking, defaults, and sequences. `sqlFile` is
+# deliberately absent — it references SQL this replay cannot see, so it stays
+# fail-closed as `unmodelled-changelog-change`.
+_INVENTORY_NEUTRAL_CHANGES = frozenset(
+    {
+        "loadData",
+        "loadUpdateData",
+        "addForeignKeyConstraint",
+        "dropForeignKeyConstraint",
+        "addPrimaryKey",
+        "dropPrimaryKey",
+        "addNotNullConstraint",
+        "dropNotNullConstraint",
+        "addDefaultValue",
+        "dropDefaultValue",
+        "addUniqueConstraint",
+        "dropUniqueConstraint",
+        "createSequence",
+        "dropSequence",
+        "alterSequence",
+        "tagDatabase",
+    }
+)
+
 
 def _local_name(tag: str) -> str:
     return tag.rsplit("}", 1)[-1]
@@ -417,6 +442,13 @@ def _apply_change(
         # Inventory-only or non-schema: none change a table's identity or columns.
         return []
 
+    if name in _INVENTORY_NEUTRAL_CHANGES:
+        # Constraint, data, sequence and default changes cannot add or remove
+        # tables or columns. They are recorded so the evidence stays complete,
+        # but — like `ignored-schema-statement` on the SQL side — they never
+        # mark the replay incomplete.
+        return [MigrationResidue("ignored-changelog-change", path, name)]
+
     return [MigrationResidue("unmodelled-changelog-change", path, name)]
 
 
@@ -481,7 +513,10 @@ def replay_liquibase(sources: tuple[MigrationSource, ...]) -> MigratedSchema:
                 entries = _apply_change(change, tables, path, index, dialect)
                 if entries:
                     residue.extend(entries)
-                    complete = False
+                    if any(
+                        entry.code != "ignored-changelog-change" for entry in entries
+                    ):
+                        complete = False
 
     for root_path in roots:
         walk(root_path)

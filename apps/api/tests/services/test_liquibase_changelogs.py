@@ -158,6 +158,71 @@ def test_a_raw_sql_change_is_replayed_through_the_sql_applier() -> None:
     assert [table.name for table in schema.tables] == ["customers"]
 
 
+def test_inventory_neutral_changes_are_recorded_without_blocking_the_replay() -> None:
+    # Constraint, data, sequence and default changes cannot add or remove tables
+    # or columns, so they are inventory: recorded as residue, never incomplete.
+    schema = replay_liquibase(
+        (
+            _source(
+                "db/changelog/db.changelog.xml",
+                _changelog(
+                    '<changeSet id="1" author="a">'
+                    '<createTable tableName="customers">'
+                    '<column name="id" type="int"/>'
+                    '<column name="email" type="varchar(255)"/>'
+                    "</createTable></changeSet>"
+                    '<changeSet id="2" author="a">'
+                    '<loadData tableName="customers" file="data/customers.csv"/>'
+                    '<addForeignKeyConstraint baseTableName="customers" baseColumnNames="id" '
+                    'referencedTableName="accounts" referencedColumnNames="id" constraintName="fk"/>'
+                    '<addPrimaryKey tableName="customers" columnNames="id"/>'
+                    '<addNotNullConstraint tableName="customers" columnName="email"/>'
+                    '<dropDefaultValue tableName="customers" columnName="email"/>'
+                    '<createSequence sequenceName="customers_seq"/>'
+                    "</changeSet>"
+                ),
+            ),
+        )
+    )
+
+    assert schema.complete is True
+    assert [table.name for table in schema.tables] == ["customers"]
+    assert [column.name for column in schema.tables[0].columns] == ["id", "email"]
+    codes = {item.code for item in schema.residue}
+    assert codes == {"ignored-changelog-change"}
+    ignored = {item.symbol for item in schema.residue}
+    assert ignored == {
+        "loadData",
+        "addForeignKeyConstraint",
+        "addPrimaryKey",
+        "addNotNullConstraint",
+        "dropDefaultValue",
+        "createSequence",
+    }
+
+
+def test_an_ignored_change_does_not_mask_a_structural_unknown() -> None:
+    schema = replay_liquibase(
+        (
+            _source(
+                "db/changelog/db.changelog.xml",
+                _changelog(
+                    '<changeSet id="1" author="a">'
+                    '<createTable tableName="customers"><column name="id" type="int"/></createTable>'
+                    '<loadData tableName="customers" file="data/customers.csv"/>'
+                    '<renameColumn tableName="customers" oldColumnName="id" newColumnName="pk"/>'
+                    "</changeSet>"
+                ),
+            ),
+        )
+    )
+
+    assert schema.complete is False
+    codes = {item.code for item in schema.residue}
+    assert "unmodelled-changelog-change" in codes
+    assert "ignored-changelog-change" in codes
+
+
 def test_an_unmodelled_change_makes_the_replay_incomplete() -> None:
     schema = replay_liquibase(
         (

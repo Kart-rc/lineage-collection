@@ -154,7 +154,7 @@ def test_harness_emits_stubs_recorder_and_a_generated_test() -> None:
     assert 'Class.forName("example.OwnerController")' in generated
     assert 'Class.forName("example.OwnerRepository")' in generated
     assert 'Class.forName("example.Owner")' in generated
-    assert "getDeclaredConstructor(" in generated
+    assert "getDeclaredConstructors()" in generated
     assert ".setAccessible(true)" in generated
     assert "Recorder.proxy(repoClass" in generated
     for method in ("find", "save"):
@@ -532,3 +532,208 @@ def test_the_parent_interface_injection_shape_compiles_and_witnesses(tmp_path: P
     # SCA resolves `findVisitsByPetId` to `pet_id`, never to the Java field `pet`.
     assert "team_id" in owner_read.fields
     assert "lastName" in owner_read.fields
+
+
+def test_stub_source_map_declares_every_stub_exactly_once() -> None:
+    """A duplicated dict key in the stub map silently shadows the earlier (often
+    richer) definition -- jhipster-sample-app lost `Cacheable#cacheNames` exactly
+    this way. The literal must declare each stub path once."""
+    import collections
+    import inspect
+    import re
+
+    import lineage_api.services.java_runtime_verification as module
+
+    source = inspect.getsource(module)
+    keys = re.findall(r'"([\w/]+\.java)":', source)
+    duplicated = [key for key, count in collections.Counter(keys).items() if count > 1]
+    assert duplicated == [], f"stub paths declared more than once: {duplicated}"
+
+
+@pytest.mark.skipif(_javac() is None, reason="no JDK available; set LINEAGE_JAVA_HOME")
+def test_a_jhipster_shaped_resource_compiles_and_runs(tmp_path: Path) -> None:
+    """The jhipster-sample-app shape: `@Column(precision, scale)`, an inline
+    fully-qualified `@org.springframework.data.annotation.Transient`, a repository
+    with `@Cacheable(cacheNames, unless)`, a resource using `@PatchMapping`,
+    `existsById`, paged `findAll(Pageable)` behind an inline
+    `@org.springdoc.core.annotations.ParameterObject`, and
+    `HttpStatus.BAD_REQUEST.value()`. Every one of these failed the harness
+    compile before the stub surface grew to cover them."""
+    javac = _javac()
+    assert javac is not None
+    java = str(Path(javac).with_name("java"))
+
+    sources = {
+        "bank/domain/BankAccount.java": (
+            "package bank.domain;\n"
+            "import jakarta.persistence.*;\n"
+            "@Entity @Table(name = \"bank_account\")\n"
+            "public class BankAccount {\n"
+            "    @Id @GeneratedValue(strategy = GenerationType.IDENTITY) private Long id;\n"
+            "    @Column(name = \"balance\", precision = 21, scale = 2, nullable = false)\n"
+            "    private java.math.BigDecimal balance;\n"
+            "    @org.springframework.data.annotation.Transient\n"
+            "    private boolean audited;\n"
+            "    public Long getId() { return id; }\n"
+            "}\n"
+        ),
+        "bank/repository/BankAccountRepository.java": (
+            "package bank.repository;\n"
+            "import bank.domain.BankAccount;\n"
+            "import org.springframework.cache.annotation.Cacheable;\n"
+            "import org.springframework.data.jpa.repository.JpaRepository;\n"
+            "public interface BankAccountRepository extends JpaRepository<BankAccount, Long> {\n"
+            "    @Cacheable(cacheNames = \"accounts\", unless = \"#result == null\")\n"
+            "    java.util.Optional<BankAccount> findOneById(Long id);\n"
+            "}\n"
+        ),
+        "bank/web/BankAccountResource.java": (
+            "package bank.web;\n"
+            "import bank.domain.BankAccount;\n"
+            "import bank.repository.BankAccountRepository;\n"
+            "import org.springframework.data.domain.Page;\n"
+            "import org.springframework.data.domain.Pageable;\n"
+            "import org.springframework.http.HttpStatus;\n"
+            "import org.springframework.web.bind.annotation.GetMapping;\n"
+            "import org.springframework.web.bind.annotation.PatchMapping;\n"
+            "import org.springframework.web.bind.annotation.RestController;\n"
+            "@RestController\n"
+            "class BankAccountResource {\n"
+            "    private final BankAccountRepository bankAccountRepository;\n"
+            "    BankAccountResource(BankAccountRepository bankAccountRepository) {\n"
+            "        this.bankAccountRepository = bankAccountRepository;\n"
+            "    }\n"
+            "    @GetMapping(\"/api/bank-accounts\")\n"
+            "    public java.util.List<BankAccount> all() {\n"
+            "        return bankAccountRepository.findAll();\n"
+            "    }\n"
+            "    @GetMapping(\"/api/bank-accounts/paged\")\n"
+            "    public int paged(@org.springdoc.core.annotations.ParameterObject Pageable pageable) {\n"
+            "        Page<BankAccount> page = bankAccountRepository.findAll(pageable);\n"
+            "        return page == null ? HttpStatus.BAD_REQUEST.value() : page.getTotalPages();\n"
+            "    }\n"
+            "    @PatchMapping(value = \"/{id}\", consumes = { \"application/json\", \"application/merge-patch+json\" })\n"
+            "    public boolean exists(Long id) {\n"
+            "        return bankAccountRepository.existsById(id);\n"
+            "    }\n"
+            "}\n"
+        ),
+    }
+    workspace = tmp_path / "src"
+    for relative, text in {**sources, **generate_harness(sources)}.items():
+        path = workspace / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text, encoding="utf-8")
+
+    listing = tmp_path / "files.txt"
+    listing.write_text(
+        "\n".join(str(path) for path in sorted(workspace.rglob("*.java"))), encoding="utf-8"
+    )
+    compiled = subprocess.run(
+        [javac, "-d", str(tmp_path / "classes"), f"@{listing}"],
+        capture_output=True,
+        text=True,
+        timeout=180,
+        check=False,
+    )
+    assert compiled.returncode == 0, compiled.stderr
+
+    ran = subprocess.run(
+        [java, "-cp", str(tmp_path / "classes"), "harness.GeneratedRuntimeTest"],
+        capture_output=True,
+        text=True,
+        timeout=120,
+        check=False,
+    )
+    assert ran.returncode == 0, ran.stderr
+
+    observations = parse_observations(ran.stdout)
+    assert any(
+        observation.table == "bank_account" and observation.operation == "READ"
+        for observation in observations
+    ), f"expected a bank_account read observation, got {observations!r}"
+
+
+@pytest.mark.skipif(_javac() is None, reason="no JDK available; set LINEAGE_JAVA_HOME")
+def test_an_injection_site_with_non_repository_constructor_params_still_records(
+    tmp_path: Path,
+) -> None:
+    """jhipster's UserService shape: the constructor mixes repositories with
+    collaborators the harness does not provide (a PasswordEncoder, a CacheManager).
+    The generated test must construct the site anyway — proxies for repository
+    parameters, null for the rest — so repository calls still record."""
+    javac = _javac()
+    assert javac is not None
+    java = str(Path(javac).with_name("java"))
+
+    sources = {
+        "acct/domain/Account.java": (
+            "package acct;\n"
+            "import jakarta.persistence.*;\n"
+            "@Entity @Table(name = \"accounts\")\n"
+            "public class Account {\n"
+            "    @Id @GeneratedValue(strategy = GenerationType.IDENTITY) private Long id;\n"
+            "    @Column(name = \"login\") private String login;\n"
+            "}\n"
+        ),
+        "acct/repository/AccountRepository.java": (
+            "package acct;\n"
+            "import org.springframework.data.jpa.repository.JpaRepository;\n"
+            "public interface AccountRepository extends JpaRepository<Account, Long> {\n"
+            "    java.util.Optional<Account> findOneByLogin(String login);\n"
+            "}\n"
+        ),
+        "acct/service/AccountService.java": (
+            "package acct;\n"
+            "import org.springframework.cache.CacheManager;\n"
+            "import org.springframework.security.crypto.password.PasswordEncoder;\n"
+            "import org.springframework.stereotype.Service;\n"
+            "@Service\n"
+            "public class AccountService {\n"
+            "    private final AccountRepository accountRepository;\n"
+            "    private final PasswordEncoder passwordEncoder;\n"
+            "    private final CacheManager cacheManager;\n"
+            "    public AccountService(AccountRepository accountRepository, PasswordEncoder passwordEncoder, CacheManager cacheManager) {\n"
+            "        this.accountRepository = accountRepository;\n"
+            "        this.passwordEncoder = passwordEncoder;\n"
+            "        this.cacheManager = cacheManager;\n"
+            "    }\n"
+            "    public java.util.Optional<Account> lookup(String login) {\n"
+            "        return accountRepository.findOneByLogin(login);\n"
+            "    }\n"
+            "}\n"
+        ),
+    }
+    workspace = tmp_path / "src"
+    for relative, text in {**sources, **generate_harness(sources)}.items():
+        path = workspace / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text, encoding="utf-8")
+
+    listing = tmp_path / "files.txt"
+    listing.write_text(
+        "\n".join(str(path) for path in sorted(workspace.rglob("*.java"))), encoding="utf-8"
+    )
+    compiled = subprocess.run(
+        [javac, "-d", str(tmp_path / "classes"), f"@{listing}"],
+        capture_output=True,
+        text=True,
+        timeout=180,
+        check=False,
+    )
+    assert compiled.returncode == 0, compiled.stderr
+
+    ran = subprocess.run(
+        [java, "-cp", str(tmp_path / "classes"), "harness.GeneratedRuntimeTest"],
+        capture_output=True,
+        text=True,
+        timeout=120,
+        check=False,
+    )
+    assert ran.returncode == 0, ran.stderr
+
+    observations = parse_observations(ran.stdout)
+    assert any(
+        observation.table == "accounts" and observation.operation == "READ"
+        for observation in observations
+    ), f"expected an accounts read via the mixed-constructor site, got {observations!r}"
