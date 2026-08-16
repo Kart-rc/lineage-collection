@@ -117,9 +117,6 @@ export function ReviewQueuePage() {
           />
         ))}
       </div>
-      {proposals.data?.nextCursor ? (
-        <p className="empty-state">More proposals are available through bounded pagination.</p>
-      ) : null}
     </div>
   );
 }

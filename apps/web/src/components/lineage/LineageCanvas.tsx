@@ -5,8 +5,6 @@ import { bandDisplay, edgeLabel } from "../review/reviewMeta";
 import type { CanvasCard } from "./lineageLayout";
 import { buildCanvas, containerOf, nodeTitle } from "./lineageLayout";
 
-export { nodeTitle };
-
 
 interface LineageCanvasProps {
   data: LineageResponse;

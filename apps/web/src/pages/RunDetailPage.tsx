@@ -2,7 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Link, useParams } from "../routing";
 
 import { api } from "../api/client";
-import { runStatusTone } from "../components/operations/StageRail";
+import { runStatusTone } from "../lib/runs";
 import { StageTimeline } from "../components/runs/StageTimeline";
 import { StatusPill } from "../components/shared/StatusPill";
 import "../styles/pages/operations.css";

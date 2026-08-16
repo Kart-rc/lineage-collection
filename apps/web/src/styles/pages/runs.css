@@ -4,18 +4,6 @@
 
 /* ===================== shared ===================== */
 
-.runs-sr {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  padding: 0;
-  margin: -1px;
-  overflow: hidden;
-  clip: rect(0 0 0 0);
-  white-space: nowrap;
-  border: 0;
-}
-
 /* Workflow-kind chip — mirrors the .workflow-chip palette conventions. */
 .runs-kind {
   font: 600 8px var(--font-mono);
@@ -626,8 +614,7 @@
   background: var(--n985);
 }
 
-.runs-empty,
-.runs-inline-note {
+.runs-empty {
   padding: 16px 26px;
   font-size: 12px;
   color: var(--n56);

@@ -7,7 +7,7 @@ import type { LineageEdge, Proposal, Run } from "../api/types";
 import { bandDisplay, edgeLabel, isRuntimeVerified } from "../components/review/reviewMeta";
 import { useProposalEdges } from "../hooks/useProposalEdges";
 import { shortDigest } from "../lib/format";
-import { classifyRunState, formatWhen, matchProposal, runEdgeCount, runStatusTone } from "../lib/runs";
+import { classifyRunState, matchProposal, runEdgeCount, runStatusTone } from "../lib/runs";
 import "../styles/pages/runs.css";
 
 
