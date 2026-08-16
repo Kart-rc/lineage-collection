@@ -98,6 +98,54 @@ test("renders stages, counts, coverage and the terminal state", () => {
 });
 
 
+test("surfaces the collector-chosen workflow path when reported", () => {
+  const withPath = renderStatus(collection({ workflowKind: "INCREMENTAL" }));
+  const chip = screen.getByText("INCREMENTAL PATH");
+  expect(chip).toBeVisible();
+  expect(chip).toHaveAttribute("data-kind", "INCREMENTAL");
+  withPath.unmount();
+
+  // Older status documents without workflowKind render no chip at all.
+  renderStatus(collection());
+  expect(screen.queryByText(/PATH$/)).toBeNull();
+});
+
+
+test("renders per-step wall-clock timings when the document carries them", () => {
+  const withTimings = renderStatus(
+    collection({
+      timings: [
+        {
+          step: "acquire",
+          startedAt: "2026-08-15T13:33:20Z",
+          completedAt: "2026-08-15T13:33:33Z",
+          durationMs: 13400,
+          detail: "shallow fetch spring-petclinic@88e37c15cf6f",
+        },
+        { step: "B5", startedAt: "2026-08-15T13:33:35Z", completedAt: "2026-08-15T13:33:35Z", durationMs: 840 },
+        {
+          step: "runtime-harness",
+          startedAt: "2026-08-15T13:33:35Z",
+          completedAt: "2026-08-15T13:33:36Z",
+          durationMs: 1210,
+          detail: "javac+java · 8 observations",
+        },
+      ],
+    }),
+  );
+  expect(screen.getByText(/Pipeline timings/)).toHaveTextContent("15 s wall clock");
+  expect(screen.getByText("acquire")).toBeVisible();
+  expect(screen.getByText("13 s")).toBeVisible();
+  expect(screen.getByText("840 ms")).toBeVisible();
+  expect(screen.getByText("javac+java · 8 observations")).toBeVisible();
+  withTimings.unmount();
+
+  // Older documents without timings render no timing rail.
+  renderStatus(collection());
+  expect(screen.queryByText(/Pipeline timings/)).toBeNull();
+});
+
+
 test("links to the generated run and proposal", () => {
   renderStatus(collection());
 

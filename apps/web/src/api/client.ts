@@ -7,7 +7,10 @@ import type {
   RepositoryCollection,
   RepositoryCollectionRequest,
   DemoReset,
+  DeploymentSubmission,
   ImpactResponse,
+  InteractionsResponse,
+  LineageDirection,
   LineageEdge,
   LineageResponse,
   Overview,
@@ -132,6 +135,71 @@ function normalizeStage(
 }
 
 
+function stageOrder(stage: string): number {
+  const match = /^([A-Z]+)(\d+)$/.exec(stage);
+  if (!match) return Number.MAX_SAFE_INTEGER;
+  return match[1].charCodeAt(0) * 1000 + Number(match[2]);
+}
+
+
+function timestamp(iso: string): number | null {
+  const value = new Date(iso).getTime();
+  return Number.isFinite(value) ? value : null;
+}
+
+
+/**
+ * Normalize a run's stage history into execution order with derived starts.
+ * Live checkpoint records carry only completedAt (and arrive in lexicographic
+ * stage-id order: B1, B10, B2 …); the pipeline executes stages serially, so the
+ * true order is the completion checkpoints and each stage's start is the
+ * previous checkpoint — the run's createdAt anchors the first. Explicit
+ * startedAt values are always kept verbatim.
+ */
+function chainStages(
+  raw: Record<string, unknown>[],
+  correlationId: string,
+  createdAt: string,
+): RunStage[] {
+  const entries = raw.map((value, index) => ({
+    id: text(value.stageId || value.stage),
+    normalized: normalizeStage(value, index, correlationId),
+  }));
+  entries.sort((a, b) => {
+    const at = timestamp(a.normalized.completedAt);
+    const bt = timestamp(b.normalized.completedAt);
+    if (at !== null && bt !== null && at !== bt) return at - bt;
+    return (
+      stageOrder(a.id || a.normalized.stage) - stageOrder(b.id || b.normalized.stage)
+    );
+  });
+  let previous = timestamp(createdAt);
+  for (const entry of entries) {
+    const completed = timestamp(entry.normalized.completedAt);
+    if (
+      !entry.normalized.startedAt &&
+      completed !== null &&
+      previous !== null &&
+      previous <= completed
+    ) {
+      entry.normalized = {
+        ...entry.normalized,
+        startedAt: new Date(previous).toISOString(),
+      };
+    }
+    previous = completed ?? timestamp(entry.normalized.startedAt) ?? previous;
+  }
+  return entries
+    .map((entry) => entry.normalized)
+    .filter(
+      (stage, index, all) =>
+        stage.stage !== "UNKNOWN" &&
+        all.findIndex((other) => other.stage === stage.stage) === index,
+    )
+    .map((stage, index) => ({ ...stage, sequence: index + 1 }));
+}
+
+
 function normalizeRun(value: unknown, stageValues?: unknown): Run {
   const run = record(value);
   const correlationId = text(run.correlationId, "unavailable");
@@ -139,6 +207,8 @@ function normalizeRun(value: unknown, stageValues?: unknown): Run {
   return {
     runId: text(run.runId || run.commandId, "unknown"),
     eventId: text(run.eventId),
+    workflowKind: text(run.workflowKind, "COLLECTION"),
+    currentStage: text(run.currentStageId || run.currentStageName),
     repo: text(run.repository || run.repo || run.system, "Unknown workload"),
     digest: text(run.artifactDigest || run.digest, "Not reported"),
     env: text(run.environment || run.env, "Unknown"),
@@ -150,9 +220,7 @@ function normalizeRun(value: unknown, stageValues?: unknown): Run {
     errorCode: typeof run.errorCode === "string" ? run.errorCode : null,
     createdAt: text(run.createdAt),
     updatedAt: text(run.updatedAt),
-    stages: records(stageSource).map((stage, index) =>
-      normalizeStage(stage, index, correlationId),
-    ),
+    stages: chainStages(records(stageSource), correlationId, text(run.createdAt)),
   };
 }
 
@@ -199,10 +267,24 @@ function normalizeCollection(value: unknown): RepositoryCollection {
     residue: count(counts.residue),
     unresolved: count(counts.unresolved),
   };
+  const workflowKind = text(collection.workflowKind);
+  const createdAt = text(collection.createdAt);
+  const timings = records(collection.timings)
+    .map((timing) => ({
+      step: text(timing.step),
+      startedAt: text(timing.startedAt),
+      completedAt: text(timing.completedAt),
+      durationMs: count(timing.durationMs),
+      ...(text(timing.detail) ? { detail: text(timing.detail) } : {}),
+    }))
+    .filter((timing) => timing.step.length > 0);
   return {
     commandId,
     collectionId: text(collection.collectionId, commandId),
     statusUrl: text(collection.statusUrl, `/api/collections/${commandId}`),
+    ...(createdAt ? { createdAt } : {}),
+    ...(timings.length ? { timings } : {}),
+    ...(workflowKind ? { workflowKind } : {}),
     sourceType:
       sourceType === "LOCAL_CHECKOUT" || sourceType === "GIT" ? sourceType : "UNKNOWN",
     origin: text(collection.origin, "Not reported"),
@@ -432,6 +514,19 @@ export const api = {
         signal,
       ),
     ),
+  submitDeployment: async (input: {
+    system: string;
+    environment: string;
+    artifactDigest?: string;
+  }): Promise<DeploymentSubmission> => {
+    const value = record(
+      await request("/deployments", {
+        method: "POST",
+        body: JSON.stringify(input),
+      }),
+    );
+    return { commandId: text(value.commandId, "unknown") };
+  },
   collection: async (
     commandId: string,
     signal?: AbortSignal,
@@ -460,8 +555,11 @@ export const api = {
   proposals: async (
     signal?: AbortSignal,
     cursor?: string,
+    state?: string,
   ): Promise<Page<Proposal>> => {
-    const value = await request(pagePath("/proposals", cursor), {}, signal);
+    const base = pagePath("/proposals", cursor);
+    const path = state ? `${base}&state=${encodeURIComponent(state)}` : base;
+    const value = await request(path, {}, signal);
     if (Array.isArray(value)) {
       return { items: value.map(normalizeProposal), nextCursor: null };
     }
@@ -529,7 +627,7 @@ export const api = {
   },
   lineage: async (
     urn: string,
-    direction: "up" | "down",
+    direction: LineageDirection,
     depth: number,
     signal?: AbortSignal,
   ) =>
@@ -544,6 +642,31 @@ export const api = {
       {},
       signal,
     )) as LineageEdge,
+  interactions: async (signal?: AbortSignal) =>
+    (await request("/interactions", {}, signal)) as InteractionsResponse,
+  /**
+   * Resolve proposal diff edge ids to full edge bodies. The proposal payload
+   * carries only ids, so the review surface fans out over /edges/{key} with
+   * bounded concurrency. Edges that fail to resolve are omitted; callers can
+   * compare lengths to report gaps.
+   */
+  edges: async (
+    edgeKeys: readonly string[],
+    signal?: AbortSignal,
+  ): Promise<LineageEdge[]> => {
+    const resolved: LineageEdge[] = [];
+    const batchSize = 8;
+    for (let start = 0; start < edgeKeys.length; start += batchSize) {
+      const batch = edgeKeys.slice(start, start + batchSize);
+      const settled = await Promise.allSettled(
+        batch.map((edgeKey) => api.edge(edgeKey, signal)),
+      );
+      for (const outcome of settled) {
+        if (outcome.status === "fulfilled") resolved.push(outcome.value);
+      }
+    }
+    return resolved;
+  },
   impact: async (subject: string, changeType: string, depth: number) =>
     normalizeImpact(
       await request("/impact", {

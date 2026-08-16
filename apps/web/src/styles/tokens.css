@@ -1,27 +1,101 @@
 :root {
   color-scheme: light;
-  --paper: #f2eee4;
-  --paper-deep: #e7dfcf;
-  --paper-light: #fbf8f0;
-  --ink: #181b1b;
-  --ink-soft: #525753;
-  --line: #cbc2b1;
-  --line-strong: #8b877d;
-  --teal: #0e625d;
-  --teal-bright: #18867d;
-  --teal-wash: #d9e8e3;
-  --rust: #9b482c;
-  --rust-wash: #eedbd0;
-  --amber: #9a6d15;
-  --amber-wash: #efe3bd;
-  --red: #8d2e27;
-  --red-wash: #efd5cf;
-  --white: #fffdf8;
-  --shadow: 0 18px 50px rgb(41 38 31 / 0.09);
-  --radius-sm: 6px;
-  --radius-md: 12px;
-  --radius-lg: 22px;
-  --font-display: Georgia, "Times New Roman", serif;
-  --font-sans: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  --font-mono: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+
+  /* Neutral ramp — hue 262, low chroma (Throughline blue-grey). */
+  --n995: oklch(99.5% 0.002 262);
+  --n99: oklch(99% 0.004 262);
+  --n985: oklch(98.5% 0.003 262);
+  --n975: oklch(97.5% 0.003 262);
+  --n97: oklch(97% 0.004 262);
+  --n96: oklch(96% 0.004 262);
+  --n95: oklch(95% 0.004 262);
+  --n94: oklch(94% 0.006 262);
+  --n92: oklch(92% 0.006 262);
+  --n91: oklch(91% 0.006 262);
+  --n88: oklch(88% 0.006 262);
+  --n86: oklch(86% 0.008 262);
+  --n82: oklch(82% 0.01 262);
+  --n78: oklch(78% 0.02 262);
+  --n70: oklch(70% 0.02 262);
+  --n64: oklch(64% 0.02 262);
+  --n62: oklch(62% 0.02 262);
+  --n56: oklch(56% 0.02 262);
+  --n50: oklch(50% 0.02 262);
+  --n42: oklch(42% 0.02 262);
+  --n34: oklch(34% 0.02 262);
+  --n30: oklch(30% 0.02 262);
+  --n26: oklch(26% 0.02 262);
+
+  /* Semantic hues. */
+  --brand: oklch(55% 0.14 252);
+  --brand-strong: oklch(52% 0.16 252);
+  --brand-link: oklch(45% 0.13 252);
+  --brand-wash: oklch(95% 0.04 252);
+  --brand-ring: oklch(93% 0.05 252);
+  --brand-tint: oklch(99.5% 0.012 252);
+
+  --verified: oklch(52% 0.13 155);
+  --verified-strong: oklch(48% 0.12 155);
+  --verified-bg: oklch(96% 0.04 155);
+  --verified-border: oklch(89% 0.05 155);
+  --verified-tint: oklch(99% 0.012 155);
+
+  --probable: oklch(58% 0.13 75);
+  --probable-deep: oklch(48% 0.1 75);
+  --probable-bg: oklch(96% 0.05 80);
+  --probable-border: oklch(89% 0.05 80);
+  --probable-tint: oklch(99% 0.015 80);
+
+  --break: oklch(55% 0.17 30);
+  --break-text: oklch(50% 0.13 30);
+  --break-bg: oklch(96% 0.04 33);
+  --break-border: oklch(90% 0.05 30);
+
+  --impact: oklch(57% 0.16 35);
+  --impact-text: oklch(45% 0.1 35);
+  --impact-bg: oklch(97% 0.03 40);
+  --impact-border: oklch(91% 0.05 40);
+  --impact-ring: oklch(92% 0.06 35);
+
+  --violet: oklch(50% 0.13 300);
+  --violet-strong: oklch(52% 0.16 300);
+  --violet-up: oklch(58% 0.12 300);
+  --violet-bg: oklch(97.5% 0.02 300);
+  --violet-border: oklch(91% 0.03 300);
+  --violet-text: oklch(42% 0.04 300);
+
+  --teal: oklch(52% 0.13 190);
+  --teal-bg: oklch(96% 0.04 190);
+  --teal-border: oklch(89% 0.05 190);
+
+  /* Agent purple — reserved for agentic/automated surfaces only. */
+  --agent-deep: oklch(30% 0.06 280);
+  --agent: oklch(40% 0.09 280);
+  --agent-border: oklch(88% 0.035 280);
+  --agent-bg: oklch(97.5% 0.015 280);
+  --agent-text: oklch(30% 0.04 280);
+
+  /* Fonts. */
+  --font-sans: "IBM Plex Sans", ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --font-mono: "IBM Plex Mono", "SFMono-Regular", Consolas, monospace;
+
+  /* Radii — size-correlated, small. */
+  --r3: 3px;
+  --r4: 4px;
+  --r5: 5px;
+  --r6: 6px;
+  --r7: 7px;
+  --r8: 8px;
+  --r9: 9px;
+  --r10: 10px;
+  --r11: 11px;
+  --r-round: 20px;
+
+  /* Shadows — restrained, blue-tinted. */
+  --shadow-1: 0 1px 2px rgba(20, 30, 50, 0.05);
+  --shadow-2: 0 2px 10px rgba(20, 30, 50, 0.07);
+  --shadow-pop: 0 8px 24px rgba(20, 30, 50, 0.14);
+  --ring-brand: 0 0 0 3px var(--brand-ring);
+  --ring-break: 0 0 0 2px var(--impact-ring);
+  --ring-warn: 0 0 0 2px oklch(94% 0.05 80);
 }

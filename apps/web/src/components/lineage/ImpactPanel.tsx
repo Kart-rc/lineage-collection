@@ -1,5 +1,5 @@
 import { useMutation } from "@tanstack/react-query";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 
 import { ApiError, api } from "../../api/client";
 import type { LineageEdge } from "../../api/types";
@@ -19,12 +19,16 @@ const CHANGE_TYPES = [
 export function ImpactPanel({ subject, edges }: { subject: string; edges: LineageEdge[] }) {
   const [changeType, setChangeType] = useState("COLUMN_DROP");
   const impact = useMutation({ mutationFn: () => api.impact(subject, changeType, 5) });
+  const edgesByKey = useMemo(
+    () => new Map(edges.map((edge) => [edge.edgeKey, edge])),
+    [edges],
+  );
   return (
     <section className="impact-panel" aria-labelledby="impact-heading">
       <div className="impact-panel__intro">
         <p className="eyebrow">Pre-change simulation</p>
         <h2 id="impact-heading">Downstream impact</h2>
-        <p>Verdicts use the weakest confidence band on each bounded path.</p>
+        <p>Change the subject's schema — verdicts use the weakest confidence band on each bounded path.</p>
       </div>
       <form
         className="impact-form"
@@ -49,25 +53,39 @@ export function ImpactPanel({ subject, edges }: { subject: string; edges: Lineag
       {impact.data && (
         <div className="impact-results">
           <div className="impact-summary" aria-label="Impact summary">
-            <strong className="impact-summary__block">{impact.data.summary.block} block</strong>
-            <strong>{impact.data.summary.warn} warn</strong>
-            <strong>{impact.data.summary.info} info</strong>
-            <span>Projection {impact.data.namespaceVersion}</span>
+            <strong className="impact-summary__block" data-zero={impact.data.summary.block === 0}>
+              {impact.data.summary.block} block
+            </strong>
+            <strong className="impact-summary__warn">{impact.data.summary.warn} warn</strong>
+            <strong className="impact-summary__info">{impact.data.summary.info} info</strong>
+            <span>Projection {impact.data.namespaceVersion} · depth {impact.data.depthSearched}</span>
           </div>
           <div className="impact-list">
             {impact.data.affected.map((item) => {
-              const evidenceEdge = edges.find((edge) => edge.to === item.urn);
+              const evidenceEdge = item.viaEdges
+                .map((edgeKey) => edgesByKey.get(edgeKey))
+                .find((edge): edge is LineageEdge => Boolean(edge));
               return (
-                <article key={item.urn}>
-                  <StatusPill label={item.severity} tone={item.severity === "BLOCK" ? "blocked" : item.severity === "WARN" ? "attention" : "neutral"} />
-                  <div><strong>{item.urn.split(":").at(-1)}</strong><code>{item.urn}</code></div>
+                <article key={item.urn} data-severity={item.severity}>
+                  <StatusPill
+                    label={item.severity}
+                    tone={item.severity === "BLOCK" ? "blocked" : item.severity === "WARN" ? "attention" : "neutral"}
+                  />
+                  <div>
+                    <strong>{item.urn.split(":").at(-1) ?? item.urn}</strong>
+                    <code>{item.urn}</code>
+                  </div>
                   <dl>
                     <div><dt>Path</dt><dd>Path length {item.pathLength}</dd></div>
                     <div><dt>Confidence</dt><dd>{item.band} band</dd></div>
                     <div><dt>Corroboration</dt><dd>{item.corroboration}</dd></div>
                     <div><dt>Owner</dt><dd>{item.owner}</dd></div>
                   </dl>
-                  {evidenceEdge && <code className="impact-evidence">Evidence {evidenceEdge.provenance[0]?.evidenceRef.key}</code>}
+                  {evidenceEdge && (
+                    <code className="impact-evidence">
+                      Evidence {evidenceEdge.provenance[0]?.evidenceRef.key}
+                    </code>
+                  )}
                 </article>
               );
             })}

@@ -29,6 +29,43 @@ export function collectionQueryOptions(commandId: string) {
 }
 
 
+function formatDuration(ms: number): string {
+  if (ms < 1000) return `${ms} ms`;
+  return `${(ms / 1000).toFixed(ms < 10_000 ? 1 : 0)} s`;
+}
+
+
+function TimingRail({ collection }: { collection: RepositoryCollection }) {
+  const timings = collection.timings ?? [];
+  if (!timings.length) return null;
+  const max = Math.max(...timings.map((timing) => timing.durationMs), 1);
+  const total = timings.reduce((sum, timing) => sum + timing.durationMs, 0);
+  return (
+    <div className="collection-timings" aria-label="Pipeline step timings">
+      <p className="eyebrow">
+        Pipeline timings · {formatDuration(total)} wall clock
+      </p>
+      <ol>
+        {timings.map((timing) => (
+          <li key={`${timing.step}-${timing.startedAt}`}>
+            <code className="collection-timings__step">{timing.step}</code>
+            <span className="collection-timings__bar" aria-hidden="true">
+              <span
+                style={{ width: `${Math.max(2, Math.round((timing.durationMs / max) * 100))}%` }}
+              />
+            </span>
+            <span className="collection-timings__value">{formatDuration(timing.durationMs)}</span>
+            {timing.detail ? (
+              <span className="collection-timings__detail">{timing.detail}</span>
+            ) : null}
+          </li>
+        ))}
+      </ol>
+    </div>
+  );
+}
+
+
 function CountList({ collection }: { collection: RepositoryCollection }) {
   const counts = collection.counts;
   const coverage = collection.coverage;
@@ -102,10 +139,17 @@ export function CollectionStatus({ commandId, initial, onTerminal }: CollectionS
           <p className="eyebrow">{collection.repository} · {collection.revision.slice(0, 12)}</p>
           <h3 id="collection-status-heading">Collection {collection.commandId}</h3>
         </div>
-        <StatusPill
-          label={collection.commandStatus}
-          tone={collection.terminal ? "trusted" : "neutral"}
-        />
+        <span className="collection-status__pills">
+          {collection.workflowKind && (
+            <span className="workflow-chip" data-kind={collection.workflowKind}>
+              {collection.workflowKind.replaceAll("_", " ")} PATH
+            </span>
+          )}
+          <StatusPill
+            label={collection.commandStatus}
+            tone={collection.terminal ? "trusted" : "neutral"}
+          />
+        </span>
       </div>
 
       <p role="status" aria-live="polite" className="collection-status__live">
@@ -121,6 +165,8 @@ export function CollectionStatus({ commandId, initial, onTerminal }: CollectionS
           ))}
         </ol>
       )}
+
+      <TimingRail collection={collection} />
 
       <CountList collection={collection} />
 

@@ -37,6 +37,16 @@ async function fillGitForm(user: ReturnType<typeof userEvent.setup>) {
   await user.type(screen.getByLabelText("System"), "petclinic");
 }
 
+async function toProfile(user: ReturnType<typeof userEvent.setup>) {
+  await user.click(
+    screen.getByRole("button", { name: "Continue to analysis profile" }),
+  );
+}
+
+async function toReview(user: ReturnType<typeof userEvent.setup>) {
+  await user.click(screen.getByRole("button", { name: "Review & collect" }));
+}
+
 
 test("serializes a GIT submission without a checkout path", async () => {
   const user = userEvent.setup();
@@ -50,6 +60,8 @@ test("serializes a GIT submission without a checkout path", async () => {
   );
 
   await fillGitForm(user);
+  await toProfile(user);
+  await toReview(user);
   await user.click(screen.getByRole("button", { name: "Collect repository" }));
 
   expect(submissions).toHaveLength(1);
@@ -100,6 +112,8 @@ test("development mode offers the checkout path only for the local source", asyn
     screen.getByLabelText("Development checkout path"),
     "/work/spring-petclinic",
   );
+  await toProfile(user);
+  await toReview(user);
   await user.click(screen.getByRole("button", { name: "Collect repository" }));
 
   expect(submissions[0].sourceType).toBe("LOCAL_CHECKOUT");
@@ -125,12 +139,13 @@ test("rejects a revision that is not an exact commit and keeps the typed values"
   await user.type(screen.getByLabelText("Repository name"), "demo");
   await user.type(screen.getByLabelText("Exact commit (40 hex)"), "main");
   await user.type(screen.getByLabelText("System"), "payments");
-  await user.click(screen.getByRole("button", { name: "Collect repository" }));
+  await toProfile(user);
 
   expect(submissions).toHaveLength(0);
   expect(screen.getByRole("alert")).toHaveTextContent(
     "Revision must be an exact lowercase 40-character commit.",
   );
+  // The wizard stays on the source step with everything the operator typed.
   expect(screen.getByLabelText("Repository name")).toHaveValue("demo");
 });
 
@@ -138,7 +153,18 @@ test("rejects a revision that is not an exact commit and keeps the typed values"
 test("cannot submit twice while a submission is pending", async () => {
   const user = userEvent.setup();
   const submissions: RepositoryCollectionRequest[] = [];
-  render(
+  const view = render(
+    <RepositoryCollectionForm
+      onSubmit={(body) => submissions.push(body)}
+      pending={false}
+      allowLocalCheckout={false}
+    />,
+  );
+
+  await fillGitForm(user);
+  await toProfile(user);
+  await toReview(user);
+  view.rerender(
     <RepositoryCollectionForm
       onSubmit={(body) => submissions.push(body)}
       pending
@@ -150,6 +176,45 @@ test("cannot submit twice while a submission is pending", async () => {
   expect(submit).toBeDisabled();
   await user.click(submit);
   expect(submissions).toHaveLength(0);
+});
+
+
+test("changing the analyzer pack keeps ruleset, schema profile and platform coherent", async () => {
+  const user = userEvent.setup();
+  const submissions: RepositoryCollectionRequest[] = [];
+  render(
+    <RepositoryCollectionForm
+      onSubmit={(body) => submissions.push(body)}
+      pending={false}
+      allowLocalCheckout={false}
+    />,
+  );
+
+  await fillGitForm(user);
+  await toProfile(user);
+
+  // The default pack is presented honestly as a default, with a real selector
+  // behind the Change affordance.
+  expect(screen.getByText("Default")).toBeVisible();
+  await user.click(screen.getByRole("button", { name: "Change" }));
+  await user.selectOptions(
+    screen.getByLabelText("Analyzer pack"),
+    "kafka-streams-v1",
+  );
+
+  expect(screen.getByText("Selected")).toBeVisible();
+  expect(screen.getByLabelText("Ruleset")).toHaveValue("kafka-binding-rules-v1");
+  expect(screen.getByLabelText("Schema profile")).toHaveValue("kafka");
+
+  await toReview(user);
+  await user.click(screen.getByRole("button", { name: "Collect repository" }));
+
+  expect(submissions[0]).toMatchObject({
+    analyzerPack: "kafka-streams-v1",
+    ruleset: "kafka-binding-rules-v1",
+    schemaProfile: "kafka",
+    platform: "kafka",
+  });
 });
 
 

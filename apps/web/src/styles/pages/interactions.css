@@ -1,0 +1,387 @@
+/* Interactions — the second lineage plane, per the Agentic prototype:
+   caller × callee matrix with channel glyph chips, cell detail in a right rail. */
+
+.ix-page {
+  gap: 18px;
+}
+
+.ix-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+}
+
+.ix-head h1 {
+  margin: 4px 0 6px;
+  font: 600 21px var(--font-sans, "IBM Plex Sans", sans-serif);
+  letter-spacing: -0.015em;
+  color: var(--n26, oklch(22% 0.02 262));
+}
+
+.ix-head .lede {
+  max-width: 640px;
+}
+
+.ix-head__facts {
+  margin-left: auto;
+  display: flex;
+  gap: 8px;
+  flex: none;
+}
+
+.ix-mechanism {
+  font: 600 9px var(--font-mono, "IBM Plex Mono", monospace);
+  color: oklch(44% 0.1 258);
+  background: oklch(95.5% 0.02 258);
+  border: 1px solid oklch(91% 0.025 258);
+  padding: 4px 10px;
+  border-radius: 12px;
+}
+
+.ix-residue {
+  font: 600 9px var(--font-mono, "IBM Plex Mono", monospace);
+  color: var(--probable-deep, oklch(48% 0.1 75));
+  background: var(--probable-bg, oklch(96% 0.05 80));
+  border: 1px solid var(--probable-border, oklch(89% 0.05 80));
+  padding: 4px 10px;
+  border-radius: 12px;
+}
+
+.ix-body {
+  display: flex;
+  gap: 16px;
+  align-items: flex-start;
+  min-height: 0;
+}
+
+.ix-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+/* ---- matrix ---- */
+
+.ix-matrix-card {
+  background: #fff;
+  border: 1px solid var(--n92, oklch(92% 0.008 258));
+  border-radius: var(--r10, 12px);
+  box-shadow: var(--shadow-1, 0 1px 3px rgba(16, 24, 40, 0.05));
+  overflow: hidden;
+}
+
+.ix-matrix-scroll {
+  overflow-x: auto;
+}
+
+.ix-matrix {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.ix-matrix th,
+.ix-matrix td {
+  border-bottom: 1px solid var(--n95, oklch(95.5% 0.004 262));
+  padding: 10px 12px;
+  text-align: left;
+  vertical-align: middle;
+}
+
+.ix-matrix thead th {
+  font: 600 8px var(--font-mono, "IBM Plex Mono", monospace);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--n62, oklch(60% 0.02 262));
+  background: var(--n985, oklch(98.5% 0.003 255));
+}
+
+.ix-matrix__corner {
+  white-space: nowrap;
+}
+
+.ix-matrix tbody th {
+  font: 600 11.5px var(--font-mono, "IBM Plex Mono", monospace);
+  color: var(--n30, oklch(30% 0.02 262));
+  white-space: nowrap;
+}
+
+.ix-matrix__caller {
+  display: block;
+}
+
+.ix-matrix__caller-hint {
+  display: block;
+  font: 400 9px var(--font-mono, "IBM Plex Mono", monospace);
+  color: var(--n64, oklch(64% 0.02 262));
+  margin-top: 2px;
+}
+
+.ix-cell {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid var(--n92, oklch(92% 0.006 262));
+  border-radius: var(--r7, 7px);
+  background: var(--n995, oklch(99.5% 0.002 262));
+  padding: 7px 10px;
+  cursor: pointer;
+}
+
+.ix-cell:hover {
+  border-color: var(--n86, oklch(86% 0.008 262));
+  background: #fff;
+}
+
+.ix-cell.is-selected {
+  border-color: var(--brand, oklch(55% 0.14 252));
+  background: var(--brand-tint, oklch(99.5% 0.012 252));
+  box-shadow: var(--ring-brand, 0 0 0 3px oklch(93% 0.05 252));
+}
+
+.ix-cell--empty {
+  border: none;
+  background: none;
+  color: var(--n82, oklch(82% 0.01 262));
+  cursor: default;
+  padding: 7px 4px;
+}
+
+.ix-cell__count {
+  font: 600 12px var(--font-mono, "IBM Plex Mono", monospace);
+  color: var(--n30, oklch(30% 0.02 262));
+}
+
+.ix-cell__chips {
+  display: flex;
+  gap: 5px;
+}
+
+.ix-chip {
+  font: 600 8.5px var(--font-mono, "IBM Plex Mono", monospace);
+  padding: 2px 7px;
+  border-radius: 8px;
+  white-space: nowrap;
+}
+
+.ix-chip--rest {
+  color: oklch(40% 0.12 252);
+  background: oklch(95.5% 0.02 252);
+}
+
+.ix-chip--grpc {
+  color: oklch(38% 0.1 190);
+  background: oklch(95% 0.035 190);
+}
+
+.ix-chip--graphql {
+  color: oklch(42% 0.15 350);
+  background: oklch(96% 0.025 350);
+}
+
+.ix-chip--event {
+  color: oklch(40% 0.12 300);
+  background: oklch(96% 0.02 300);
+}
+
+/* ---- collected systems strip ---- */
+
+.ix-systems {
+  background: #fff;
+  border: 1px solid var(--n92, oklch(92% 0.008 258));
+  border-radius: var(--r10, 12px);
+  box-shadow: var(--shadow-1, 0 1px 3px rgba(16, 24, 40, 0.05));
+  padding: 14px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.ix-system {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  min-width: 0;
+  border-bottom: 1px solid var(--n95, oklch(95.5% 0.004 262));
+  padding-bottom: 9px;
+}
+
+.ix-system:last-child {
+  border-bottom: none;
+  padding-bottom: 0;
+}
+
+.ix-system strong {
+  font: 600 12px var(--font-sans, "IBM Plex Sans", sans-serif);
+  color: var(--n30, oklch(30% 0.02 262));
+  flex: none;
+}
+
+.ix-system__meta {
+  flex: 1;
+  min-width: 0;
+  font: 400 10px var(--font-mono, "IBM Plex Mono", monospace);
+  color: var(--n56, oklch(56% 0.02 262));
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ix-system a {
+  flex: none;
+  font: 500 10.5px var(--font-sans, "IBM Plex Sans", sans-serif);
+  color: var(--brand-link, oklch(45% 0.13 252));
+  text-decoration: none;
+}
+
+.ix-system a:hover {
+  text-decoration: underline;
+}
+
+/* ---- detail rail ---- */
+
+.ix-rail {
+  flex: none;
+  width: 320px;
+  background: #fff;
+  border: 1px solid var(--n92, oklch(92% 0.008 258));
+  border-radius: var(--r10, 12px);
+  box-shadow: var(--shadow-1, 0 1px 3px rgba(16, 24, 40, 0.05));
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-height: 76vh;
+  overflow: auto;
+}
+
+.ix-rail__head h2 {
+  margin: 4px 0 0;
+  font: 600 13.5px var(--font-mono, "IBM Plex Mono", monospace);
+  color: var(--n26, oklch(26% 0.02 262));
+  overflow-wrap: anywhere;
+}
+
+.ix-rail__arrow {
+  color: var(--brand-link, oklch(48% 0.1 258));
+}
+
+.ix-rail__count {
+  margin: 4px 0 0;
+  font: 400 10.5px var(--font-sans, "IBM Plex Sans", sans-serif);
+  color: var(--n56, oklch(56% 0.02 262));
+}
+
+.ix-ops {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+
+.ix-op {
+  border: 1px solid var(--n94, oklch(93.5% 0.006 262));
+  border-radius: var(--r8, 8px);
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.ix-op__head {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+}
+
+.ix-op__operation {
+  font: 600 11px var(--font-mono, "IBM Plex Mono", monospace);
+  color: var(--n30, oklch(30% 0.02 262));
+  overflow-wrap: anywhere;
+}
+
+.ix-op__meta {
+  margin: 0;
+  font: 400 9.5px var(--font-mono, "IBM Plex Mono", monospace);
+  color: var(--n62, oklch(60% 0.02 262));
+  overflow-wrap: anywhere;
+}
+
+.ix-fields__label {
+  margin: 0 0 3px;
+  font: 600 7.5px var(--font-mono, "IBM Plex Mono", monospace);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--n62, oklch(62% 0.02 262));
+}
+
+.ix-fields ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.ix-fields li {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  font: 400 10px var(--font-mono, "IBM Plex Mono", monospace);
+  color: var(--n42, oklch(42% 0.02 262));
+}
+
+.ix-fields code {
+  font: 500 10px var(--font-mono, "IBM Plex Mono", monospace);
+}
+
+.ix-fields__type {
+  color: var(--n64, oklch(64% 0.02 262));
+}
+
+.ix-fields__class {
+  font: 600 7.5px var(--font-mono, "IBM Plex Mono", monospace);
+  padding: 1px 5px;
+  border-radius: 4px;
+}
+
+.ix-fields__class--pii {
+  color: oklch(45% 0.12 30);
+  background: oklch(96% 0.04 33);
+}
+
+.ix-fields__class--secret {
+  color: #fff;
+  background: oklch(50% 0.15 30);
+}
+
+.ix-op__origin {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  font: 400 9.5px var(--font-mono, "IBM Plex Mono", monospace);
+  color: var(--n62, oklch(62% 0.02 262));
+}
+
+.ix-op__origin a {
+  font: 500 10px var(--font-sans, "IBM Plex Sans", sans-serif);
+  color: var(--brand-link, oklch(45% 0.13 252));
+  text-decoration: none;
+}
+
+.ix-op__origin a:hover {
+  text-decoration: underline;
+}
+
+@media (max-width: 980px) {
+  .ix-body {
+    flex-direction: column;
+  }
+
+  .ix-rail {
+    width: 100%;
+    max-height: none;
+  }
+}
