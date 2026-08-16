@@ -72,8 +72,37 @@ function ok(data: unknown) {
   return Promise.resolve({ ok: true, status: 200, json: async () => data });
 }
 
-function stubFetch(options: { truncated?: boolean } = {}) {
+function stubFetch(
+  options: { truncated?: boolean; approvedSubject?: string | null } = {},
+) {
   const lineageUrls: string[] = [];
+  const approvedProposal =
+    options.approvedSubject != null
+      ? {
+          schemaVersion: "1.0.0",
+          proposalId: "proposal-seed",
+          version: 1,
+          system: "seed-system",
+          state: "APPROVED",
+          expectedBaseVersion: "graph-demo",
+          diff: {
+            added: [
+              {
+                ...edge,
+                from: [`service://seed/com.example.Service#write`],
+                to: options.approvedSubject,
+                edgeType: "WRITES",
+              },
+            ],
+            removed: [],
+            bandChanged: [],
+          },
+          correlationId: "corr-seed",
+          createdAt: "2026-08-16T18:00:00Z",
+          updatedAt: "2026-08-16T18:05:00Z",
+          lockVersion: 2,
+        }
+      : null;
   const fetchMock = vi.fn((input: string | URL, init?: RequestInit) => {
     const url = String(input);
     if (url === "/api/overview")
@@ -84,6 +113,13 @@ function stubFetch(options: { truncated?: boolean } = {}) {
         counts: { runs: 1, inReview: 0, quarantined: 0 },
         recentRuns: [],
       });
+    if (url.startsWith("/api/proposals?") && url.includes("state=APPROVED"))
+      return ok({
+        items: approvedProposal ? [approvedProposal] : [],
+        nextCursor: null,
+      });
+    if (url === "/api/proposals/proposal-seed" && approvedProposal)
+      return ok(approvedProposal);
     if (url.startsWith("/api/lineage/")) {
       lineageUrls.push(url);
       const subject = decodeURIComponent(url.slice("/api/lineage/".length).split("?")[0]);
@@ -128,6 +164,29 @@ function renderExplorer() {
 }
 
 afterEach(() => vi.unstubAllGlobals());
+
+
+test("explorer seeds its subject from the latest approved proposal", async () => {
+  // A freshly published system must be discoverable without hand-typing its
+  // URN: the explorer roots at the newest approved proposal's first published
+  // dataset (element scope stripped to the dataset).
+  const { lineageUrls } = stubFetch({
+    approvedSubject: "urn:ldp:staging:postgres:sivalabs-blog:posts#title",
+  });
+  renderExplorer();
+
+  expect(await screen.findByText("Projection graph-demo · depth 3")).toBeVisible();
+  expect(screen.getByLabelText("Subject URN")).toHaveValue(
+    "urn:ldp:staging:postgres:sivalabs-blog:posts",
+  );
+  expect(lineageUrls[0]).toContain(
+    encodeURIComponent("urn:ldp:staging:postgres:sivalabs-blog:posts"),
+  );
+  // The hardcoded fallback must never have been walked.
+  expect(
+    lineageUrls.some((url) => url.includes(encodeURIComponent(OWNERS))),
+  ).toBe(false);
+});
 
 
 test("explorer defaults to the live seed subject walked in both directions", async () => {

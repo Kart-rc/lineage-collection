@@ -12,17 +12,61 @@ import "../styles/pages/lineage.css";
 const DEFAULT_SUBJECT = "urn:ldp:staging:mysql:petclinic-rest:owners";
 
 
+/** The first published dataset URN among a proposal's added edges, at dataset
+ * scope — the natural place to root a walk for a freshly approved system. */
+function seedSubjectFrom(edges: readonly { from: readonly string[]; to: string }[]) {
+  for (const edge of edges) {
+    for (const urn of [edge.to, ...edge.from]) {
+      if (typeof urn === "string" && urn.startsWith("urn:ldp:")) {
+        return urn.split("#")[0];
+      }
+    }
+  }
+  return null;
+}
+
+
 export function LineageExplorerPage() {
-  const [subject, setSubject] = useState(DEFAULT_SUBJECT);
-  const [draftSubject, setDraftSubject] = useState(DEFAULT_SUBJECT);
+  // null until the seed resolves — the walk roots at the most recently
+  // approved proposal's dataset so a new system is discoverable without
+  // hand-typing its URN; the historical default is only a fallback.
+  const [subject, setSubject] = useState<string | null>(null);
+  const [draftSubject, setDraftSubject] = useState("");
   const [direction, setDirection] = useState<LineageDirection>("both");
   const [depth, setDepth] = useState(3);
   const [selectedEdgeKey, setSelectedEdgeKey] = useState<string | null>(null);
   const [selectedNodeUrn, setSelectedNodeUrn] = useState<string | null>(null);
   const [railCollapsed, setRailCollapsed] = useState(false);
+  const seed = useQuery({
+    queryKey: ["lineage-seed"],
+    staleTime: Infinity,
+    queryFn: async ({ signal }) => {
+      try {
+        const approved = await api.proposals(signal, undefined, "APPROVED");
+        const latest = [...approved.items].sort((a, b) =>
+          String(b.updatedAt ?? b.createdAt ?? "").localeCompare(
+            String(a.updatedAt ?? a.createdAt ?? ""),
+          ),
+        )[0];
+        if (!latest) return null;
+        const detail = await api.proposal(latest.proposalId, signal);
+        return seedSubjectFrom(detail.diff.added);
+      } catch {
+        return null;
+      }
+    },
+  });
+  useEffect(() => {
+    if (subject === null && seed.isFetched) {
+      const seeded = seed.data ?? DEFAULT_SUBJECT;
+      setSubject(seeded);
+      setDraftSubject(seeded);
+    }
+  }, [subject, seed.isFetched, seed.data]);
   const lineage = useQuery({
     queryKey: ["lineage", subject, direction, depth],
-    queryFn: ({ signal }) => api.lineage(subject, direction, depth, signal),
+    enabled: subject !== null,
+    queryFn: ({ signal }) => api.lineage(subject ?? "", direction, depth, signal),
   });
   const selectedEdge =
     lineage.data?.edges.find((edge) => edge.edgeKey === selectedEdgeKey) ?? null;
@@ -161,7 +205,7 @@ export function LineageExplorerPage() {
                 a proposal in the Review queue first.
               </p>
             ))}
-          {lineage.data && (
+          {lineage.data && subject && (
             <ImpactPanel key={subject} subject={subject} edges={lineage.data.edges} />
           )}
         </div>
