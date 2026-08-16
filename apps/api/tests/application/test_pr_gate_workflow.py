@@ -165,6 +165,23 @@ def test_pr_gate_blocks_only_calibrated_non_llm_violation() -> None:
     assert llm_only["reasons"] == ["LLM_ONLY_BLOCK_EVIDENCE"]
 
 
+def test_pr_gate_block_wins_over_warn_reasons() -> None:
+    # Impact summary contains BOTH warn > 0 (adds IMPACT_WARNING reason)
+    # and block > 0 with non-LLM evidence (calibrated block).
+    # The verdict must be BLOCK, not WARN: a warning must never mask a block.
+    impact = lambda *_: {
+        "namespaceVersion": "v1",
+        "truncated": False,
+        "summary": {"block": 1, "warn": 1, "info": 0},
+        "affected": [{"severity": "BLOCK"}, {"severity": "WARN"}],
+    }
+
+    result = build_workflow(impact_reader=impact).evaluate(request())
+
+    assert result["verdict"] == "BLOCK"
+    assert "IMPACT_WARNING" in result["reasons"]
+
+
 @pytest.mark.parametrize(
     ("coverage", "environment_value", "impact_reader", "reason"),
     [

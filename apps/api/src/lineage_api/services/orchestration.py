@@ -1723,7 +1723,7 @@ class OrchestrationService:
         )
         run = self._run_for_correlation(decision.proposal.correlation_id)
         self._stage(run["runId"], "PUBLISHING", {"approvalId": decision.approval.approval_id})
-        published = self._publisher.publish(decision.proposal, decision.approval, env="staging")
+        published = self._publisher.publish(decision.proposal, decision.approval, env=run["env"])
         with self._database.connection() as connection:
             graph = connection.execute(
                 "SELECT checksum FROM graph_versions WHERE env = ? AND version = ?",
