@@ -24,6 +24,7 @@ from sqlglot.errors import ParseError, TokenError
 
 _VERSIONED = re.compile(r"^V(?P<version>\d+(?:[._]\d+)*)__(?P<name>.+)\.sql$")
 _REPEATABLE = re.compile(r"^R__(?P<name>.+)\.sql$")
+_ALTER_SEQUENCE = re.compile(r"(?is)^\s*alter\s+sequence\b")
 
 
 @dataclass(frozen=True, slots=True)
@@ -221,7 +222,7 @@ def _apply_sql_statement(
                 statement_index=index,
             )
             return None
-        if kind in {"INDEX", "DATABASE", "SCHEMA", "VIEW"}:
+        if kind in {"INDEX", "DATABASE", "SCHEMA", "VIEW", "SEQUENCE"}:
             # Inventory-only: none of these change a table's identity or its columns.
             return None
         return MigrationResidue("unmodelled-migration-statement", path, kind or "CREATE")
@@ -232,13 +233,23 @@ def _apply_sql_statement(
         if kind == "TABLE" and isinstance(target, exp.Table):
             tables.pop(target.name, None)
             return None
-        if kind in {"INDEX", "VIEW"}:
+        if kind in {"INDEX", "VIEW", "SEQUENCE"}:
             return None
         return MigrationResidue("unmodelled-migration-statement", path, kind or "DROP")
 
     if isinstance(statement, exp.Alter):
         handled, entry = _apply_alter(statement, tables, path, index)
         return None if handled else entry
+
+    if isinstance(statement, (exp.Insert, exp.Update)):
+        # Data loads and row rewrites cannot add or remove tables or columns —
+        # the Flyway twin of the Liquibase loadData/loadUpdateData changes.
+        return None
+
+    if isinstance(statement, exp.Command) and _ALTER_SEQUENCE.match(statement.sql()):
+        # sqlglot cannot parse ALTER SEQUENCE and falls back to a raw command;
+        # sequences are inventory-neutral, mirroring Liquibase's alterSequence.
+        return None
 
     return MigrationResidue(
         "unmodelled-migration-statement", path, type(statement).__name__.upper()
@@ -280,6 +291,15 @@ def _apply_alter(
                 table.statement_index,
             )
             continue
+        if isinstance(action, exp.AlterColumn) and action.this is not None:
+            # Nullability and default changes are constraint-only: the column's
+            # existence and type are untouched — Liquibase's addNotNullConstraint
+            # and addDefaultValue twins, which are inventory-neutral there too.
+            if any(item.name == action.this.name for item in table.columns):
+                continue
+            return False, MigrationResidue(
+                "unknown-migration-table", path, action.this.name
+            )
         if isinstance(action, exp.Drop) and str(
             action.args.get("kind", "")
         ).upper() in {"COLUMN", ""}:

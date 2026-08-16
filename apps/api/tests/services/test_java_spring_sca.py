@@ -1520,6 +1520,202 @@ class OwnerService {{
     assert query.split('"', 2)[1] not in evidence.to_bytes().decode()
 
 
+def test_text_block_query_with_constructor_projection_is_modelled() -> None:
+    # Java text blocks are string literals, and a JPQL `select new Dto(...)`
+    # constructor projection reads exactly the listed properties of its root
+    # entity — both are well-defined, so neither may fall out as dynamic-query.
+    repository = '''package example;
+import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+interface OwnerRepository extends JpaRepository<Owner, Integer> {
+  @Query("""
+      select new example.OwnerDto(o.id, o.city)
+      from Owner o
+      order by o.city
+      """)
+  Object customRead();
+}
+'''
+    evidence = _compile_java_spring(
+        (
+            _source("pom.xml", _maven_build()),
+            _source(
+                "src/example/Owner.java",
+                'package example; import jakarta.persistence.Entity; import jakarta.persistence.Table; '
+                '@Entity @Table(name="owners") class Owner {}',
+            ),
+            _source("src/example/OwnerRepository.java", repository),
+            _source(
+                "src/example/OwnerService.java",
+                '''package example;
+class OwnerService {
+  private final OwnerRepository owners;
+  OwnerService(OwnerRepository owners) { this.owners = owners; }
+  Object run() { return owners.customRead(); }
+}
+''',
+            ),
+            _source(
+                "src/main/resources/db/postgres/schema.sql",
+                "create table owners (id integer primary key, city text);",
+                dialect="postgres",
+            ),
+        )
+    )
+
+    assert evidence.status == "COMPLETE"
+    assert not any(entry.code == "dynamic-query" for entry in evidence.residue)
+    assert len(evidence.edges) == 1
+    assert evidence.edges[0].edge_type == "READS"
+    assert evidence.edges[0].transform.endswith("[JPQL SELECT]")
+
+
+def test_constructor_projection_grounds_elements_without_fqcn_artifacts() -> None:
+    # The constructor's dotted FQCN must not be misread as property references,
+    # and audit fields inherited from a @MappedSuperclass resolve like any other.
+    evidence = _compile_java_spring(
+        (
+            _source("pom.xml", _maven_build()),
+            _source(
+                "src/example/Audited.java",
+                'package example; import jakarta.persistence.Column; import jakarta.persistence.MappedSuperclass; '
+                '@MappedSuperclass abstract class Audited { @Column(name="created_at") protected String createdAt; }',
+            ),
+            _source(
+                "src/example/Owner.java",
+                'package example; import jakarta.persistence.Column; import jakarta.persistence.Entity; '
+                'import jakarta.persistence.Id; import jakarta.persistence.Table; '
+                '@Entity @Table(name="owners") class Owner extends Audited { '
+                '@Id private Integer id; @Column(name="city") private String city; }',
+            ),
+            _source(
+                "src/example/OwnerRepository.java",
+                '''package example;
+import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+interface OwnerRepository extends JpaRepository<Owner, Integer> {
+  @Query("""
+      select new example.owner.web.OwnerDto(o.id, o.city, o.createdAt)
+      from Owner o
+      order by o.city
+      """)
+  Object customRead();
+}
+''',
+            ),
+            _source(
+                "src/example/OwnerService.java",
+                '''package example;
+class OwnerService {
+  private final OwnerRepository owners;
+  OwnerService(OwnerRepository owners) { this.owners = owners; }
+  Object run() { return owners.customRead(); }
+}
+''',
+            ),
+            _source(
+                "src/main/resources/db/postgres/schema.sql",
+                "create table owners (id integer primary key, city text, created_at timestamp);",
+                dialect="postgres",
+            ),
+        )
+    )
+
+    assert evidence.status == "COMPLETE"
+    assert not any(
+        entry.code == "unresolved-query-property" for entry in evidence.residue
+    )
+    element_targets = {
+        edge.dataset_urn for edge in evidence.edges if "#" in edge.dataset_urn
+    }
+    assert element_targets == {
+        "urn:ldp:staging:postgres:petclinic:owners#id",
+        "urn:ldp:staging:postgres:petclinic:owners#city",
+        "urn:ldp:staging:postgres:petclinic:owners#created_at",
+    }
+
+
+def test_explicit_entity_join_reads_every_joined_entity() -> None:
+    # `from Post p join User u on ...` reads BOTH entities: one invocation emits
+    # a READS edge (and element edges) for each — never silently dropping the
+    # joined side.
+    evidence = _compile_java_spring(
+        (
+            _source("pom.xml", _maven_build()),
+            _source(
+                "src/example/Post.java",
+                'package example; import jakarta.persistence.Column; import jakarta.persistence.Entity; '
+                'import jakarta.persistence.Id; import jakarta.persistence.Table; '
+                '@Entity @Table(name="posts") class Post { @Id private Long id; '
+                '@Column(name="title") private String title; '
+                '@Column(name="slug") private String slug; '
+                '@Column(name="created_by") private Long createdBy; }',
+            ),
+            _source(
+                "src/example/User.java",
+                'package example; import jakarta.persistence.Column; import jakarta.persistence.Entity; '
+                'import jakarta.persistence.Id; import jakarta.persistence.Table; '
+                '@Entity @Table(name="users") class User { @Id private Long id; '
+                '@Column(name="name") private String name; }',
+            ),
+            _source(
+                "src/example/UserRepository.java",
+                '''package example;
+import org.springframework.data.jpa.repository.JpaRepository;
+interface UserRepository extends JpaRepository<User, Long> {}
+''',
+            ),
+            _source(
+                "src/example/PostRepository.java",
+                '''package example;
+import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+interface PostRepository extends JpaRepository<Post, Long> {
+  @Query("""
+      select new example.web.PostDto(p.id, p.title, u.name)
+      from Post p join User u on p.createdBy = u.id
+      where p.slug = :slug
+      """)
+  Object findBySlug(String slug);
+}
+''',
+            ),
+            _source(
+                "src/example/PostService.java",
+                '''package example;
+class PostService {
+  private final PostRepository posts;
+  PostService(PostRepository posts) { this.posts = posts; }
+  Object run() { return posts.findBySlug("intro"); }
+}
+''',
+            ),
+            _source(
+                "src/main/resources/db/postgres/schema.sql",
+                "create table posts (id bigint primary key, title text, slug text, created_by bigint);\n"
+                "create table users (id bigint primary key, name text);",
+                dialect="postgres",
+            ),
+        )
+    )
+
+    assert evidence.status == "COMPLETE"
+    dataset_reads = {
+        edge.dataset_urn
+        for edge in evidence.edges
+        if edge.edge_type == "READS" and "#" not in edge.dataset_urn
+    }
+    assert dataset_reads == {
+        "urn:ldp:staging:postgres:petclinic:posts",
+        "urn:ldp:staging:postgres:petclinic:users",
+    }
+    element_targets = {
+        edge.dataset_urn for edge in evidence.edges if "#" in edge.dataset_urn
+    }
+    assert "urn:ldp:staging:postgres:petclinic:users#name" in element_targets
+    assert "urn:ldp:staging:postgres:petclinic:posts#title" in element_targets
+
+
 @pytest.mark.parametrize(
     "query",
     [
@@ -3170,12 +3366,11 @@ class OwnerService {
 def test_cross_entity_jpql_never_element_scopes_the_mismatched_table_candidate() -> None:
     """Mirrors petclinic's `PetRepository.findPetTypeById` -> `types`.
 
-    The @Query redirects the edge to a different entity's table (`types`), but the
-    query-element fact for that method resolves its property against the repository's
-    *own* declared entity (`Owner`, table `owners`) -- a real, residue-guarded fact, just
-    for the wrong table. That mismatch must never element-scope the redirected
-    `owners -> types` candidate; whether the cross-entity projection gets its own edge is
-    out of scope here, so the wall for it stays.
+    The @Query redirects the edge to a different entity's table (`types`), and the
+    alias-aware property resolution grounds `t.id` against the entity the alias
+    actually binds (`PetType` -> `types.id`) -- so the redirected candidate is
+    element-scoped by its OWN table's fact, and no fact for the repository's
+    declared table (`owners`) ever element-scopes it.
     """
     evidence = _compile_java_spring(
         _lineage_sources(
@@ -3221,9 +3416,11 @@ import jakarta.persistence.Table;
     )
 
     assert evidence.status == "COMPLETE"
-    assert len(evidence.edges) == 1
-    assert evidence.edges[0].dataset_urn == "urn:ldp:staging:postgres:petclinic:types"
-    assert "#" not in evidence.edges[0].dataset_urn
+    assert {edge.dataset_urn for edge in evidence.edges} == {
+        "urn:ldp:staging:postgres:petclinic:types",
+        "urn:ldp:staging:postgres:petclinic:types#id",
+    }
+    assert not any("owners#" in edge.dataset_urn for edge in evidence.edges)
 
 
 def test_a_default_method_delegating_to_a_declared_query_resolves_through_it() -> None:

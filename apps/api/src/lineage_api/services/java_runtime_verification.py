@@ -965,6 +965,9 @@ def generate_stub_sources() -> dict[str, str]:
             "    int getTotalPages();\n"
             "    long getTotalElements();\n"
             "    boolean isEmpty();\n"
+            "    int getNumber();\n"
+            "    boolean hasNext();\n"
+            "    boolean hasPrevious();\n"
             "    default <U> Page<U> map(Function<? super T, ? extends U> converter) { return null; }\n"
             "}\n"
         ),
@@ -1190,7 +1193,70 @@ def generate_stub_sources() -> dict[str, str]:
             "package org.springframework.transaction.annotation;\n"
             "import java.lang.annotation.*;\n"
             "@Retention(RetentionPolicy.RUNTIME)\n"
-            "public @interface Transactional { boolean readOnly() default false; }\n"
+            "public @interface Transactional { boolean readOnly() default false; "
+            "Propagation propagation() default Propagation.REQUIRED; }\n"
+        ),
+        # The members below are the additional surface a package-by-feature service
+        # (sivalabs-style blog) imports: optimistic locking, Hibernate natural ids,
+        # MapStruct mappers, propagation-qualified transactions, application events
+        # and Spring Security's access exception. Annotations and minimal types
+        # only — no runtime behaviour is invented.
+        "org/springframework/transaction/annotation/Propagation.java": (
+            "package org.springframework.transaction.annotation;\n"
+            "public enum Propagation { REQUIRED, REQUIRES_NEW, SUPPORTS, "
+            "NOT_SUPPORTED, MANDATORY, NEVER, NESTED }\n"
+        ),
+        "jakarta/persistence/Version.java": (
+            "package jakarta.persistence;\n"
+            "import java.lang.annotation.*;\n"
+            "@Retention(RetentionPolicy.RUNTIME)\n"
+            "public @interface Version {}\n"
+        ),
+        "jakarta/persistence/EnumType.java": (
+            "package jakarta.persistence;\n"
+            "public enum EnumType { ORDINAL, STRING }\n"
+        ),
+        "jakarta/persistence/Enumerated.java": (
+            "package jakarta.persistence;\n"
+            "import java.lang.annotation.*;\n"
+            "@Retention(RetentionPolicy.RUNTIME)\n"
+            "public @interface Enumerated { EnumType value() default EnumType.ORDINAL; }\n"
+        ),
+        "org/hibernate/annotations/NaturalId.java": (
+            "package org.hibernate.annotations;\n"
+            "import java.lang.annotation.*;\n"
+            "@Retention(RetentionPolicy.RUNTIME)\n"
+            "public @interface NaturalId { boolean mutable() default false; }\n"
+        ),
+        "org/mapstruct/Mapper.java": (
+            "package org.mapstruct;\n"
+            "import java.lang.annotation.*;\n"
+            "@Retention(RetentionPolicy.RUNTIME) @Target(ElementType.TYPE)\n"
+            "public @interface Mapper { String componentModel() default \"\"; }\n"
+        ),
+        "org/mapstruct/Mapping.java": (
+            "package org.mapstruct;\n"
+            "import java.lang.annotation.*;\n"
+            "@Retention(RetentionPolicy.RUNTIME) @Target(ElementType.METHOD)\n"
+            "@Repeatable(Mappings.class)\n"
+            "public @interface Mapping { String target(); String source() default \"\"; "
+            "String expression() default \"\"; boolean ignore() default false; }\n"
+        ),
+        "org/mapstruct/Mappings.java": (
+            "package org.mapstruct;\n"
+            "import java.lang.annotation.*;\n"
+            "@Retention(RetentionPolicy.RUNTIME) @Target(ElementType.METHOD)\n"
+            "public @interface Mappings { Mapping[] value(); }\n"
+        ),
+        "org/springframework/context/ApplicationEventPublisher.java": (
+            "package org.springframework.context;\n"
+            "public interface ApplicationEventPublisher { void publishEvent(Object event); }\n"
+        ),
+        "org/springframework/security/access/AccessDeniedException.java": (
+            "package org.springframework.security.access;\n"
+            "public class AccessDeniedException extends RuntimeException {\n"
+            "    public AccessDeniedException(String message) { super(message); }\n"
+            "}\n"
         ),
     }
 

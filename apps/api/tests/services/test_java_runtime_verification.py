@@ -7,6 +7,7 @@ from pathlib import Path
 
 import pytest
 
+from lineage_api.application.java_runtime_stage import select_relevant_java_sources
 from lineage_api.services.java_runtime_verification import (
     JavaHarnessError,
     JavaObservation,
@@ -324,6 +325,142 @@ def test_generated_harness_compiles_and_runs_on_a_real_jvm(tmp_path: Path) -> No
         [("owners", "READ"), ("owners", "WRITE")], observations
     )
     assert verification.verdict == "CORROBORATED"
+
+
+@pytest.mark.skipif(_javac() is None, reason="no JDK available; set LINEAGE_JAVA_HOME")
+def test_an_audited_mapstruct_service_corpus_compiles_and_runs(tmp_path: Path) -> None:
+    """A modern package-by-feature service (Spring Data auditing base with @Version,
+    @NaturalId, a MapStruct mapper, propagation-qualified @Transactional, an event
+    publisher and Spring Security's AccessDeniedException) must stay inside the
+    harness's stub surface — each stub exists because this real shape imports it."""
+    javac = _javac()
+    assert javac is not None
+    java = str(Path(javac).with_name("java"))
+
+    sources = {
+        "src/main/java/com/example/shared/BaseEntity.java": (
+            "package com.example.shared;\n"
+            "import jakarta.persistence.Column;\n"
+            "import jakarta.persistence.EntityListeners;\n"
+            "import jakarta.persistence.MappedSuperclass;\n"
+            "import jakarta.persistence.Version;\n"
+            "import org.springframework.data.annotation.CreatedDate;\n"
+            "import org.springframework.data.jpa.domain.support.AuditingEntityListener;\n"
+            "@MappedSuperclass\n"
+            "@EntityListeners(AuditingEntityListener.class)\n"
+            "public abstract class BaseEntity {\n"
+            "    @Column(name = \"created_at\") @CreatedDate protected String createdAt;\n"
+            "    @Version protected Long version;\n"
+            "}\n"
+        ),
+        "src/main/java/com/example/blog/Article.java": (
+            "package com.example.blog;\n"
+            "import com.example.shared.BaseEntity;\n"
+            "import jakarta.persistence.*;\n"
+            "import org.hibernate.annotations.NaturalId;\n"
+            "@Entity @Table(name = \"articles\")\n"
+            "class Article extends BaseEntity {\n"
+            "    @Id private Long id;\n"
+            "    @NaturalId\n"
+            "    @Column(name = \"slug\") private String slug;\n"
+            "    public Long getId() { return id; }\n"
+            "    public String getSlug() { return slug; }\n"
+            "}\n"
+        ),
+        "src/main/java/com/example/blog/ArticleDto.java": (
+            "package com.example.blog;\n"
+            "public record ArticleDto(Long id, String slug) {}\n"
+        ),
+        "src/main/java/com/example/blog/ArticleMapper.java": (
+            "package com.example.blog;\n"
+            "import org.mapstruct.Mapper;\n"
+            "import org.mapstruct.Mapping;\n"
+            "@Mapper(componentModel = \"spring\")\n"
+            "interface ArticleMapper {\n"
+            "    @Mapping(target = \"slug\", source = \"slug\")\n"
+            "    ArticleDto toDto(Article article);\n"
+            "}\n"
+        ),
+        "src/main/java/com/example/blog/ArticleRepository.java": (
+            "package com.example.blog;\n"
+            "import org.springframework.data.jpa.repository.JpaRepository;\n"
+            "interface ArticleRepository extends JpaRepository<Article, Long> {\n"
+            "    Article findBySlug(String slug);\n"
+            "}\n"
+        ),
+        "src/main/java/com/example/blog/ArticleService.java": (
+            "package com.example.blog;\n"
+            "import org.springframework.context.ApplicationEventPublisher;\n"
+            "import org.springframework.security.access.AccessDeniedException;\n"
+            "import org.springframework.stereotype.Service;\n"
+            "import org.springframework.transaction.annotation.Propagation;\n"
+            "import org.springframework.transaction.annotation.Transactional;\n"
+            "@Service\n"
+            "public class ArticleService {\n"
+            "    private final ArticleRepository articleRepository;\n"
+            "    private final ApplicationEventPublisher publisher;\n"
+            "    ArticleService(ArticleRepository articleRepository, ApplicationEventPublisher publisher) {\n"
+            "        this.articleRepository = articleRepository;\n"
+            "        this.publisher = publisher;\n"
+            "    }\n"
+            "    @Transactional(propagation = Propagation.REQUIRES_NEW)\n"
+            "    public Object findArticle(String slug) {\n"
+            "        Object found = articleRepository.findBySlug(slug);\n"
+            "        if (found == null && slug == null) throw new AccessDeniedException(\"denied\");\n"
+            "        return found;\n"
+            "    }\n"
+            "    @Transactional(readOnly = true)\n"
+            "    public Object load(Long id) { return articleRepository.findById(id); }\n"
+            "}\n"
+        ),
+    }
+
+    scoped = select_relevant_java_sources(
+        sources,
+        [
+            {
+                "from": ["urn:ldp:staging:postgres:blog:articles#slug"],
+                "to": "service://blog/com.example.blog.ArticleService#findArticle",
+                "edgeType": "READS",
+                "provenanceId": "p-1",
+            }
+        ],
+    )
+    assert "src/main/java/com/example/blog/ArticleRepository.java" in scoped
+    assert "src/main/java/com/example/blog/ArticleService.java" in scoped
+    assert "src/main/java/com/example/shared/BaseEntity.java" in scoped
+
+    workspace = tmp_path / "src"
+    for relative, text in {**scoped, **generate_harness(scoped)}.items():
+        path = workspace / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text, encoding="utf-8")
+    listing = tmp_path / "files.txt"
+    listing.write_text(
+        "\n".join(str(path) for path in sorted(workspace.rglob("*.java"))),
+        encoding="utf-8",
+    )
+    compiled = subprocess.run(
+        [javac, "-d", str(tmp_path / "classes"), f"@{listing}"],
+        capture_output=True,
+        text=True,
+        timeout=180,
+        check=False,
+    )
+    assert compiled.returncode == 0, compiled.stderr
+    ran = subprocess.run(
+        [java, "-cp", str(tmp_path / "classes"), "harness.GeneratedRuntimeTest"],
+        capture_output=True,
+        text=True,
+        timeout=120,
+        check=False,
+    )
+    assert ran.returncode == 0, ran.stderr
+    observations = parse_observations(ran.stdout)
+    assert any(
+        observation.table == "articles" and observation.operation == "READ"
+        for observation in observations
+    )
 
 
 @pytest.mark.skipif(_javac() is None, reason="no JDK available; set LINEAGE_JAVA_HOME")
