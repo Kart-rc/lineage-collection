@@ -75,6 +75,7 @@ test proves it holds at full whole-repository scale on the real checkout too.
 from __future__ import annotations
 
 import hashlib
+import os
 import subprocess
 import tempfile
 from pathlib import Path
@@ -98,7 +99,8 @@ from lineage_api.domain.urns import LineageUrn, is_element_scoped_dataset_urn
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[4]
-CHECKOUT = Path("/private/tmp/lineage-estate/spring-petclinic-microservices")
+ESTATE = Path(os.environ.get("LINEAGE_ESTATE_DIR", "/private/tmp/lineage-estate"))
+CHECKOUT = ESTATE / "spring-petclinic-microservices"
 ORIGIN = "https://github.com/spring-petclinic/spring-petclinic-microservices"
 REPOSITORY = "spring-petclinic-microservices"
 SECRET = "petclinic-runtime-acceptance-secret"
@@ -111,13 +113,18 @@ SCHEMA_PROFILE = "mysql"
 ENVIRONMENT = "staging"
 SYSTEM = "petclinic"
 
-pytestmark = pytest.mark.skipif(
-    not CHECKOUT.is_dir() or java_home_or_none() is None,
-    reason="petclinic checkout or JVM not present",
-)
+def _head_revision() -> str | None:
+    """The checkout's HEAD, or None when it is not a usable git checkout.
 
-
-def _revision() -> str:
+    `is_dir()` alone is not enough. This corpus conventionally lives under
+    `/private/tmp`, which macOS reaps: the working tree survives while `.git` is
+    emptied, so the directory still exists but `rev-parse` fails. Collecting a
+    revision-less snapshot then produces `INTEGRATION_REQUIRED` and the assertions
+    fail for a reason that has nothing to do with the code under test. Treat an
+    unreadable checkout as absent and skip.
+    """
+    if not CHECKOUT.is_dir():
+        return None
     result = subprocess.run(
         ["git", "-C", str(CHECKOUT), "rev-parse", "HEAD"],
         capture_output=True,
@@ -125,7 +132,24 @@ def _revision() -> str:
         timeout=30,
         check=False,
     )
-    return result.stdout.strip() or "0" * 40
+    if result.returncode != 0:
+        return None
+    return result.stdout.strip() or None
+
+
+pytestmark = pytest.mark.skipif(
+    _head_revision() is None or java_home_or_none() is None,
+    reason=(
+        f"usable petclinic checkout absent at {CHECKOUT}, or no JVM. "
+        "Re-clone it, or set LINEAGE_ESTATE_DIR, to run this proof."
+    ),
+)
+
+
+def _revision() -> str:
+    revision = _head_revision()
+    assert revision is not None, "guarded by pytestmark"
+    return revision
 
 
 def _snapshot(revision: str) -> RepositorySnapshot:

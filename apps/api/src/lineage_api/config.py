@@ -15,6 +15,61 @@ def _environment_boolean(name: str, default: bool) -> bool:
     return parsed
 
 
+# The demo secret is published in this repository, so anything signed with it is
+# forgeable by anyone who can read the source. It authenticates every signed input
+# the platform accepts -- push deliveries, deployment outcomes and (key-derived)
+# runtime observations -- so a deployment that silently fell back to it would let a
+# stranger publish lineage and deployment promotions. It is therefore usable only
+# when the operator has explicitly asked for demo mode.
+DEMO_WEBHOOK_SECRET = "local-lineage-demo-secret"
+
+_MINIMUM_WEBHOOK_SECRET_BYTES = 16
+
+
+def _webhook_secret() -> str:
+    """Resolve the signing secret, failing closed rather than defaulting to the demo value."""
+    configured = os.environ.get("LINEAGE_WEBHOOK_SECRET")
+    dev_mode = _environment_boolean("LINEAGE_DEV_MODE", False)
+    if configured is None:
+        if dev_mode:
+            return DEMO_WEBHOOK_SECRET
+        raise ValueError(
+            "LINEAGE_WEBHOOK_SECRET must be set. It signs every accepted push, "
+            "deployment and runtime delivery. Set LINEAGE_DEV_MODE=1 to use the "
+            "published demo secret for local development only."
+        )
+    if configured == DEMO_WEBHOOK_SECRET and not dev_mode:
+        raise ValueError(
+            "LINEAGE_WEBHOOK_SECRET is the published demo secret and is forgeable "
+            "by anyone who can read this repository. Set a private value, or set "
+            "LINEAGE_DEV_MODE=1 for local development only."
+        )
+    if not dev_mode and len(configured.encode()) < _MINIMUM_WEBHOOK_SECRET_BYTES:
+        raise ValueError(
+            "LINEAGE_WEBHOOK_SECRET must be at least "
+            f"{_MINIMUM_WEBHOOK_SECRET_BYTES} bytes outside development mode"
+        )
+    return configured
+
+
+def _api_token() -> str | None:
+    """Optional bearer token guarding state-changing endpoints.
+
+    Unset leaves the API open, which is correct for a single-operator local run and
+    is what the demo walkthrough expects. Setting it makes every mutating route
+    require the token, so a deployed instance can be closed without a code change.
+    """
+    token = os.environ.get("LINEAGE_API_TOKEN")
+    if token is None:
+        return None
+    if len(token.encode()) < _MINIMUM_WEBHOOK_SECRET_BYTES:
+        raise ValueError(
+            "LINEAGE_API_TOKEN must be at least "
+            f"{_MINIMUM_WEBHOOK_SECRET_BYTES} bytes"
+        )
+    return token
+
+
 def _environment_integer(
     name: str, default: int, *, minimum: int, maximum: int
 ) -> int:
@@ -45,6 +100,7 @@ class Settings:
     allow_local_repository_sources: bool = False
     repository_clone_timeout_seconds: int = 60
     repository_git_output_limit_bytes: int = 64 * 1024
+    api_token: str | None = None
 
     @classmethod
     def from_environment(cls, project_root: Path | None = None) -> "Settings":
@@ -56,7 +112,8 @@ class Settings:
             fixture_directory=root / "fixtures",
             database_path=data_directory / "lineage.db",
             object_directory=data_directory / "objects",
-            webhook_secret=os.getenv("LINEAGE_WEBHOOK_SECRET", "local-lineage-demo-secret"),
+            webhook_secret=_webhook_secret(),
+            api_token=_api_token(),
             allow_local_repository_sources=_environment_boolean(
                 "LINEAGE_ALLOW_LOCAL_REPOSITORY_SOURCES", False
             ),
