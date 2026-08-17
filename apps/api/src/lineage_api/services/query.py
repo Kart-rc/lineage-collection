@@ -10,6 +10,12 @@ from lineage_api.domain.impact import BAND_ORDER, severity_for
 from lineage_api.domain.urns import LineageUrn
 
 
+# The web explorer defaults to "both" and the Neptune adapter has always supported
+# it, so the local backend accepting only up/down made the Lineage Explorer fail on
+# first load. Keep the three values in one place so the two backends cannot drift.
+DIRECTIONS = frozenset({"up", "down", "both"})
+
+
 class QueryService:
     def __init__(self, database: Database, env: str = "staging") -> None:
         self._database = database
@@ -23,25 +29,36 @@ class QueryService:
         version: str | None = None,
     ) -> dict[str, Any]:
         self._validate_depth(depth)
-        if direction not in {"up", "down"}:
+        if direction not in DIRECTIONS:
             raise DomainError(
-                "INVALID_DIRECTION", "Direction must be up or down", "system-query"
+                "INVALID_DIRECTION",
+                "Direction must be up, down or both",
+                "system-query",
             )
         namespace = self._resolve_version(version)
         all_edges = self._edges(namespace)
         frontier = {subject}
         nodes = {subject}
         selected: dict[str, dict[str, Any]] = {}
+        # "both" walks each edge undirected, so an edge is followed whichever end
+        # the frontier reached it from. Depth still bounds the walk, and `nodes`
+        # keeps the frontier from revisiting, so an undirected pair cannot bounce
+        # between its two ends forever.
+        follow_down = direction in {"down", "both"}
+        follow_up = direction in {"up", "both"}
         for _ in range(depth):
             next_frontier: set[str] = set()
             for edge in all_edges:
                 sources = set(edge["from"])
                 destinations = {edge["to"]}
-                matches = sources & frontier if direction == "down" else destinations & frontier
-                if not matches:
+                discovered: set[str] = set()
+                if follow_down and sources & frontier:
+                    discovered |= destinations
+                if follow_up and destinations & frontier:
+                    discovered |= sources
+                if not discovered:
                     continue
                 selected[edge["edgeKey"]] = edge
-                discovered = destinations if direction == "down" else sources
                 next_frontier.update(discovered - nodes)
                 nodes.update(sources | destinations)
             frontier = next_frontier
@@ -245,7 +262,11 @@ class QueryService:
     ) -> bool:
         if direction == "down":
             return any(set(edge["from"]) & frontier for edge in edges)
-        return any(edge["to"] in frontier for edge in edges)
+        if direction == "up":
+            return any(edge["to"] in frontier for edge in edges)
+        return any(
+            set(edge["from"]) & frontier or edge["to"] in frontier for edge in edges
+        )
 
     @staticmethod
     def _node(urn: str) -> dict[str, str]:

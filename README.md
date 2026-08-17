@@ -4,6 +4,18 @@ A locally runnable, production-shaped implementation of evidence-first lineage c
 
 The default operator path remains local: FastAPI + SQLite + a write-once object directory on the backend, and React + TypeScript + Vite on the frontend. The same repository also contains nine independently addressable Lambda handlers, an SCA Fargate worker, four generated Step Functions workflows, concrete AWS adapters, CDK stacks, deterministic OCI packaging, and guarded ephemeral-AWS verification. Local use does not require AWS credentials or an LLM key.
 
+## Start here
+
+New to the repository, or looking for a specific file or command? **[docs/NAVIGATION.md](docs/NAVIGATION.md)** is the guided map: what each workspace owns, where a given concept lives, the full command reference, and a troubleshooting table.
+
+Each application also documents itself:
+
+| Application | What it is | README |
+|---|---|---|
+| `apps/api` | Collection engine and product API — Python, FastAPI, SQLite | [apps/api/README.md](apps/api/README.md) |
+| `apps/web` | Operator control room — React, TypeScript, Vite | [apps/web/README.md](apps/web/README.md) |
+| `infra` | CDK stacks, OCI packaging, generated Step Functions | [infra/README.md](infra/README.md) |
+
 ## Prerequisites
 
 - Python 3.12 or 3.13
@@ -30,6 +42,12 @@ Open the UI at [http://127.0.0.1:5173](http://127.0.0.1:5173). The API health en
 
 Generated state is written under `data/` and is ignored by Git. Stop both processes with `Ctrl-C`.
 
+If port 8000 or 5173 is already in use, move the whole stack — the web proxy follows the API port automatically:
+
+```bash
+LINEAGE_API_PORT=8021 LINEAGE_WEB_PORT=5181 make dev
+```
+
 To drain durable local work without the web process, run:
 
 ```bash
@@ -37,6 +55,20 @@ uv run --project apps/api python -m lineage_api.cli worker --drain --max-message
 ```
 
 Use `--once` instead of `--drain` to process at most one available command.
+
+## Secrets and access
+
+`make dev` and `make reset` need no configuration: both set `LINEAGE_DEV_MODE=1`, which permits the demo signing secret published in this repository.
+
+Anything else must supply its own. `LINEAGE_WEBHOOK_SECRET` authenticates **every** signed input the platform accepts — push deliveries, deployment outcomes, and, through a derived key, runtime observations. Resolution therefore fails closed: a missing secret, the published demo value, or anything shorter than 16 bytes is refused rather than silently falling back to a value that anyone who can read this repository already knows.
+
+```bash
+export LINEAGE_WEBHOOK_SECRET=a-private-value-at-least-16-bytes
+```
+
+`LINEAGE_API_TOKEN` is unset by default, which leaves the API open — correct for a single-operator local run and what the demo walkthrough expects. Set it for any instance reachable by more than one person, and every route except `/healthz` will require `Authorization: Bearer <token>`. It gates reads as well as writes, because the lineage graph discloses the estate's schema and topology.
+
+The React UI does not yet send a bearer token, so leave `LINEAGE_API_TOKEN` unset when using the UI, and use it for headless or deployed access.
 
 ## Collect an exact Java/Spring checkout
 
@@ -81,7 +113,7 @@ tracked path must occur in exactly one disposition, and `COMPLETE` is impossible
 or failed paths.
 
 The bounded JSON result contains only identifiers, digests, status, stage names and counts. Static
-`exact=true` means the source citation is exact, not that the operation ran. By default, runtime verification is off and `runtimeStatus` remains `NOT_PROVIDED` (with `runtimeReasons == ["not-requested"]`). Runtime verification is currently a library-level opt-in: passing `runtime_execution=True` to `RepositoryCollectionService.collect(...)` executes Python and Java runtime stages against SCA edges in-process. Neither the CLI (`collect-checkout` above) nor the `POST /api/collections` HTTP endpoint exposes this flag yet.
+`exact=true` means the source citation is exact, not that the operation ran. By default, runtime verification is off and `runtimeStatus` remains `NOT_PROVIDED` (with `runtimeReasons == ["not-requested"]`). Enable it per collection with `--runtime-verification` on `collect-checkout`, or `"runtimeVerification": true` on `POST /api/collections`; both reach `RepositoryCollectionService.collect(..., runtime_execution=True)`, which executes the Python and Java runtime stages against the SCA edges. A successful run reports `runtimeStatus == "CORROBORATED"` with empty `runtimeReasons`.
 
 Spring Petclinic is an acceptance example, not a special case in production code:
 
@@ -262,7 +294,7 @@ The default command is hermetic and reports `HERMITIC_LOCAL_PASS` or failure ind
 an external repository is not implicit test input, it also reports
 `LOCAL_REAL_REPOSITORY_REQUIRED`; that status is not counted as a pass. Set
 `LINEAGE_REAL_REPOSITORY_CHECKOUT` to the exact pinned Petclinic checkout before running
-`make acceptance-smoke` to add the separate `LOCAL_REAL_REPOSITORY_PASS` proof. This static proof defaults to `RUNTIME_NOT_PROVIDED` (no runtime verification); runtime verification is currently a library-level opt-in on `RepositoryCollectionService.collect(..., runtime_execution=True)` and is not exposed by `make acceptance-smoke`, the CLI, or the collections API. Live cloud rows remain `AWS_REQUIRED`, and collection defaults to runtime off.
+`make acceptance-smoke` to add the separate `LOCAL_REAL_REPOSITORY_PASS` proof. This static proof defaults to `RUNTIME_NOT_PROVIDED` (no runtime verification). `make acceptance-smoke` does not enable runtime verification; the CLI and the collections API both do expose it, via `--runtime-verification` and `"runtimeVerification": true`. Live cloud rows remain `AWS_REQUIRED`, and collection defaults to runtime off.
 
 Run only the named crash/redrive scenario with:
 
@@ -306,6 +338,7 @@ Production mode remains deletion-protected and Object-Locked. Only the strict ep
 
 ## Architecture and delivery sources
 
+- [Repository navigation and command reference](docs/NAVIGATION.md)
 - [Normative architecture and six Mermaid views](docs/plans/2026-08-05-lineage-collection-architecture-refactor-design.md)
 - [Executable implementation plan and Tasks 1–22](docs/plans/2026-08-05-lineage-collection-architecture-refactor.md)
 - [Acceptance specification](docs/acceptance/lineage-platform-acceptance.md)
