@@ -1,14 +1,50 @@
-"""The Kafka cell turns bindings into dataset edges a topic can be joined on."""
+"""The Kafka cell turns bindings into dataset edges a topic can be joined on.
 
+This asserts against a real upstream checkout rather than a fixture, so it needs that
+checkout present. It is skipped when absent instead of failing: an external repository
+is not implicit test input, and a fresh clone must be able to run the suite green.
+
+    git clone https://github.com/spring-cloud/spring-cloud-stream-samples \\
+        "${LINEAGE_ESTATE_DIR:-/private/tmp/lineage-estate}/spring-cloud-stream-samples"
+"""
+
+import os
 from pathlib import Path
+
+import pytest
 
 from lineage_api.services.analyzer_registry import AnalyzerRegistry, AnalyzerSelection
 from lineage_api.services.resolver import Resolver
 
 ROOT = Path(__file__).resolve().parents[4]
 CATALOG = ROOT / "fixtures" / "catalog" / "catalog-snapshot-v1.json"
-REAL = Path("/private/tmp/lineage-estate/spring-cloud-stream-samples")
+ESTATE = Path(os.environ.get("LINEAGE_ESTATE_DIR", "/private/tmp/lineage-estate"))
+REAL = ESTATE / "spring-cloud-stream-samples"
 PROCESSOR = REAL / "kafka-streams-samples/kafka-streams-inventory-count"
+
+def _has_binding_configuration() -> bool:
+    """True only when the corpus actually carries the config this cell reads.
+
+    `is_dir()` alone is not enough. This corpus conventionally lives under
+    `/private/tmp`, which macOS reaps, and the reap leaves the directory tree in
+    place while removing every file. The analyzer then sees an empty repository and
+    reports zero edges, so the assertions fail for a reason unrelated to the code
+    under test. Require the binding configuration itself before claiming the corpus
+    is present.
+    """
+    if not PROCESSOR.is_dir():
+        return False
+    patterns = ("application*.yml", "application*.yaml", "application*.properties")
+    return any(any(PROCESSOR.rglob(pattern)) for pattern in patterns)
+
+
+pytestmark = pytest.mark.skipif(
+    not _has_binding_configuration(),
+    reason=(
+        f"stream-samples corpus missing or empty at {PROCESSOR}. "
+        "Clone it there, or set LINEAGE_ESTATE_DIR, to run this proof."
+    ),
+)
 
 SELECTION = AnalyzerSelection(
     "kafka-streams-v1", "kafka-binding-rules-v1", "git-checkout", "spring-cloud-stream", "kafka"

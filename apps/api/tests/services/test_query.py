@@ -124,3 +124,34 @@ def test_depth_above_five_is_rejected(query) -> None:
         query.lineage(SOURCE, direction="down", depth=6)
 
     assert captured.value.code == "DEPTH_EXCEEDED"
+
+
+def test_direction_both_walks_upstream_and_downstream_from_the_middle(query) -> None:
+    """The web explorer defaults to `both`, and the Neptune adapter has always
+    supported it. Walking from MIDDLE must reach SOURCE behind it and TARGET ahead
+    of it in a single call, which neither `up` nor `down` alone can do."""
+    walked = query.lineage(MIDDLE, "both", 3)
+
+    assert walked["direction"] == "both"
+    assert {edge["edgeKey"] for edge in walked["edges"]} == {"edge-one", "edge-two"}
+    assert {node["urn"] for node in walked["nodes"]} == {SOURCE, MIDDLE, TARGET}
+
+
+def test_direction_both_terminates_on_a_cycle(query) -> None:
+    """An undirected walk must not bounce between the two ends of an edge forever."""
+    walked = query.lineage(SOURCE, "both", 5)
+
+    assert {node["urn"] for node in walked["nodes"]} == {SOURCE, MIDDLE, TARGET}
+
+
+def test_direction_both_still_honours_depth(query) -> None:
+    walked = query.lineage(SOURCE, "both", 1)
+
+    assert {edge["edgeKey"] for edge in walked["edges"]} == {"edge-one"}
+    assert walked["truncated"] is True
+
+
+def test_unknown_direction_is_still_rejected(query) -> None:
+    with pytest.raises(DomainError) as error:
+        query.lineage(SOURCE, "sideways", 3)
+    assert error.value.code == "INVALID_DIRECTION"

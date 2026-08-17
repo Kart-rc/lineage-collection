@@ -122,14 +122,20 @@ state reset. It is on for `local` and off for `production`.
 
 ---
 
-## Known gap
+## Ports
 
-The Lineage Explorer initialises its direction control to `both` and offers it as an
-option, but the local FastAPI backend accepts only `up` or `down` and rejects anything
-else with `INVALID_DIRECTION`. Only the AWS/Neptune adapter implements `both`. Against
-`make dev`, the explorer therefore errors until the direction is changed. Fix it in
-either `LineageExplorerPage.tsx` or `services/query.py`, depending on which behaviour
-you want to be authoritative.
+Both the dev server and its API proxy follow environment variables, so the stack can
+run alongside something already using the defaults:
+
+```bash
+LINEAGE_API_PORT=8021 LINEAGE_WEB_PORT=5181 make dev
+```
+
+`LINEAGE_API_PORT` moves the proxy target as well as the backend — they are read from
+the same value in `vite.config.ts`, because moving one without the other would
+silently proxy to the wrong API.
+
+## Known gap
 
 If `LINEAGE_API_TOKEN` is set on the API, this app will receive `401` — it does not
 yet send a bearer token. Leave the token unset for the local UI walkthrough.

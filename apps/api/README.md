@@ -148,6 +148,8 @@ uv run --project apps/api --extra dev pytest -q
 | `LINEAGE_REPOSITORY_CLONE_TIMEOUT_SECONDS` | `60` | Bounded, 1–600 |
 | `LINEAGE_REPOSITORY_GIT_OUTPUT_LIMIT_BYTES` | `65536` | Bounded, 1–1048576 |
 | `LINEAGE_JAVA_HOME` | unset | JDK for the runtime harness; falls back to `javac` on `PATH` |
+| `LINEAGE_API_PORT` | `8000` | Port used by `make dev`. The web proxy follows it |
+| `LINEAGE_ESTATE_DIR` | `/private/tmp/lineage-estate` | External corpora for corpus-backed tests, which skip when absent |
 
 ### Security posture
 
@@ -209,7 +211,7 @@ Two constraints are deliberate and load-bearing:
 | `GET` | `/api/runs`, `/api/runs/{id}` | Run list and stage timeline |
 | `GET` | `/api/proposals`, `/api/proposals/{id}` | Review queue and detail |
 | `POST` | `/api/proposals/{id}/approve\|reject\|correct` | Review decisions |
-| `GET` | `/api/lineage/{urn}` | Graph walk. `direction=up\|down`, `depth`, `version` |
+| `GET` | `/api/lineage/{urn}` | Graph walk. `direction=up\|down\|both`, `depth`, `version` |
 | `POST` | `/api/impact` | Impact analysis for a proposed change |
 | `POST` | `/api/pr-gate/evaluate` | Bounded read-only PR verdict |
 | `GET` | `/api/edges/{edgeKey}` | Single edge with full provenance |

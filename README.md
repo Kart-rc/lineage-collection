@@ -42,11 +42,19 @@ Open the UI at [http://127.0.0.1:5173](http://127.0.0.1:5173). The API health en
 
 Generated state is written under `data/` and is ignored by Git. Stop both processes with `Ctrl-C`.
 
+If port 8000 or 5173 is already in use, move the whole stack — the web proxy follows the API port automatically:
+
+```bash
+LINEAGE_API_PORT=8021 LINEAGE_WEB_PORT=5181 make dev
+```
+
 To drain durable local work without the web process, run:
 
 ```bash
 uv run --project apps/api python -m lineage_api.cli worker --drain --max-messages 100
 ```
+
+Use `--once` instead of `--drain` to process at most one available command.
 
 ## Secrets and access
 
@@ -61,8 +69,6 @@ export LINEAGE_WEBHOOK_SECRET=a-private-value-at-least-16-bytes
 `LINEAGE_API_TOKEN` is unset by default, which leaves the API open — correct for a single-operator local run and what the demo walkthrough expects. Set it for any instance reachable by more than one person, and every route except `/healthz` will require `Authorization: Bearer <token>`. It gates reads as well as writes, because the lineage graph discloses the estate's schema and topology.
 
 The React UI does not yet send a bearer token, so leave `LINEAGE_API_TOKEN` unset when using the UI, and use it for headless or deployed access.
-
-Use `--once` instead of `--drain` to process at most one available command.
 
 ## Collect an exact Java/Spring checkout
 
@@ -107,7 +113,7 @@ tracked path must occur in exactly one disposition, and `COMPLETE` is impossible
 or failed paths.
 
 The bounded JSON result contains only identifiers, digests, status, stage names and counts. Static
-`exact=true` means the source citation is exact, not that the operation ran. By default, runtime verification is off and `runtimeStatus` remains `NOT_PROVIDED` (with `runtimeReasons == ["not-requested"]`). Runtime verification is currently a library-level opt-in: passing `runtime_execution=True` to `RepositoryCollectionService.collect(...)` executes Python and Java runtime stages against SCA edges in-process. Neither the CLI (`collect-checkout` above) nor the `POST /api/collections` HTTP endpoint exposes this flag yet.
+`exact=true` means the source citation is exact, not that the operation ran. By default, runtime verification is off and `runtimeStatus` remains `NOT_PROVIDED` (with `runtimeReasons == ["not-requested"]`). Enable it per collection with `--runtime-verification` on `collect-checkout`, or `"runtimeVerification": true` on `POST /api/collections`; both reach `RepositoryCollectionService.collect(..., runtime_execution=True)`, which executes the Python and Java runtime stages against the SCA edges. A successful run reports `runtimeStatus == "CORROBORATED"` with empty `runtimeReasons`.
 
 Spring Petclinic is an acceptance example, not a special case in production code:
 
@@ -288,7 +294,7 @@ The default command is hermetic and reports `HERMITIC_LOCAL_PASS` or failure ind
 an external repository is not implicit test input, it also reports
 `LOCAL_REAL_REPOSITORY_REQUIRED`; that status is not counted as a pass. Set
 `LINEAGE_REAL_REPOSITORY_CHECKOUT` to the exact pinned Petclinic checkout before running
-`make acceptance-smoke` to add the separate `LOCAL_REAL_REPOSITORY_PASS` proof. This static proof defaults to `RUNTIME_NOT_PROVIDED` (no runtime verification); runtime verification is currently a library-level opt-in on `RepositoryCollectionService.collect(..., runtime_execution=True)` and is not exposed by `make acceptance-smoke`, the CLI, or the collections API. Live cloud rows remain `AWS_REQUIRED`, and collection defaults to runtime off.
+`make acceptance-smoke` to add the separate `LOCAL_REAL_REPOSITORY_PASS` proof. This static proof defaults to `RUNTIME_NOT_PROVIDED` (no runtime verification). `make acceptance-smoke` does not enable runtime verification; the CLI and the collections API both do expose it, via `--runtime-verification` and `"runtimeVerification": true`. Live cloud rows remain `AWS_REQUIRED`, and collection defaults to runtime off.
 
 Run only the named crash/redrive scenario with:
 

@@ -239,6 +239,12 @@ Never hand-edit `infra/workflows/*.asl.json` or the generated architecture HTML.
 | `LINEAGE_DATA_DIR` | `./data` | SQLite database and write-once object directory |
 | `LINEAGE_ALLOW_LOCAL_REPOSITORY_SOURCES` | `false` | Permit `LOCAL_CHECKOUT` sources |
 | `LINEAGE_JAVA_HOME` | unset | JDK for the runtime harness |
+| `LINEAGE_API_PORT` | `8000` | API port. The web proxy follows it automatically |
+| `LINEAGE_WEB_PORT` | `5173` | Web dev-server port |
+| `LINEAGE_ESTATE_DIR` | `/private/tmp/lineage-estate` | Where the optional external corpora live for corpus-backed tests |
+
+**Ports already in use?** `LINEAGE_API_PORT=8021 LINEAGE_WEB_PORT=5181 make dev` moves
+the whole stack, proxy included, so it can run alongside another instance.
 
 **On secrets.** `LINEAGE_WEBHOOK_SECRET` authenticates every signed input — pushes,
 deployment outcomes and runtime observations alike. Resolution fails closed: a
@@ -259,7 +265,8 @@ token, so leave it unset when using the UI.
 |---|---|
 | `LINEAGE_WEBHOOK_SECRET must be set` | Running the API outside `make dev`. Export a secret of 16+ bytes, or set `LINEAGE_DEV_MODE=1` for local work |
 | `401 UNAUTHORIZED` on every route | `LINEAGE_API_TOKEN` is set. Send `Authorization: Bearer <token>`, or unset it for the UI |
-| Lineage explorer errors on load | Known gap: the UI defaults to `direction=both`, which the local backend rejects. Choose *Upstream* or *Downstream* |
+| `Address already in use` on `make dev` | Something holds 8000 or 5173. Set `LINEAGE_API_PORT` and `LINEAGE_WEB_PORT` |
+| Corpus-backed tests skip | Expected. They need optional external checkouts under `LINEAGE_ESTATE_DIR`; the skip message names the exact path and repository |
 | `INTEGRATION_REQUIRED` on a real repo | The analyzer found something it cannot safely classify. Usual causes: no trusted `db/<profile>/schema.sql`, several candidates, an H2 profile, or non-literal build cells |
 | `POINTER_NOT_FOUND` | The target environment has no pointer. Only `staging` is seeded — run `make reset` first |
 | `UNKNOWN_ANALYZER_PACK` / `PROFILE_MISMATCH` | The pack, ruleset, framework and profile combination is outside the closed registry in `services/analyzer_registry.py` |
