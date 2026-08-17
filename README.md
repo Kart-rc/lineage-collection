@@ -4,6 +4,18 @@ A locally runnable, production-shaped implementation of evidence-first lineage c
 
 The default operator path remains local: FastAPI + SQLite + a write-once object directory on the backend, and React + TypeScript + Vite on the frontend. The same repository also contains nine independently addressable Lambda handlers, an SCA Fargate worker, four generated Step Functions workflows, concrete AWS adapters, CDK stacks, deterministic OCI packaging, and guarded ephemeral-AWS verification. Local use does not require AWS credentials or an LLM key.
 
+## Start here
+
+New to the repository, or looking for a specific file or command? **[docs/NAVIGATION.md](docs/NAVIGATION.md)** is the guided map: what each workspace owns, where a given concept lives, the full command reference, and a troubleshooting table.
+
+Each application also documents itself:
+
+| Application | What it is | README |
+|---|---|---|
+| `apps/api` | Collection engine and product API — Python, FastAPI, SQLite | [apps/api/README.md](apps/api/README.md) |
+| `apps/web` | Operator control room — React, TypeScript, Vite | [apps/web/README.md](apps/web/README.md) |
+| `infra` | CDK stacks, OCI packaging, generated Step Functions | [infra/README.md](infra/README.md) |
+
 ## Prerequisites
 
 - Python 3.12 or 3.13
@@ -35,6 +47,20 @@ To drain durable local work without the web process, run:
 ```bash
 uv run --project apps/api python -m lineage_api.cli worker --drain --max-messages 100
 ```
+
+## Secrets and access
+
+`make dev` and `make reset` need no configuration: both set `LINEAGE_DEV_MODE=1`, which permits the demo signing secret published in this repository.
+
+Anything else must supply its own. `LINEAGE_WEBHOOK_SECRET` authenticates **every** signed input the platform accepts — push deliveries, deployment outcomes, and, through a derived key, runtime observations. Resolution therefore fails closed: a missing secret, the published demo value, or anything shorter than 16 bytes is refused rather than silently falling back to a value that anyone who can read this repository already knows.
+
+```bash
+export LINEAGE_WEBHOOK_SECRET=a-private-value-at-least-16-bytes
+```
+
+`LINEAGE_API_TOKEN` is unset by default, which leaves the API open — correct for a single-operator local run and what the demo walkthrough expects. Set it for any instance reachable by more than one person, and every route except `/healthz` will require `Authorization: Bearer <token>`. It gates reads as well as writes, because the lineage graph discloses the estate's schema and topology.
+
+The React UI does not yet send a bearer token, so leave `LINEAGE_API_TOKEN` unset when using the UI, and use it for headless or deployed access.
 
 Use `--once` instead of `--drain` to process at most one available command.
 
@@ -306,6 +332,7 @@ Production mode remains deletion-protected and Object-Locked. Only the strict ep
 
 ## Architecture and delivery sources
 
+- [Repository navigation and command reference](docs/NAVIGATION.md)
 - [Normative architecture and six Mermaid views](docs/plans/2026-08-05-lineage-collection-architecture-refactor-design.md)
 - [Executable implementation plan and Tasks 1–22](docs/plans/2026-08-05-lineage-collection-architecture-refactor.md)
 - [Acceptance specification](docs/acceptance/lineage-platform-acceptance.md)
