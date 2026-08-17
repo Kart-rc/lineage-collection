@@ -1,0 +1,482 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Throughline · Lineage Collection — Architecture Flow</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg: oklch(95.5% 0.004 262);
+    --ink: oklch(30% 0.02 262);
+    --ink-strong: oklch(22% 0.02 262);
+    --ink-soft: oklch(46% 0.02 262);
+    --ink-faint: oklch(58% 0.02 262);
+    --line: oklch(91% 0.006 262);
+    --line-soft: oklch(90% 0.01 262);
+    --accent: oklch(55% 0.14 252);
+    --accent-ink: oklch(50% 0.12 252);
+    --accent-wash: oklch(98% 0.012 252);
+    --accent-line: oklch(88% 0.04 252);
+    --green: oklch(56% 0.12 155);
+    --green-wash: oklch(97.5% 0.02 155);
+    --green-line: oklch(88% 0.05 155);
+    --purple: oklch(52% 0.12 300);
+    --purple-wash: oklch(97.5% 0.015 300);
+    --purple-line: oklch(89% 0.04 300);
+    --amber: oklch(60% 0.13 70);
+    --amber-wash: oklch(97.5% 0.02 85);
+    --amber-line: oklch(88% 0.06 85);
+    --red: oklch(55% 0.16 25);
+    --sans: 'IBM Plex Sans', sans-serif;
+    --mono: 'IBM Plex Mono', monospace;
+    --serif: 'Newsreader', serif;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+  a { color: inherit; }
+  body{ background:var(--bg); font-family:var(--sans); color:var(--ink); -webkit-font-smoothing:antialiased; }
+  ::-webkit-scrollbar { width: 10px; height: 10px; }
+  ::-webkit-scrollbar-thumb { background: oklch(88% 0.006 262); border-radius: 6px; border: 2px solid transparent; background-clip: padding-box; }
+  .wrap{ max-width:1200px; margin:0 auto; display:flex; gap:36px; padding:40px 28px 80px; align-items:flex-start; }
+  aside.toc{ flex:none; width:210px; position:sticky; top:40px; display:flex; flex-direction:column; gap:3px; }
+  .brand{ display:flex; align-items:center; gap:9px; margin-bottom:14px; }
+  .brand .dot{ width:22px; height:22px; border-radius:6px; background:var(--accent); display:block; }
+  .brand span.t{ font:700 15px var(--sans); color:oklch(26% 0.02 262); letter-spacing:-0.01em; }
+  .toc-eyebrow{ font:600 8.5px var(--mono); letter-spacing:.12em; text-transform:uppercase; color:var(--ink-faint); margin:0 0 8px 2px; }
+  .toc a.item{ display:flex; gap:9px; padding:5px 8px; border-radius:6px; text-decoration:none; font:500 12px var(--sans); color:var(--ink-soft); }
+  .toc a.item:hover{ background:oklch(92% 0.01 262); }
+  .toc a.item .n{ font:600 10px var(--mono); color:oklch(68% 0.02 262); width:14px; flex:none; }
+  .toc .suite{ margin-top:16px; padding-top:14px; border-top:1px solid var(--line); display:flex; flex-direction:column; gap:6px; }
+  .toc .suite a{ font:500 11.5px var(--sans); color:oklch(50% 0.02 262); text-decoration:none; padding:3px 8px; }
+  main.page{ flex:1; min-width:0; max-width:860px; background:#fff; border:1px solid var(--line); border-radius:3px; box-shadow:0 1px 3px rgba(20,30,50,.06); padding:60px 64px 72px; }
+  .masthead{ display:flex; align-items:center; gap:10px; margin-bottom:26px; flex-wrap:wrap; }
+  .badge{ font:600 9px var(--mono); letter-spacing:.14em; text-transform:uppercase; color:#fff; background:var(--accent); padding:4px 9px; border-radius:4px; }
+  .meta{ font:500 11px var(--mono); color:var(--ink-faint); }
+  h1{ font:600 40px var(--serif); color:var(--ink-strong); letter-spacing:-0.01em; line-height:1.1; margin:0 0 12px; }
+  .lede{ font:400 16px/1.6 var(--sans); color:oklch(45% 0.02 262); margin:0 0 4px; max-width:62ch; }
+  h2{ font:600 24px var(--serif); color:var(--ink-strong); letter-spacing:-0.005em; margin:0 0 6px; }
+  .sec{ margin-top:52px; }
+  .sec-eyebrow{ font:600 9px var(--mono); letter-spacing:.14em; text-transform:uppercase; color:var(--accent-ink); margin-bottom:8px; }
+  p{ font:400 14.5px/1.65 var(--sans); color:oklch(36% 0.02 262); margin:0 0 14px; max-width:70ch; }
+  p strong{ font-weight:600; color:var(--ink-strong); }
+  .callout{ border:1px solid var(--accent-line); background:var(--accent-wash); border-radius:10px; padding:20px 22px; margin:22px 0; }
+  .callout .k{ font:600 9px var(--mono); letter-spacing:.12em; text-transform:uppercase; color:var(--accent-ink); margin-bottom:9px; }
+  .callout p{ margin:0; color:oklch(34% 0.02 262); }
+  .chips{ display:flex; flex-wrap:wrap; gap:10px; margin:14px 0 0; }
+  .chip{ font:500 12px var(--sans); color:oklch(40% 0.02 262); background:#fff; border:1px solid var(--line-soft); border-radius:7px; padding:7px 11px; }
+  .chip strong{ font-weight:600; }
+  table{ border-collapse:collapse; width:100%; margin:18px 0 6px; }
+  th{ font:600 9.5px var(--mono); letter-spacing:.1em; text-transform:uppercase; color:var(--ink-faint); text-align:left; padding:8px 12px 8px 0; border-bottom:1.5px solid oklch(85% 0.01 262); }
+  td{ font:400 13px/1.5 var(--sans); color:oklch(36% 0.02 262); padding:11px 12px 11px 0; border-bottom:1px solid var(--line); vertical-align:top; }
+  td strong{ font-weight:600; color:var(--ink-strong); }
+  td .m{ font:500 11.5px var(--mono); }
+  .tag{ display:inline-block; font:600 9px var(--mono); letter-spacing:.08em; text-transform:uppercase; border-radius:4px; padding:2.5px 7px; white-space:nowrap; }
+  .tag.build{ color:var(--accent-ink); background:var(--accent-wash); border:1px solid var(--accent-line); }
+  .tag.run{ color:var(--green); background:var(--green-wash); border:1px solid var(--green-line); }
+  .tag.corr{ color:var(--purple); background:var(--purple-wash); border:1px solid var(--purple-line); }
+  .tag.new{ color:var(--amber); background:var(--amber-wash); border:1px solid var(--amber-line); }
+  /* ---------- flow diagram ---------- */
+  .flow{ margin:26px 0 8px; border:1px solid var(--line); border-radius:12px; padding:24px 22px 20px; background:oklch(98.5% 0.002 262); }
+  .flow-title{ font:600 9px var(--mono); letter-spacing:.14em; text-transform:uppercase; color:var(--ink-faint); margin-bottom:18px; text-align:center; }
+  .flow-grid{ display:grid; grid-template-columns: 1fr 26px 1fr 26px 1fr 26px 1fr; gap:0; align-items:stretch; }
+  .flow-col{ display:flex; flex-direction:column; gap:10px; }
+  .flow-col-h{ font:600 8.5px var(--mono); letter-spacing:.12em; text-transform:uppercase; color:var(--ink-faint); text-align:center; margin-bottom:2px; }
+  .fcard{ border-radius:9px; padding:10px 12px; border:1px solid var(--line-soft); background:#fff; }
+  .fcard .t{ font:600 12px var(--sans); color:var(--ink-strong); display:flex; align-items:center; gap:6px; }
+  .fcard .d{ font:400 10.5px/1.45 var(--sans); color:var(--ink-faint); margin-top:3px; }
+  .fcard.build{ border-color:var(--accent-line); background:var(--accent-wash); }
+  .fcard.run{ border-color:var(--green-line); background:var(--green-wash); }
+  .fcard.corr{ border-color:var(--purple-line); background:var(--purple-wash); }
+  .fcard.core{ border-color:oklch(80% 0.02 262); background:#fff; box-shadow:0 1px 2px rgba(20,30,50,.05); }
+  .fcard .glyph{ font:600 10px var(--mono); }
+  .fcard .glyph.b{ color:var(--accent-ink); } .fcard .glyph.g{ color:var(--green); } .fcard .glyph.p{ color:var(--purple); }
+  .plane-label{ font:600 8px var(--mono); letter-spacing:.1em; text-transform:uppercase; border-radius:4px; padding:3px 7px; align-self:flex-start; }
+  .plane-label.b{ color:var(--accent-ink); background:var(--accent-wash); border:1px solid var(--accent-line); }
+  .plane-label.g{ color:var(--green); background:var(--green-wash); border:1px solid var(--green-line); }
+  .arrowcell{ display:flex; align-items:center; justify-content:center; }
+  .arrowcell svg{ display:block; }
+  .flow-note{ font:400 10.5px/1.5 var(--sans); color:var(--ink-faint); text-align:center; margin-top:16px; }
+  .flow-note .m{ font:500 10px var(--mono); }
+  /* bands */
+  .bands{ display:grid; grid-template-columns:repeat(3,1fr); gap:12px; margin:20px 0 6px; }
+  .band{ border-radius:10px; padding:16px 16px 14px; border:1px solid var(--line-soft); }
+  .band .pct{ font:600 22px var(--serif); letter-spacing:-0.01em; }
+  .band .nm{ font:600 12.5px var(--sans); margin-top:2px; }
+  .band .ds{ font:400 11.5px/1.5 var(--sans); color:var(--ink-faint); margin-top:5px; }
+  .band.v{ background:var(--green-wash); border-color:var(--green-line); } .band.v .pct,.band.v .nm{ color:var(--green); }
+  .band.p{ background:var(--amber-wash); border-color:var(--amber-line); } .band.p .pct,.band.p .nm{ color:var(--amber); }
+  .band.i{ background:oklch(97% 0.004 262); } .band.i .pct,.band.i .nm{ color:var(--ink-faint); }
+  /* phases */
+  .phases{ display:flex; flex-direction:column; gap:0; margin:20px 0 4px; }
+  .phase{ display:flex; gap:16px; padding:16px 0; border-bottom:1px solid var(--line); }
+  .phase:last-child{ border-bottom:none; }
+  .phase .pn{ flex:none; width:64px; font:600 10px var(--mono); letter-spacing:.08em; color:var(--accent-ink); padding-top:2px; }
+  .phase .pt{ font:600 13.5px var(--sans); color:var(--ink-strong); }
+  .phase .pd{ font:400 12.5px/1.55 var(--sans); color:var(--ink-soft); margin-top:3px; max-width:60ch; }
+  .phase .gate{ font:500 11px var(--mono); color:var(--amber); margin-top:6px; }
+  /* risk cards */
+  .risks{ display:grid; grid-template-columns:repeat(3,1fr); gap:12px; margin:18px 0 4px; }
+  .risk{ border:1px solid var(--line-soft); border-radius:10px; padding:15px 15px 13px; background:#fff; }
+  .risk .rk{ font:600 9px var(--mono); letter-spacing:.1em; text-transform:uppercase; color:var(--red); }
+  .risk .rt{ font:600 12.5px var(--sans); color:var(--ink-strong); margin-top:5px; }
+  .risk .rd{ font:400 11.5px/1.5 var(--sans); color:var(--ink-soft); margin-top:5px; }
+  .risk .rm{ font:400 11px/1.5 var(--sans); color:var(--green); margin-top:7px; }
+  .risk .rm strong{ font-weight:600; }
+  .footer{ margin-top:56px; padding-top:18px; border-top:1px solid var(--line); display:flex; justify-content:space-between; font:500 10.5px var(--mono); color:var(--ink-faint); flex-wrap:wrap; gap:8px; }
+  @media print{
+    .no-print{ display:none !important; }
+    main.page{ box-shadow:none !important; margin:0 !important; border:none; }
+    body{ background:#fff !important; }
+  }
+  @media (max-width: 900px){
+    .wrap{ flex-direction:column; }
+    aside.toc{ position:static; width:100%; }
+    main.page{ padding:36px 24px 48px; }
+    .flow-grid{ grid-template-columns:1fr; }
+    .arrowcell{ transform:rotate(90deg); padding:4px 0; }
+    .bands,.risks{ grid-template-columns:1fr; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <!-- TOC -->
+  <aside class="toc no-print">
+    <div class="brand"><span class="dot"></span><span class="t">Throughline</span></div>
+    <div class="toc-eyebrow">Architecture Brief · Collection</div>
+    <a class="item" href="#problem"><span class="n">1</span><span>The problem</span></a>
+    <a class="item" href="#concept"><span class="n">2</span><span>Two planes, one graph</span></a>
+    <a class="item" href="#flow"><span class="n">3</span><span>Architecture flow</span></a>
+    <a class="item" href="#signals"><span class="n">4</span><span>What each signal adds</span></a>
+    <a class="item" href="#confidence"><span class="n">5</span><span>Trust bands</span></a>
+    <a class="item" href="#changes"><span class="n">6</span><span>What we de-risked</span></a>
+    <a class="item" href="#rollout"><span class="n">7</span><span>Rollout &amp; gates</span></a>
+    <a class="item" href="#risks"><span class="n">8</span><span>Top risks</span></a>
+    <div class="suite">
+      <div class="toc-eyebrow" style="margin-bottom:2px">Suite</div>
+      <a href="Index - Throughline PRDs.dc.html">Overview</a>
+      <a href="PRD 1 - Lineage Collection.dc.html">PRD 1 · Collection</a>
+      <a href="Deep Dive - Lineage Collection Proposal.dc.html">Deep Dive · Collection</a>
+    </div>
+  </aside>
+
+  <!-- PAGE -->
+  <main class="page">
+    <div class="masthead">
+      <span class="badge">Architecture Brief</span>
+      <span class="meta">v1.0 · For technology leadership</span>
+      <span class="meta" style="margin-left:auto">Owner: Data Platform</span>
+    </div>
+    <h1>Lineage collection, at a glance</h1>
+    <p class="lede">One canonical, column-level lineage graph built from two independent kinds of evidence — what the code says, and what production proves — with a confidence score on every edge.</p>
+
+    <div class="callout">
+      <div class="k">The one-paragraph version</div>
+      <p>We parse every repo to <strong>predict</strong> the complete set of data flows — every branch, including paths that rarely run. We then observe production — Spark runs, warehouse query logs, orchestrator runs, service traces — to <strong>confirm</strong> which of those flows are real and current. Where prediction and observation agree, an edge is <strong>Verified</strong> and safe to gate a code change on. Where only the code asserts it, the edge is visibly <strong>Inferred</strong> and never blocks anyone. That honesty — a confidence score on every edge — is what makes the graph trustworthy enough to put in front of a merge button.</p>
+      <div class="chips">
+        <span class="chip">Column-level, org-wide</span>
+        <span class="chip"><strong>Every edge scored</strong> for confidence</span>
+        <span class="chip">Refreshed <strong>every PR</strong></span>
+        <span class="chip">OpenLineage-standard ingestion</span>
+      </div>
+    </div>
+
+    <!-- 1 -->
+    <div class="sec" id="problem">
+      <div class="sec-eyebrow">01 · The problem</div>
+      <h2>A schema change is a bet placed in the dark</h2>
+      <p>Nobody can answer "if I drop this column, what breaks?" before the change ships. Hand-curated lineage rots the week after it's drawn. Catalog products stop at table-level lineage inside their own connectors. And any single automated source is incomplete: code analysis sees paths that never run; runtime observation misses paths that haven't run <em>yet</em> — the quarter-end job, the error branch, the EU-only flow.</p>
+      <p><strong>The wedge is not "another catalog."</strong> It is column-level impact answers, delivered in the pull request, with an explicit statement of how much to trust each answer. No off-the-shelf product does that today.</p>
+    </div>
+
+    <!-- 2 -->
+    <div class="sec" id="concept">
+      <div class="sec-eyebrow">02 · The concept</div>
+      <h2>Two planes of evidence, reconciled</h2>
+      <p>Every collection mechanism we run belongs to one of two planes:</p>
+      <table>
+        <tr><th style="width:130px">Plane</th><th>What it knows</th><th>Its blind spot</th></tr>
+        <tr>
+          <td><span class="tag build">Build time · predicted</span></td>
+          <td>The <strong>complete superset</strong> of flows the code can produce — every branch, guard, and transform, tied to a file and line.</td>
+          <td>Unproven. Includes dead code; a parser or model can be wrong.</td>
+        </tr>
+        <tr>
+          <td><span class="tag run">Runtime · observed</span></td>
+          <td>What <strong>actually executed</strong> — real reads and writes, real column derivations, real call volumes, with timestamps.</td>
+          <td>Only sees paths that fired. Silent about the rare-but-critical tail.</td>
+        </tr>
+      </table>
+      <p style="margin-top:14px">Neither plane is sufficient alone. Reconciled, they cover each other's blind spot: build time supplies completeness, runtime supplies proof, and the <strong>confidence score is the measure of their agreement and its recency</strong>. Every code change re-runs the loop: predict in CI, watch after deploy, confirm in production.</p>
+    </div>
+
+    <!-- 3 -->
+    <div class="sec" id="flow">
+      <div class="sec-eyebrow">03 · Architecture flow</div>
+      <h2>From signals to a graph you can gate on</h2>
+
+      <div class="flow">
+        <div class="flow-title">Collection → Normalize → Reconcile → Serve</div>
+        <div class="flow-grid">
+
+          <!-- col 1: collectors -->
+          <div class="flow-col">
+            <div class="flow-col-h">Signals</div>
+            <span class="plane-label b">Build time · predicted</span>
+            <div class="fcard build">
+              <div class="t"><span class="glyph b">{&nbsp;}</span>Code analysis</div>
+              <div class="d">Parsers first (SQL, dbt); tree-sitter locates; LLM resolves only the residue</div>
+            </div>
+            <div class="fcard build">
+              <div class="t"><span class="glyph b">Δ</span>CI/CD diff</div>
+              <div class="d">Every PR re-derives lineage for changed code; edge delta vs baseline</div>
+            </div>
+            <span class="plane-label g" style="margin-top:6px">Runtime · observed</span>
+            <div class="fcard run">
+              <div class="t"><span class="glyph g">✸</span>Spark · OpenLineage</div>
+              <div class="d">Confirmed dataset + column edges per job run</div>
+            </div>
+            <div class="fcard run">
+              <div class="t"><span class="glyph g">◈</span>Warehouse-native</div>
+              <div class="d">Unity Catalog · ACCESS_HISTORY · Dataplex — column lineage, zero instrumentation</div>
+            </div>
+            <div class="fcard run">
+              <div class="t"><span class="glyph g">⧖</span>Orchestrator &amp; dbt</div>
+              <div class="d">Airflow OL provider · dbt-ol — job/dataset edges, schedule context</div>
+            </div>
+            <div class="fcard corr">
+              <div class="t"><span class="glyph p">◬</span>OTel traces</div>
+              <div class="d">Service↔service calls, recency, volume — interactions, never column lineage</div>
+            </div>
+          </div>
+
+          <div class="arrowcell"><svg width="22" height="14" viewBox="0 0 22 14"><path d="M0 7h16m0 0-5-5m5 5-5 5" fill="none" stroke="oklch(70% 0.02 262)" stroke-width="1.6"/></svg></div>
+
+          <!-- col 2: normalize -->
+          <div class="flow-col" style="justify-content:center">
+            <div class="flow-col-h">Normalize</div>
+            <div class="fcard core">
+              <div class="t">OpenLineage events</div>
+              <div class="d">One wire format for every collector — <span style="font-family:var(--mono);font-size:9.5px">POST /v1/lineage/events</span></div>
+            </div>
+            <div class="fcard core">
+              <div class="t">Identity resolution</div>
+              <div class="d">Canonical URNs across repos, topics, paths, tables, services · deterministic-first</div>
+            </div>
+          </div>
+
+          <div class="arrowcell"><svg width="22" height="14" viewBox="0 0 22 14"><path d="M0 7h16m0 0-5-5m5 5-5 5" fill="none" stroke="oklch(70% 0.02 262)" stroke-width="1.6"/></svg></div>
+
+          <!-- col 3: reconcile -->
+          <div class="flow-col" style="justify-content:center">
+            <div class="flow-col-h">Reconcile</div>
+            <div class="fcard core">
+              <div class="t">Merge engine</div>
+              <div class="d">Dedupe by (source, target, level) · union attributes · keep full provenance</div>
+            </div>
+            <div class="fcard core">
+              <div class="t">Confidence engine</div>
+              <div class="d">Signal agreement × runtime recency → Verified / Probable / Inferred</div>
+            </div>
+          </div>
+
+          <div class="arrowcell"><svg width="22" height="14" viewBox="0 0 22 14"><path d="M0 7h16m0 0-5-5m5 5-5 5" fill="none" stroke="oklch(70% 0.02 262)" stroke-width="1.6"/></svg></div>
+
+          <!-- col 4: serve -->
+          <div class="flow-col" style="justify-content:center">
+            <div class="flow-col-h">Serve</div>
+            <div class="fcard core">
+              <div class="t">Canonical graph</div>
+              <div class="d">Typed property graph · column-level edges roll up to dataset &amp; app views</div>
+            </div>
+            <div class="fcard">
+              <div class="t">Impact analysis</div>
+              <div class="d">Blast radius by change type, pruned by confidence</div>
+            </div>
+            <div class="fcard">
+              <div class="t">CI/CD gate</div>
+              <div class="d">Blocks on Verified breaking edges only</div>
+            </div>
+            <div class="fcard">
+              <div class="t">UI &amp; agents</div>
+              <div class="d">Lineage, interactions, provenance lenses · curation agents</div>
+            </div>
+          </div>
+
+        </div>
+        <div class="flow-note">Build-time signals assert the superset · runtime signals confirm the subset · <span class="m">confidence = agreement × recency</span> · a per-PR diff keeps the whole loop current</div>
+      </div>
+    </div>
+
+    <!-- 4 -->
+    <div class="sec" id="signals">
+      <div class="sec-eyebrow">04 · Signals</div>
+      <h2>What each signal contributes</h2>
+      <table>
+        <tr><th>Signal</th><th style="width:92px">Plane</th><th>Emits</th><th>Trust role</th></tr>
+        <tr>
+          <td><strong>Code analysis</strong><br><span class="m" style="color:var(--ink-faint)">parsers + tree-sitter + LLM</span></td>
+          <td><span class="tag build">Build</span></td>
+          <td>Candidate column edges, transform expressions, code-path guards, file/line references</td>
+          <td>Baseline superset — completeness</td>
+        </tr>
+        <tr>
+          <td><strong>CI/CD diff</strong></td>
+          <td><span class="tag build">Build</span></td>
+          <td>Added / changed / removed edges on every PR</td>
+          <td>Freshness + the gating moment</td>
+        </tr>
+        <tr>
+          <td><strong>Spark</strong><br><span class="m" style="color:var(--ink-faint)">OpenLineage listener</span></td>
+          <td><span class="tag run">Runtime</span></td>
+          <td>Confirmed dataset→dataset and column→column edges, run stats, row volumes</td>
+          <td>Column-level confirmation</td>
+        </tr>
+        <tr>
+          <td><strong>Warehouse-native</strong> <span class="tag new">Added</span><br><span class="m" style="color:var(--ink-faint)">Unity Catalog · Snowflake ACCESS_HISTORY · BigQuery Dataplex</span></td>
+          <td><span class="tag run">Runtime</span></td>
+          <td>Column lineage for everything running <em>inside</em> the engines — no instrumentation to deploy</td>
+          <td>Coverage federation — the cheapest wins</td>
+        </tr>
+        <tr>
+          <td><strong>Orchestrator &amp; dbt</strong> <span class="tag new">Added</span><br><span class="m" style="color:var(--ink-faint)">Airflow OL provider · dbt-ol</span></td>
+          <td><span class="tag run">Runtime</span></td>
+          <td>Job→dataset edges, schedule context, dbt model lineage from build artifacts</td>
+          <td>Pipeline coverage between the engines</td>
+        </tr>
+        <tr>
+          <td><strong>OTel traces</strong></td>
+          <td><span class="tag corr">Runtime</span></td>
+          <td>Service↔service calls, endpoints, call volume, latency, recency</td>
+          <td>Interaction map + recency corroboration — <strong>never column lineage</strong></td>
+        </tr>
+      </table>
+      <p style="margin-top:12px;font-size:13px;color:var(--ink-faint)">Deferred: a Dask runtime collector. No lineage ecosystem exists for Dask today — it is genuine R&amp;D, so it is scheduled as such rather than hidden inside an integration line-item (see §6).</p>
+    </div>
+
+    <!-- 5 -->
+    <div class="sec" id="confidence">
+      <div class="sec-eyebrow">05 · Trust</div>
+      <h2>Three bands, one rule</h2>
+      <div class="bands">
+        <div class="band v">
+          <div class="pct">≥ 85</div>
+          <div class="nm">Verified</div>
+          <div class="ds">Code and runtime agree, recently. The only band allowed to block a merge.</div>
+        </div>
+        <div class="band p">
+          <div class="pct">65–84</div>
+          <div class="nm">Probable</div>
+          <div class="ds">Strong evidence, imperfect agreement or aging observation. Warns, never blocks.</div>
+        </div>
+        <div class="band i">
+          <div class="pct">&lt; 65</div>
+          <div class="nm">Inferred</div>
+          <div class="ds">Asserted by code analysis alone. Drawn dashed; excluded from automated gates.</div>
+        </div>
+      </div>
+      <p style="margin-top:14px"><strong>The one rule: prediction alone is capped below Verified.</strong> An edge that only the code asserts — however plausible — can never score above 64, so it can never gate a change. Only production evidence promotes an edge into gating territory. This single constraint is what keeps LLM-assisted extraction safe to use at all.</p>
+    </div>
+
+    <!-- 6 -->
+    <div class="sec" id="changes">
+      <div class="sec-eyebrow">06 · De-risking</div>
+      <h2>Four amendments to the original plan</h2>
+      <p>A feasibility review of PRD 1 against the current ecosystem (primary sources: OpenLineage &amp; OpenTelemetry specs, DataHub's parser benchmark, published LLM-extraction studies) confirmed the architecture and corrected four specifics:</p>
+      <table>
+        <tr><th style="width:190px">Change</th><th>Why</th></tr>
+        <tr>
+          <td><strong>Parser-first, LLM-residual</strong></td>
+          <td>Deterministic SQL parsers are benchmarked as the most accurate source of column lineage. The LLM handles only what parsers can't — dynamic SQL, UDFs, notebooks — cached by code hash. Cheaper, more accurate, reproducible.</td>
+        </tr>
+        <tr>
+          <td><strong>Dask deferred; warehouse-native + orchestrator collectors added</strong></td>
+          <td>No Dask lineage integration exists anywhere — it is greenfield R&amp;D, not configuration. Warehouse-native lineage and the Airflow/dbt collectors deliver strictly more estate coverage in the same phase, at connector-level effort.</td>
+        </tr>
+        <tr>
+          <td><strong>OTel scoped to interactions</strong></td>
+          <td>OpenTelemetry formally declined data lineage as a signal; OpenLineage is the standard. OTel remains exactly what it is good at: the live service-interaction map and a recency pulse on every flow.</td>
+        </tr>
+        <tr>
+          <td><strong>OpenLineage end-to-end</strong></td>
+          <td>Every collector emits one standard event format. We differentiate on collection breadth, confidence, and CI gating — not on reinventing metadata plumbing an ecosystem already maintains.</td>
+        </tr>
+      </table>
+    </div>
+
+    <!-- 7 -->
+    <div class="sec" id="rollout">
+      <div class="sec-eyebrow">07 · Rollout</div>
+      <h2>Prove the loop, then widen it</h2>
+      <div class="phases">
+        <div class="phase">
+          <div class="pn">PHASE 0<br>Q1</div>
+          <div>
+            <div class="pt">Vertical slice — one business app, end to end</div>
+            <div class="pd">Static baseline + Spark and OTel runtime + CI diff + confidence scoring on one app and its immediate dependencies. Includes the identity-resolution spike — the hardest problem, tackled first.</div>
+            <div class="gate">GATE · identity matching ≥95% precision / ≥90% recall on a hand-labeled slice — GO / PIVOT / STOP</div>
+          </div>
+        </div>
+        <div class="phase">
+          <div class="pn">PHASE 1<br>Q2</div>
+          <div>
+            <div class="pt">Domain rollout — 8–10 applications</div>
+            <div class="pd">Add warehouse-native federation, Airflow and dbt collectors, and Kafka/streaming lineage. Publish the coverage map: per system, which collector, what granularity, what confidence ceiling.</div>
+            <div class="gate">GATE · majority of critical-path edges Verified; gate false-positive budget met</div>
+          </div>
+        </div>
+        <div class="phase">
+          <div class="pn">PHASE 2<br>Q3</div>
+          <div>
+            <div class="pt">Org-wide ingest</div>
+            <div class="pd">All domains, 2,000+ services and datasets, historical backfill, catalog integration, confidence calibration against observed outcomes.</div>
+          </div>
+        </div>
+        <div class="phase">
+          <div class="pn">PHASE 3<br>Q4</div>
+          <div>
+            <div class="pt">Continuous trust</div>
+            <div class="pd">Drift detection, stale-edge decay, confidence SLAs, self-serve collector onboarding — and the Dask/long-tail collector question, decided by measured estate share, not assumption.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 8 -->
+    <div class="sec" id="risks">
+      <div class="sec-eyebrow">08 · Risks</div>
+      <h2>The three that matter</h2>
+      <div class="risks">
+        <div class="risk">
+          <div class="rk">Risk 01</div>
+          <div class="rt">Identity resolution</div>
+          <div class="rd">The same dataset is named differently by every signal. A missed match doesn't error — the graph silently under-reports.</div>
+          <div class="rm"><strong>Mitigation:</strong> P0 spike with numeric exit gates; canonical URN scheme; deterministic matching first, catalog-backed.</div>
+        </div>
+        <div class="risk">
+          <div class="rk">Risk 02</div>
+          <div class="rt">Coverage tail</div>
+          <div class="rd">Systems without a collector become invisible edges while the UI implies completeness.</div>
+          <div class="rm"><strong>Mitigation:</strong> published coverage map; explicit "not yet observed" state in the UI; federation strategy prioritized by estate share.</div>
+        </div>
+        <div class="risk">
+          <div class="rk">Risk 03</div>
+          <div class="rt">LLM accuracy &amp; cost</div>
+          <div class="rd">Published extraction accuracy tops out ~0.77 on hard cases, and models are systematically overconfident.</div>
+          <div class="rm"><strong>Mitigation:</strong> parsers first; LLM residual-only, cached by code hash; hard cap below Verified until runtime corroborates.</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="footer">
+      <span>Throughline · Architecture Brief · Lineage Collection</span>
+      <span>Companion: Deep Dive — Lineage Collection Proposal (distinguished-engineer edition)</span>
+    </div>
+  </main>
+</div>
+</body>
+</html>

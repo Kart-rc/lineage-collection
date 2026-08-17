@@ -408,8 +408,23 @@ class ConsolidationService:
                 ),
             )
             if isinstance(resolved, ResolvedName):
-                return resolved.urn.dataset_urn
-            if is_object_store(scheme):
+                if is_object_store(scheme):
+                    return resolved.urn.dataset_urn
+                # A wire identifier minted by `wire_dataset` carries the system as
+                # its authority (`platform://system/dataset`). A catalog answer
+                # naming a DIFFERENT system is then a bare-name collision with
+                # another system's dataset; honoring it would silently rebind the
+                # observation (and could corroborate that other system's edge). An
+                # authority that cannot be a URN system at all (e.g. a
+                # `host:port` metastore URI) is a host, not a system claim -- there
+                # the catalog's answer stands.
+                wire_system = value.split("://", 1)[-1].split("/", 1)[0]
+                authority_is_system_claim = (
+                    bool(wire_system) and ":" not in wire_system and "#" not in wire_system
+                )
+                if not authority_is_system_claim or resolved.urn.system == wire_system:
+                    return resolved.urn.dataset_urn
+            elif is_object_store(scheme):
                 raise ValueError(f"unresolvable runtime dataset identifier: {value}")
         return self._runtime_dataset_urn(value, environment)
 

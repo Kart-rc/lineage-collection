@@ -49,7 +49,7 @@ _REQUIRED_FIELDS = (
     "ruleset",
     "schemaProfile",
 )
-_ALLOWED_FIELDS = frozenset((*_REQUIRED_FIELDS, "checkoutPath"))
+_ALLOWED_FIELDS = frozenset((*_REQUIRED_FIELDS, "checkoutPath", "runtimeVerification"))
 
 
 class CollectionError(RuntimeError):
@@ -98,7 +98,12 @@ def parse_collection_submission(
     if _EXACT_COMMIT.fullmatch(revision) is None:
         raise _invalid("revision", "must be an exact lowercase 40-hex commit")
 
+    runtime_verification = body.get("runtimeVerification", False)
+    if not isinstance(runtime_verification, bool):
+        raise _invalid("runtimeVerification", "must be a boolean")
+
     shared: dict[str, Any] = {
+        "runtime_verification": runtime_verification,
         "origin": _text(body, "origin", MAX_ORIGIN_LENGTH),
         "repository": _text(body, "repository", MAX_DETERMINANT_LENGTH),
         "revision": revision,
@@ -266,6 +271,7 @@ def _project(
             "proposalId",
             "proposalStatus",
             "runtimeStatus",
+            "runtimeReasons",
             "analysisStatus",
             "statusReasons",
             "coverageManifest",
@@ -283,6 +289,7 @@ def _project(
             "analyzerPack": request.analyzer_pack,
             "ruleset": request.ruleset,
             "schemaProfile": request.schema_profile,
+            "runtimeVerification": request.runtime_verification,
             "correlationId": correlation_id,
             "terminal": command_status in TERMINAL_COMMAND_STATUSES,
         }

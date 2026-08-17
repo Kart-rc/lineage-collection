@@ -1,0 +1,342 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,600&display=swap" rel="stylesheet">
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+  a { color: inherit; }
+  ::-webkit-scrollbar { width: 10px; height: 10px; }
+  ::-webkit-scrollbar-thumb { background: oklch(88% 0.006 262); border-radius: 6px; border: 2px solid transparent; background-clip: padding-box; }
+  @media print { .no-print { display: none !important; } .page { box-shadow: none !important; margin: 0 !important; } body { background: #fff !important; } }
+</style>
+</helmet>
+
+<div style="background:oklch(95.5% 0.004 262);min-height:100vh;font-family:'IBM Plex Sans',sans-serif;-webkit-font-smoothing:antialiased;color:oklch(30% 0.02 262)">
+  <div style="max-width:1200px;margin:0 auto;display:flex;gap:36px;padding:40px 28px 80px;align-items:flex-start">
+
+    <aside class="no-print" style="flex:none;width:210px;position:sticky;top:40px;display:flex;flex-direction:column;gap:3px">
+      <div style="display:flex;align-items:center;gap:9px;margin-bottom:14px">
+        <span style="width:22px;height:22px;border-radius:6px;background:oklch(52% 0.13 190);display:block"></span>
+        <span style="font:700 15px 'IBM Plex Sans';color:oklch(26% 0.02 262);letter-spacing:-0.01em">Throughline</span>
+      </div>
+      <div style="font:600 8.5px 'IBM Plex Mono';letter-spacing:.12em;text-transform:uppercase;color:oklch(60% 0.02 262);margin:0 0 8px 2px">PRD 3 · UI/UX</div>
+      <sc-for list="{{ toc }}" as="t" hint-placeholder-count="9">
+        <a href="{{ t.href }}" style="display:flex;gap:9px;padding:5px 8px;border-radius:6px;text-decoration:none;font:500 12px 'IBM Plex Sans';color:oklch(46% 0.02 262)" style-hover="background:oklch(92% 0.01 262)"><span style="font:600 10px 'IBM Plex Mono';color:oklch(68% 0.02 262);width:14px;flex:none">{{ t.n }}</span><span>{{ t.label }}</span></a>
+      </sc-for>
+      <div style="margin-top:16px;padding-top:14px;border-top:1px solid oklch(90% 0.006 262);display:flex;flex-direction:column;gap:6px">
+        <div style="font:600 8.5px 'IBM Plex Mono';letter-spacing:.12em;text-transform:uppercase;color:oklch(60% 0.02 262);margin:0 0 2px 2px">Suite</div>
+        <a href="Index - Throughline PRDs.dc.html" style="font:500 11.5px 'IBM Plex Sans';color:oklch(50% 0.02 262);text-decoration:none;padding:3px 8px">Overview</a>
+        <a href="PRD 1 - Lineage Collection.dc.html" style="font:500 11.5px 'IBM Plex Sans';color:oklch(50% 0.02 262);text-decoration:none;padding:3px 8px">PRD 1 · Collection</a>
+        <a href="PRD 2 - Impact Analysis.dc.html" style="font:500 11.5px 'IBM Plex Sans';color:oklch(50% 0.02 262);text-decoration:none;padding:3px 8px">PRD 2 · Impact</a>
+        <a href="Throughline - Final.dc.html" style="font:600 11.5px 'IBM Plex Sans';color:oklch(50% 0.13 190);text-decoration:none;padding:3px 8px">↗ Live prototype</a>
+      </div>
+    </aside>
+
+    <main class="page" style="flex:1;min-width:0;max-width:860px;background:#fff;border:1px solid oklch(91% 0.006 262);border-radius:3px;box-shadow:0 1px 3px rgba(20,30,50,.06);padding:60px 64px 72px">
+
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:26px">
+        <span style="font:600 9px 'IBM Plex Mono';letter-spacing:.14em;text-transform:uppercase;color:#fff;background:oklch(52% 0.13 190);padding:4px 9px;border-radius:4px">Product Requirements</span>
+        <span style="font:500 11px 'IBM Plex Mono';color:oklch(58% 0.02 262)">v0.9 · Draft for review</span>
+        <span style="font:500 11px 'IBM Plex Mono';color:oklch(58% 0.02 262);margin-left:auto">Owner: Design + Data Platform</span>
+      </div>
+      <h1 style="font:600 40px 'Newsreader',serif;color:oklch(22% 0.02 262);letter-spacing:-0.01em;line-height:1.1;margin:0 0 12px">UI &amp; Representation</h1>
+      <p style="font:400 16px/1.6 'IBM Plex Sans';color:oklch(45% 0.02 262);margin:0 0 4px;max-width:62ch">How thousands of services, datasets and jobs become legible: an altitude-based navigation model and four coordinated lenses over one graph — lineage, interactions, impact, and provenance.</p>
+
+      <div style="margin:34px 0 8px;border:1px solid oklch(86% 0.05 190);background:oklch(98.5% 0.015 190);border-radius:10px;padding:22px 24px">
+        <div style="font:600 9px 'IBM Plex Mono';letter-spacing:.12em;text-transform:uppercase;color:oklch(48% 0.12 190);margin-bottom:10px">Executive summary</div>
+        <p style="font:400 14.5px/1.6 'IBM Plex Sans';color:oklch(34% 0.02 262);margin:0 0 12px">You can’t draw a 2,000-node graph and expect anyone to read it. Throughline’s UI is built on one principle: <strong style="font-weight:600">never render the whole graph — navigate by altitude</strong>. Start at domains, drill to the team-aligned business application, then to services, datasets, and columns, loading only what’s in view. Four lenses share this navigation so a user keeps their place while switching between “where does data flow,” “who calls whom,” “what breaks,” and “how do we know.” A working prototype already demonstrates the model.</p>
+        <a href="Throughline - Final.dc.html" style="display:inline-flex;align-items:center;gap:8px;font:600 12px 'IBM Plex Sans';color:#fff;background:oklch(52% 0.13 190);padding:9px 15px;border-radius:8px;text-decoration:none">Open the live prototype <span>↗</span></a>
+      </div>
+
+      <!-- 1 PRINCIPLES -->
+      <h2 id="s1" style="font:600 22px 'Newsreader',serif;color:oklch(24% 0.02 262);margin:46px 0 14px"><span style="font:600 13px 'IBM Plex Mono';color:oklch(50% 0.13 190);margin-right:10px">01</span>Design principles</h2>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:11px">
+        <sc-for list="{{ principles }}" as="p" hint-placeholder-count="4">
+          <div style="border:1px solid oklch(92% 0.006 262);border-radius:10px;padding:15px 17px">
+            <div style="font:600 12.5px 'IBM Plex Sans';color:oklch(30% 0.02 262)">{{ p.title }}</div>
+            <div style="font:400 12px/1.55 'IBM Plex Sans';color:oklch(48% 0.02 262);margin-top:5px">{{ p.body }}</div>
+          </div>
+        </sc-for>
+      </div>
+
+      <!-- 2 ALTITUDE MODEL (interactive) -->
+      <h2 id="s2" style="font:600 22px 'Newsreader',serif;color:oklch(24% 0.02 262);margin:46px 0 8px"><span style="font:600 13px 'IBM Plex Mono';color:oklch(50% 0.13 190);margin-right:10px">02</span>Altitude navigation model</h2>
+      <p style="font:400 14px/1.6 'IBM Plex Sans';color:oklch(42% 0.02 262);margin:0 0 16px;max-width:62ch">The core interaction: progressive disclosure down a containment hierarchy. Click a level to see what renders and what loads.</p>
+      <div style="display:flex;align-items:stretch;gap:6px;margin-bottom:14px">
+        <sc-for list="{{ levels }}" as="l" hint-placeholder-count="5">
+          <span onClick="{{ l.onClick }}" style="flex:1;display:flex;flex-direction:column;gap:4px;align-items:center;padding:12px 6px;border:1.5px solid {{ l.border }};background:{{ l.bg }};border-radius:9px;cursor:pointer">
+            <span style="font:600 8px 'IBM Plex Mono';color:{{ l.codeColor }}">{{ l.code }}</span>
+            <span style="font:600 11.5px 'IBM Plex Sans';color:{{ l.fg }}">{{ l.label }}</span>
+          </span>
+        </sc-for>
+      </div>
+      <div style="border:1px solid oklch(91% 0.006 262);border-radius:11px;padding:20px 22px;background:oklch(98.6% 0.003 262);min-height:128px">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:9px">
+          <span style="font:600 9px 'IBM Plex Mono';letter-spacing:.08em;text-transform:uppercase;color:#fff;background:oklch(50% 0.13 190);padding:4px 9px;border-radius:4px">{{ activeCode }}</span>
+          <span style="font:600 15px 'IBM Plex Sans';color:oklch(28% 0.02 262)">{{ activeLabel }}</span>
+          <span style="font:500 11px 'IBM Plex Mono';color:oklch(58% 0.02 262);margin-left:auto">{{ activeScale }}</span>
+        </div>
+        <p style="font:400 13.5px/1.6 'IBM Plex Sans';color:oklch(42% 0.02 262);margin:0 0 12px">{{ activeDesc }}</p>
+        <div style="display:flex;gap:18px">
+          <div style="flex:1"><div style="font:600 8.5px 'IBM Plex Mono';letter-spacing:.08em;text-transform:uppercase;color:oklch(50% 0.12 155);margin-bottom:5px">Renders</div><div style="font:400 12px/1.5 'IBM Plex Sans';color:oklch(44% 0.02 262)">{{ activeRenders }}</div></div>
+          <div style="flex:1"><div style="font:600 8.5px 'IBM Plex Mono';letter-spacing:.08em;text-transform:uppercase;color:oklch(54% 0.13 35);margin-bottom:5px">Loads on demand</div><div style="font:400 12px/1.5 'IBM Plex Sans';color:oklch(44% 0.02 262)">{{ activeLoads }}</div></div>
+        </div>
+      </div>
+
+      <!-- 3 FOUR LENSES (exec) -->
+      <h2 id="s3" style="font:600 22px 'Newsreader',serif;color:oklch(24% 0.02 262);margin:46px 0 8px"><span style="font:600 13px 'IBM Plex Mono';color:oklch(50% 0.13 190);margin-right:10px">03</span>The four lenses</h2>
+      <p style="font:400 14px/1.6 'IBM Plex Sans';color:oklch(42% 0.02 262);margin:0 0 16px;max-width:62ch">Four ways to read the same graph, sharing one altitude position and selection. Switching a lens never loses your place.</p>
+      <div style="display:flex;flex-direction:column;gap:10px">
+        <sc-for list="{{ lenses }}" as="l" hint-placeholder-count="4">
+          <div style="display:flex;gap:15px;border:1px solid oklch(92% 0.006 262);border-radius:11px;padding:16px 18px;border-left:3px solid {{ l.color }}">
+            <div style="flex:none;width:30px;height:30px;border-radius:8px;background:{{ l.bg }};display:flex;align-items:center;justify-content:center;font:600 13px 'IBM Plex Mono';color:{{ l.color }}">{{ l.glyph }}</div>
+            <div style="flex:1">
+              <div style="display:flex;align-items:center;gap:9px"><span style="font:600 14px 'IBM Plex Sans';color:oklch(28% 0.02 262)">{{ l.name }}</span><span style="font:500 10px 'IBM Plex Mono';color:oklch(58% 0.02 262)">{{ l.q }}</span></div>
+              <p style="font:400 12.5px/1.55 'IBM Plex Sans';color:oklch(46% 0.02 262);margin:5px 0 0">{{ l.body }}</p>
+            </div>
+          </div>
+        </sc-for>
+      </div>
+
+      <!-- engineering divider -->
+      <div style="display:flex;align-items:center;gap:14px;margin:40px 0 6px">
+        <span style="font:600 10px 'IBM Plex Mono';letter-spacing:.14em;text-transform:uppercase;color:oklch(48% 0.02 262);background:oklch(94% 0.006 262);padding:6px 12px;border-radius:5px">Engineering specification</span>
+        <span style="flex:1;height:1px;background:oklch(91% 0.006 262)"></span>
+      </div>
+
+      <!-- 4 LAYOUT SPEC -->
+      <h2 id="s4" style="font:600 22px 'Newsreader',serif;color:oklch(24% 0.02 262);margin:34px 0 8px"><span style="font:600 13px 'IBM Plex Mono';color:oklch(50% 0.13 190);margin-right:10px">04</span>Layout &amp; component spec</h2>
+      <p style="font:400 14px/1.6 'IBM Plex Sans';color:oklch(42% 0.02 262);margin:0 0 14px;max-width:62ch">A persistent three-region shell. Lenses swap the canvas and inspector content; the chrome stays put.</p>
+      <div style="border:1px solid oklch(91% 0.006 262);border-radius:11px;overflow:hidden">
+        <div style="height:38px;border-bottom:1px solid oklch(93% 0.006 262);display:flex;align-items:center;gap:8px;padding:0 14px;background:oklch(98.5% 0.003 262)">
+          <span style="width:11px;height:11px;border-radius:3px;background:oklch(52% 0.13 190)"></span>
+          <span style="font:600 10px 'IBM Plex Sans';color:oklch(40% 0.02 262)">Top bar</span>
+          <span style="font:400 9.5px 'IBM Plex Mono';color:oklch(60% 0.02 262)">— search · lens switch · scope · profile</span>
+        </div>
+        <div style="height:30px;border-bottom:1px solid oklch(93% 0.006 262);display:flex;align-items:center;gap:8px;padding:0 14px">
+          <span style="font:600 9.5px 'IBM Plex Sans';color:oklch(46% 0.02 262)">Altitude / breadcrumb bar</span>
+          <span style="font:400 9px 'IBM Plex Mono';color:oklch(62% 0.02 262)">— Org › Domain › App › Service · Domains/Apps/Services toggle · stat strip</span>
+        </div>
+        <div style="display:flex;height:150px">
+          <div style="flex:1;border-right:1px solid oklch(93% 0.006 262);display:flex;align-items:center;justify-content:center;background:oklch(99% 0.003 262);background-image:linear-gradient(oklch(96.5% 0.004 262) 1px,transparent 1px),linear-gradient(90deg,oklch(96.5% 0.004 262) 1px,transparent 1px);background-size:22px 22px">
+            <span style="font:600 11px 'IBM Plex Sans';color:oklch(50% 0.02 262);text-align:center">Canvas<br><span style="font:400 9.5px 'IBM Plex Mono';color:oklch(62% 0.02 262)">graph / matrix per lens</span></span>
+          </div>
+          <div style="flex:none;width:230px;display:flex;align-items:center;justify-content:center;background:#fff">
+            <span style="font:600 11px 'IBM Plex Sans';color:oklch(50% 0.02 262);text-align:center">Inspector<br><span style="font:400 9.5px 'IBM Plex Mono';color:oklch(62% 0.02 262)">selection detail · drill-down</span></span>
+          </div>
+        </div>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:7px;margin-top:14px">
+        <sc-for list="{{ components }}" as="c" hint-placeholder-count="5">
+          <div style="display:flex;gap:13px;padding:9px 13px;border:1px solid oklch(93% 0.006 262);border-radius:8px">
+            <span style="font:600 11px 'IBM Plex Mono';color:oklch(45% 0.10 190);flex:none;width:118px">{{ c.name }}</span>
+            <span style="font:400 12px/1.45 'IBM Plex Sans';color:oklch(44% 0.02 262);flex:1">{{ c.body }}</span>
+          </div>
+        </sc-for>
+      </div>
+
+      <!-- 5 VISUAL ENCODING -->
+      <h2 id="s5" style="font:600 22px 'Newsreader',serif;color:oklch(24% 0.02 262);margin:46px 0 8px"><span style="font:600 13px 'IBM Plex Mono';color:oklch(50% 0.13 190);margin-right:10px">05</span>Visual encoding system</h2>
+      <p style="font:400 14px/1.6 'IBM Plex Sans';color:oklch(42% 0.02 262);margin:0 0 14px;max-width:62ch">Consistent encoding across lenses so a color or line style always means the same thing.</p>
+      <div style="display:flex;gap:14px;flex-wrap:wrap">
+        <div style="flex:1;min-width:240px;border:1px solid oklch(92% 0.006 262);border-radius:10px;padding:15px 17px">
+          <div style="font:600 9px 'IBM Plex Mono';letter-spacing:.08em;text-transform:uppercase;color:oklch(60% 0.02 262);margin-bottom:10px">Channel — line style</div>
+          <div style="display:flex;flex-direction:column;gap:9px">
+            <sc-for list="{{ channels }}" as="c" hint-placeholder-count="4">
+              <span style="display:flex;align-items:center;gap:11px"><span style="width:30px;border-top:{{ c.line }};flex:none"></span><span style="font:600 9px 'IBM Plex Mono';color:{{ c.color }};width:14px">{{ c.glyph }}</span><span style="font:500 11.5px 'IBM Plex Sans';color:oklch(44% 0.02 262)">{{ c.label }}</span></span>
+            </sc-for>
+          </div>
+        </div>
+        <div style="flex:1;min-width:240px;border:1px solid oklch(92% 0.006 262);border-radius:10px;padding:15px 17px">
+          <div style="font:600 9px 'IBM Plex Mono';letter-spacing:.08em;text-transform:uppercase;color:oklch(60% 0.02 262);margin-bottom:10px">State — node treatment</div>
+          <div style="display:flex;flex-direction:column;gap:9px">
+            <sc-for list="{{ states }}" as="s" hint-placeholder-count="4">
+              <span style="display:flex;align-items:center;gap:11px"><span style="width:16px;height:16px;border-radius:4px;border:1.5px solid {{ s.border }};background:{{ s.fill }};box-shadow:{{ s.ring }};flex:none"></span><span style="font:500 11.5px 'IBM Plex Sans';color:oklch(44% 0.02 262)">{{ s.label }}</span></span>
+            </sc-for>
+          </div>
+        </div>
+      </div>
+      <div style="margin-top:13px;border-left:3px solid oklch(52% 0.13 190);background:oklch(98.5% 0.012 190);padding:11px 15px;border-radius:0 8px 8px 0">
+        <span style="font:600 11px 'IBM Plex Sans';color:oklch(40% 0.10 190)">Confidence encoding.</span>
+        <span style="font:400 12.5px/1.55 'IBM Plex Sans';color:oklch(42% 0.02 262)"> Verified edges are solid, Probable are solid-thin, Inferred are dashed and lower-opacity — so trust is readable on the canvas itself, consistent with PRD 1’s bands.</span>
+      </div>
+
+      <!-- 6 FUNCTIONAL REQ -->
+      <h2 id="s6" style="font:600 22px 'Newsreader',serif;color:oklch(24% 0.02 262);margin:46px 0 14px"><span style="font:600 13px 'IBM Plex Mono';color:oklch(50% 0.13 190);margin-right:10px">06</span>Functional requirements</h2>
+      <div style="display:flex;flex-direction:column;gap:8px">
+        <sc-for list="{{ reqs }}" as="r" hint-placeholder-count="8">
+          <div style="display:flex;gap:13px;padding:11px 14px;border:1px solid oklch(92% 0.006 262);border-radius:9px">
+            <span style="font:600 10px 'IBM Plex Mono';color:oklch(48% 0.12 190);flex:none;width:52px">{{ r.id }}</span>
+            <span style="font:400 13px/1.5 'IBM Plex Sans';color:oklch(38% 0.02 262);flex:1">{{ r.text }}</span>
+            <span style="font:600 8px 'IBM Plex Mono';letter-spacing:.04em;text-transform:uppercase;color:{{ r.pFg }};background:{{ r.pBg }};padding:3px 7px;border-radius:4px;height:fit-content;flex:none">{{ r.pri }}</span>
+          </div>
+        </sc-for>
+      </div>
+
+      <!-- 7 METRICS -->
+      <h2 id="s7" style="font:600 22px 'Newsreader',serif;color:oklch(24% 0.02 262);margin:46px 0 14px"><span style="font:600 13px 'IBM Plex Mono';color:oklch(50% 0.13 190);margin-right:10px">07</span>Success criteria</h2>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+        <sc-for list="{{ metrics }}" as="m" hint-placeholder-count="4">
+          <div style="border:1px solid oklch(92% 0.006 262);border-radius:9px;padding:14px 16px">
+            <div style="font:600 12px 'IBM Plex Sans';color:oklch(30% 0.02 262)">{{ m.name }}</div>
+            <div style="font:400 12px/1.5 'IBM Plex Sans';color:oklch(48% 0.02 262);margin-top:5px">{{ m.body }}</div>
+          </div>
+        </sc-for>
+      </div>
+
+      <!-- 8 ROLLOUT -->
+      <h2 id="s8" style="font:600 22px 'Newsreader',serif;color:oklch(24% 0.02 262);margin:46px 0 10px"><span style="font:600 13px 'IBM Plex Mono';color:oklch(50% 0.13 190);margin-right:10px">08</span>Rollout &amp; phasing</h2>
+      <div style="display:flex;gap:10px">
+        <sc-for list="{{ rollout }}" as="r" hint-placeholder-count="3">
+          <div style="flex:1;border:1px solid oklch(92% 0.006 262);border-radius:10px;padding:14px;border-top:3px solid {{ r.color }}">
+            <div style="font:600 9px 'IBM Plex Mono';letter-spacing:.06em;text-transform:uppercase;color:{{ r.color }}">{{ r.tag }}</div>
+            <div style="font:600 13px 'IBM Plex Sans';color:oklch(30% 0.02 262);margin:6px 0 5px">{{ r.title }}</div>
+            <div style="font:400 11.5px/1.5 'IBM Plex Sans';color:oklch(48% 0.02 262)">{{ r.body }}</div>
+          </div>
+        </sc-for>
+      </div>
+
+      <!-- 9 RISKS -->
+      <h2 id="s9" style="font:600 22px 'Newsreader',serif;color:oklch(24% 0.02 262);margin:46px 0 14px"><span style="font:600 13px 'IBM Plex Mono';color:oklch(50% 0.13 190);margin-right:10px">09</span>Risks &amp; open questions</h2>
+      <div style="display:flex;flex-direction:column;gap:9px">
+        <sc-for list="{{ risks }}" as="r" hint-placeholder-count="4">
+          <div style="display:flex;gap:12px;padding:11px 14px;border:1px solid oklch(92% 0.006 262);border-radius:9px;background:{{ r.bg }}">
+            <span style="font:600 9px 'IBM Plex Mono';letter-spacing:.04em;text-transform:uppercase;color:{{ r.tagColor }};flex:none;width:62px">{{ r.tag }}</span>
+            <div style="flex:1"><div style="font:600 12.5px 'IBM Plex Sans';color:oklch(32% 0.02 262)">{{ r.title }}</div><div style="font:400 12px/1.5 'IBM Plex Sans';color:oklch(48% 0.02 262);margin-top:3px">{{ r.body }}</div></div>
+          </div>
+        </sc-for>
+      </div>
+
+      <div style="margin-top:46px;padding-top:18px;border-top:1px solid oklch(91% 0.006 262);display:flex;align-items:center;gap:10px">
+        <a href="PRD 2 - Impact Analysis.dc.html" style="font:600 11.5px 'IBM Plex Sans';color:oklch(50% 0.02 262);text-decoration:none">← PRD 2: Impact</a>
+        <span style="font:500 11px 'IBM Plex Mono';color:oklch(60% 0.02 262);margin:0 auto">Throughline · PRD 3 of 3</span>
+        <a href="Throughline - Final.dc.html" style="font:600 11.5px 'IBM Plex Sans';color:oklch(50% 0.13 190);text-decoration:none">Open prototype ↗</a>
+      </div>
+    </main>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+class Component extends DCLogic {
+  state = { level: 1 };
+
+  levelDefs() {
+    return [
+      { code: 'L0', label: 'Domains', scale: '~6 nodes', color: 'oklch(50% 0.06 262)',
+        desc: 'The default landing. Domain cards connected by aggregated roll-up edges \u2014 each edge stands for thousands of underlying flows with a count.',
+        renders: 'Domain cards with asset counts; roll-up edges', loads: 'Nothing below domain until you drill' },
+      { code: 'L1', label: 'Business apps', scale: '~8\u201340 per domain', color: 'oklch(52% 0.13 190)',
+        desc: 'The team-aligned unit. Entering a domain loads its applications plus boundary neighbors; interactions are most meaningful here.',
+        renders: 'App cards (team, counts); aggregated app-to-app edges', loads: 'Services on app open' },
+      { code: 'L2', label: 'Services / Datasets / Jobs', scale: 'scoped to one app', color: 'oklch(56% 0.12 155)',
+        desc: 'The dense DAG, scoped to a single application plus cross-app boundary nodes \u2014 never the global graph. Each node is tagged with its app code.',
+        renders: 'Service DAG with typed I/O; in/out dataset chips', loads: 'Dataset fields on expand' },
+      { code: 'L3', label: 'Datasets', scale: 'per service', color: 'oklch(54% 0.13 70)',
+        desc: 'Expand a service to reveal its input and output datasets, each typed (Kafka topic, S3 landing, S3 file, cache) and clickable.',
+        renders: 'Dataset schema summary; field list', loads: 'Column lineage on field click' },
+      { code: 'L4', label: 'Columns', scale: 'leaf', color: 'oklch(56% 0.16 300)',
+        desc: 'The leaf. A single column with its classification (PII\u2026), transform, and upstream/downstream element-level lineage.',
+        renders: 'Column detail; per-field up/downstream edges', loads: '\u2014 (deepest level)' },
+    ];
+  }
+
+  renderVals() {
+    const toc = [
+      ['01', 'Design principles', '#s1'], ['02', 'Altitude model', '#s2'], ['03', 'Four lenses', '#s3'], ['04', 'Layout spec', '#s4'],
+      ['05', 'Visual encoding', '#s5'], ['06', 'Requirements', '#s6'], ['07', 'Success criteria', '#s7'], ['08', 'Rollout', '#s8'], ['09', 'Risks', '#s9'],
+    ].map(([n, label, href]) => ({ n, label, href }));
+
+    const principles = [
+      { title: 'Never render the whole graph', body: 'Navigate by altitude and load only what is in view. A 2,000-node canvas is a failure state, not a feature.' },
+      { title: 'Progressive disclosure', body: 'Every level expands in place to the next \u2014 domain \u2192 app \u2192 service \u2192 dataset \u2192 column \u2014 with a breadcrumb tracking position.' },
+      { title: 'One graph, many lenses', body: 'Lineage, interactions, impact and provenance share altitude and selection. Switching lens keeps your place.' },
+      { title: 'Trust is visible', body: 'Confidence and severity are encoded on the canvas itself \u2014 line style, color, dashing \u2014 not hidden in a panel.' },
+    ];
+
+    const L = this.levelDefs();
+    const levels = L.map((l, i) => {
+      const on = this.state.level === i;
+      return { code: l.code, label: l.label, fg: on ? '#fff' : 'oklch(40% 0.02 262)', bg: on ? l.color : '#fff',
+        border: on ? l.color : 'oklch(91% 0.006 262)', codeColor: on ? 'rgba(255,255,255,.8)' : 'oklch(62% 0.02 262)',
+        onClick: () => this.setState({ level: i }) };
+    });
+    const al = L[this.state.level];
+
+    const lenses = [
+      { name: 'Lineage', q: 'where does data flow?', glyph: '\u2192', color: 'oklch(52% 0.14 252)', bg: 'oklch(96% 0.03 252)', body: 'The data-at-rest graph: services producing and consuming datasets across batch and streaming, drilling to column-level transforms.' },
+      { name: 'Interactions', q: 'who calls whom?', glyph: '\u229A', color: 'oklch(50% 0.12 190)', bg: 'oklch(96% 0.03 190)', body: 'Runtime API dependencies as a matrix (not a hairball) \u2014 app-to-app by default, rolled up from service calls. Click a cell for the contract.' },
+      { name: 'Impact', q: 'what breaks?', glyph: '\u26A0', color: 'oklch(57% 0.16 35)', bg: 'oklch(96% 0.035 38)', body: 'Blast radius overlaid on the graph: origin highlighted, downstream colored by severity, unaffected dimmed. Drills to the schema diff.' },
+      { name: 'Provenance', q: 'how do we know?', glyph: '\u25EC', color: 'oklch(52% 0.14 300)', bg: 'oklch(96% 0.03 300)', body: 'The collection view: which signals (static, LLM, Spark, Dask, OTel) assert each edge, its confidence band, and the CI/CD baseline diff.' },
+    ];
+
+    const components = [
+      { name: 'Top bar', body: 'Global search (asset/column/owner), lens switcher, active scope chip, user profile. Persistent across all lenses.' },
+      { name: 'Altitude bar', body: 'Breadcrumb (Org \u203A Domain \u203A App \u203A Service), Domains/Apps/Services toggle, live stat strip (domains/services/datasets/jobs).' },
+      { name: 'Canvas', body: 'Lens-specific: layered DAG (lineage/impact), card overview (domain/app), or interaction matrix. Scoped + virtualized for scale.' },
+      { name: 'Inspector', body: 'Right rail bound to selection: entity detail, dataset schema, field lineage, impact report, or signal/confidence breakdown.' },
+      { name: 'Node / chip', body: 'Service node with typed I/O chips, app-code badge, role marker, expand caret. Reused with severity/confidence overlays per lens.' },
+    ];
+
+    const channels = [
+      { label: 'Batch (S3, file)', glyph: '\u25A4', color: 'oklch(52% 0.03 262)', line: '2px solid oklch(60% 0.02 262)' },
+      { label: 'Stream (Kafka)', glyph: '\u224B', color: 'oklch(52% 0.15 300)', line: '2px solid oklch(52% 0.15 300)' },
+      { label: 'REST', glyph: '\u21C4', color: 'oklch(52% 0.16 252)', line: '2px dashed oklch(52% 0.16 252)' },
+      { label: 'GraphQL', glyph: '\u25C6', color: 'oklch(54% 0.21 350)', line: '2px dotted oklch(54% 0.21 350)' },
+    ];
+    const states = [
+      { label: 'Selected / origin', border: 'oklch(55% 0.14 252)', fill: 'oklch(98% 0.02 252)', ring: '0 0 0 3px oklch(92% 0.05 252)' },
+      { label: 'In scope / neighbor', border: 'oklch(86% 0.008 262)', fill: '#fff', ring: 'none' },
+      { label: 'Impacted (severity)', border: 'oklch(60% 0.15 38)', fill: 'oklch(98% 0.03 40)', ring: '0 0 0 2px oklch(92% 0.06 42)' },
+      { label: 'Boundary / dimmed', border: 'oklch(90% 0.006 262)', fill: 'oklch(98.5% 0.003 262)', ring: 'none' },
+    ];
+
+    const reqs = [
+      ['FR-U1', 'Altitude navigation: domains \u2192 apps \u2192 services \u2192 datasets \u2192 columns with in-place expand and a breadcrumb that tracks position.', 'P0'],
+      ['FR-U2', 'Scoped loading: entering an app/domain fetches only its subgraph plus boundary neighbors; the global graph is never rendered at once.', 'P0'],
+      ['FR-U3', 'Four lenses (Lineage, Interactions, Impact, Provenance) share altitude and selection; switching preserves position.', 'P0'],
+      ['FR-U4', 'Interaction matrix renders app-to-app by default with roll-up counts + channel chips; cell drill-down to service contracts.', 'P0'],
+      ['FR-U5', 'Consistent visual encoding: channel as line style, confidence as solid/dashed, severity as color \u2014 identical across lenses.', 'P0'],
+      ['FR-U6', 'Inspector is selection-bound and context-aware per lens (entity / schema / field lineage / impact report / signals).', 'P0'],
+      ['FR-U7', 'Global search anchors on any entity and opens its k-hop neighborhood as the entry point.', 'P1'],
+      ['FR-U8', 'Facets/filters: owner, domain, classification (PII), criticality, environment \u2014 applied as canvas filters.', 'P1'],
+      ['FR-U9', 'Performance: smooth pan/zoom and virtualized rendering at the scoped scale; semantic level-of-detail on zoom.', 'P1'],
+    ].map(([id, text, pri]) => ({ id, text, pri, pFg: pri === 'P0' ? '#fff' : 'oklch(48% 0.02 262)', pBg: pri === 'P0' ? 'oklch(52% 0.13 190)' : 'oklch(95% 0.004 262)' }));
+
+    const metrics = [
+      { name: 'Legibility', body: 'Users find a specific dependency without ever seeing an unreadable hairball.' },
+      { name: 'Orientation', body: 'Users always know their altitude and can back out one level at a time without losing context.' },
+      { name: 'Continuity', body: 'Switching lenses preserves selection and position \u2014 it feels like one tool, not four.' },
+      { name: 'Responsiveness', body: 'Navigation and drill-down feel instant at the scoped scale, even org-wide.' },
+    ];
+
+    const rollout = [
+      { tag: 'Slice', title: 'Lineage + altitude', color: 'oklch(52% 0.13 190)', body: 'Ship altitude navigation and the lineage lens on the vertical slice; validate progressive disclosure with real users.' },
+      { tag: 'Widen', title: 'Interactions + impact', color: 'oklch(57% 0.16 35)', body: 'Add the interaction matrix and impact overlay across the domain; introduce search and facets.' },
+      { tag: 'Scale', title: 'Provenance + polish', color: 'oklch(52% 0.14 300)', body: 'Provenance lens, semantic zoom, virtualization, and accessibility hardening for org-wide use.' },
+    ];
+
+    const risks = [
+      { tag: 'Risk', title: 'Disclosure depth vs. effort', body: 'Five levels can mean many clicks to reach a column. Mitigation: search-to-anchor jumps, expand-all within scope, and saved views.', bg: 'oklch(98.5% 0.02 32)', tagColor: 'oklch(56% 0.13 30)' },
+      { tag: 'Risk', title: 'Matrix scale at large domains', body: 'A domain with many apps makes a wide matrix. Mitigation: block-clustered ordering, search/filter on axes, and pagination.', bg: 'oklch(98.5% 0.02 32)', tagColor: 'oklch(56% 0.13 30)' },
+      { tag: 'Open', title: 'Cross-domain lineage traversal', body: 'How to follow a path that leaves the current scope \u2014 auto-expand the next scope, or open a focused ego-graph?', bg: 'oklch(98.5% 0.012 252)', tagColor: 'oklch(50% 0.10 252)' },
+      { tag: 'Open', title: 'Lens switching affordance', body: 'Are four top-level lenses right, or should provenance be an overlay toggle on the others? Needs usability testing.', bg: 'oklch(98.5% 0.012 252)', tagColor: 'oklch(50% 0.10 252)' },
+    ];
+
+    return { toc, principles, levels,
+      activeCode: al.code, activeLabel: al.label, activeScale: al.scale, activeDesc: al.desc, activeRenders: al.renders, activeLoads: al.loads,
+      lenses, components, channels, states, reqs, metrics, rollout, risks };
+  }
+}
+</script>
+</body>
+</html>

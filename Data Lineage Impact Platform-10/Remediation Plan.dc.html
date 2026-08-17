@@ -1,0 +1,344 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,600&display=swap" rel="stylesheet">
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+  a { color: inherit; }
+  ::-webkit-scrollbar { width: 10px; height: 10px; }
+  ::-webkit-scrollbar-thumb { background: oklch(88% 0.006 262); border-radius: 6px; border: 2px solid transparent; background-clip: padding-box; }
+  @media print { .no-print { display: none !important; } .page { box-shadow: none !important; margin: 0 !important; } body { background: #fff !important; } }
+</style>
+</helmet>
+
+<div style="background:oklch(95.5% 0.004 262);min-height:100vh;font-family:'IBM Plex Sans',sans-serif;-webkit-font-smoothing:antialiased;color:oklch(30% 0.02 262)">
+  <div style="max-width:1320px;margin:0 auto;display:flex;gap:36px;padding:40px 28px 80px;align-items:flex-start">
+
+    <!-- TOC -->
+    <aside class="no-print" style="flex:none;width:206px;position:sticky;top:40px;display:flex;flex-direction:column;gap:3px">
+      <div style="display:flex;align-items:center;gap:9px;margin-bottom:14px">
+        <span style="width:22px;height:22px;border-radius:6px;background:oklch(48% 0.13 165);display:block"></span>
+        <span style="font:700 15px 'IBM Plex Sans';color:oklch(26% 0.02 262);letter-spacing:-0.01em">Throughline</span>
+      </div>
+      <div style="font:600 8.5px 'IBM Plex Mono';letter-spacing:.12em;text-transform:uppercase;color:oklch(60% 0.02 262);margin:0 0 8px 2px">Remediation Plan</div>
+      <sc-for list="{{ toc }}" as="t" hint-placeholder-count="7">
+        <a href="{{ t.href }}" style="display:flex;gap:9px;padding:5px 8px;border-radius:6px;text-decoration:none;font:500 12px 'IBM Plex Sans';color:oklch(46% 0.02 262)" style-hover="background:oklch(92% 0.01 262)"><span style="font:600 10px 'IBM Plex Mono';color:oklch(68% 0.02 262);width:14px;flex:none">{{ t.n }}</span><span>{{ t.label }}</span></a>
+      </sc-for>
+      <div style="margin-top:16px;padding-top:14px;border-top:1px solid oklch(90% 0.006 262);display:flex;flex-direction:column;gap:6px">
+        <div style="font:600 8.5px 'IBM Plex Mono';letter-spacing:.12em;text-transform:uppercase;color:oklch(60% 0.02 262);margin:0 0 2px 2px">Suite</div>
+        <a href="Index - Throughline PRDs.dc.html" style="font:500 11.5px 'IBM Plex Sans';color:oklch(50% 0.02 262);text-decoration:none;padding:3px 8px">Overview</a>
+        <a href="Critical Review.dc.html" style="font:500 11.5px 'IBM Plex Sans';color:oklch(50% 0.02 262);text-decoration:none;padding:3px 8px">Critical Review</a>
+        <a href="Roadmap & LOE.dc.html" style="font:500 11.5px 'IBM Plex Sans';color:oklch(50% 0.02 262);text-decoration:none;padding:3px 8px">Roadmap &amp; LOE</a>
+      </div>
+    </aside>
+
+    <!-- PAGE -->
+    <main class="page" style="flex:1;min-width:0;max-width:1010px;background:#fff;border:1px solid oklch(91% 0.006 262);border-radius:3px;box-shadow:0 1px 3px rgba(20,30,50,.06);padding:56px 56px 72px">
+
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:24px">
+        <span style="font:600 9px 'IBM Plex Mono';letter-spacing:.14em;text-transform:uppercase;color:#fff;background:oklch(48% 0.13 165);padding:4px 9px;border-radius:4px">Action Plan</span>
+        <span style="font:500 11px 'IBM Plex Mono';color:oklch(58% 0.02 262)">Responds to Critical Review v0.9</span>
+        <span style="font:500 11px 'IBM Plex Mono';color:oklch(58% 0.02 262);margin-left:auto">PI cadence: 6 weeks</span>
+      </div>
+      <h1 style="font:600 38px 'Newsreader',serif;color:oklch(22% 0.02 262);letter-spacing:-0.01em;line-height:1.1;margin:0 0 12px">Remediation plan for leadership buy-in</h1>
+      <p style="font:400 16px/1.6 'IBM Plex Sans';color:oklch(45% 0.02 262);margin:0 0 4px;max-width:66ch">Concrete responses to the accepted findings from the red-team review. Each action below is owned, scoped, and tied to a date. The through-line: <strong style="font-weight:600">we deliver demonstrable business value every Program Increment (6 weeks)</strong> — not one 24-month bet.</p>
+
+      <!-- disposition band -->
+      <div style="margin:28px 0 8px;border:1px solid oklch(92% 0.006 262);border-radius:11px;overflow:hidden">
+        <div style="display:flex;align-items:center;gap:10px;padding:12px 16px;background:oklch(98.6% 0.003 262);border-bottom:1px solid oklch(93% 0.006 262)">
+          <span style="font:600 12.5px 'IBM Plex Sans';color:oklch(30% 0.02 262)">Disposition of review findings</span>
+          <span style="font:500 10.5px 'IBM Plex Mono';color:oklch(56% 0.02 262);margin-left:auto">10 actions · 1 resolved · 6 planned here · 3 tracked elsewhere</span>
+        </div>
+        <sc-for list="{{ disposition }}" as="d" hint-placeholder-count="6">
+          <div style="display:flex;align-items:center;gap:12px;padding:9px 16px;border-bottom:1px solid oklch(96% 0.004 262)">
+            <span style="font:600 10px 'IBM Plex Mono';color:oklch(60% 0.02 262);flex:none;width:18px">{{ d.n }}</span>
+            <span style="font:500 12px 'IBM Plex Sans';color:oklch(34% 0.02 262);flex:1;min-width:0">{{ d.action }}</span>
+            <span style="font:600 8.5px 'IBM Plex Mono';color:{{ d.fg }};background:{{ d.bg }};padding:3px 8px;border-radius:4px;flex:none">{{ d.status }}</span>
+            <span style="font:500 10px 'IBM Plex Mono';color:oklch(58% 0.02 262);flex:none;width:78px;text-align:right">{{ d.ref }}</span>
+          </div>
+        </sc-for>
+      </div>
+
+      <!-- 1 PI VALUE -->
+      <h2 id="s1" style="font:600 21px 'Newsreader',serif;color:oklch(24% 0.02 262);margin:44px 0 4px"><span style="font:600 13px 'IBM Plex Mono';color:oklch(46% 0.13 165);margin-right:10px">A3</span>Value every PI — the 6-week cadence</h2>
+      <p style="font:400 13px/1.6 'IBM Plex Sans';color:oklch(48% 0.02 262);margin:0 0 16px;max-width:68ch">Not a single 90-day win, but a demonstrable, business-relevant outcome at the end of <strong style="font-weight:600">every Program Increment</strong>. Leadership reviews — and re-funds — against the value column, not the activity. Each PI is a stage gate.</p>
+      <table style="width:100%;border-collapse:collapse;font-family:'IBM Plex Sans'">
+        <thead><tr style="background:oklch(97% 0.004 262)">
+          <th style="text-align:left;font:600 8px 'IBM Plex Mono';letter-spacing:.05em;text-transform:uppercase;color:oklch(58% 0.02 262);padding:9px 9px;border-bottom:1px solid oklch(91% 0.006 262);width:52px">PI</th>
+          <th style="text-align:left;font:600 8px 'IBM Plex Mono';letter-spacing:.05em;text-transform:uppercase;color:oklch(58% 0.02 262);padding:9px 9px;border-bottom:1px solid oklch(91% 0.006 262);width:62px">Phase</th>
+          <th style="text-align:left;font:600 8px 'IBM Plex Mono';letter-spacing:.05em;text-transform:uppercase;color:oklch(58% 0.02 262);padding:9px 9px;border-bottom:1px solid oklch(91% 0.006 262)">Capability shipped</th>
+          <th style="text-align:left;font:600 8px 'IBM Plex Mono';letter-spacing:.05em;text-transform:uppercase;color:oklch(58% 0.02 262);padding:9px 9px;border-bottom:1px solid oklch(91% 0.006 262)">Business value demonstrated</th>
+        </tr></thead>
+        <tbody>
+          <sc-for list="{{ piPlan }}" as="p" hint-placeholder-count="8">
+            <tr style="border-bottom:1px solid oklch(95.5% 0.004 262);background:{{ p.rowBg }}">
+              <td style="padding:8px 9px;vertical-align:top"><span style="font:700 11px 'IBM Plex Mono';color:{{ p.color }}">{{ p.pi }}</span><div style="font:400 8px 'IBM Plex Mono';color:oklch(64% 0.02 262);margin-top:1px">{{ p.wk }}</div></td>
+              <td style="padding:8px 9px;vertical-align:top"><span style="font:600 8px 'IBM Plex Mono';color:{{ p.color }};background:{{ p.phBg }};padding:2px 6px;border-radius:4px">{{ p.phase }}</span></td>
+              <td style="padding:8px 9px;font:500 11px/1.45 'IBM Plex Sans';color:oklch(34% 0.02 262);vertical-align:top">{{ p.cap }}</td>
+              <td style="padding:8px 9px;font:400 11px/1.45 'IBM Plex Sans';color:oklch(46% 0.02 262);vertical-align:top">{{ p.value }}</td>
+            </tr>
+          </sc-for>
+        </tbody>
+      </table>
+      <div style="margin-top:12px;border-left:3px solid oklch(48% 0.13 165);background:oklch(98.5% 0.012 165);padding:11px 15px;border-radius:0 8px 8px 0;font:400 11.5px/1.55 'IBM Plex Sans';color:oklch(44% 0.02 262)"><strong style="font-weight:600;color:oklch(42% 0.10 165)">Stage-gate funding.</strong> Leadership commits one phase at a time. A PI that misses its value gate triggers a replan before the next phase is funded — capping downside to ~6 weeks, not 24 months.</div>
+
+      <!-- 2 CAPACITY RECONCILIATION -->
+      <h2 id="s2" style="font:600 21px 'Newsreader',serif;color:oklch(24% 0.02 262);margin:46px 0 4px"><span style="font:600 13px 'IBM Plex Mono';color:oklch(46% 0.13 165);margin-right:10px">A2</span>Capacity reconciliation — where 24 months of two teams goes</h2>
+      <p style="font:400 13px/1.6 'IBM Plex Sans';color:oklch(48% 0.02 262);margin:0 0 16px;max-width:68ch">The review flagged a gap: net build was sized at ≈175 eng-weeks, but two teams over 24 months is far more capacity. That is expected — <strong style="font-weight:600">build is roughly a quarter of the work.</strong> Below, the full net capacity is accounted for.</p>
+      <div style="display:flex;gap:18px;align-items:flex-start;flex-wrap:wrap">
+        <div style="flex:1;min-width:340px">
+          <table style="width:100%;border-collapse:collapse;font-family:'IBM Plex Sans'">
+            <thead><tr style="background:oklch(97% 0.004 262)">
+              <th style="text-align:left;font:600 8px 'IBM Plex Mono';letter-spacing:.05em;text-transform:uppercase;color:oklch(58% 0.02 262);padding:9px 10px;border-bottom:1px solid oklch(91% 0.006 262)">Category</th>
+              <th style="text-align:left;font:600 8px 'IBM Plex Mono';letter-spacing:.05em;text-transform:uppercase;color:oklch(58% 0.02 262);padding:9px 10px;border-bottom:1px solid oklch(91% 0.006 262)">What it covers</th>
+              <th style="text-align:right;font:600 8px 'IBM Plex Mono';letter-spacing:.05em;text-transform:uppercase;color:oklch(58% 0.02 262);padding:9px 10px;border-bottom:1px solid oklch(91% 0.006 262);width:84px">Eng-weeks</th>
+            </tr></thead>
+            <tbody>
+              <sc-for list="{{ capacity }}" as="c" hint-placeholder-count="6">
+                <tr style="border-bottom:1px solid oklch(95.5% 0.004 262)">
+                  <td style="padding:9px 10px;font:600 11.5px 'IBM Plex Sans';color:oklch(32% 0.02 262);vertical-align:top"><span style="display:inline-block;width:8px;height:8px;border-radius:2px;background:{{ c.color }};margin-right:7px"></span>{{ c.name }}</td>
+                  <td style="padding:9px 10px;font:400 10.5px/1.45 'IBM Plex Sans';color:oklch(50% 0.02 262);vertical-align:top">{{ c.covers }}</td>
+                  <td style="padding:9px 10px;font:600 11px 'IBM Plex Mono';color:oklch(36% 0.02 262);text-align:right;vertical-align:top">{{ c.weeks }}</td>
+                </tr>
+              </sc-for>
+              <tr style="background:oklch(98% 0.003 262)">
+                <td style="padding:10px;font:700 11.5px 'IBM Plex Sans';color:oklch(28% 0.02 262)" colspan="2">Net capacity, 2 teams × 24 months</td>
+                <td style="padding:10px;font:700 12px 'IBM Plex Mono';color:oklch(30% 0.02 262);text-align:right">{{ capTotal }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <div style="flex:none;width:248px;background:oklch(98.6% 0.003 262);border:1px solid oklch(92% 0.006 262);border-radius:11px;padding:15px 16px">
+          <div style="font:600 9px 'IBM Plex Mono';letter-spacing:.06em;text-transform:uppercase;color:oklch(58% 0.02 262);margin-bottom:9px">Gross → net</div>
+          <sc-for list="{{ grossNet }}" as="g" hint-placeholder-count="4">
+            <div style="display:flex;align-items:baseline;gap:8px;padding:5px 0;border-bottom:1px solid oklch(95% 0.004 262)">
+              <span style="font:500 10.5px 'IBM Plex Sans';color:oklch(46% 0.02 262);flex:1">{{ g.label }}</span>
+              <span style="font:600 11px 'IBM Plex Mono';color:{{ g.color }}">{{ g.val }}</span>
+            </div>
+          </sc-for>
+          <div style="font:400 10px/1.5 'IBM Plex Sans';color:oklch(54% 0.02 262);margin-top:10px">~10 engineers × ~104 weeks, less ~25% for leave, on-call, ceremonies and ramp, yields the net pool the table allocates.</div>
+        </div>
+      </div>
+
+      <!-- 3 IDENTITY SPIKE -->
+      <h2 id="s3" style="font:600 21px 'Newsreader',serif;color:oklch(24% 0.02 262);margin:46px 0 4px"><span style="font:600 13px 'IBM Plex Mono';color:oklch(46% 0.13 165);margin-right:10px">A5</span>P0 spike — canonical identity resolution</h2>
+      <p style="font:400 13px/1.6 'IBM Plex Sans';color:oklch(48% 0.02 262);margin:0 0 16px;max-width:68ch">The make-or-break technical risk: can we match the <em>same</em> entity across static, Spark, Dask and OTel reliably? We answer this <strong style="font-weight:600">in PI&nbsp;1, before committing the plan</strong> — a timeboxed spike with a measured exit decision.</p>
+      <div style="border:1px solid oklch(90% 0.04 165);border-radius:13px;overflow:hidden">
+        <div style="display:flex;flex-wrap:wrap;gap:0">
+          <sc-for list="{{ spikeMeta }}" as="m" hint-placeholder-count="4">
+            <div style="flex:1;min-width:150px;padding:13px 16px;border-right:1px solid oklch(95% 0.004 262);border-bottom:1px solid oklch(95% 0.004 262);background:oklch(99% 0.008 165)">
+              <div style="font:600 8px 'IBM Plex Mono';letter-spacing:.06em;text-transform:uppercase;color:oklch(48% 0.10 165)">{{ m.k }}</div>
+              <div style="font:600 13px 'IBM Plex Sans';color:oklch(30% 0.02 262);margin-top:3px">{{ m.v }}</div>
+            </div>
+          </sc-for>
+        </div>
+        <div style="display:flex;flex-wrap:wrap;gap:0">
+          <div style="flex:1;min-width:280px;padding:15px 17px;border-right:1px solid oklch(95% 0.004 262)">
+            <div style="font:600 9px 'IBM Plex Mono';letter-spacing:.08em;text-transform:uppercase;color:oklch(58% 0.02 262);margin-bottom:9px">Approach</div>
+            <div style="display:flex;flex-direction:column;gap:8px">
+              <sc-for list="{{ spikeApproach }}" as="a" hint-placeholder-count="4">
+                <div style="display:flex;gap:9px"><span style="font:700 9px 'IBM Plex Mono';color:#fff;background:oklch(48% 0.13 165);width:17px;height:17px;border-radius:50%;display:flex;align-items:center;justify-content:center;flex:none">{{ a.n }}</span><span style="font:400 11.5px/1.5 'IBM Plex Sans';color:oklch(44% 0.02 262)">{{ a.t }}</span></div>
+              </sc-for>
+            </div>
+          </div>
+          <div style="flex:1;min-width:280px;padding:15px 17px">
+            <div style="font:600 9px 'IBM Plex Mono';letter-spacing:.08em;text-transform:uppercase;color:oklch(58% 0.02 262);margin-bottom:9px">Exit decision — measured on slice ground truth</div>
+            <div style="display:flex;flex-direction:column;gap:7px">
+              <sc-for list="{{ spikeExit }}" as="e" hint-placeholder-count="3">
+                <div style="display:flex;align-items:flex-start;gap:9px;padding:8px 10px;border:1px solid {{ e.border }};background:{{ e.bg }};border-radius:8px">
+                  <span style="font:600 8px 'IBM Plex Mono';color:{{ e.fg }};flex:none;width:42px">{{ e.gate }}</span>
+                  <span style="font:400 11px/1.45 'IBM Plex Sans';color:oklch(42% 0.02 262)">{{ e.action }}</span>
+                </div>
+              </sc-for>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 4 ADOPTION -->
+      <h2 id="s4" style="font:600 21px 'Newsreader',serif;color:oklch(24% 0.02 262);margin:46px 0 4px"><span style="font:600 13px 'IBM Plex Mono';color:oklch(46% 0.13 165);margin-right:10px">A4</span>Adoption &amp; change-management workstream</h2>
+      <p style="font:400 13px/1.6 'IBM Plex Sans';color:oklch(48% 0.02 262);margin:0 0 16px;max-width:68ch">Value requires every app team to instrument collectors and accept a CI/CD gate. That is org change, not just a build — so it is a funded workstream with a named exec sponsor, run on a <strong style="font-weight:600">observe → warn → block</strong> trust ramp.</p>
+      <div style="display:flex;gap:14px;align-items:stretch;flex-wrap:wrap;margin-bottom:14px">
+        <sc-for list="{{ trustRamp }}" as="r" hint-placeholder-count="3">
+          <div style="flex:1;min-width:200px;border:1px solid oklch(92% 0.006 262);border-radius:11px;padding:14px 16px;border-top:3px solid {{ r.color }}">
+            <div style="display:flex;align-items:center;gap:8px"><span style="font:700 9px 'IBM Plex Mono';color:#fff;background:{{ r.color }};padding:3px 7px;border-radius:4px">{{ r.stage }}</span><span style="font:500 9.5px 'IBM Plex Mono';color:oklch(58% 0.02 262);margin-left:auto">{{ r.when }}</span></div>
+            <div style="font:400 11.5px/1.5 'IBM Plex Sans';color:oklch(46% 0.02 262);margin-top:9px">{{ r.body }}</div>
+          </div>
+        </sc-for>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+        <sc-for list="{{ adoptionLevers }}" as="a" hint-placeholder-count="4">
+          <div style="display:flex;gap:10px;align-items:flex-start;border:1px solid oklch(93% 0.006 262);border-radius:9px;padding:11px 13px">
+            <span style="font:600 11px 'IBM Plex Mono';color:oklch(46% 0.13 165);flex:none">{{ a.glyph }}</span>
+            <div><div style="font:600 11.5px 'IBM Plex Sans';color:oklch(32% 0.02 262)">{{ a.title }}</div><div style="font:400 10.5px/1.45 'IBM Plex Sans';color:oklch(50% 0.02 262);margin-top:2px">{{ a.body }}</div></div>
+          </div>
+        </sc-for>
+      </div>
+
+      <!-- 5 UI ENTRY -->
+      <h2 id="s5" style="font:600 21px 'Newsreader',serif;color:oklch(24% 0.02 262);margin:46px 0 4px"><span style="font:600 13px 'IBM Plex Mono';color:oklch(46% 0.13 165);margin-right:10px">A8</span>Role-based entry &amp; search-first landing</h2>
+      <p style="font:400 13px/1.6 'IBM Plex Sans';color:oklch(48% 0.02 262);margin:0 0 16px;max-width:68ch">The prototype opens on a browsable graph — fine for engineers, overwhelming for everyone else and impractical at 10k assets. Each role lands on the surface that answers <em>their</em> question; the full canvas is one click away.</p>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:11px">
+        <sc-for list="{{ roleEntry }}" as="r" hint-placeholder-count="4">
+          <div style="border:1px solid oklch(92% 0.006 262);border-radius:11px;padding:14px 16px">
+            <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px"><span style="width:10px;height:10px;border-radius:3px;background:{{ r.color }}"></span><span style="font:600 12.5px 'IBM Plex Sans';color:oklch(30% 0.02 262)">{{ r.role }}</span></div>
+            <div style="font:600 9px 'IBM Plex Mono';letter-spacing:.05em;text-transform:uppercase;color:oklch(58% 0.02 262)">Lands on</div>
+            <div style="font:500 11.5px/1.45 'IBM Plex Sans';color:oklch(38% 0.02 262);margin:2px 0 7px">{{ r.lands }}</div>
+            <div style="font:400 10.5px/1.45 'IBM Plex Sans';color:oklch(50% 0.02 262)">{{ r.why }}</div>
+          </div>
+        </sc-for>
+      </div>
+      <div style="margin-top:12px;border-left:3px solid oklch(48% 0.12 252);background:oklch(98.5% 0.01 252);padding:11px 15px;border-radius:0 8px 8px 0;font:400 11.5px/1.55 'IBM Plex Sans';color:oklch(44% 0.02 262)"><strong style="font-weight:600;color:oklch(42% 0.12 252)">Search is the front door.</strong> Global search becomes the default landing for all roles: type an asset, the graph renders its ego-network. Browsing the domain overview is demoted to a secondary "explore" path.</div>
+
+      <!-- 6 LEADING INDICATORS -->
+      <h2 id="s6" style="font:600 21px 'Newsreader',serif;color:oklch(24% 0.02 262);margin:46px 0 4px"><span style="font:600 13px 'IBM Plex Mono';color:oklch(46% 0.13 165);margin-right:10px">A10</span>Leading indicators — for leadership trust &amp; visibility</h2>
+      <p style="font:400 13px/1.6 'IBM Plex Sans';color:oklch(48% 0.02 262);margin:0 0 16px;max-width:68ch">Directional, reviewed each PI. These tell leadership whether the bet is paying off long before the platform is "done" — and which lever to pull if a number stalls.</p>
+      <table style="width:100%;border-collapse:collapse;font-family:'IBM Plex Sans'">
+        <thead><tr style="background:oklch(97% 0.004 262)">
+          <th style="text-align:left;font:600 8px 'IBM Plex Mono';letter-spacing:.05em;text-transform:uppercase;color:oklch(58% 0.02 262);padding:9px 10px;border-bottom:1px solid oklch(91% 0.006 262)">Indicator</th>
+          <th style="text-align:left;font:600 8px 'IBM Plex Mono';letter-spacing:.05em;text-transform:uppercase;color:oklch(58% 0.02 262);padding:9px 10px;border-bottom:1px solid oklch(91% 0.006 262)">Why it matters</th>
+          <th style="text-align:center;font:600 8px 'IBM Plex Mono';letter-spacing:.05em;text-transform:uppercase;color:oklch(58% 0.02 262);padding:9px 8px;border-bottom:1px solid oklch(91% 0.006 262);width:96px">End P1</th>
+          <th style="text-align:center;font:600 8px 'IBM Plex Mono';letter-spacing:.05em;text-transform:uppercase;color:oklch(58% 0.02 262);padding:9px 8px;border-bottom:1px solid oklch(91% 0.006 262);width:96px">End P2</th>
+          <th style="text-align:center;font:600 8px 'IBM Plex Mono';letter-spacing:.05em;text-transform:uppercase;color:oklch(58% 0.02 262);padding:9px 8px;border-bottom:1px solid oklch(91% 0.006 262);width:96px">End P3</th>
+        </tr></thead>
+        <tbody>
+          <sc-for list="{{ indicators }}" as="i" hint-placeholder-count="5">
+            <tr style="border-bottom:1px solid oklch(95.5% 0.004 262)">
+              <td style="padding:9px 10px;font:600 11.5px 'IBM Plex Sans';color:oklch(32% 0.02 262);vertical-align:top">{{ i.name }}</td>
+              <td style="padding:9px 10px;font:400 10.5px/1.45 'IBM Plex Sans';color:oklch(50% 0.02 262);vertical-align:top">{{ i.why }}</td>
+              <td style="padding:9px 8px;text-align:center;font:600 11px 'IBM Plex Mono';color:oklch(46% 0.02 262);vertical-align:top">{{ i.p1 }}</td>
+              <td style="padding:9px 8px;text-align:center;font:600 11px 'IBM Plex Mono';color:oklch(40% 0.10 165);vertical-align:top">{{ i.p2 }}</td>
+              <td style="padding:9px 8px;text-align:center;font:600 11px 'IBM Plex Mono';color:oklch(42% 0.13 165);vertical-align:top">{{ i.p3 }}</td>
+            </tr>
+          </sc-for>
+        </tbody>
+      </table>
+      <p style="font:400 10.5px/1.5 'IBM Plex Sans';color:oklch(58% 0.02 262);margin:11px 0 0">Targets are directional, set against the vertical slice first, then the expanding estate. They are leading indicators of adoption and value — not a substitute for the qualitative success criteria in the PRDs.</p>
+
+      <div style="margin-top:44px;padding-top:18px;border-top:1px solid oklch(91% 0.006 262);display:flex;align-items:center;gap:10px">
+        <a href="Critical Review.dc.html" style="font:600 11.5px 'IBM Plex Sans';color:oklch(50% 0.02 262);text-decoration:none">← Critical Review</a>
+        <span style="font:500 11px 'IBM Plex Mono';color:oklch(60% 0.02 262);margin:0 auto">Throughline · Remediation Plan</span>
+        <a href="Roadmap & LOE.dc.html" style="font:600 11.5px 'IBM Plex Sans';color:oklch(50% 0.10 70);text-decoration:none">Roadmap &amp; LOE →</a>
+      </div>
+    </main>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+class Component extends DCLogic {
+  renderVals() {
+    const G = 'oklch(48% 0.13 165)';
+    const toc = [
+      ['A3', 'PI value cadence', '#s1'], ['A2', 'Capacity reconciliation', '#s2'], ['A5', 'Identity spike', '#s3'],
+      ['A4', 'Adoption workstream', '#s4'], ['A8', 'Role-based entry', '#s5'], ['A10', 'Leading indicators', '#s6'],
+    ].map(([n, label, href]) => ({ n, label, href }));
+
+    const st = { done: { fg: 'oklch(45% 0.13 165)', bg: 'oklch(95% 0.04 165)' }, here: { fg: '#fff', bg: G }, elsewhere: { fg: 'oklch(48% 0.10 252)', bg: 'oklch(95% 0.03 252)' } };
+    const disp = (n, action, status, ref) => ({ n, action, status: status === 'done' ? 'RESOLVED' : status === 'here' ? 'THIS DOC' : 'TRACKED', fg: st[status].fg, bg: st[status].bg, ref });
+    const disposition = [
+      disp('1', 'Build-vs-buy — consensus reached, integrate-don\u2019t-replace', 'done', '— closed'),
+      disp('2', 'Reconcile LOE vs. 24-month staffing', 'here', '§A2'),
+      disp('3', 'Value milestone every PI (6 weeks), not just 90 days', 'here', '§A3'),
+      disp('4', 'Adoption / change-management workstream + sponsor', 'here', '§A4'),
+      disp('5', 'Identity resolution P0 spike (detailed)', 'here', '§A5'),
+      disp('8', 'Role-based UI entry + search-first landing', 'here', '§A8'),
+      disp('10', 'Leading indicators with targets', 'here', '§A10'),
+      disp('6', 'Collector coverage map', 'elsewhere', 'Roadmap'),
+      disp('7', 'Re-baseline without AI uplift', 'elsewhere', 'Roadmap'),
+      disp('9', 'Cold-path & conflict-resolution policy', 'elsewhere', 'PRD 1'),
+    ];
+
+    // ---- PI plan: 6-week increments across 4 phases ----
+    const PH = { P0: { color: 'oklch(56% 0.16 300)', bg: 'oklch(96% 0.04 300)' }, P1: { color: 'oklch(55% 0.14 252)', bg: 'oklch(96% 0.03 252)' }, P2: { color: 'oklch(50% 0.13 165)', bg: 'oklch(96% 0.04 165)' }, P3: { color: 'oklch(54% 0.13 70)', bg: 'oklch(96% 0.05 75)' } };
+    const pi = (n, wk, ph, cap, value) => ({ pi: 'PI ' + n, wk, phase: ph, color: PH[ph].color, phBg: PH[ph].bg, cap, value, rowBg: (n % 2 === 0) ? 'oklch(99% 0.002 262)' : '#fff' });
+    const piPlan = [
+      pi('1', 'wk 1\u20136', 'P0', 'Identity-resolution spike result + slice scoped; collectors connected on one pilot app', 'Go/no-go on the core technical risk, in hand before further spend'),
+      pi('2', 'wk 7\u201312', 'P0', 'Static+LLM baseline graph for the pilot app, column-level, with confidence bands', 'First trustworthy column-level lineage for a real app — replaces tribal knowledge'),
+      pi('3', 'wk 13\u201318', 'P1', 'Spark + OTel runtime confirmation; coverage % visible per asset', 'Lineage that is verified by what actually runs, not just declared'),
+      pi('4', 'wk 19\u201324', 'P1', 'Impact report on the static baseline for a proposed change', 'First "what breaks if I change this?" answer on a real schema change'),
+      pi('5', 'wk 25\u201330', 'P1', 'CI/CD impact check in warn mode on the pilot repo', 'A real breaking change is flagged pre-merge (advisory) for the first time'),
+      pi('6', 'wk 31\u201336', 'P2', 'Gate moves to block on the pilot; first prevented incident', 'A breaking change is stopped before production \u2014 the headline outcome'),
+      pi('7\u20139', 'wk 37\u201354', 'P2', 'Expand to a full domain; Dask + streaming connectors; matrix lens', 'Cross-team impact across a whole domain; ML/feature lineage covered'),
+      pi('10\u201313', 'wk 55\u201378', 'P2', 'Scale-out: partitioning, search-first UI, role landings, more domains', 'Self-serve answers for governance & analysts; adoption widens'),
+      pi('14\u201316', 'wk 79\u2013104', 'P3', 'Org-wide coverage, confidence hardening, gate rollout by team', 'Trusted, org-wide change safety net \u2014 the funded end-state'),
+    ];
+
+    // ---- capacity reconciliation ----
+    const cap = (name, covers, weeks, color) => ({ name, covers, weeks, color });
+    const capacity = [
+      cap('Net build', 'The workstreams sized in the Roadmap LOE \u2014 collectors, graph core, impact, UI, gating', '~175', 'oklch(55% 0.14 252)'),
+      cap('Hardening & scale-out', 'Partitioning, performance, reliability, security review, taking the slice to 10k+ assets', '~200', 'oklch(50% 0.13 165)'),
+      cap('Adoption & connector long-tail', 'Enablement, golden paths, the heterogeneous-stack connectors beyond the core four', '~180', 'oklch(54% 0.13 70)'),
+      cap('Run & iterate', 'On-call, operations, bug-fix, and responding to feedback from each PI review', '~150', 'oklch(56% 0.13 28)'),
+      cap('Contingency buffer', 'Explicit schedule buffer on the critical chain (identity, coverage are least certain)', '~75', 'oklch(56% 0.03 250)'),
+    ];
+    const capTotal = '~780';
+    const grossNet = [
+      { label: 'Gross (10 eng × 104 wk)', val: '~1,040', color: 'oklch(40% 0.02 262)' },
+      { label: 'Less ~25% overhead', val: '\u2212260', color: 'oklch(55% 0.13 28)' },
+      { label: 'Net allocatable', val: '~780', color: G },
+    ];
+
+    // ---- identity spike ----
+    const spikeMeta = [
+      { k: 'When', v: 'PI 1 · weeks 1\u20136' }, { k: 'Team', v: '2 engineers, timeboxed' },
+      { k: 'Question', v: 'Can we match one entity across 4 signals?' }, { k: 'Gate', v: 'Blocks full plan commit' },
+    ];
+    const spikeApproach = [
+      { n: '1', t: 'Define a canonical URN scheme: namespace + system + path (e.g. svc:order-management/orders-svc), resilient to rename/redeploy.' },
+      { n: '2', t: 'Build a resolver: deterministic match first, fuzzy/heuristic fallback for the ambiguous remainder.' },
+      { n: '3', t: 'Hand-label ground-truth identities on the vertical slice across static, Spark, Dask and OTel.' },
+      { n: '4', t: 'Measure precision / recall and fragmentation against that ground truth; review with the team.' },
+    ];
+    const spikeExit = [
+      { gate: 'GO', fg: 'oklch(45% 0.13 165)', bg: 'oklch(97% 0.04 165)', border: 'oklch(88% 0.05 165)', action: '\u226595% precision & \u226590% recall \u2014 proceed with the plan as written.' },
+      { gate: 'PIVOT', fg: 'oklch(48% 0.10 75)', bg: 'oklch(97% 0.05 80)', border: 'oklch(88% 0.05 80)', action: 'Below target \u2014 add a manual mapping layer for ambiguous entities; re-scope effort.' },
+      { gate: 'STOP', fg: 'oklch(50% 0.16 28)', bg: 'oklch(97% 0.04 33)', border: 'oklch(88% 0.05 33)', action: 'Resolution infeasible at acceptable cost \u2014 re-scope to per-system lineage, no cross-signal merge.' },
+    ];
+
+    // ---- adoption ----
+    const trustRamp = [
+      { stage: 'OBSERVE', when: 'per team · weeks 1\u20132', color: 'oklch(54% 0.10 252)', body: 'Lineage and impact run silently. No developer is blocked; we measure would-be flags and false-positive rate.' },
+      { stage: 'WARN', when: 'weeks 3\u20136', color: 'oklch(58% 0.13 75)', body: 'Impact posts an advisory comment on PRs. Developers see value without friction; we tune precision.' },
+      { stage: 'BLOCK', when: 'once FP budget met', color: 'oklch(52% 0.15 28)', body: 'Gate blocks breaking changes \u2014 only after the false-positive budget is met, with an easy audited override.' },
+    ];
+    const adoptionLevers = [
+      { glyph: '\u25C8', title: 'Named exec sponsor', body: 'A VP-level owner accountable for adoption targets, not just the build team.' },
+      { glyph: '\u25C8', title: 'Golden-path onboarding', body: 'One-command collector setup + docs so a team self-onboards in under a day.' },
+      { glyph: '\u25C8', title: 'Incentives, not mandates', body: 'Lead with the prevented-incident story; recognise early-adopter teams.' },
+      { glyph: '\u25C8', title: 'Published FP budget + override', body: 'A transparent false-positive ceiling and a fast, audited override preserve trust.' },
+    ];
+
+    // ---- role entry ----
+    const roleEntry = [
+      { role: 'Analyst / consumer', color: 'oklch(52% 0.13 190)', lands: 'Search for an asset', why: 'Find a dataset, see its sources and freshness \u2014 a question, not an exploration.' },
+      { role: 'Platform engineer', color: 'oklch(55% 0.14 252)', lands: 'The full canvas + provenance', why: 'Altitude navigation, code-paths, confidence internals \u2014 the power-user tool.' },
+    ];
+
+    // ---- indicators ----
+    const ind = (name, why, p1, p2, p3) => ({ name, why, p1, p2, p3 });
+    const indicators = [
+      ind('Estate coverage', 'How much of the org\u2019s assets have trusted lineage', 'Slice 100%', '1 domain', 'Org-wide'),
+      ind('Breaking changes caught pre-merge', 'The core value: incidents prevented, not diagnosed', 'First catch', 'Weekly', 'Routine'),
+      ind('Edges at "Verified" confidence', 'Share of lineage runtime-confirmed, not just inferred', '> half', 'Majority', 'High'),
+      ind('Teams onboarded', 'Adoption breadth \u2014 the org-change signal', '1 pilot', 'A domain', 'Most teams'),
+      ind('Gate false-positive rate', 'Trust guardrail \u2014 must stay low to keep the gate on', 'Measured', 'Within budget', 'Low & stable'),
+      ind('Time to impact answer', 'Is it fast enough to use in a PR review', 'Minutes', 'Sub-minute', 'Seconds'),
+    ];
+
+    return { toc, disposition, piPlan, capacity, capTotal, grossNet, spikeMeta, spikeApproach, spikeExit, trustRamp, adoptionLevers, roleEntry, indicators };
+  }
+}
+</script>
+</body>
+</html>

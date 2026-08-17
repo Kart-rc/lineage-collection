@@ -573,3 +573,54 @@ def _http_client_calls(root: Node, content: bytes, path: str, service: str):
             ),
             None,
         )
+
+
+def interaction_analysis_document(
+    analysis: InteractionAnalysis,
+    *,
+    system: str,
+    service: str,
+    revision: str,
+    command_id: str,
+    correlation_id: str,
+) -> dict:
+    """Serialize an analysis into the persisted interactions-plane document.
+
+    Metadata-only by construction: field entries carry name/type/classification
+    (InteractionField.as_dict), citations carry file · line — never a value.
+    """
+    return {
+        "schemaVersion": "1.0.0",
+        "system": system,
+        "service": service,
+        "revision": revision,
+        "commandId": command_id,
+        "correlationId": correlation_id,
+        "mechanism": "SCA",
+        "inbound": [
+            {
+                "channel": item.channel,
+                "operation": item.operation,
+                "handler": item.handler,
+                "requestFields": [f.as_dict() for f in item.request_fields],
+                "responseFields": [f.as_dict() for f in item.response_fields],
+                "citation": {"file": item.path, "line": item.line},
+            }
+            for item in analysis.inbound
+        ],
+        "outbound": [
+            {
+                "fromService": item.from_service,
+                "toService": item.to_service,
+                "channel": item.channel,
+                "operation": item.operation,
+                "handler": item.handler,
+                "citation": {"file": item.path, "line": item.line},
+            }
+            for item in analysis.outbound
+        ],
+        "residue": [
+            {"code": item.code, "path": item.path, "line": item.line, "symbol": item.symbol}
+            for item in analysis.residue
+        ],
+    }

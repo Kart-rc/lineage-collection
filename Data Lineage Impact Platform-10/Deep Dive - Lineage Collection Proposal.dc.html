@@ -1,0 +1,585 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Throughline · Deep Dive — Lineage Collection Proposal</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg: oklch(95.5% 0.004 262);
+    --ink: oklch(30% 0.02 262);
+    --ink-strong: oklch(22% 0.02 262);
+    --ink-soft: oklch(46% 0.02 262);
+    --ink-faint: oklch(58% 0.02 262);
+    --line: oklch(91% 0.006 262);
+    --line-soft: oklch(90% 0.01 262);
+    --accent: oklch(55% 0.14 252);
+    --accent-ink: oklch(50% 0.12 252);
+    --accent-wash: oklch(98% 0.012 252);
+    --accent-line: oklch(88% 0.04 252);
+    --green: oklch(56% 0.12 155);
+    --green-wash: oklch(97.5% 0.02 155);
+    --green-line: oklch(88% 0.05 155);
+    --purple: oklch(52% 0.12 300);
+    --purple-wash: oklch(97.5% 0.015 300);
+    --purple-line: oklch(89% 0.04 300);
+    --amber: oklch(60% 0.13 70);
+    --amber-wash: oklch(97.5% 0.02 85);
+    --amber-line: oklch(88% 0.06 85);
+    --red: oklch(55% 0.16 25);
+    --red-wash: oklch(97.5% 0.015 25);
+    --red-line: oklch(89% 0.05 25);
+    --code-bg: oklch(23% 0.015 262);
+    --code-ink: oklch(88% 0.008 262);
+    --code-dim: oklch(65% 0.015 262);
+    --code-key: oklch(78% 0.09 252);
+    --code-str: oklch(80% 0.09 155);
+    --code-num: oklch(80% 0.1 70);
+    --sans: 'IBM Plex Sans', sans-serif;
+    --mono: 'IBM Plex Mono', monospace;
+    --serif: 'Newsreader', serif;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+  a { color: inherit; }
+  body{ background:var(--bg); font-family:var(--sans); color:var(--ink); -webkit-font-smoothing:antialiased; }
+  ::-webkit-scrollbar { width: 10px; height: 10px; }
+  ::-webkit-scrollbar-thumb { background: oklch(88% 0.006 262); border-radius: 6px; border: 2px solid transparent; background-clip: padding-box; }
+  .wrap{ max-width:1200px; margin:0 auto; display:flex; gap:36px; padding:40px 28px 80px; align-items:flex-start; }
+  aside.toc{ flex:none; width:210px; position:sticky; top:40px; display:flex; flex-direction:column; gap:3px; max-height:calc(100vh - 80px); overflow-y:auto; }
+  .brand{ display:flex; align-items:center; gap:9px; margin-bottom:14px; }
+  .brand .dot{ width:22px; height:22px; border-radius:6px; background:var(--accent); display:block; }
+  .brand span.t{ font:700 15px var(--sans); color:oklch(26% 0.02 262); letter-spacing:-0.01em; }
+  .toc-eyebrow{ font:600 8.5px var(--mono); letter-spacing:.12em; text-transform:uppercase; color:var(--ink-faint); margin:0 0 8px 2px; }
+  .toc a.item{ display:flex; gap:9px; padding:5px 8px; border-radius:6px; text-decoration:none; font:500 12px var(--sans); color:var(--ink-soft); }
+  .toc a.item:hover{ background:oklch(92% 0.01 262); }
+  .toc a.item .n{ font:600 10px var(--mono); color:oklch(68% 0.02 262); width:14px; flex:none; }
+  .toc .suite{ margin-top:16px; padding-top:14px; border-top:1px solid var(--line); display:flex; flex-direction:column; gap:6px; }
+  .toc .suite a{ font:500 11.5px var(--sans); color:oklch(50% 0.02 262); text-decoration:none; padding:3px 8px; }
+  main.page{ flex:1; min-width:0; max-width:860px; background:#fff; border:1px solid var(--line); border-radius:3px; box-shadow:0 1px 3px rgba(20,30,50,.06); padding:60px 64px 72px; }
+  .masthead{ display:flex; align-items:center; gap:10px; margin-bottom:26px; flex-wrap:wrap; }
+  .badge{ font:600 9px var(--mono); letter-spacing:.14em; text-transform:uppercase; color:#fff; background:oklch(35% 0.03 262); padding:4px 9px; border-radius:4px; }
+  .meta{ font:500 11px var(--mono); color:var(--ink-faint); }
+  h1{ font:600 38px var(--serif); color:var(--ink-strong); letter-spacing:-0.01em; line-height:1.12; margin:0 0 12px; }
+  .lede{ font:400 16px/1.6 var(--sans); color:oklch(45% 0.02 262); margin:0 0 4px; max-width:64ch; }
+  h2{ font:600 24px var(--serif); color:var(--ink-strong); letter-spacing:-0.005em; margin:0 0 6px; }
+  h3{ font:600 15.5px var(--sans); color:var(--ink-strong); margin:26px 0 8px; }
+  .sec{ margin-top:54px; }
+  .sec-eyebrow{ font:600 9px var(--mono); letter-spacing:.14em; text-transform:uppercase; color:var(--accent-ink); margin-bottom:8px; }
+  p{ font:400 14.5px/1.65 var(--sans); color:oklch(36% 0.02 262); margin:0 0 14px; max-width:72ch; }
+  p strong{ font-weight:600; color:var(--ink-strong); }
+  ul{ margin:0 0 14px; padding-left:20px; }
+  li{ font:400 14px/1.6 var(--sans); color:oklch(36% 0.02 262); margin-bottom:6px; }
+  li strong{ font-weight:600; color:var(--ink-strong); }
+  code.i{ font:500 12px var(--mono); background:oklch(96% 0.006 262); border:1px solid var(--line); border-radius:4px; padding:1px 5px; color:oklch(38% 0.05 262); white-space:nowrap; }
+  .callout{ border:1px solid var(--accent-line); background:var(--accent-wash); border-radius:10px; padding:20px 22px; margin:22px 0; }
+  .callout .k{ font:600 9px var(--mono); letter-spacing:.12em; text-transform:uppercase; color:var(--accent-ink); margin-bottom:9px; }
+  .callout p{ margin:0 0 8px; color:oklch(34% 0.02 262); }
+  .callout p:last-child{ margin:0; }
+  .warn{ border:1px solid var(--amber-line); background:var(--amber-wash); border-radius:10px; padding:18px 20px; margin:20px 0; }
+  .warn .k{ font:600 9px var(--mono); letter-spacing:.12em; text-transform:uppercase; color:var(--amber); margin-bottom:8px; }
+  .warn p{ margin:0; font-size:13.5px; }
+  table{ border-collapse:collapse; width:100%; margin:18px 0 8px; }
+  th{ font:600 9.5px var(--mono); letter-spacing:.1em; text-transform:uppercase; color:var(--ink-faint); text-align:left; padding:8px 12px 8px 0; border-bottom:1.5px solid oklch(85% 0.01 262); }
+  td{ font:400 13px/1.55 var(--sans); color:oklch(36% 0.02 262); padding:11px 12px 11px 0; border-bottom:1px solid var(--line); vertical-align:top; }
+  td strong{ font-weight:600; color:var(--ink-strong); }
+  td .m, .m{ font:500 11.5px var(--mono); }
+  .tag{ display:inline-block; font:600 9px var(--mono); letter-spacing:.08em; text-transform:uppercase; border-radius:4px; padding:2.5px 7px; white-space:nowrap; }
+  .tag.ok{ color:var(--green); background:var(--green-wash); border:1px solid var(--green-line); }
+  .tag.cond{ color:var(--amber); background:var(--amber-wash); border:1px solid var(--amber-line); }
+  .tag.no{ color:var(--red); background:var(--red-wash); border:1px solid var(--red-line); }
+  .tag.build{ color:var(--accent-ink); background:var(--accent-wash); border:1px solid var(--accent-line); }
+  .tag.run{ color:var(--green); background:var(--green-wash); border:1px solid var(--green-line); }
+  pre{ background:var(--code-bg); color:var(--code-ink); border-radius:10px; padding:16px 18px; font:400 11.5px/1.62 var(--mono); overflow-x:auto; margin:14px 0 18px; }
+  pre .c{ color:var(--code-dim); } pre .k{ color:var(--code-key); } pre .s{ color:var(--code-str); } pre .n{ color:var(--code-num); }
+  .code-label{ font:600 9px var(--mono); letter-spacing:.12em; text-transform:uppercase; color:var(--ink-faint); margin:16px 0 -8px; }
+  /* ladder */
+  .ladder{ display:flex; flex-direction:column; gap:10px; margin:20px 0; }
+  .rung{ display:flex; gap:16px; border:1px solid var(--line-soft); border-radius:10px; padding:15px 17px; background:#fff; }
+  .rung .rn{ flex:none; width:54px; font:600 10px var(--mono); letter-spacing:.06em; color:var(--accent-ink); padding-top:2px; }
+  .rung .rt{ font:600 13.5px var(--sans); color:var(--ink-strong); }
+  .rung .rd{ font:400 12.5px/1.55 var(--sans); color:var(--ink-soft); margin-top:4px; }
+  .rung.t1{ border-left:3px solid var(--green); }
+  .rung.t2{ border-left:3px solid var(--accent); }
+  .rung.t3{ border-left:3px solid var(--purple); }
+  /* join visual */
+  .joinviz{ border:1px solid var(--line); border-radius:12px; background:oklch(98.5% 0.002 262); padding:20px 20px 16px; margin:20px 0; }
+  .joinviz .jt{ font:600 9px var(--mono); letter-spacing:.12em; text-transform:uppercase; color:var(--ink-faint); margin-bottom:14px; }
+  .joinrow{ display:grid; grid-template-columns:1fr 34px 1fr; gap:0; align-items:center; }
+  .jcard{ border-radius:9px; border:1px solid var(--line-soft); background:#fff; padding:12px 14px; }
+  .jcard .jh{ font:600 8.5px var(--mono); letter-spacing:.1em; text-transform:uppercase; margin-bottom:7px; }
+  .jcard.static{ border-color:var(--accent-line); background:var(--accent-wash); } .jcard.static .jh{ color:var(--accent-ink); }
+  .jcard.rt{ border-color:var(--green-line); background:var(--green-wash); } .jcard.rt .jh{ color:var(--green); }
+  .jcard .kv{ font:400 10.5px/1.7 var(--mono); color:oklch(38% 0.02 262); }
+  .jcard .kv b{ font-weight:600; color:var(--ink-strong); }
+  .jcard .kv .hl{ background:oklch(93% 0.05 85); border-radius:3px; padding:0 3px; }
+  .jbolt{ display:flex; align-items:center; justify-content:center; font:600 13px var(--mono); color:var(--ink-faint); }
+  .jresult{ margin-top:12px; border-radius:9px; border:1px solid var(--green-line); background:#fff; padding:11px 14px; display:flex; gap:10px; align-items:baseline; flex-wrap:wrap; }
+  .jresult .rk{ font:600 8.5px var(--mono); letter-spacing:.1em; text-transform:uppercase; color:var(--green); }
+  .jresult .rv{ font:400 11.5px/1.5 var(--sans); color:oklch(36% 0.02 262); }
+  .footer{ margin-top:56px; padding-top:18px; border-top:1px solid var(--line); display:flex; justify-content:space-between; font:500 10.5px var(--mono); color:var(--ink-faint); flex-wrap:wrap; gap:8px; }
+  .refs{ font:400 12px/1.9 var(--sans); color:var(--ink-soft); }
+  .refs .m{ font-size:11px; }
+  .refs a{ color:var(--accent-ink); text-decoration:none; word-break:break-all; }
+  .refs a:hover{ text-decoration:underline; }
+  .refs li{ margin-bottom:8px; font-size:12px; }
+  @media print{
+    .no-print{ display:none !important; }
+    main.page{ box-shadow:none !important; margin:0 !important; border:none; }
+    body{ background:#fff !important; }
+    pre{ white-space:pre-wrap; }
+  }
+  @media (max-width: 900px){
+    .wrap{ flex-direction:column; }
+    aside.toc{ position:static; width:100%; max-height:none; }
+    main.page{ padding:36px 22px 48px; }
+    .joinrow{ grid-template-columns:1fr; }
+    .jbolt{ transform:rotate(90deg); padding:6px 0; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <!-- TOC -->
+  <aside class="toc no-print">
+    <div class="brand"><span class="dot"></span><span class="t">Throughline</span></div>
+    <div class="toc-eyebrow">Deep Dive · Collection</div>
+    <a class="item" href="#verdict"><span class="n">1</span><span>Feasibility verdict</span></a>
+    <a class="item" href="#buildtime"><span class="n">2</span><span>Build-time plane</span></a>
+    <a class="item" href="#codeql"><span class="n">3</span><span>vs CodeQL</span></a>
+    <a class="item" href="#runtime"><span class="n">4</span><span>Runtime plane</span></a>
+    <a class="item" href="#converge"><span class="n">5</span><span>Convergence — the joins</span></a>
+    <a class="item" href="#identity"><span class="n">6</span><span>Identity resolution</span></a>
+    <a class="item" href="#confidence"><span class="n">7</span><span>Confidence engine</span></a>
+    <a class="item" href="#alternatives"><span class="n">8</span><span>Alternatives, honestly</span></a>
+    <a class="item" href="#why"><span class="n">9</span><span>Why hybrid wins</span></a>
+    <a class="item" href="#open"><span class="n">10</span><span>Open problems</span></a>
+    <a class="item" href="#refs"><span class="n">11</span><span>References</span></a>
+    <div class="suite">
+      <div class="toc-eyebrow" style="margin-bottom:2px">Suite</div>
+      <a href="Architecture Flow - Tech Leaders.dc.html">Architecture Brief</a>
+      <a href="PRD 1 - Lineage Collection.dc.html">PRD 1 · Collection</a>
+      <a href="Critical Review.dc.html">Critical Review</a>
+    </div>
+  </aside>
+
+  <!-- PAGE -->
+  <main class="page">
+    <div class="masthead">
+      <span class="badge">Engineering Deep Dive</span>
+      <span class="meta">v1.0 · For distinguished-engineer review</span>
+      <span class="meta" style="margin-left:auto">Owner: Data Platform</span>
+    </div>
+    <h1>Lineage collection: the mechanism, its failure modes, and why it still wins</h1>
+    <p class="lede">A feasibility-grounded proposal for the Throughline collection framework — every claim about third-party tooling cited to a primary source, every known failure mode stated before you find it.</p>
+
+    <div class="callout">
+      <div class="k">Position</div>
+      <p>The two-plane architecture — a build-time predicted superset reconciled against runtime-observed evidence, with per-edge confidence — is the right design, and no off-the-shelf product delivers it. Two components of the original PRD are <strong>not feasible as specified</strong> (a Dask OpenLineage collector, which does not exist; and LLM self-reported confidence, which is empirically near-random) and are amended here. The single highest technical risk is not any collector — it is <strong>identity resolution across signals</strong>, and this proposal treats it accordingly: first, with numeric exit gates.</p>
+    </div>
+
+    <!-- 1 VERDICT -->
+    <div class="sec" id="verdict">
+      <div class="sec-eyebrow">01 · Feasibility verdict</div>
+      <h2>Component by component</h2>
+      <table>
+        <tr><th style="width:170px">Component</th><th style="width:120px">Verdict</th><th>Grounding</th></tr>
+        <tr>
+          <td><strong>Static analysis, build time</strong><br><span class="m" style="color:var(--ink-faint)">parsers + tree-sitter + LLM</span></td>
+          <td><span class="tag ok">Feasible</span></td>
+          <td>Deterministic SQL parsing is benchmarked state of the art: DataHub tested SQLGlot vs sqllineage vs the OpenLineage parser on ~9K real BigQuery statements and adopted SQLGlot for column lineage <a href="#r1" style="color:var(--accent-ink)">[1]</a>. Requires schema catalog access to resolve <code class="i">SELECT *</code> and unqualified columns.</td>
+        </tr>
+        <tr>
+          <td><strong>LLM enrichment</strong></td>
+          <td><span class="tag cond">Feasible with guardrails</span></td>
+          <td>Best published schema-lineage extraction reaches ≈0.77 on a strict metric (GPT-4.1 + chain-of-thought), degrading with script complexity <a href="#r2" style="color:var(--accent-ink)">[2]</a>. LLM self-reported confidence is near-random (AUROC 0.524) <a href="#r3" style="color:var(--accent-ink)">[3]</a> — so it is <strong>removed from the scoring design</strong>. The Inferred-band cap + runtime-promotion gate stands as the containment mechanism.</td>
+        </tr>
+        <tr>
+          <td><strong>Spark runtime</strong><br><span class="m" style="color:var(--ink-faint)">OpenLineage listener</span></td>
+          <td><span class="tag ok">Feasible</span></td>
+          <td>The most mature runtime column-lineage source; column lineage on by default, extracted from the Catalyst logical plan <a href="#r4" style="color:var(--accent-ink)">[4]</a>. Known gaps are real and bounded: RDD column extraction deliberately disabled, opaque UDFs, JDBC relations name-only, MLlib unsupported (§4).</td>
+        </tr>
+        <tr>
+          <td><strong>Dask runtime</strong></td>
+          <td><span class="tag no">Not feasible as specified</span></td>
+          <td>"Dask hooks · OpenLineage" does not exist. Dask is not an OpenLineage integration <a href="#r5" style="color:var(--accent-ink)">[5]</a>; no maintained lineage collector exists for it anywhere; Dask has no Catalyst-equivalent logical plan carrying column semantics. This is greenfield R&amp;D — deferred and re-scoped, not silently rebranded as an integration task.</td>
+        </tr>
+        <tr>
+          <td><strong>OTel as a lineage signal</strong></td>
+          <td><span class="tag cond">Legitimate only as scoped</span></td>
+          <td>OpenTelemetry has no lineage semantic conventions, and the proposal to add lineage as an OTel signal was closed without adoption, deferring to OpenLineage <a href="#r6" style="color:var(--accent-ink)">[6]</a>. Traces are trees over requests; lineage is a DAG over datasets <a href="#r7" style="color:var(--accent-ink)">[7]</a>. OTel here confirms <strong>interaction edges and recency only</strong> — never column lineage.</td>
+        </tr>
+      </table>
+      <p style="margin-top:10px">Cross-cutting: the merge and confidence design is sound and partially executable already; identity resolution is named in PRD 1 as critical-path and has no design — §6 supplies one, with the Remediation Plan's numeric exit gates.</p>
+    </div>
+
+    <!-- 2 BUILD TIME -->
+    <div class="sec" id="buildtime">
+      <div class="sec-eyebrow">02 · Build-time plane</div>
+      <h2>Tree-sitter → LLM, restructured as a three-tier ladder</h2>
+      <p>The build-time plan is tree-sitter followed by LLM inference. That is defensible <strong>only if the LLM's decision surface is minimized</strong>. Tree-sitter produces a concrete syntax tree: no name resolution, no types, no data-flow. In a naive two-stage pipeline, every semantic judgment lands on the probabilistic component. The fix is to route each construct to the cheapest sufficient analyzer:</p>
+
+      <div class="ladder">
+        <div class="rung t1">
+          <div class="rn">TIER 1</div>
+          <div>
+            <div class="rt">Deterministic parsers, wherever a grammar has real semantics</div>
+            <div class="rd">SQL → SQLGlot-class AST parsing (30+ dialects; benchmarked most accurate for column lineage <a href="#r1" style="color:var(--accent-ink)">[1]</a>). dbt → compiled manifest. OpenAPI/protobuf specs → declared endpoints and schemas. Deterministic, reproducible, near-zero marginal cost. <strong>Never send well-formed SQL to an LLM</strong> — it costs more and is less accurate.</div>
+          </div>
+        </div>
+        <div class="rung t2">
+          <div class="rn">TIER 2</div>
+          <div>
+            <div class="rt">Tree-sitter as the candidate-finder and context-slicer</div>
+            <div class="rd">This is what tree-sitter is genuinely excellent at: 100+ grammars under one query mechanism, error-tolerant (parses half-broken code), incremental (fast per-PR re-parse). Structural queries deterministically locate the anchors — <code class="i">@KafkaListener("orders.events")</code> annotations, S3 path literals, HTTP client calls, dataframe operations — and slice the exact enclosing function as context for tier 3.</div>
+          </div>
+        </div>
+        <div class="rung t3">
+          <div class="rn">TIER 3</div>
+          <div>
+            <div class="rt">LLM for the semantic residue only</div>
+            <div class="rd">Column mapping, transform expression, guard condition — the judgments with no deterministic path (dynamic SQL, UDF bodies, notebooks, stored procedures). Output is schema-validated JSON, cached by code hash, and <strong>quarantined in the Inferred band (score ≤ 64) until a runtime signal corroborates it</strong>. The promotion gate — not model confidence — is the safety mechanism.</div>
+          </div>
+        </div>
+      </div>
+
+      <h3>Worked example: what each tier contributes</h3>
+      <div class="code-label">Source — OrderService.java (tree-sitter captures the underlined anchors deterministically)</div>
+      <pre><span class="c">// OrderService.java : 74–92</span>
+<span class="k">@KafkaListener</span>(topics = <span class="s">"orders.events"</span>)          <span class="c">← topic literal: tier 2</span>
+<span class="k">void</span> onOrder(OrderEvent e) {
+    <span class="k">if</span> (e.getStatus() == CONFIRMED) {              <span class="c">← guard: tier 3 names it</span>
+        row.put(<span class="s">"total_amount"</span>, e.getAmount() / <span class="n">100.0</span>);  <span class="c">← mapping + transform: tier 3</span>
+        writer.write(<span class="s">"s3://lake/orders_raw/"</span>, row);  <span class="c">← sink literal: tier 2</span>
+    }
+}</pre>
+      <div class="code-label">Emitted candidate edge — schema-validated, provenance-tagged</div>
+      <pre>{
+  <span class="k">"src"</span>:  <span class="s">"urn:kafka:prod:orders.events#amount"</span>,
+  <span class="k">"dst"</span>:  <span class="s">"urn:s3:lake/orders_raw#total_amount"</span>,
+  <span class="k">"transform"</span>: <span class="s">"amount / 100.0"</span>,                    <span class="c">// tier 3 (LLM)</span>
+  <span class="k">"path"</span>: { <span class="k">"guard"</span>: <span class="s">"status == CONFIRMED"</span>,          <span class="c">// tier 3 (LLM)</span>
+            <span class="k">"codeRef"</span>: <span class="s">"OrderService.java:88"</span> },     <span class="c">// tier 2 (tree-sitter)</span>
+  <span class="k">"signals"</span>: [<span class="s">"static"</span>, <span class="s">"llm"</span>],
+  <span class="k">"score"</span>: <span class="n">48</span>, <span class="k">"band"</span>: <span class="s">"Inferred"</span>                    <span class="c">// capped until runtime agrees</span>
+}</pre>
+      <p>Topic name, sink path, and code location are deterministic. Only the column mapping and transform are model-inferred — and they cannot influence a CI gate until production evidence confirms them (§5).</p>
+
+      <div class="warn">
+        <div class="k">Evidence constraint we design around</div>
+        <p>Published LLM schema-lineage extraction: GPT-4.1 scores 0.418 zero-shot, 0.673 one-shot, <strong>0.767 with chain-of-thought</strong> on the SLiCE metric; accuracy degrades as script complexity rises <a href="#r2" style="color:var(--accent-ink)">[2]</a>. Self-reported confidence discriminates correct from incorrect output at AUROC 0.524 — a coin flip <a href="#r3" style="color:var(--accent-ink)">[3]</a>. Consequences in this design: the LLM never scores itself, its edges never gate, and every extraction is cached by code hash so cost scales with churn, not estate size.</p>
+      </div>
+    </div>
+
+    <!-- 3 CODEQL -->
+    <div class="sec" id="codeql">
+      <div class="sec-eyebrow">03 · The obvious challenge</div>
+      <h2>"Why not CodeQL?"</h2>
+      <p>CodeQL is the strongest static-analysis counter-proposal: it compiles code into a relational database with full name resolution, types, call graphs, and <strong>deterministic interprocedural data-flow / taint tracking</strong> — tracing <code class="i">e.getAmount()</code> through helper methods into a sink is literally its core competency. The comparison, honestly:</p>
+      <table>
+        <tr><th></th><th>Tree-sitter → LLM ladder</th><th>CodeQL</th></tr>
+        <tr><td><strong>Analysis depth</strong></td><td>Syntax tree + model-inferred semantics</td><td>Semantic DB: interprocedural data-flow, taint, types</td></tr>
+        <tr><td><strong>Determinism</strong></td><td>Probabilistic wherever tier 3 decides</td><td>Fully deterministic</td></tr>
+        <tr><td><strong>Language coverage</strong></td><td>100+ grammars, one mechanism</td><td>~10 languages, one extractor each</td></tr>
+        <tr><td><strong>Build requirement</strong></td><td>None — parses raw source, tolerates broken code</td><td>Compiled languages need a buildable snapshot; extraction fails when the build fails</td></tr>
+        <tr><td><strong>Per-PR latency</strong></td><td>Seconds, incremental</td><td>Minutes+ — DB extraction, then query evaluation</td></tr>
+        <tr><td><strong>Dynamic SQL</strong></td><td>Tier 3 infers intent from fragments</td><td>Traces string <em>construction</em>, does not interpret SQL semantics</td></tr>
+        <tr><td><strong>Notebooks, SQL files, DAG configs</strong></td><td>First-class inputs</td><td>Largely outside the extraction model</td></tr>
+        <tr><td><strong>Licensing</strong></td><td>Open-source parsers + inference cost</td><td>Private commercial use requires GitHub Advanced Security licensing</td></tr>
+        <tr><td><strong>Lineage fit</strong></td><td>Estate-wide candidate discovery</td><td>Bespoke QL query packs per framework/idiom</td></tr>
+      </table>
+      <p style="margin-top:12px">Two conclusions. First, <strong>CodeQL is not a substitute</strong>: it fails the estate on language breadth, build requirements, artifact types, and licensing — and a lineage extractor in QL is a per-framework query-engineering project, not a switch to flip. Second, <strong>CodeQL is a credible later upgrade</strong> for precision on hot JVM paths, where its taint tracking could replace tier-3 inference with deterministic data-flow.</p>
+      <div class="callout">
+        <div class="k">The decisive point — for either tool</div>
+        <p>Both approaches are <strong>repo-scoped</strong>. Neither can see that the topic <code class="i">orders.events</code> written by repo A is the same physical dataset read by the Spark job in repo B. No static analyzer crosses the Kafka boundary, the S3 boundary, or the service boundary. That is not a tooling gap to fix at build time — it is the architectural argument for the runtime plane, and it is why we chose breadth (ladder) over depth (CodeQL) at build time and recover trust through runtime corroboration.</p>
+      </div>
+    </div>
+
+    <!-- 4 RUNTIME -->
+    <div class="sec" id="runtime">
+      <div class="sec-eyebrow">04 · Runtime plane</div>
+      <h2>Each collector, with its failure modes attached</h2>
+
+      <h3>Spark — OpenLineage listener <span class="tag run" style="margin-left:6px">column-level</span></h3>
+      <p><code class="i">OpenLineageSparkListener</code> registered via <code class="i">spark.extraListeners</code>; column lineage on by default, extracted by traversing the Catalyst logical plan (Project, Aggregate, Join, Filter; DataSourceV2, Hive, JDBC relations) and emitted as the <code class="i">columnLineage</code> facet <a href="#r4" style="color:var(--accent-ink)">[4]</a>. The fault line is <strong>Catalyst vs everything else</strong> — not DataFrame vs SQL (both compile through Catalyst):</p>
+      <ul>
+        <li><strong>RDD operations</strong> — column extraction was <em>deliberately disabled</em> upstream because lost schema context produced incorrect lineage. RDD-heavy jobs yield dataset-level edges only.</li>
+        <li><strong>Opaque UDFs</strong> — a UDF is a black box in the plan; columns entering it are traceable, the mapping inside is not. Tier-3 static extraction is the complement here.</li>
+        <li><strong>JDBC relations</strong> — lineage recovered by parsing the SQL string: table/field names only, no types, no transform classification.</li>
+        <li><strong>MLlib</strong> — no robust column lineage in any current collector. Treat as unsupported.</li>
+        <li><strong>Facet omission is silent.</strong> By OpenLineage design, an integration that cannot compute column lineage simply omits the facet while still emitting dataset edges — so "we ingest OpenLineage" never implies column coverage. Coverage must be measured, not assumed (§10).</li>
+      </ul>
+
+      <h3>Warehouse-native federation <span class="tag run" style="margin-left:6px">column-level · zero instrumentation</span></h3>
+      <p>For workloads already inside an engine, the engine's own lineage beats anything we could instrument:</p>
+      <ul>
+        <li><strong>Databricks Unity Catalog</strong> — automatic column-level lineage from Spark plans across all languages, queryable via system tables <a href="#r8" style="color:var(--accent-ink)">[8]</a>. Caveat: "as much as possible" wording implies silent gaps; scope is Databricks-only.</li>
+        <li><strong>Snowflake ACCESS_HISTORY</strong> — column-level reads and writes per query (<code class="i">objectsModified</code>, <code class="i">columns</code>); lineage is reconstructed from access records — excellent evidence, one derivation step removed from intent.</li>
+        <li><strong>BigQuery / Dataplex</strong> — column lineage for some job types only; load jobs, routines, and external tables are uncovered. The most gap-ridden of the three; federate it, but publish its holes.</li>
+      </ul>
+      <p>These are <strong>runtime evidence sources to federate, not to reimplement</strong>. They arrive as the same OpenLineage-shaped input to the merge engine.</p>
+
+      <h3>Orchestrator &amp; dbt <span class="tag run" style="margin-left:6px">job/dataset-level</span></h3>
+      <ul>
+        <li><strong>Airflow</strong> — the OpenLineage provider is built into Airflow 2.7+ (AIP-53); extraction quality is per-operator, with a published supported-classes list <a href="#r9" style="color:var(--accent-ink)">[9]</a>. Mostly dataset-level; treat column facets as operator-dependent bonus.</li>
+        <li><strong>dbt</strong> — <code class="i">dbt-ol</code> post-processes <code class="i">manifest.json</code> / <code class="i">run_results.json</code> after a run <a href="#r10" style="color:var(--accent-ink)">[10]</a>. Artifact-based, not a live hook — which is fine: dbt's artifacts are the ground truth for its models, and tier-1 parsing of compiled dbt SQL supplies the column detail.</li>
+      </ul>
+
+      <h3>OTel traces <span class="tag" style="margin-left:6px;color:var(--purple);background:var(--purple-wash);border:1px solid var(--purple-line)">interaction + recency only</span></h3>
+      <p>Standard semconv spans give caller→callee (<code class="i">peer.service</code>), endpoint (<code class="i">http.route</code>, <code class="i">rpc.method</code>), messaging destination (<code class="i">messaging.destination.name</code>), volume, latency, and — critically for the confidence model — <strong>recency</strong>. What they do not and will not carry is column semantics: the OTel spec has no lineage conventions, and the proposal to add lineage as a signal was closed, deferring to OpenLineage <a href="#r6" style="color:var(--accent-ink)">[6]</a>. Structurally, traces are per-request trees; lineage is a dataset DAG (an aggregation has no single parent request) <a href="#r7" style="color:var(--accent-ink)">[7]</a>. Routing lineage through spans would be reinventing OpenLineage inside a data model that rejects it.</p>
+
+      <h3>Dask — deferred, honestly</h3>
+      <p>There is no OpenLineage Dask integration and no maintained Dask lineage collector anywhere <a href="#r5" style="color:var(--accent-ink)">[5]</a>. Dask exposes a task graph (<code class="i">HighLevelGraph</code>) — partition-level compute topology, not column lineage — and has no Catalyst-equivalent plan from which to extract column semantics; arbitrary Python UDFs make it strictly harder than Spark's UDF problem. Building this is legitimate R&amp;D with publishable-novelty upside, and it is scheduled as exactly that: a Phase-3 decision driven by measured estate share, with tier-1/tier-3 static extraction covering Dask code meanwhile (its edges capped at Inferred, as designed).</p>
+    </div>
+
+    <!-- 5 CONVERGENCE -->
+    <div class="sec" id="converge">
+      <div class="sec-eyebrow">05 · Convergence</div>
+      <h2>How predicted and observed actually join</h2>
+      <p>Everything reconciles through three joins over canonicalized URNs. The subtlety that must survive every design review: <strong>OTel confirms interaction edges; only OpenLineage facets confirm column edges.</strong> They corroborate different levels of the same graph.</p>
+
+      <!-- J1 -->
+      <div class="joinviz">
+        <div class="jt">Join 1 · Static column edge × Spark columnLineage facet → column confirmation</div>
+        <div class="joinrow">
+          <div class="jcard static">
+            <div class="jh">Predicted — tier-1 parse of the nightly job's SQL</div>
+            <div class="kv">
+              src&nbsp;&nbsp;<b><span class="hl">urn:s3:lake/orders_raw#total_amount</span></b><br>
+              dst&nbsp;&nbsp;<b><span class="hl">urn:wh:prod/fct_orders#total_amount</span></b><br>
+              transform&nbsp;&nbsp;identity (join to customers)<br>
+              signals&nbsp;&nbsp;[static] · score 30 · Inferred
+            </div>
+          </div>
+          <div class="jbolt">⋈</div>
+          <div class="jcard rt">
+            <div class="jh">Observed — OpenLineage COMPLETE event</div>
+            <div class="kv">
+              job&nbsp;&nbsp;spark://prod · nightly_fct_orders<br>
+              in&nbsp;&nbsp;&nbsp;<b><span class="hl">s3://lake · orders_raw · total_amount</span></b><br>
+              out&nbsp;&nbsp;<b><span class="hl">warehouse://prod · fct_orders · total_amount</span></b><br>
+              transformation&nbsp;&nbsp;DIRECT / IDENTITY · run 04:12Z
+            </div>
+          </div>
+        </div>
+        <div class="jresult"><span class="rk">On match</span><span class="rv">signals += spark → score 30 + 30, fresh run → <strong>Verified</strong>. The facet's DIRECT/INDIRECT typing also cross-checks the predicted transform.</span></div>
+      </div>
+
+      <!-- J2 -->
+      <div class="joinviz">
+        <div class="jt">Join 2 · Static Kafka-consume edge × OTel messaging spans → path frequency &amp; recency</div>
+        <div class="joinrow">
+          <div class="jcard static">
+            <div class="jh">Predicted — tier-2 annotation capture</div>
+            <div class="kv">
+              service&nbsp;&nbsp;<b><span class="hl">repo: orders-service</span></b> <span style="color:var(--ink-faint)">(CODEOWNERS)</span><br>
+              consumes&nbsp;&nbsp;<b><span class="hl">urn:kafka:prod:orders.events</span></b><br>
+              guard&nbsp;&nbsp;status == CONFIRMED · codeRef :88
+            </div>
+          </div>
+          <div class="jbolt">⋈</div>
+          <div class="jcard rt">
+            <div class="jh">Observed — consumer span aggregate</div>
+            <div class="kv">
+              service.name&nbsp;&nbsp;<b><span class="hl">orders-svc</span></b> · namespace prod<br>
+              messaging.system&nbsp;&nbsp;kafka<br>
+              messaging.destination.name&nbsp;&nbsp;<b><span class="hl">orders.events</span></b><br>
+              count 24h&nbsp;&nbsp;124,903 · last seen 38s
+            </div>
+          </div>
+        </div>
+        <div class="jresult"><span class="rk">On match</span><span class="rv">path marked <strong>HOT</strong>, recency multiplier ×1.0 — via the service catalog's <span class="m">repo → service.name</span> mapping, the first identity-resolution dependency.</span></div>
+      </div>
+
+      <!-- J3 -->
+      <div class="joinviz">
+        <div class="jt">Join 3 · Static REST-call edge × OTel client spans → interaction confirmation</div>
+        <div class="joinrow">
+          <div class="jcard static">
+            <div class="jh">Predicted — tier-1 OpenAPI + tier-2 client-call capture</div>
+            <div class="kv">
+              caller&nbsp;&nbsp;<b><span class="hl">orders-service</span></b><br>
+              declared route&nbsp;&nbsp;<b><span class="hl">GET /customers/{id}</span></b><br>
+              callee&nbsp;&nbsp;customer-service · sync
+            </div>
+          </div>
+          <div class="jbolt">⋈</div>
+          <div class="jcard rt">
+            <div class="jh">Observed — client span aggregate</div>
+            <div class="kv">
+              service.name&nbsp;&nbsp;<b><span class="hl">orders-svc</span></b><br>
+              http.route&nbsp;&nbsp;<b><span class="hl">/customers/{id}</span></b> · peer.service customer-svc<br>
+              18,230 calls/24h · p99 42ms · err 0.2%
+            </div>
+          </div>
+        </div>
+        <div class="jresult"><span class="rk">On match</span><span class="rv">interaction edge <strong>Verified</strong> with live volume/latency attributes — this is the edge class OTel owns.</span></div>
+      </div>
+
+      <div class="code-label">The merge, as SQL over canonicalized edge tables</div>
+      <pre><span class="c">-- J1: column promotion</span>
+<span class="k">SELECT</span> s.edge_id, <span class="s">'spark'</span> <span class="k">AS</span> corroborating_signal
+<span class="k">FROM</span>   static_edges s
+<span class="k">JOIN</span>   ol_column_facets r
+  <span class="k">ON</span>   s.src_urn = canon(r.in_ns,  r.in_name,  r.in_field)
+ <span class="k">AND</span>   s.dst_urn = canon(r.out_ns, r.out_name, r.out_field);
+
+<span class="c">-- J2 / J3: interaction + recency (note the catalog hop)</span>
+<span class="k">SELECT</span> s.edge_id, o.last_seen, o.count_24h
+<span class="k">FROM</span>   static_call_edges s
+<span class="k">JOIN</span>   svc_catalog c  <span class="k">ON</span> s.repo = c.repo            <span class="c">-- repo → service.name</span>
+<span class="k">JOIN</span>   otel_agg o     <span class="k">ON</span> c.otel_service = o.service_name
+                     <span class="k">AND</span> s.declared_route = o.http_route;</pre>
+
+      <h3>Non-matches are information</h3>
+      <table>
+        <tr><th style="width:230px">Outcome</th><th>Meaning</th><th>Action</th></tr>
+        <tr><td><strong>Static edge, never observed</strong></td><td>Cold path, dead code — or a wrong tier-3 edge</td><td>Stays Inferred; surfaces to the Confidence Curator, which asks the owning team one targeted question</td></tr>
+        <tr><td><strong>Runtime edge, no static match</strong></td><td>Code doing something the baseline missed — drift, or an extraction gap</td><td>Flagged; feeds the extractor's own recall measurement</td></tr>
+      </table>
+
+      <h3>Why the joins miss — and why identity resolution is P0</h3>
+      <p>Every join key above can silently disagree. A missed join does not error; the edge simply never promotes, and the graph quietly under-reports confidence at scale:</p>
+      <table>
+        <tr><th style="width:110px">Join key</th><th>Static side says</th><th>Runtime side says</th></tr>
+        <tr><td><strong>Service</strong></td><td><span class="m">repo: orders-service</span> (CODEOWNERS)</td><td><span class="m">service.name: "orders-svc-v2"</span> (free-form resource attribute)</td></tr>
+        <tr><td><strong>Topic</strong></td><td><span class="m">"orders.events"</span> (annotation literal)</td><td><span class="m">prod.orders.events</span> (environment prefix)</td></tr>
+        <tr><td><strong>Dataset</strong></td><td><span class="m">s3://lake/orders_raw/</span> (path literal, trailing slash)</td><td>OL <span class="m">namespace: s3://lake · name: orders_raw</span></td></tr>
+        <tr><td><strong>Route</strong></td><td>OpenAPI <span class="m">/customers/{id}</span></td><td><span class="m">/customers/8231</span> when route templating is misconfigured</td></tr>
+      </table>
+    </div>
+
+    <!-- 6 IDENTITY -->
+    <div class="sec" id="identity">
+      <div class="sec-eyebrow">06 · Identity resolution</div>
+      <h2>The linchpin, treated as such</h2>
+      <p>Everything downstream — dedup, attribute union, scoring, gating — presupposes that five signals agree on what "the same thing" is. The design, deterministic-first:</p>
+      <ul>
+        <li><strong>Canonical URN scheme</strong> — <code class="i">urn:&lt;system&gt;:&lt;instance&gt;:&lt;path&gt;#&lt;element&gt;</code>, with per-system normalizers (S3 path canonicalization, topic env-prefix stripping rules, warehouse three-part naming, route templating enforcement). Normalizers are code-reviewed config, not inference.</li>
+        <li><strong>Service catalog as the identity backbone</strong> — the <code class="i">repo ↔ service.name ↔ owner</code> mapping is maintained where it already lives (catalog/CODEOWNERS), and joins go through it; OTel <code class="i">service.name</code> conformance becomes an onboarding requirement, checked in CI.</li>
+        <li><strong>Deterministic match first, fuzzy fallback quarantined</strong> — exact-URN matches auto-merge; fuzzy candidates (edit distance, schema-shape similarity) go to a review queue and never silently merge.</li>
+        <li><strong>Measured, with exit gates</strong> — PI-1 spike on the vertical slice against hand-labeled ground truth: <strong>GO ≥ 95% precision and ≥ 90% recall; PIVOT</strong> = add a manual mapping layer; <strong>STOP</strong> = re-scope to per-system lineage with no cross-signal merge. The STOP branch is stated because it is real: without reliable identity, the confidence model that Impact gating depends on does not exist.</li>
+      </ul>
+    </div>
+
+    <!-- 7 CONFIDENCE -->
+    <div class="sec" id="confidence">
+      <div class="sec-eyebrow">07 · Confidence engine</div>
+      <h2>The math, its strengths, and what we changed</h2>
+      <div class="code-label">Scoring — as specified in PRD 1 (executable today)</div>
+      <pre>weights   = { static: <span class="n">30</span>, llm: <span class="n">18</span>, spark: <span class="n">30</span>, dask: <span class="n">26</span>, otel: <span class="n">22</span> }
+recency   = { fresh_1d: <span class="n">1.0</span>, aging_7d: <span class="n">0.82</span>, never: <span class="n">0</span> }   <span class="c">// runtime terms only</span>
+score     = min(<span class="n">100</span>, baseline + Σ runtime_i × recency_i)
+<span class="k">if</span> (no runtime signal) score = min(score, <span class="n">64</span>)             <span class="c">// the cap</span>
+band      = score ≥ <span class="n">85</span> &amp;&amp; anyRuntime ? <span class="s">Verified</span> : score ≥ <span class="n">65</span> ? <span class="s">Probable</span> : <span class="s">Inferred</span></pre>
+      <p><strong>What is right about it:</strong> the baseline-only cap at 64 means no purely static/LLM edge can reach gating territory — this single constraint contains the LLM's failure modes better than any accuracy improvement could. Recency decay on runtime terms only is correct: code doesn't get staler, observations do. Full per-edge provenance (<code class="i">signals[]</code>) makes every score auditable.</p>
+      <p><strong>What we changed and added:</strong></p>
+      <ul>
+        <li><strong>LLM self-reported confidence removed</strong> from the formula's inputs (it was specified in FR-C2 but never wired in — correctly, as it turns out: AUROC 0.524 <a href="#r3" style="color:var(--accent-ink)">[3]</a>). External signals replace it: tier-1 parser cross-check, self-consistency across samples, and runtime corroboration.</li>
+        <li><strong>Calibration plan</strong> — weights are self-described as heuristic. The vertical slice produces labeled outcomes (edges later confirmed vs retired); weights get fit to those outcomes per signal <em>per stack</em>, and re-fit on a schedule. A confidence score that is never calibrated against reality is a UI decoration.</li>
+        <li><strong>Conflict-resolution matrix</strong> — attribute union assumes non-conflicting attributes; conflicts need a policy, not an accident of ingestion order:</li>
+      </ul>
+      <table>
+        <tr><th style="width:250px">Conflict</th><th>Resolution</th></tr>
+        <tr><td>Static asserts edge; runtime never observes</td><td>Edge stays Inferred; cold-path decay applies; Curator question after N windows</td></tr>
+        <tr><td>Two signals report different transforms for one edge</td><td>Runtime facet wins for <em>what happened</em>; static wins for <em>expression text</em>; disagreement itself lowers score and is surfaced</td></tr>
+        <tr><td>Runtime observes edge static never predicted</td><td>Edge admitted as runtime-only, flagged drift; counts against extractor recall</td></tr>
+        <tr><td>Two collectors disagree on schema/type</td><td>Registry (schema registry / warehouse catalog) is authoritative; collectors annotate</td></tr>
+      </table>
+    </div>
+
+    <!-- 8 ALTERNATIVES -->
+    <div class="sec" id="alternatives">
+      <div class="sec-eyebrow">08 · Alternatives</div>
+      <h2>Build-vs-buy, without the straw men</h2>
+      <table>
+        <tr><th style="width:180px">Alternative</th><th>What it genuinely gives you</th><th>Why it isn't sufficient</th></tr>
+        <tr>
+          <td><strong>Warehouse-native only</strong><br><span class="m" style="color:var(--ink-faint)">UC · ACCESS_HISTORY · Dataplex</span></td>
+          <td>Column lineage, zero instrumentation, high fidelity inside each engine</td>
+          <td>Engine-scoped with silent holes; blind to services, streams, files, and everything between engines. <strong>Adopted as a federated source, not the framework.</strong></td>
+        </tr>
+        <tr>
+          <td><strong>Metadata platforms</strong><br><span class="m" style="color:var(--ink-faint)">DataHub · Marquez · Atlan · Collibra</span></td>
+          <td>Mature ingestion, storage, graph, UI; DataHub's SQLGlot parsing; connector breadth</td>
+          <td>Connector-level lineage stops at what connectors see: no code-path guards, no never-run-path visibility, no per-edge confidence, no CI gate. <strong>Candidate for the aggregation layer</strong> — we differentiate at the collection edge, not the catalog.</td>
+        </tr>
+        <tr>
+          <td><strong>Pure static</strong><br><span class="m" style="color:var(--ink-faint)">SQLMesh-style compile-time lineage</span></td>
+          <td>Deterministic column lineage for the SQL estate at compile time</td>
+          <td>SQL-only, and permanently unproven: no distinction between an edge that runs hourly and one dead for a year. That distinction is the product.</td>
+        </tr>
+        <tr>
+          <td><strong>Pure runtime</strong><br><span class="m" style="color:var(--ink-faint)">OpenLineage collectors alone</span></td>
+          <td>Ground truth for everything that executes</td>
+          <td>Silent about the risky tail — quarter-end jobs, error branches, EU-only flows — precisely the paths impact analysis exists for. And facet omission makes its own coverage unauditable without a baseline to diff against.</td>
+        </tr>
+        <tr>
+          <td><strong>Spline</strong></td>
+          <td>Spark plan-based lineage, open source</td>
+          <td>Spark-only, lags newer Spark commands, smaller ecosystem than the OpenLineage listener. Dominated by OL for our purposes.</td>
+        </tr>
+      </table>
+    </div>
+
+    <!-- 9 WHY -->
+    <div class="sec" id="why">
+      <div class="sec-eyebrow">09 · The argument</div>
+      <h2>Why the hybrid still wins</h2>
+      <p>Every alternative above fails the same test: <strong>can it tell you, in the pull request, what a change breaks — including on paths that haven't run lately — and how much to trust that answer?</strong></p>
+      <ul>
+        <li><strong>Completeness requires build time.</strong> Only code analysis sees the superset — every branch, guard, and feature-flagged path, including the ones that will fire next quarter. Runtime can never testify about a path that hasn't executed.</li>
+        <li><strong>Trust requires runtime.</strong> Only observation separates live edges from dead code and wrong inferences. Static analysis can never prove its own assertions.</li>
+        <li><strong>Gating requires the confidence contract.</strong> A gate that fires on unproven edges gets disabled by the second false positive. The band system — with prediction hard-capped below Verified — is what makes automation socially survivable.</li>
+        <li><strong>The seams are where the work is.</strong> Identity resolution and merge policy are the actual hard problems, which is exactly why they are sequenced first with numeric exit gates, rather than discovered in month nine.</li>
+      </ul>
+      <p>The composition — predicted superset, observed confirmation, calibrated confidence, per-PR refresh — is not available to buy, and each pillar uses the most boring proven technology available for its job: SQLGlot-class parsing, the OpenLineage ecosystem, warehouse system tables, standard OTel semconv. The novelty budget is spent in exactly two places: the reconciliation layer and the tier-3 residue. Everything else is deliberately unoriginal.</p>
+    </div>
+
+    <!-- 10 OPEN -->
+    <div class="sec" id="open">
+      <div class="sec-eyebrow">10 · Open problems</div>
+      <h2>Stated plainly, before you find them</h2>
+      <table>
+        <tr><th style="width:210px">Problem</th><th>Status</th></tr>
+        <tr><td><strong>Cold and seasonal paths</strong></td><td>A never-observed path stays Inferred no matter how critical — "low confidence ≠ low risk." Mitigations (Curator owner-questions, branch-coverage reporting, decay windows sized per path class) reduce but do not eliminate this. Honest answer: the tail is verified by humans, prompted by the system.</td></tr>
+        <tr><td><strong>"Element-level" beyond columns</strong></td><td>OpenLineage's facet is column→column; intra-job transformation chains and sub-column semantics are unstandardized (open proposal, OL #4090 <a href="#r11" style="color:var(--accent-ink)">[11]</a>). Our <code class="i">transform</code> + <code class="i">path</code> attributes carry finer detail than the standard — a deliberate extension, flagged as such.</td></tr>
+        <tr><td><strong>LLM cost &amp; model drift</strong></td><td>Code-hash caching bounds cost by churn; extraction is versioned by model+prompt so a model upgrade re-scores rather than silently rewrites. A standing eval set (labeled slice) is the regression suite. Budget is a published number per PI, not an assumption.</td></tr>
+        <tr><td><strong>Coverage tail</strong></td><td>Flink, Kafka Streams, stored procedures, legacy ETL, BI tools have no collector yet. The coverage map (per system: collector, granularity, confidence ceiling) is a Phase-1 deliverable, and the UI must render "not yet observed" distinctly from "no dependency."</td></tr>
+        <tr><td><strong>Security &amp; PII posture</strong></td><td>Source code and SQL flow to an LLM; column classifications flow through the graph. Requires: scoped model endpoints, no training on submitted code, secret-scanning before prompt assembly, and classification-aware access control on the graph itself. Unwritten in PRD 1; must be written before Phase 1.</td></tr>
+        <tr><td><strong>Graph store selection</strong></td><td>Sizing (~1M nodes, ~3M edges, ~500K events/day at 10K services) is order-of-magnitude, unvalidated against a concrete engine. Phase-0 slice doubles as the storage bake-off.</td></tr>
+      </table>
+    </div>
+
+    <!-- 11 REFS -->
+    <div class="sec" id="refs">
+      <div class="sec-eyebrow">11 · References</div>
+      <h2>Primary sources</h2>
+      <ol class="refs">
+        <li id="r1">[1] DataHub — <em>Extracting Column-Level Lineage from SQL</em> (SQLGlot vs sqllineage vs OpenLineage parser benchmark) · <a href="https://datahub.com/blog/extracting-column-level-lineage-from-sql/">datahub.com/blog/extracting-column-level-lineage-from-sql</a></li>
+        <li id="r2">[2] <em>Schema Lineage Extraction at Scale</em> (SLiCE metric; GPT-4.1 0.418/0.673/0.767) · <a href="https://arxiv.org/html/2508.07179v1">arxiv.org/abs/2508.07179</a></li>
+        <li id="r3">[3] Amazon Science — <em>Confidence Scoring for LLM-Generated SQL</em> (self-reported confidence AUROC 0.524) · <a href="https://arxiv.org/pdf/2506.17203">arxiv.org/abs/2506.17203</a></li>
+        <li id="r4">[4] OpenLineage — <em>Spark Column-Level Lineage</em> (Catalyst traversal; RDD/JDBC limitations) · <a href="https://openlineage.io/docs/integrations/spark/spark_column_lineage/">openlineage.io/docs/integrations/spark/spark_column_lineage</a>; related issues <a href="https://github.com/OpenLineage/OpenLineage/issues/2573">OL #2573</a>, <a href="https://github.com/MarquezProject/marquez/issues/2800">Marquez #2800</a></li>
+        <li id="r5">[5] OpenLineage integration list (no Dask) · <a href="https://github.com/OpenLineage/OpenLineage">github.com/OpenLineage/OpenLineage</a>; Dask task graphs · <a href="https://docs.dask.org/en/latest/graphs.html">docs.dask.org/en/latest/graphs.html</a></li>
+        <li id="r6">[6] OpenTelemetry spec issue #3447 — <em>Modeling data lineage in OTel</em>, closed without adoption · <a href="https://github.com/open-telemetry/opentelemetry-specification/issues/3447">github.com/open-telemetry/opentelemetry-specification/issues/3447</a></li>
+        <li id="r7">[7] OpenLineage — <em>How OpenLineage takes inspiration from OpenTelemetry</em> (traces are trees; lineage is a DAG) · <a href="https://openlineage.io/blog/openlineage-takes-inspiration-from-opentelemetry/">openlineage.io/blog/openlineage-takes-inspiration-from-opentelemetry</a></li>
+        <li id="r8">[8] Databricks — Unity Catalog data lineage &amp; system tables · <a href="https://docs.databricks.com/aws/en/data-governance/unity-catalog/data-lineage">docs.databricks.com/…/unity-catalog/data-lineage</a></li>
+        <li id="r9">[9] Airflow OpenLineage provider (AIP-53; supported classes) · <a href="https://airflow.apache.org/docs/apache-airflow-providers-openlineage/stable/supported_classes.html">airflow.apache.org/docs/apache-airflow-providers-openlineage</a></li>
+        <li id="r10">[10] OpenLineage dbt integration (<code class="i">dbt-ol</code>, artifact-based) · <a href="https://openlineage.io/docs/integrations/dbt/">openlineage.io/docs/integrations/dbt</a></li>
+        <li id="r11">[11] OpenLineage issue #4090 — <em>DetailedLineage facet</em> (sub-transformation lineage unstandardized, open) · <a href="https://github.com/OpenLineage/OpenLineage/issues/4090">github.com/OpenLineage/OpenLineage/issues/4090</a></li>
+      </ol>
+      <p style="font-size:12px;color:var(--ink-faint)">Internal sources: PRD 1 — Lineage Collection (signals, scoring, risks §9) · Architecture &amp; Scale (sizing §7) · Critical Review (coverage &amp; identity critiques) · Remediation Plan (identity spike A5, capacity A2).</p>
+    </div>
+
+    <div class="footer">
+      <span>Throughline · Engineering Deep Dive · Lineage Collection</span>
+      <span>Companion: Architecture Flow — Tech Leaders</span>
+    </div>
+  </main>
+</div>
+</body>
+</html>

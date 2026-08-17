@@ -1,119 +1,307 @@
-import type { KeyboardEvent } from "react";
+import { useMemo, useState } from "react";
 
 import type { LineageEdge, LineageResponse } from "../../api/types";
-import { layoutGraph } from "./lineageLayout";
+import { bandDisplay, edgeLabel } from "../review/reviewMeta";
+import type { CanvasCard } from "./lineageLayout";
+import { buildCanvas, containerOf, nodeTitle } from "./lineageLayout";
 
 
 interface LineageCanvasProps {
   data: LineageResponse;
   selectedEdgeKey: string | null;
+  selectedNodeUrn?: string | null;
   onSelectEdge: (edge: LineageEdge) => void;
   onSelectNode: (urn: string) => void;
 }
 
 
-function shortName(urn: string) {
-  const tail = urn.split(":").at(-1) ?? urn;
-  const [dataset, element] = tail.split("#");
-  return { dataset, element: element ?? "dataset" };
-}
-
-
-function activate(event: KeyboardEvent<SVGGElement>, action: () => void) {
-  if (event.key === "Enter" || event.key === " ") {
-    event.preventDefault();
-    action();
-  }
+/** Weakest-band percentage shown at the end of a member row, prototype-style. */
+function rowConfidence(
+  band: string | null,
+): { pct: string; tone: "verified" | "probable" | "inferred" } | null {
+  if (!band) return null;
+  const projection = bandDisplay(band);
+  return { pct: `${projection.percent}%`, tone: projection.tone };
 }
 
 
 export function LineageCanvas({
   data,
   selectedEdgeKey,
+  selectedNodeUrn = null,
   onSelectEdge,
   onSelectNode,
 }: LineageCanvasProps) {
-  const layout = layoutGraph(data.nodes, data.edges, data.direction);
+  const [expanded, setExpanded] = useState<Record<string, boolean>>({});
+  const [allExpanded, setAllExpanded] = useState(true);
+
+  const model = useMemo(
+    () => buildCanvas(data.subject, data.nodes, data.edges, expanded, allExpanded),
+    [data.subject, data.nodes, data.edges, expanded, allExpanded],
+  );
+
+  const selectedEdge = useMemo(
+    () => data.edges.find((edge) => edge.edgeKey === selectedEdgeKey) ?? null,
+    [data.edges, selectedEdgeKey],
+  );
+
+  // The neighborhood that stays lit while something is selected (prototype model).
+  const litCards = useMemo(() => {
+    if (selectedEdge) {
+      return new Set(
+        [...selectedEdge.from, selectedEdge.to].map((urn) => containerOf(urn)),
+      );
+    }
+    if (selectedNodeUrn) {
+      const lit = new Set([containerOf(selectedNodeUrn)]);
+      for (const edge of data.edges) {
+        const touches = [...edge.from, edge.to].includes(selectedNodeUrn);
+        if (touches) for (const urn of [...edge.from, edge.to]) lit.add(containerOf(urn));
+      }
+      return lit;
+    }
+    return null;
+  }, [data.edges, selectedEdge, selectedNodeUrn]);
+
+  const edgeTouchesSelection = (edge: LineageEdge): boolean => {
+    if (selectedEdgeKey) return edge.edgeKey === selectedEdgeKey;
+    if (selectedNodeUrn) return [...edge.from, edge.to].includes(selectedNodeUrn);
+    return false;
+  };
+  const hasSelection = Boolean(selectedEdgeKey || selectedNodeUrn);
+
+  const toggleCard = (card: CanvasCard) => {
+    setExpanded((state) => ({ ...state, [card.id]: !card.expanded }));
+    if (card.selfUrn) onSelectNode(card.selfUrn);
+  };
+
   return (
-    <div className="lineage-canvas">
-      <svg
-        viewBox={`0 0 ${layout.width} ${layout.height}`}
-        width={layout.width}
-        height={layout.height}
+    <div className="explorer-canvas-shell">
+      <div className="explorer-canvas-tools">
+        <button
+          type="button"
+          onClick={() => {
+            setExpanded({});
+            setAllExpanded(true);
+          }}
+        >
+          Expand all
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            setExpanded({});
+            setAllExpanded(false);
+          }}
+        >
+          Collapse all
+        </button>
+      </div>
+
+      <div
+        className="explorer-canvas-scroll"
         role="group"
         aria-label={`Lineage graph in ${data.namespaceVersion}`}
       >
-        <defs>
-          <marker id="lineage-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
-            <path d="M 0 0 L 10 5 L 0 10 z" />
-          </marker>
-          <pattern id="lineage-grid" width="24" height="24" patternUnits="userSpaceOnUse">
-            <path d="M 24 0 L 0 0 0 24" fill="none" />
-          </pattern>
-        </defs>
-        <rect className="lineage-canvas__grid" width="100%" height="100%" />
-        {data.edges.map((edge) => {
-          const source = layout.nodes[edge.from[0]];
-          const target = layout.nodes[edge.to];
-          if (!source || !target) return null;
-          const leftToRight = target.x > source.x;
-          const x1 = source.x + (leftToRight ? source.width : 0);
-          const x2 = target.x + (leftToRight ? 0 : target.width);
-          const y1 = source.y + source.height / 2;
-          const y2 = target.y + target.height / 2;
-          const bend = Math.abs(x2 - x1) * 0.45;
-          const path = `M ${x1} ${y1} C ${x1 + (leftToRight ? bend : -bend)} ${y1}, ${x2 + (leftToRight ? -bend : bend)} ${y2}, ${x2} ${y2}`;
-          const mechanisms = edge.provenance.map((item) => item.mechanism).join(" + ");
-          return (
-            <g
-              key={edge.edgeKey}
-              className={selectedEdgeKey === edge.edgeKey ? "graph-edge is-selected" : "graph-edge"}
-              role="button"
-              tabIndex={0}
-              aria-label={`Inspect edge ${edge.edgeKey}, ${edge.band} confidence, ${mechanisms}`}
-              onClick={() => onSelectEdge(edge)}
-              onKeyDown={(event) => activate(event, () => onSelectEdge(edge))}
-            >
-              <path className="graph-edge__target" d={path} />
-              <path className="graph-edge__line" d={path} markerEnd="url(#lineage-arrow)" />
-              <g transform={`translate(${(x1 + x2) / 2 - 34} ${(y1 + y2) / 2 - 13})`}>
-                <rect className="graph-edge__label-bg" width="68" height="24" rx="12" />
-                <text className="graph-edge__label" x="34" y="16" textAnchor="middle">{edge.band}</text>
-              </g>
-            </g>
-          );
-        })}
-        {data.nodes.map((node) => {
-          const position = layout.nodes[node.urn];
-          const label = shortName(node.urn);
-          return (
-            <g
-              key={node.urn}
-              className="graph-node"
-              role="button"
-              tabIndex={0}
-              aria-label={`Select node ${label.dataset} ${label.element}`}
-              transform={`translate(${position.x} ${position.y})`}
-              onClick={() => onSelectNode(node.urn)}
-              onKeyDown={(event) => activate(event, () => onSelectNode(node.urn))}
-            >
-              <rect width={position.width} height={position.height} rx="8" />
-              <text className="graph-node__kind" x="16" y="20">{node.system} / {node.kind}</text>
-              <text className="graph-node__dataset" x="16" y="45">{label.dataset}</text>
-              <text className="graph-node__element" x="16" y="64">#{label.element}</text>
-            </g>
-          );
-        })}
-      </svg>
-      <div className="graph-fallback" aria-label="Accessible lineage relationships">
-        <p>Relationships</p>
-        <ul>
-          {data.edges.map((edge) => (
-            <li key={edge.edgeKey}>
-              {shortName(edge.from[0]).element} → {shortName(edge.to).element}; {edge.band} confidence; {edge.provenance.map((item) => item.mechanism).join(" + ")}
-            </li>
-          ))}
-        </ul>
+        <div
+          className="explorer-canvas-plane"
+          style={{ width: model.width, height: model.height }}
+        >
+          {model.columns.map(
+            (column) =>
+              column.label && (
+                <span
+                  key={column.x}
+                  className="explorer-canvas-collabel"
+                  style={{ left: column.x }}
+                >
+                  {column.label}
+                </span>
+              ),
+          )}
+
+          <svg
+            className="explorer-canvas-wires"
+            width={model.width}
+            height={model.height}
+            aria-hidden={model.edges.length === 0 || undefined}
+          >
+            {model.edges.map(({ edge, path, verified }) => {
+              const active = edgeTouchesSelection(edge);
+              const faded = hasSelection && !active;
+              const stroke = active
+                ? edge.edgeKey === selectedEdgeKey
+                  ? "var(--brand)"
+                  : verified
+                    ? "oklch(45% 0.04 262)"
+                    : "oklch(52% 0.15 75)"
+                : verified
+                  ? "oklch(55% 0.03 262)"
+                  : "oklch(60% 0.13 75)";
+              const width = (verified ? 2.2 : 1.3) + (active ? 0.8 : 0);
+              const mechanisms = edge.provenance
+                .map((item) => item.mechanism)
+                .join(" + ");
+              return (
+                <g key={edge.edgeKey}>
+                  <path
+                    d={path}
+                    fill="none"
+                    stroke={stroke}
+                    strokeWidth={width}
+                    strokeOpacity={faded ? 0.3 : 1}
+                    strokeDasharray={verified ? undefined : "3 4"}
+                    pointerEvents="none"
+                  />
+                  <path
+                    className="explorer-wire-hit"
+                    d={path}
+                    fill="none"
+                    stroke="transparent"
+                    strokeWidth={12}
+                    role="button"
+                    tabIndex={0}
+                    aria-label={`Inspect edge ${edgeLabel(edge)}, ${edge.band} confidence, ${mechanisms}`}
+                    onClick={() => onSelectEdge(edge)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter" || event.key === " ") {
+                        event.preventDefault();
+                        onSelectEdge(edge);
+                      }
+                    }}
+                  >
+                    <title>
+                      {`${edgeLabel(edge)} · ${edge.edgeType} · ${bandDisplay(edge.band).label}`}
+                    </title>
+                  </path>
+                </g>
+              );
+            })}
+          </svg>
+
+          {model.cards.map((card) => {
+            const headerUrn = card.selfUrn;
+            const dimmed = Boolean(litCards && !litCards.has(card.id));
+            const headerSelected =
+              (headerUrn !== null && headerUrn === selectedNodeUrn) ||
+              (selectedNodeUrn !== null &&
+                containerOf(selectedNodeUrn) === card.id &&
+                headerUrn === selectedNodeUrn);
+            const cardCarriesSelection =
+              selectedNodeUrn !== null && containerOf(selectedNodeUrn) === card.id;
+            return (
+              <article
+                key={card.id}
+                className={`canvas-card${cardCarriesSelection ? " is-selected" : ""}${
+                  card.isSubjectCard ? " canvas-card--subject" : ""
+                }`}
+                data-dimmed={dimmed || undefined}
+                style={{ left: card.x, top: card.y, width: card.w, height: card.h }}
+              >
+                <button
+                  type="button"
+                  className="canvas-card__head"
+                  aria-expanded={card.rows.length > 0 ? card.expanded : undefined}
+                  aria-label={
+                    headerUrn
+                      ? `Select node ${nodeTitle(headerUrn)}, ${
+                          card.role === "service" ? "SERVICE" : "DATASET"
+                        }`
+                      : `Toggle ${card.title}`
+                  }
+                  title={card.id}
+                  onClick={() => toggleCard(card)}
+                >
+                  <span
+                    className={`canvas-card__marker canvas-card__marker--${card.role}`}
+                    aria-hidden="true"
+                  />
+                  <span className="canvas-card__idty">
+                    <span
+                      className={`canvas-card__name${headerSelected ? " is-selected" : ""}`}
+                    >
+                      {card.title}
+                    </span>
+                    <span className="canvas-card__meta">
+                      {card.system} · {card.role}
+                      {card.isSubjectCard ? " · subject" : ""}
+                    </span>
+                  </span>
+                  {card.isSubjectCard && (
+                    <span className="canvas-card__subject-chip">SUBJECT</span>
+                  )}
+                  {card.rows.length > 0 && (
+                    <span className="canvas-card__caret" aria-hidden="true">
+                      {card.expanded ? "▾" : "▸"}
+                    </span>
+                  )}
+                </button>
+                {card.expanded && (
+                  <div className="canvas-card__rows">
+                    {card.rows.map((row) => {
+                      const confidence = rowConfidence(row.weakestBand);
+                      const selected = row.urn === selectedNodeUrn;
+                      return (
+                        <button
+                          key={row.urn}
+                          type="button"
+                          className={`canvas-row${selected ? " is-selected" : ""}`}
+                          aria-label={`Select node ${nodeTitle(row.urn)}, ${row.kind}`}
+                          title={row.urn}
+                          onClick={() => onSelectNode(row.urn)}
+                        >
+                          <span
+                            className={`canvas-row__dot canvas-row__dot--${row.kind.toLowerCase()}`}
+                            aria-hidden="true"
+                          />
+                          <span className="canvas-row__name">{row.name}</span>
+                          {confidence && (
+                            <span
+                              className={`canvas-row__conf canvas-row__conf--${confidence.tone}`}
+                              title={
+                                confidence.tone === "verified"
+                                  ? "Weakest incident edge is runtime-verified"
+                                  : "Weakest incident edge is static-only"
+                              }
+                            >
+                              {confidence.pct}
+                            </span>
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </article>
+            );
+          })}
+        </div>
+      </div>
+
+      <div className="explorer-legend-float" aria-label="Reading the graph">
+        <span className="explorer-legend-float__title">Reading the graph</span>
+        <span className="explorer-legend-float__item">
+          <span className="explorer-legend-float__line explorer-legend-float__line--verified" />
+          thick = verified at runtime
+        </span>
+        <span className="explorer-legend-float__item">
+          <span className="explorer-legend-float__line explorer-legend-float__line--probable" />
+          dashed amber = static-only
+        </span>
+        <span className="explorer-legend-float__item">
+          arrows follow data flow · READS pulls, WRITES pushes
+        </span>
+        <span className="explorer-legend-float__item">
+          <span className="explorer-legend-float__glyph explorer-legend-float__glyph--service" />
+          service class ·{" "}
+          <span className="explorer-legend-float__glyph explorer-legend-float__glyph--dataset" />
+          dataset ·{" "}
+          <span className="explorer-legend-float__glyph explorer-legend-float__glyph--element" />
+          element
+        </span>
+        <span className="explorer-legend-float__item explorer-legend-float__item--hint">
+          click a wire for its evidence · click a node to inspect it · Esc clears
+        </span>
       </div>
     </div>
   );

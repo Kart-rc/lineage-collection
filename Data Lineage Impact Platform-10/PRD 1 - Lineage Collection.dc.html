@@ -1,0 +1,538 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,600&display=swap" rel="stylesheet">
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+  a { color: inherit; }
+  ::-webkit-scrollbar { width: 10px; height: 10px; }
+  ::-webkit-scrollbar-thumb { background: oklch(88% 0.006 262); border-radius: 6px; border: 2px solid transparent; background-clip: padding-box; }
+  @media print {
+    .no-print { display: none !important; }
+    .page { box-shadow: none !important; margin: 0 !important; }
+    body { background: #fff !important; }
+  }
+</style>
+</helmet>
+
+<div style="background:oklch(95.5% 0.004 262);min-height:100vh;font-family:'IBM Plex Sans',sans-serif;-webkit-font-smoothing:antialiased;color:oklch(30% 0.02 262)">
+  <div style="max-width:1200px;margin:0 auto;display:flex;gap:36px;padding:40px 28px 80px;align-items:flex-start">
+
+    <!-- TOC -->
+    <aside class="no-print" style="flex:none;width:210px;position:sticky;top:40px;display:flex;flex-direction:column;gap:3px">
+      <div style="display:flex;align-items:center;gap:9px;margin-bottom:14px">
+        <span style="width:22px;height:22px;border-radius:6px;background:oklch(55% 0.14 252);display:block"></span>
+        <span style="font:700 15px 'IBM Plex Sans';color:oklch(26% 0.02 262);letter-spacing:-0.01em">Throughline</span>
+      </div>
+      <div style="font:600 8.5px 'IBM Plex Mono';letter-spacing:.12em;text-transform:uppercase;color:oklch(60% 0.02 262);margin:0 0 8px 2px">PRD 1 · Collection</div>
+      <sc-for list="{{ toc }}" as="t" hint-placeholder-count="10">
+        <a href="{{ t.href }}" style="display:flex;gap:9px;padding:5px 8px;border-radius:6px;text-decoration:none;font:500 12px 'IBM Plex Sans';color:oklch(46% 0.02 262)" style-hover="background:oklch(92% 0.01 262)"><span style="font:600 10px 'IBM Plex Mono';color:oklch(68% 0.02 262);width:14px;flex:none">{{ t.n }}</span><span>{{ t.label }}</span></a>
+      </sc-for>
+      <div style="margin-top:16px;padding-top:14px;border-top:1px solid oklch(90% 0.006 262);display:flex;flex-direction:column;gap:6px">
+        <div style="font:600 8.5px 'IBM Plex Mono';letter-spacing:.12em;text-transform:uppercase;color:oklch(60% 0.02 262);margin:0 0 2px 2px">Suite</div>
+        <a href="Index - Throughline PRDs.dc.html" style="font:500 11.5px 'IBM Plex Sans';color:oklch(50% 0.02 262);text-decoration:none;padding:3px 8px">Overview</a>
+        <a href="PRD 2 - Impact Analysis.dc.html" style="font:500 11.5px 'IBM Plex Sans';color:oklch(50% 0.02 262);text-decoration:none;padding:3px 8px">PRD 2 · Impact</a>
+        <a href="PRD 3 - UI Representation.dc.html" style="font:500 11.5px 'IBM Plex Sans';color:oklch(50% 0.02 262);text-decoration:none;padding:3px 8px">PRD 3 · UI/UX</a>
+      </div>
+    </aside>
+
+    <!-- PAGE -->
+    <main class="page" style="flex:1;min-width:0;max-width:860px;background:#fff;border:1px solid oklch(91% 0.006 262);border-radius:3px;box-shadow:0 1px 3px rgba(20,30,50,.06);padding:60px 64px 72px">
+
+      <!-- masthead -->
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:26px">
+        <span style="font:600 9px 'IBM Plex Mono';letter-spacing:.14em;text-transform:uppercase;color:#fff;background:oklch(55% 0.14 252);padding:4px 9px;border-radius:4px">Product Requirements</span>
+        <span style="font:500 11px 'IBM Plex Mono';color:oklch(58% 0.02 262)">v0.9 · Draft for review</span>
+        <span style="font:500 11px 'IBM Plex Mono';color:oklch(58% 0.02 262);margin-left:auto">Owner: Data Platform</span>
+      </div>
+      <h1 style="font:600 40px 'Newsreader',serif;color:oklch(22% 0.02 262);letter-spacing:-0.01em;line-height:1.1;margin:0 0 12px">Lineage Collection</h1>
+      <p style="font:400 16px/1.6 'IBM Plex Sans';color:oklch(45% 0.02 262);margin:0 0 4px;max-width:62ch">How Throughline builds and continuously trusts a single, organization-wide lineage graph from code, runtime, and change events — with a confidence score on every edge.</p>
+
+      <!-- exec summary callout -->
+      <div style="margin:34px 0 8px;border:1px solid oklch(88% 0.04 252);background:oklch(98% 0.012 252);border-radius:10px;padding:22px 24px">
+        <div style="font:600 9px 'IBM Plex Mono';letter-spacing:.12em;text-transform:uppercase;color:oklch(50% 0.12 252);margin-bottom:10px">Executive summary</div>
+        <p style="font:400 14.5px/1.6 'IBM Plex Sans';color:oklch(34% 0.02 262);margin:0 0 12px">Lineage is only useful if people trust it. Hand-curated lineage rots; single-source automated lineage is incomplete. Throughline collects lineage from <strong style="font-weight:600">four independent signals</strong> — static code analysis with LLM inference, a CI/CD diff on every change, runtime collectors (Spark &amp; Dask), and OpenTelemetry traces — then reconciles them into one canonical graph where <strong style="font-weight:600">every edge carries a confidence score</strong> derived from the signals that agree.</p>
+        <div style="display:flex;flex-wrap:wrap;gap:10px">
+          <span style="font:500 12px 'IBM Plex Sans';color:oklch(40% 0.02 262);background:#fff;border:1px solid oklch(90% 0.01 262);border-radius:7px;padding:7px 11px">Scales to <strong style="font-weight:600">2,000+</strong> services &amp; datasets</span>
+          <span style="font:500 12px 'IBM Plex Sans';color:oklch(40% 0.02 262);background:#fff;border:1px solid oklch(90% 0.01 262);border-radius:7px;padding:7px 11px">Batch <em>and</em> streaming</span>
+          <span style="font:500 12px 'IBM Plex Sans';color:oklch(40% 0.02 262);background:#fff;border:1px solid oklch(90% 0.01 262);border-radius:7px;padding:7px 11px">Prove value on <strong style="font-weight:600">one vertical slice</strong> first</span>
+        </div>
+      </div>
+
+      <!-- 1 GOALS -->
+      <h2 id="s1" style="font:600 22px 'Newsreader',serif;color:oklch(24% 0.02 262);margin:46px 0 14px;padding-top:8px"><span style="font:600 13px 'IBM Plex Mono';color:oklch(60% 0.13 252);margin-right:10px">01</span>Goals &amp; non-goals</h2>
+      <div style="display:flex;gap:20px;margin-top:6px">
+        <div style="flex:1">
+          <div style="font:600 9px 'IBM Plex Mono';letter-spacing:.1em;text-transform:uppercase;color:oklch(50% 0.10 155);margin-bottom:9px">Goals</div>
+          <ul style="margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:8px">
+            <li style="display:flex;gap:9px;font:400 13.5px/1.5 'IBM Plex Sans';color:oklch(38% 0.02 262)"><span style="color:oklch(55% 0.12 155);font-weight:600">✓</span>One canonical, column-level lineage graph spanning services, streams, S3 and file transfers.</li>
+            <li style="display:flex;gap:9px;font:400 13.5px/1.5 'IBM Plex Sans';color:oklch(38% 0.02 262)"><span style="color:oklch(55% 0.12 155);font-weight:600">✓</span>A calibrated confidence score on every node and edge, with full provenance.</li>
+            <li style="display:flex;gap:9px;font:400 13.5px/1.5 'IBM Plex Sans';color:oklch(38% 0.02 262)"><span style="color:oklch(55% 0.12 155);font-weight:600">✓</span>Lineage kept current automatically as code changes — no manual upkeep.</li>
+            <li style="display:flex;gap:9px;font:400 13.5px/1.5 'IBM Plex Sans';color:oklch(38% 0.02 262)"><span style="color:oklch(55% 0.12 155);font-weight:600">✓</span>Collectors that degrade gracefully when a signal is missing.</li>
+          </ul>
+        </div>
+        <div style="flex:1">
+          <div style="font:600 9px 'IBM Plex Mono';letter-spacing:.1em;text-transform:uppercase;color:oklch(56% 0.10 30);margin-bottom:9px">Non-goals (v1)</div>
+          <ul style="margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:8px">
+            <li style="display:flex;gap:9px;font:400 13.5px/1.5 'IBM Plex Sans';color:oklch(48% 0.02 262)"><span style="color:oklch(62% 0.10 30)">—</span>Auto-remediation of broken pipelines.</li>
+            <li style="display:flex;gap:9px;font:400 13.5px/1.5 'IBM Plex Sans';color:oklch(48% 0.02 262)"><span style="color:oklch(62% 0.10 30)">—</span>A data catalog / glossary product (we integrate, not replace).</li>
+            <li style="display:flex;gap:9px;font:400 13.5px/1.5 'IBM Plex Sans';color:oklch(48% 0.02 262)"><span style="color:oklch(62% 0.10 30)">—</span>Real-time (sub-second) lineage; near-real-time is sufficient.</li>
+            <li style="display:flex;gap:9px;font:400 13.5px/1.5 'IBM Plex Sans';color:oklch(48% 0.02 262)"><span style="color:oklch(62% 0.10 30)">—</span>Every language/framework at launch — start with the vertical slice's stack.</li>
+          </ul>
+        </div>
+      </div>
+
+      <!-- 2 ROADMAP (exec) -->
+      <h2 id="s2" style="font:600 22px 'Newsreader',serif;color:oklch(24% 0.02 262);margin:46px 0 16px"><span style="font:600 13px 'IBM Plex Mono';color:oklch(60% 0.13 252);margin-right:10px">02</span>Roadmap</h2>
+      <div style="display:flex;flex-direction:column;gap:0">
+        <sc-for list="{{ roadmap }}" as="p" hint-placeholder-count="4">
+          <div style="display:flex;gap:16px">
+            <div style="flex:none;display:flex;flex-direction:column;align-items:center">
+              <span style="width:13px;height:13px;border-radius:50%;background:{{ p.dot }};border:2.5px solid {{ p.ring }};flex:none"></span>
+              <span style="width:2px;flex:1;background:oklch(92% 0.006 262);min-height:14px"></span>
+            </div>
+            <div style="padding-bottom:20px;flex:1">
+              <div style="display:flex;align-items:center;gap:10px"><span style="font:600 9px 'IBM Plex Mono';letter-spacing:.08em;text-transform:uppercase;color:{{ p.dot }}">{{ p.phase }}</span><span style="font:600 14px 'IBM Plex Sans';color:oklch(28% 0.02 262)">{{ p.title }}</span><span style="font:500 10.5px 'IBM Plex Mono';color:oklch(60% 0.02 262);margin-left:auto">{{ p.when }}</span></div>
+              <p style="font:400 13px/1.55 'IBM Plex Sans';color:oklch(46% 0.02 262);margin:6px 0 0">{{ p.body }}</p>
+            </div>
+          </div>
+        </sc-for>
+      </div>
+
+      <!-- engineering divider -->
+      <div style="display:flex;align-items:center;gap:14px;margin:40px 0 6px">
+        <span style="font:600 10px 'IBM Plex Mono';letter-spacing:.14em;text-transform:uppercase;color:oklch(48% 0.02 262);background:oklch(94% 0.006 262);padding:6px 12px;border-radius:5px">Engineering specification</span>
+        <span style="flex:1;height:1px;background:oklch(91% 0.006 262)"></span>
+      </div>
+
+      <!-- 3 ARCHITECTURE -->
+      <h2 id="s3" style="font:600 22px 'Newsreader',serif;color:oklch(24% 0.02 262);margin:34px 0 6px"><span style="font:600 13px 'IBM Plex Mono';color:oklch(60% 0.13 252);margin-right:10px">03</span>System architecture</h2>
+      <p style="font:400 14px/1.6 'IBM Plex Sans';color:oklch(42% 0.02 262);margin:0 0 18px;max-width:62ch">Four collectors feed a merge &amp; reconciliation engine that resolves identities, deduplicates edges, and assigns confidence. The result is one canonical graph; a CI/CD diff keeps it current on every change.</p>
+      <div style="border:1px solid oklch(91% 0.006 262);border-radius:11px;padding:20px;background:oklch(98.6% 0.003 262)">
+        <div style="display:flex;align-items:stretch;gap:0">
+          <div style="flex:none;width:236px;display:flex;flex-direction:column;gap:7px">
+            <div style="font:600 8px 'IBM Plex Mono';letter-spacing:.1em;text-transform:uppercase;color:oklch(62% 0.02 262);margin-bottom:1px">Collectors</div>
+            <sc-for list="{{ sources }}" as="s" hint-placeholder-count="4">
+              <div style="display:flex;align-items:center;gap:9px;background:#fff;border:1px solid oklch(91% 0.006 262);border-radius:8px;padding:8px 10px">
+                <span style="display:flex;align-items:center;justify-content:center;width:26px;height:26px;border-radius:6px;border:1px solid {{ s.color }};font:600 11px 'IBM Plex Mono';color:{{ s.color }};flex:none">{{ s.glyph }}</span>
+                <span style="display:flex;flex-direction:column;gap:0;min-width:0;flex:1"><span style="font:600 11px 'IBM Plex Sans';color:oklch(30% 0.02 262)">{{ s.name }}</span><span style="font:500 8px 'IBM Plex Mono';letter-spacing:.04em;text-transform:uppercase;color:{{ s.color }}">{{ s.out }}</span></span>
+              </div>
+            </sc-for>
+          </div>
+          <div style="flex:none;width:34px;display:flex;align-items:center;justify-content:center;font:400 16px 'IBM Plex Sans';color:oklch(74% 0.02 262)">→</div>
+          <div style="flex:1;display:flex;flex-direction:column;justify-content:center;background:oklch(99% 0.012 300);border:1.5px solid oklch(87% 0.04 300);border-radius:9px;padding:14px">
+            <span style="font:700 8px 'IBM Plex Mono';letter-spacing:.08em;text-transform:uppercase;color:oklch(50% 0.14 300)">Merge &amp; reconciliation</span>
+            <span style="font:600 13px 'IBM Plex Sans';color:oklch(30% 0.02 262);margin-top:6px">Resolve · dedupe · score</span>
+            <span style="font:400 10.5px/1.5 'IBM Plex Sans';color:oklch(52% 0.02 262);margin-top:5px">Canonical IDs across collectors; baseline ⨉ runtime reconciliation; confidence assignment.</span>
+          </div>
+          <div style="flex:none;width:34px;display:flex;align-items:center;justify-content:center;font:400 16px 'IBM Plex Sans';color:oklch(74% 0.02 262)">→</div>
+          <div style="flex:none;width:150px;display:flex;flex-direction:column;gap:7px">
+            <div style="flex:1;background:oklch(55% 0.14 252);border-radius:9px;padding:12px;color:#fff;display:flex;flex-direction:column;justify-content:center"><span style="font:700 8px 'IBM Plex Mono';letter-spacing:.08em;text-transform:uppercase;opacity:.85">Output</span><span style="font:600 12.5px 'IBM Plex Sans';margin-top:5px">Canonical graph</span></div>
+            <div style="background:#fff;border:1px dashed oklch(80% 0.06 155);border-radius:9px;padding:9px 11px"><span style="font:700 8px 'IBM Plex Mono';letter-spacing:.06em;text-transform:uppercase;color:oklch(50% 0.12 155)">↻ CI/CD diff</span><span style="font:400 9.5px/1.4 'IBM Plex Sans';color:oklch(52% 0.02 262);display:block;margin-top:4px">Per-PR delta vs baseline.</span></div>
+          </div>
+        </div>
+      </div>
+      <p style="font:400 12.5px/1.55 'IBM Plex Sans';color:oklch(52% 0.02 262);margin:14px 0 0">Baseline signals (static + LLM) describe what the code <em>should</em> do; runtime signals (Spark, Dask, OTel) describe what actually <em>happened</em>. Confidence is highest where the two agree and recently.</p>
+
+      <!-- 4 DATA MODEL -->
+      <h2 id="s4" style="font:600 22px 'Newsreader',serif;color:oklch(24% 0.02 262);margin:46px 0 8px"><span style="font:600 13px 'IBM Plex Mono';color:oklch(60% 0.13 252);margin-right:10px">04</span>Data model &amp; entities</h2>
+      <p style="font:400 14px/1.6 'IBM Plex Sans';color:oklch(42% 0.02 262);margin:0 0 16px;max-width:62ch">The graph is a typed property graph. The containment hierarchy gives the altitudes the UI navigates; lineage edges connect entities at any level and resolve down to columns.</p>
+      <div style="display:flex;align-items:center;gap:0;flex-wrap:wrap;margin-bottom:18px">
+        <sc-for list="{{ hierarchy }}" as="h" hint-placeholder-count="6">
+          <span style="display:flex;align-items:center;gap:0">
+            <span style="font:600 11.5px 'IBM Plex Mono';color:{{ h.color }};background:{{ h.bg }};border:1px solid {{ h.color }};border-radius:6px;padding:5px 10px">{{ h.label }}</span>
+            <span style="font:400 13px 'IBM Plex Sans';color:oklch(72% 0.02 262);margin:0 7px">{{ h.sep }}</span>
+          </span>
+        </sc-for>
+      </div>
+      <table style="width:100%;border-collapse:collapse;font-family:'IBM Plex Sans'">
+        <thead><tr style="background:oklch(97% 0.004 262)">
+          <th style="text-align:left;font:600 9px 'IBM Plex Mono';letter-spacing:.06em;text-transform:uppercase;color:oklch(58% 0.02 262);padding:9px 12px;border-bottom:1px solid oklch(91% 0.006 262)">Entity</th>
+          <th style="text-align:left;font:600 9px 'IBM Plex Mono';letter-spacing:.06em;text-transform:uppercase;color:oklch(58% 0.02 262);padding:9px 12px;border-bottom:1px solid oklch(91% 0.006 262)">Key attributes</th>
+          <th style="text-align:left;font:600 9px 'IBM Plex Mono';letter-spacing:.06em;text-transform:uppercase;color:oklch(58% 0.02 262);padding:9px 12px;border-bottom:1px solid oklch(91% 0.006 262)">Collected from</th>
+        </tr></thead>
+        <tbody>
+          <sc-for list="{{ entities }}" as="e" hint-placeholder-count="7">
+            <tr style="border-bottom:1px solid oklch(95% 0.004 262)">
+              <td style="padding:9px 12px;font:600 12px 'IBM Plex Mono';color:oklch(34% 0.02 262);vertical-align:top">{{ e.name }}</td>
+              <td style="padding:9px 12px;font:400 12px/1.5 'IBM Plex Sans';color:oklch(46% 0.02 262);vertical-align:top">{{ e.attrs }}</td>
+              <td style="padding:9px 12px;font:500 11px 'IBM Plex Mono';color:oklch(52% 0.02 262);vertical-align:top">{{ e.src }}</td>
+            </tr>
+          </sc-for>
+        </tbody>
+      </table>
+      <div style="margin-top:14px;border-left:3px solid oklch(60% 0.13 252);background:oklch(98.5% 0.01 252);padding:11px 15px;border-radius:0 8px 8px 0">
+        <span style="font:600 11px 'IBM Plex Sans';color:oklch(40% 0.08 252)">Edge model.</span>
+        <span style="font:400 12.5px/1.55 'IBM Plex Sans';color:oklch(42% 0.02 262)"> Every edge has <span style="font-family:'IBM Plex Mono';font-size:11px">{source, target, level (system|dataset|column), transform, channel (batch|stream|rest|graphql|grpc|async), confidence, signals[], lastObservedAt}</span> plus a <span style="font-family:'IBM Plex Mono';font-size:11px">path</span> qualifier (below). Column-level edges roll up to dataset and app edges for the higher altitudes.</span>
+      </div>
+
+      <!-- path-qualified edges -->
+      <div style="margin-top:22px;display:flex;align-items:center;gap:9px">
+        <span style="font:600 13.5px 'IBM Plex Sans';color:oklch(30% 0.02 262)">Path-qualified edges</span>
+        <span style="font:500 9px 'IBM Plex Mono';letter-spacing:.04em;text-transform:uppercase;color:oklch(50% 0.12 300);background:oklch(96% 0.03 300);padding:3px 7px;border-radius:4px">why a service has many edges</span>
+      </div>
+      <p style="font:400 13px/1.6 'IBM Plex Sans';color:oklch(44% 0.02 262);margin:8px 0 14px;max-width:64ch">A service is not one transform. The same input column reaches different outputs depending on the <strong style="font-weight:600">code path taken</strong> — branches, event-type switches, feature flags, null/error handling. Static + LLM analysis emits the <strong style="font-weight:600">superset</strong> of all potential paths; runtime collectors confirm which actually execute. Each edge therefore carries the path that produced it:</p>
+      <div style="border:1px solid oklch(91% 0.006 262);border-radius:10px;overflow:hidden;font-family:'IBM Plex Mono'">
+        <sc-for list="{{ pathFields }}" as="p" hint-placeholder-count="5">
+          <div style="display:flex;gap:0;border-bottom:1px solid oklch(95.5% 0.004 262)">
+            <span style="flex:none;width:142px;font:600 11px 'IBM Plex Mono';color:oklch(40% 0.10 300);padding:9px 13px;background:oklch(98.5% 0.012 300)">{{ p.key }}</span>
+            <span style="flex:1;font:400 11.5px/1.5 'IBM Plex Sans';color:oklch(44% 0.02 262);padding:9px 13px">{{ p.desc }}</span>
+          </div>
+        </sc-for>
+      </div>
+      <div style="margin-top:13px;display:flex;gap:10px">
+        <div style="flex:1;border:1px solid oklch(86% 0.04 50);background:oklch(98.5% 0.012 55);border-radius:9px;padding:12px 14px">
+          <div style="font:600 9px 'IBM Plex Mono';letter-spacing:.06em;text-transform:uppercase;color:oklch(52% 0.14 50);margin-bottom:6px">Superset · static + LLM</div>
+          <p style="font:400 11.5px/1.5 'IBM Plex Sans';color:oklch(44% 0.02 262);margin:0">Every branch, including rarely-taken and error paths. Complete, but over-approximates — may include dead code.</p>
+        </div>
+        <div style="flex:1;border:1px solid oklch(84% 0.06 155);background:oklch(98.5% 0.015 155);border-radius:9px;padding:12px 14px">
+          <div style="font:600 9px 'IBM Plex Mono';letter-spacing:.06em;text-transform:uppercase;color:oklch(48% 0.12 155);margin-bottom:6px">Executed subset · runtime</div>
+          <p style="font:400 11.5px/1.5 'IBM Plex Sans';color:oklch(44% 0.02 262);margin:0">Which paths actually fired, and how often (hot/warm/cold). Confirms reality, but a never-yet-observed path stays unconfirmed.</p>
+        </div>
+      </div>
+      <p style="font:400 12px/1.55 'IBM Plex Sans';color:oklch(52% 0.02 262);margin:13px 0 0">Per-path execution frequency feeds confidence: a hot, runtime-confirmed path scores Verified; a static-only branch stays Inferred. Branch coverage — the share of code paths runtime-confirmed — becomes a measurable risk surface (see PRD 2 §4).</p>
+
+      <!-- 4b WHAT EACH SIGNAL COLLECTS -->
+      <div style="font:600 15px 'IBM Plex Sans';color:oklch(30% 0.02 262);margin:30px 0 4px">What each signal collects — and what it powers</div>
+      <p style="font:400 13px/1.6 'IBM Plex Sans';color:oklch(44% 0.02 262);margin:0 0 16px;max-width:62ch">No single collector sees everything. Static + LLM proposes the complete <em>shape</em>; the runtime signals confirm <em>reality</em> and add frequency, freshness and traffic. The merge engine unions their attributes onto one entity/edge record.</p>
+
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:11px;margin-bottom:16px">
+        <sc-for list="{{ signalsCollect }}" as="s" hint-placeholder-count="4">
+          <div style="border:1px solid oklch(92% 0.006 262);border-radius:11px;padding:15px 16px;border-top:3px solid {{ s.color }}">
+            <div style="display:flex;align-items:baseline;gap:8px;margin-bottom:3px">
+              <span style="font:600 13px 'IBM Plex Sans';color:oklch(28% 0.02 262)">{{ s.name }}</span>
+              <span style="font:500 8.5px 'IBM Plex Mono';color:oklch(58% 0.02 262);margin-left:auto">{{ s.tag }}</span>
+            </div>
+            <div style="font:400 10.5px 'IBM Plex Sans';color:oklch(50% 0.02 262);margin-bottom:9px">Observes: {{ s.observes }}</div>
+            <div style="display:flex;flex-direction:column;gap:3px;margin-bottom:10px">
+              <sc-for list="{{ s.attrs }}" as="a" hint-placeholder-count="4">
+                <div style="display:flex;gap:7px;align-items:flex-start"><span style="color:{{ s.color }};font:600 10px 'IBM Plex Mono';flex:none">+</span><span style="font:500 10.5px/1.4 'IBM Plex Mono';color:oklch(40% 0.02 262)">{{ a.v }}</span></div>
+              </sc-for>
+            </div>
+            <div style="display:flex;gap:5px;flex-wrap:wrap;border-top:1px solid oklch(94% 0.006 262);padding-top:9px">
+              <span style="font:600 7.5px 'IBM Plex Mono';letter-spacing:.04em;color:oklch(60% 0.02 262);align-self:center">POWERS</span>
+              <sc-for list="{{ s.powers }}" as="p" hint-placeholder-count="2">
+                <span style="font:600 8px 'IBM Plex Mono';color:{{ p.fg }};background:{{ p.bg }};padding:2px 7px;border-radius:4px">{{ p.label }}</span>
+              </sc-for>
+            </div>
+          </div>
+        </sc-for>
+      </div>
+
+      <!-- attributes by experience -->
+      <div style="border:1px solid oklch(92% 0.006 262);border-radius:10px;padding:6px 14px;margin-bottom:16px">
+        <sc-for list="{{ expNeeds }}" as="e" hint-placeholder-count="3">
+          <div style="display:flex;gap:12px;align-items:baseline;padding:9px 0;border-bottom:1px solid oklch(96% 0.004 262)">
+            <span style="font:600 9px 'IBM Plex Mono';color:#fff;background:{{ e.color }};padding:3px 8px;border-radius:4px;flex:none;width:84px;text-align:center">{{ e.exp }}</span>
+            <span style="font:400 11px/1.5 'IBM Plex Sans';color:oklch(46% 0.02 262)">requires {{ e.needs }}</span>
+          </div>
+        </sc-for>
+      </div>
+
+      <!-- worked example -->
+      <div style="font:600 8.5px 'IBM Plex Mono';letter-spacing:.06em;text-transform:uppercase;color:oklch(58% 0.02 262);margin-bottom:8px">One example · the order-amount flow, assembled from all four signals</div>
+      <div style="background:oklch(22% 0.02 262);border-radius:11px;padding:16px 18px;overflow:auto">
+        <pre style="margin:0;font:400 11px/1.6 'IBM Plex Mono';color:oklch(86% 0.02 262);white-space:pre">{{ collectExample }}</pre>
+      </div>
+      <div style="display:flex;gap:14px;flex-wrap:wrap;margin-top:10px">
+        <sc-for list="{{ provLegend }}" as="p" hint-placeholder-count="4">
+          <span style="display:flex;align-items:center;gap:6px;font:500 10px 'IBM Plex Sans';color:oklch(48% 0.02 262)"><span style="width:9px;height:9px;border-radius:2px;background:{{ p.color }}"></span>{{ p.name }}</span>
+        </sc-for>
+      </div>
+
+      <!-- 5 CONFIDENCE (interactive) -->
+      <h2 id="s5" style="font:600 22px 'Newsreader',serif;color:oklch(24% 0.02 262);margin:46px 0 8px"><span style="font:600 13px 'IBM Plex Mono';color:oklch(60% 0.13 252);margin-right:10px">05</span>Confidence scoring spec</h2>
+      <p style="font:400 14px/1.6 'IBM Plex Sans';color:oklch(42% 0.02 262);margin:0 0 8px;max-width:62ch">Confidence combines <strong style="font-weight:600">signal agreement</strong> (how many independent collectors assert the edge) with <strong style="font-weight:600">runtime recency</strong> (how recently it was actually observed). Baseline-only edges are capped below the runtime-confirmed range. Try it:</p>
+
+      <div style="border:1px solid oklch(91% 0.006 262);border-radius:12px;overflow:hidden;margin-top:14px">
+        <div style="display:flex;gap:0">
+          <div style="flex:1;padding:18px 20px;border-right:1px solid oklch(93% 0.006 262)">
+            <div style="font:600 9px 'IBM Plex Mono';letter-spacing:.1em;text-transform:uppercase;color:oklch(60% 0.02 262);margin-bottom:10px">Signals asserting this edge</div>
+            <div style="display:flex;flex-direction:column;gap:7px">
+              <sc-for list="{{ sigList }}" as="s" hint-placeholder-count="5">
+                <div onClick="{{ s.onClick }}" style="display:flex;align-items:center;gap:10px;padding:8px 10px;border:1px solid {{ s.border }};background:{{ s.bg }};border-radius:8px;cursor:pointer">
+                  <span style="width:16px;height:16px;border-radius:5px;border:1.5px solid {{ s.box }};background:{{ s.boxBg }};display:flex;align-items:center;justify-content:center;font:600 10px 'IBM Plex Mono';color:#fff;flex:none">{{ s.check }}</span>
+                  <span style="font:600 11.5px 'IBM Plex Sans';color:oklch(34% 0.02 262);flex:1">{{ s.label }}</span>
+                  <span style="font:600 7.5px 'IBM Plex Mono';letter-spacing:.04em;text-transform:uppercase;color:{{ s.color }};border:1px solid {{ s.color }};border-radius:3px;padding:2px 5px">{{ s.kind }}</span>
+                </div>
+              </sc-for>
+            </div>
+            <div style="font:600 9px 'IBM Plex Mono';letter-spacing:.1em;text-transform:uppercase;color:oklch(60% 0.02 262);margin:16px 0 8px">Last observed at runtime</div>
+            <div style="display:flex;gap:5px">
+              <sc-for list="{{ recencyOpts }}" as="r" hint-placeholder-count="3">
+                <span onClick="{{ r.onClick }}" style="flex:1;text-align:center;font:600 11px 'IBM Plex Sans';color:{{ r.fg }};background:{{ r.bg }};border:1px solid {{ r.border }};border-radius:7px;padding:7px 4px;cursor:pointer">{{ r.label }}</span>
+              </sc-for>
+            </div>
+          </div>
+          <div style="flex:none;width:260px;padding:20px;display:flex;flex-direction:column;align-items:center;justify-content:center;background:oklch(98.6% 0.003 262)">
+            <div style="font:600 9px 'IBM Plex Mono';letter-spacing:.1em;text-transform:uppercase;color:oklch(60% 0.02 262)">Confidence</div>
+            <div style="font:700 56px 'IBM Plex Sans';color:{{ bandColor }};line-height:1;margin:8px 0 4px">{{ scoreStr }}</div>
+            <span style="font:600 11px 'IBM Plex Mono';color:{{ bandColor }};background:{{ bandBg }};padding:4px 12px;border-radius:5px">{{ band }}</span>
+            <div style="width:100%;height:7px;border-radius:4px;background:oklch(93% 0.006 262);overflow:hidden;margin-top:16px"><span style="display:block;height:100%;width:{{ barW }};background:{{ bandColor }};transition:width .2s ease"></span></div>
+            <p style="font:400 11px/1.5 'IBM Plex Sans';color:oklch(50% 0.02 262);margin:12px 0 0;text-align:center">{{ bandNote }}</p>
+          </div>
+        </div>
+      </div>
+      <table style="width:100%;border-collapse:collapse;font-family:'IBM Plex Sans';margin-top:18px">
+        <thead><tr style="background:oklch(97% 0.004 262)">
+          <th style="text-align:left;font:600 9px 'IBM Plex Mono';letter-spacing:.06em;text-transform:uppercase;color:oklch(58% 0.02 262);padding:8px 12px;border-bottom:1px solid oklch(91% 0.006 262)">Band</th>
+          <th style="text-align:left;font:600 9px 'IBM Plex Mono';letter-spacing:.06em;text-transform:uppercase;color:oklch(58% 0.02 262);padding:8px 12px;border-bottom:1px solid oklch(91% 0.006 262)">Range</th>
+          <th style="text-align:left;font:600 9px 'IBM Plex Mono';letter-spacing:.06em;text-transform:uppercase;color:oklch(58% 0.02 262);padding:8px 12px;border-bottom:1px solid oklch(91% 0.006 262)">Meaning &amp; treatment</th>
+        </tr></thead>
+        <tbody>
+          <tr style="border-bottom:1px solid oklch(95% 0.004 262)"><td style="padding:8px 12px"><span style="font:600 10px 'IBM Plex Mono';color:oklch(52% 0.13 155);background:oklch(96% 0.04 155);padding:3px 8px;border-radius:4px">Verified</span></td><td style="padding:8px 12px;font:500 12px 'IBM Plex Mono';color:oklch(46% 0.02 262)">≥ 85</td><td style="padding:8px 12px;font:400 12px/1.5 'IBM Plex Sans';color:oklch(46% 0.02 262)">Runtime-confirmed by ≥1 collector plus baseline. Safe for automated impact gating.</td></tr>
+          <tr style="border-bottom:1px solid oklch(95% 0.004 262)"><td style="padding:8px 12px"><span style="font:600 10px 'IBM Plex Mono';color:oklch(58% 0.13 75);background:oklch(96% 0.05 80);padding:3px 8px;border-radius:4px">Probable</span></td><td style="padding:8px 12px;font:500 12px 'IBM Plex Mono';color:oklch(46% 0.02 262)">65–84</td><td style="padding:8px 12px;font:400 12px/1.5 'IBM Plex Sans';color:oklch(46% 0.02 262)">Strong baseline, partial/aging runtime. Surfaced with a caution flag.</td></tr>
+          <tr><td style="padding:8px 12px"><span style="font:600 10px 'IBM Plex Mono';color:oklch(58% 0.15 30);background:oklch(96% 0.04 32);padding:3px 8px;border-radius:4px">Inferred</span></td><td style="padding:8px 12px;font:500 12px 'IBM Plex Mono';color:oklch(46% 0.02 262)">&lt; 65</td><td style="padding:8px 12px;font:400 12px/1.5 'IBM Plex Sans';color:oklch(46% 0.02 262)">LLM-derived, never observed. Shown dashed; excluded from automated gates.</td></tr>
+        </tbody>
+      </table>
+
+      <!-- 6 FUNCTIONAL REQUIREMENTS -->
+      <h2 id="s6" style="font:600 22px 'Newsreader',serif;color:oklch(24% 0.02 262);margin:46px 0 14px"><span style="font:600 13px 'IBM Plex Mono';color:oklch(60% 0.13 252);margin-right:10px">06</span>Functional requirements</h2>
+      <div style="display:flex;flex-direction:column;gap:8px">
+        <sc-for list="{{ reqs }}" as="r" hint-placeholder-count="8">
+          <div style="display:flex;gap:13px;padding:11px 14px;border:1px solid oklch(92% 0.006 262);border-radius:9px">
+            <span style="font:600 10px 'IBM Plex Mono';color:oklch(55% 0.14 252);flex:none;width:50px">{{ r.id }}</span>
+            <span style="font:400 13px/1.5 'IBM Plex Sans';color:oklch(38% 0.02 262);flex:1">{{ r.text }}</span>
+            <span style="font:600 8px 'IBM Plex Mono';letter-spacing:.04em;text-transform:uppercase;color:{{ r.pFg }};background:{{ r.pBg }};padding:3px 7px;border-radius:4px;height:fit-content;flex:none">{{ r.pri }}</span>
+          </div>
+        </sc-for>
+      </div>
+
+      <!-- 7 METRICS -->
+      <h2 id="s7" style="font:600 22px 'Newsreader',serif;color:oklch(24% 0.02 262);margin:46px 0 14px"><span style="font:600 13px 'IBM Plex Mono';color:oklch(60% 0.13 252);margin-right:10px">07</span>Success criteria</h2>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+        <sc-for list="{{ metrics }}" as="m" hint-placeholder-count="4">
+          <div style="border:1px solid oklch(92% 0.006 262);border-radius:9px;padding:14px 16px">
+            <div style="font:600 12px 'IBM Plex Sans';color:oklch(30% 0.02 262)">{{ m.name }}</div>
+            <div style="font:400 12px/1.5 'IBM Plex Sans';color:oklch(48% 0.02 262);margin-top:5px">{{ m.body }}</div>
+          </div>
+        </sc-for>
+      </div>
+
+      <!-- 8 ROLLOUT -->
+      <h2 id="s8" style="font:600 22px 'Newsreader',serif;color:oklch(24% 0.02 262);margin:46px 0 10px"><span style="font:600 13px 'IBM Plex Mono';color:oklch(60% 0.13 252);margin-right:10px">08</span>Rollout &amp; phasing</h2>
+      <p style="font:400 14px/1.6 'IBM Plex Sans';color:oklch(42% 0.02 262);margin:0 0 14px;max-width:62ch">Prove the full collection → confidence → graph loop on <strong style="font-weight:600">one vertical slice</strong> end-to-end before widening. The slice is one business application and its immediate cross-app dependencies.</p>
+      <div style="display:flex;gap:10px">
+        <sc-for list="{{ rollout }}" as="r" hint-placeholder-count="3">
+          <div style="flex:1;border:1px solid oklch(92% 0.006 262);border-radius:10px;padding:14px;border-top:3px solid {{ r.color }}">
+            <div style="font:600 9px 'IBM Plex Mono';letter-spacing:.06em;text-transform:uppercase;color:{{ r.color }}">{{ r.tag }}</div>
+            <div style="font:600 13px 'IBM Plex Sans';color:oklch(30% 0.02 262);margin:6px 0 5px">{{ r.title }}</div>
+            <div style="font:400 11.5px/1.5 'IBM Plex Sans';color:oklch(48% 0.02 262)">{{ r.body }}</div>
+          </div>
+        </sc-for>
+      </div>
+
+      <!-- 9 RISKS -->
+      <h2 id="s9" style="font:600 22px 'Newsreader',serif;color:oklch(24% 0.02 262);margin:46px 0 14px"><span style="font:600 13px 'IBM Plex Mono';color:oklch(60% 0.13 252);margin-right:10px">09</span>Risks &amp; open questions</h2>
+      <div style="display:flex;flex-direction:column;gap:9px">
+        <sc-for list="{{ risks }}" as="r" hint-placeholder-count="5">
+          <div style="display:flex;gap:12px;padding:11px 14px;border:1px solid oklch(92% 0.006 262);border-radius:9px;background:{{ r.bg }}">
+            <span style="font:600 9px 'IBM Plex Mono';letter-spacing:.04em;text-transform:uppercase;color:{{ r.tagColor }};flex:none;width:62px">{{ r.tag }}</span>
+            <div style="flex:1"><div style="font:600 12.5px 'IBM Plex Sans';color:oklch(32% 0.02 262)">{{ r.title }}</div><div style="font:400 12px/1.5 'IBM Plex Sans';color:oklch(48% 0.02 262);margin-top:3px">{{ r.body }}</div></div>
+          </div>
+        </sc-for>
+      </div>
+
+      <div style="margin-top:46px;padding-top:18px;border-top:1px solid oklch(91% 0.006 262);display:flex;align-items:center;gap:10px">
+        <span style="font:500 11px 'IBM Plex Mono';color:oklch(60% 0.02 262)">Throughline · PRD 1 of 3</span>
+        <a href="PRD 2 - Impact Analysis.dc.html" style="font:600 11.5px 'IBM Plex Sans';color:oklch(50% 0.13 252);text-decoration:none;margin-left:auto">Next: Impact Analysis →</a>
+      </div>
+    </main>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+class Component extends DCLogic {
+  state = { sig: { static: true, llm: true, spark: true, dask: false, otel: true }, recency: 'fresh' };
+
+  sigDefs() {
+    return [
+      { key: 'static', label: 'Static analysis', kind: 'baseline', color: 'oklch(54% 0.14 252)', base: 30, runtime: 0 },
+      { key: 'llm',    label: 'LLM inference',    kind: 'baseline', color: 'oklch(56% 0.18 300)', base: 18, runtime: 0 },
+      { key: 'spark',  label: 'Spark collector',  kind: 'runtime',  color: 'oklch(62% 0.15 50)',  base: 0, runtime: 30 },
+      { key: 'dask',   label: 'Dask collector',   kind: 'runtime',  color: 'oklch(55% 0.12 190)', base: 0, runtime: 26 },
+      { key: 'otel',   label: 'OTel traces',      kind: 'confidence', color: 'oklch(58% 0.16 350)', base: 0, runtime: 22 },
+    ];
+  }
+  recencyDefs() { return [ { key: 'fresh', label: '< 1 day', mult: 1 }, { key: 'aging', label: '< 7 days', mult: 0.82 }, { key: 'never', label: 'Never', mult: 0 } ]; }
+
+  score() {
+    const defs = this.sigDefs(), rec = this.recencyDefs().find(r => r.key === this.state.recency).mult;
+    let baseline = 0, runtime = 0, anyRuntime = false;
+    defs.forEach(d => { if (this.state.sig[d.key]) { baseline += d.base; if (d.runtime) { runtime += d.runtime * rec; anyRuntime = anyRuntime || rec > 0; } } });
+    let s = Math.min(100, Math.round(baseline + runtime));
+    if (!anyRuntime) s = Math.min(s, 64); // baseline-only is capped below verified
+    let band = 'inferred';
+    if (s >= 85 && anyRuntime) band = 'verified'; else if (s >= 65) band = 'probable';
+    return { s, band, anyRuntime };
+  }
+
+  renderVals() {
+    const toc = [
+      ['01', 'Goals & non-goals', '#s1'], ['02', 'Roadmap', '#s2'], ['03', 'Architecture', '#s3'], ['04', 'Data model', '#s4'],
+      ['05', 'Confidence spec', '#s5'], ['06', 'Requirements', '#s6'], ['07', 'Success criteria', '#s7'], ['08', 'Rollout', '#s8'], ['09', 'Risks', '#s9'],
+    ].map(([n, label, href]) => ({ n, label, href }));
+
+    const roadmap = [
+      { phase: 'Phase 0', title: 'Vertical slice', when: 'Q1', dot: 'oklch(55% 0.14 252)', ring: 'oklch(90% 0.05 252)', body: 'One business application, end-to-end: static+LLM baseline, Spark/OTel runtime, CI/CD diff, confidence scoring. Proves the loop and calibrates the score.' },
+      { phase: 'Phase 1', title: 'Domain rollout', when: 'Q2', dot: 'oklch(58% 0.13 155)', ring: 'oklch(92% 0.04 155)', body: 'Expand to the slice\u2019s full domain; add Dask collector and streaming (Kafka) lineage. Onboard 8\u201310 applications.' },
+      { phase: 'Phase 2', title: 'Org-wide ingest', when: 'Q3', dot: 'oklch(60% 0.13 75)', ring: 'oklch(94% 0.04 75)', body: 'All domains; 2,000+ services & datasets. Confidence calibration loop, backfill of historical runs, catalog integration.' },
+      { phase: 'Phase 3', title: 'Continuous trust', when: 'Q4', dot: 'oklch(56% 0.16 300)', ring: 'oklch(93% 0.04 300)', body: 'Drift detection, stale-edge decay, automated confidence SLAs, and self-serve collector onboarding for new stacks.' },
+    ];
+
+    const sources = [
+      { name: 'Static + LLM', out: 'Baseline', color: 'oklch(54% 0.14 252)', glyph: '{ }' },
+      { name: 'Spark', out: 'Runtime', color: 'oklch(62% 0.15 50)', glyph: '\u2738' },
+      { name: 'Dask', out: 'Runtime', color: 'oklch(55% 0.12 190)', glyph: '\u2756' },
+      { name: 'OTel traces', out: 'Confidence', color: 'oklch(58% 0.16 350)', glyph: '\u25EC' },
+    ];
+
+    const hcols = ['oklch(50% 0.06 262)', 'oklch(54% 0.13 252)', 'oklch(52% 0.13 190)', 'oklch(56% 0.12 155)', 'oklch(58% 0.12 300)', 'oklch(54% 0.10 70)'];
+    const hierarchy = ['Org', 'Domain', 'Business app', 'Service / Dataset / Job', 'Column / Endpoint'].map((label, i) => ({
+      label, color: hcols[i], bg: 'oklch(98% 0.01 262)', sep: i < 4 ? '\u203A' : ''
+    }));
+
+    const entities = [
+      { name: 'Domain', attrs: 'id, name, owner org', src: 'Org chart / config' },
+      { name: 'BusinessApp', attrs: 'id, name, team, domain', src: 'Service catalog' },
+      { name: 'Service', attrs: 'id, app, role, endpoints[]', src: 'Static + catalog' },
+      { name: 'Dataset', attrs: 'id, type (kafka|s3|file|cache), schema, owner', src: 'Static + runtime' },
+      { name: 'Job', attrs: 'id, engine (spark|dask|dbt), inputs[], outputs[]', src: 'Runtime collectors' },
+      { name: 'Column', attrs: 'name, type, classification (PII\u2026)', src: 'Static + schema registry' },
+      { name: 'Edge', attrs: 'source, target, level, transform, channel, confidence', src: 'All signals (merged)' },
+    ];
+
+    const pathFields = [
+      { key: 'pathId', desc: 'Stable identifier for this code path within the service (e.g. orders-svc#handleRefund).' },
+      { key: 'guard', desc: 'The predicate that gates the path \u2014 e.g. event.type == \u2018refund\u2019, region == \u2018EU\u2019, flag.newPricing.' },
+      { key: 'codeRef', desc: 'Source location: file \u00b7 line / function, so a reviewer can jump straight to the branch.' },
+      { key: 'frequency', desc: 'Runtime execution class: hot \u00b7 warm \u00b7 cold \u00b7 never-observed (drives confidence band).' },
+      { key: 'lastFiredAt', desc: 'Timestamp the path was last seen executing; powers stale-path decay.' },
+    ];
+
+    const sigList = this.sigDefs().map(d => {
+      const on = this.state.sig[d.key];
+      return { label: d.label, kind: d.kind.toUpperCase(), color: d.color, check: on ? '\u2713' : '',
+        box: on ? d.color : 'oklch(82% 0.01 262)', boxBg: on ? d.color : '#fff',
+        border: on ? d.color : 'oklch(92% 0.006 262)', bg: on ? 'oklch(99% 0.012 262)' : '#fff',
+        onClick: () => this.setState(s => ({ sig: { ...s.sig, [d.key]: !s.sig[d.key] } })) };
+    });
+    const recencyOpts = this.recencyDefs().map(r => {
+      const on = this.state.recency === r.key;
+      return { label: r.label, fg: on ? '#fff' : 'oklch(50% 0.02 262)', bg: on ? 'oklch(45% 0.10 252)' : '#fff', border: on ? 'oklch(45% 0.10 252)' : 'oklch(91% 0.006 262)',
+        onClick: () => this.setState({ recency: r.key }) };
+    });
+    const sc = this.score();
+    const bandMap = { verified: { c: 'oklch(52% 0.13 155)', bg: 'oklch(96% 0.04 155)', label: 'Verified', note: 'Runtime-confirmed \u2014 safe for automated impact gating.' },
+      probable: { c: 'oklch(56% 0.13 75)', bg: 'oklch(96% 0.05 80)', label: 'Probable', note: 'Strong baseline, partial runtime \u2014 surfaced with a caution flag.' },
+      inferred: { c: 'oklch(58% 0.15 30)', bg: 'oklch(96% 0.04 32)', label: 'Inferred', note: 'Not observed at runtime \u2014 shown dashed, excluded from gates.' } };
+    const bm = bandMap[sc.band];
+
+    const reqs = [
+      ['FR-C1', 'Static analyzer parses repository code, SQL, and orchestration DAGs to emit candidate baseline edges with transform expressions.', 'P0'],
+      ['FR-C2', 'LLM enrichment resolves ambiguous transforms (UDFs, dynamic SQL, notebooks) into column-level mappings with a self-reported confidence.', 'P0'],
+      ['FR-C3', 'Runtime collectors (Spark OpenLineage listener, Dask hooks) emit observed input/output datasets + columns per job run.', 'P0'],
+      ['FR-C4', 'OTel ingestion derives service-to-service calls and data operations from spans, contributing recency and runtime corroboration.', 'P1'],
+      ['FR-C5', 'Merge engine resolves canonical entity identity across collectors and deduplicates edges by (source,target,level).', 'P0'],
+      ['FR-C6', 'Confidence service scores every edge from signal agreement \u00d7 recency and assigns a band; full provenance is retained.', 'P0'],
+      ['FR-C7', 'CI/CD hook regenerates lineage for changed code on each PR and produces an added/changed/removed edge delta vs baseline.', 'P0'],
+      ['FR-C8', 'Streaming lineage: topic schema (registry subject + version), partition key, and consumer-group edges are captured.', 'P1'],
+      ['FR-C9', 'Stale-edge decay lowers confidence for edges not re-observed within a configurable window.', 'P2'],
+    ].map(([id, text, pri]) => ({ id, text, pri, pFg: pri === 'P0' ? '#fff' : 'oklch(48% 0.02 262)', pBg: pri === 'P0' ? 'oklch(55% 0.14 252)' : 'oklch(95% 0.004 262)' }));
+
+    const metrics = [
+      { name: 'Coverage', body: 'A growing share of production datasets have at least one runtime-confirmed inbound edge.' },
+      { name: 'Trust', body: 'The majority of edges on critical paths sit in the Verified band; Inferred-only edges trend down over time.' },
+      { name: 'Freshness', body: 'Lineage reflects a code change within one CI cycle; runtime edges re-confirm within their decay window.' },
+      { name: 'Adoption', body: 'New applications onboard via self-serve collectors without platform-team intervention.' },
+    ];
+
+    const rollout = [
+      { tag: 'Slice', title: 'One application, E2E', color: 'oklch(55% 0.14 252)', body: 'All four signals wired for a single app + its boundary. Calibrate confidence against known-true edges.' },
+      { tag: 'Widen', title: 'Domain + streaming', color: 'oklch(58% 0.13 155)', body: 'Add Dask and Kafka; onboard the rest of the domain; validate roll-up to app/domain altitudes.' },
+      { tag: 'Scale', title: 'Org-wide', color: 'oklch(60% 0.13 75)', body: '2,000+ entities across domains; backfill history; integrate the catalog; confidence SLAs.' },
+    ];
+
+    const risks = [
+      { tag: 'Risk', title: 'LLM hallucinated edges', body: 'Mitigation: LLM edges enter as Inferred only, never gate automatically, and must be runtime-corroborated to be promoted.', bg: 'oklch(98.5% 0.02 32)', tagColor: 'oklch(56% 0.13 30)' },
+      { tag: 'Risk', title: 'Identity resolution across collectors', body: 'Spark, OTel and static use different identifiers. A canonical naming/resolution layer is on the critical path.', bg: 'oklch(98.5% 0.02 32)', tagColor: 'oklch(56% 0.13 30)' },
+      { tag: 'Open', title: 'Confidence weights & thresholds', body: 'Initial weights are heuristic; calibration on the vertical slice should tune them. Per-signal trust may need to vary by stack.', bg: 'oklch(98.5% 0.012 252)', tagColor: 'oklch(50% 0.10 252)' },
+      { tag: 'Open', title: 'Streaming lineage granularity', body: 'How deep to model state stores, changelogs and caches as first-class datasets vs. attributes of a processor.', bg: 'oklch(98.5% 0.012 252)', tagColor: 'oklch(50% 0.10 252)' },
+      { tag: 'Open', title: 'Cross-stack collector coverage', body: 'Order of language/engine support beyond the slice (e.g. Flink, Trino, dbt) needs prioritization with stakeholders.', bg: 'oklch(98.5% 0.012 252)', tagColor: 'oklch(50% 0.10 252)' },
+    ];
+
+    // ---- what each signal collects ----
+    const pw = { lin: { label: 'Lineage', fg: 'oklch(45% 0.13 252)', bg: 'oklch(95% 0.03 252)' },
+      intx: { label: 'Interactions', fg: 'oklch(42% 0.11 190)', bg: 'oklch(95% 0.03 190)' },
+      imp: { label: 'Impact', fg: 'oklch(50% 0.14 35)', bg: 'oklch(96% 0.03 38)' } };
+    const av = arr => arr.map(v => ({ v }));
+    const signalsCollect = [
+      { name: 'SCA + LLM', tag: 'static · per PR + nightly', color: 'oklch(55% 0.14 252)',
+        observes: 'source, SQL, IaC, API specs, CODEOWNERS',
+        attrs: av(['candidate nodes: service / dataset / column', 'declared endpoints (REST · GraphQL · gRPC)', 'transform expression + column mapping', 'code-path guard + codeRef', 'declared types / schema', 'owner / team']),
+        powers: [pw.lin, pw.intx, pw.imp] },
+      { name: 'Spark', tag: 'runtime · OpenLineage', color: 'oklch(52% 0.12 155)',
+        observes: 'batch & SQL job runs',
+        attrs: av(['confirmed dataset→dataset edges', 'column-level lineage facet', 'transform via job + run id', 'run frequency & freshness', 'row / volume stats']),
+        powers: [pw.lin, pw.imp] },
+      { name: 'Dask', tag: 'runtime · OpenLineage', color: 'oklch(50% 0.12 195)',
+        observes: 'Python feature & ML pipelines',
+        attrs: av(['confirmed feature derivations', 'dataset → feature → model edges', 'window / aggregation transform', 'run frequency, engine stats']),
+        powers: [pw.lin, pw.imp] },
+      { name: 'OTel', tag: 'runtime · traces + metrics', color: 'oklch(55% 0.14 300)',
+        observes: 'service-to-service calls',
+        attrs: av(['caller→callee spans (peer.service)', 'rpc.method / http.route / endpoint', 'sync vs async channel', 'call count, latency p50/p99, error rate']),
+        powers: [pw.intx, pw.imp] },
+    ];
+    const expNeeds = [
+      { exp: 'Lineage', color: pw.lin.fg, needs: 'typed nodes + containment, column-level edges, transform expressions and direction' },
+      { exp: 'Interactions', color: pw.intx.fg, needs: 'caller→callee pairs, endpoint, channel (sync/async) and call frequency' },
+      { exp: 'Impact', color: pw.imp.fg, needs: 'edge direction + transform, code-path guard + execution frequency, confidence, and severity inputs (type, classification)' },
+    ];
+    const collectExample =
+`// DATA EDGE  orders.events.total_amount → orders_raw.total_amount
+{ "source":"col:orders.events.total_amount",
+  "target":"col:orders_raw.total_amount", "level":"column",
+  "transform":"cast(amount/100 as decimal)",       // SCA+LLM
+  "channel":"stream",                                // SCA+LLM
+  "path":{"guard":"order.status=='CONFIRMED'",       // SCA+LLM
+          "codeRef":"OrderService.java:88",
+          "frequency":"hot"},                        // Spark (observed runs)
+  "runStats":{"lastRun":"38s","rowsOut":124903},     // Spark
+  "signals":["static","llm","spark"], "confidence":0.96 }
+
+// FEATURE EDGE  fct_orders.net_amount → churn_features.avg_order_value
+{ "transform":"avg over 90d window",                 // SCA+LLM
+  "runStats":{"engine":"dask"}, "frequency":"hot",   // Dask
+  "signals":["static","llm","dask"], "confidence":0.90 }
+
+// INTERACTION EDGE  orders-svc → customer-svc
+{ "kind":"call", "channel":"rest",
+  "endpoint":"GET /customers/{id}",                  // SCA+LLM + OTel
+  "sync":true, "callCount24h":18230,                 // OTel
+  "p99Ms":42, "errorRate":0.002,                     // OTel
+  "signals":["static","otel"], "confidence":0.93 }`;
+    const provLegend = [
+      { name: 'SCA + LLM', color: 'oklch(55% 0.14 252)' }, { name: 'Spark', color: 'oklch(52% 0.12 155)' },
+      { name: 'Dask', color: 'oklch(50% 0.12 195)' }, { name: 'OTel', color: 'oklch(55% 0.14 300)' },
+    ];
+
+    return { toc, roadmap, sources, hierarchy, entities, sigList, recencyOpts, pathFields,
+      signalsCollect, expNeeds, collectExample, provLegend,
+      scoreStr: sc.s + '%', band: bm.label, bandColor: bm.c, bandBg: bm.bg, barW: sc.s + '%', bandNote: bm.note,
+      reqs, metrics, rollout, risks };
+  }
+}
+</script>
+</body>
+</html>

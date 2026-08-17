@@ -34,7 +34,10 @@ REVISION = "88e37c15cf6fc8490b01bc3e8e2c800cec1ac272"
 
 # The established Petclinic oracle records 8 residue entries, all
 # "ignored-schema-statement" (tests/integration/test_spring_petclinic_repository.py).
-EXPECTED_COUNTS = {"edges": 15, "reads": 10, "writes": 5, "residue": 8, "unresolved": 0}
+# 23 edges = 15 dataset-scope + 8 element-scope: since element-grounded Java SCA
+# edges, a proven column claim emits its own `dataset#column` edge alongside the
+# dataset-scope edge for the same repository call.
+EXPECTED_COUNTS = {"edges": 23, "reads": 18, "writes": 5, "residue": 8, "unresolved": 0}
 EXPECTED_COVERAGE = {
     "expected": 131,
     "completed": 33,

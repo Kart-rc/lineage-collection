@@ -7,6 +7,7 @@ from pathlib import Path
 
 import pytest
 
+from lineage_api.application.java_runtime_stage import select_relevant_java_sources
 from lineage_api.services.java_runtime_verification import (
     JavaHarnessError,
     JavaObservation,
@@ -73,6 +74,38 @@ def test_entities_repositories_and_injection_sites_are_read_from_the_corpus() ->
     assert set(sites[0].methods) == {"find", "save"}
 
 
+def test_every_spring_data_base_interface_is_recognized_as_a_repository() -> None:
+    # spring-petclinic's VetRepository extends `Repository<Vet, Integer>` -- the
+    # deliberately minimal Spring Data marker -- and other real repositories extend
+    # the Crud/ListCrud/PagingAndSorting bases. All of them are Spring Data
+    # repositories the proxy seam can instrument, not just JpaRepository.
+    template = (
+        "package example;\n"
+        "import org.springframework.data.repository.{base};\n"
+        "interface {name} extends {base}<Vet, Integer> {{\n"
+        "    java.util.List<Vet> findAll();\n"
+        "}}\n"
+    )
+    sources = {
+        f"src/{name}.java": template.format(base=base, name=name)
+        for base, name in (
+            ("Repository", "VetRepository"),
+            ("CrudRepository", "CrudVetRepository"),
+            ("ListCrudRepository", "ListCrudVetRepository"),
+            ("PagingAndSortingRepository", "PagingVetRepository"),
+        )
+    }
+
+    repositories = read_repositories(sources)
+
+    assert {(r.type_name, r.entity_type) for r in repositories} == {
+        ("VetRepository", "Vet"),
+        ("CrudVetRepository", "Vet"),
+        ("ListCrudVetRepository", "Vet"),
+        ("PagingVetRepository", "Vet"),
+    }
+
+
 def test_a_commented_out_entity_never_registers_a_table() -> None:
     # The corpus deliberately contains `// @Entity class FakeOwner {}` and a string
     # literal mentioning a repository, to catch analyzers that match on raw text.
@@ -122,7 +155,7 @@ def test_harness_emits_stubs_recorder_and_a_generated_test() -> None:
     assert 'Class.forName("example.OwnerController")' in generated
     assert 'Class.forName("example.OwnerRepository")' in generated
     assert 'Class.forName("example.Owner")' in generated
-    assert "getDeclaredConstructor(" in generated
+    assert "getDeclaredConstructors()" in generated
     assert ".setAccessible(true)" in generated
     assert "Recorder.proxy(repoClass" in generated
     for method in ("find", "save"):
@@ -295,6 +328,142 @@ def test_generated_harness_compiles_and_runs_on_a_real_jvm(tmp_path: Path) -> No
 
 
 @pytest.mark.skipif(_javac() is None, reason="no JDK available; set LINEAGE_JAVA_HOME")
+def test_an_audited_mapstruct_service_corpus_compiles_and_runs(tmp_path: Path) -> None:
+    """A modern package-by-feature service (Spring Data auditing base with @Version,
+    @NaturalId, a MapStruct mapper, propagation-qualified @Transactional, an event
+    publisher and Spring Security's AccessDeniedException) must stay inside the
+    harness's stub surface — each stub exists because this real shape imports it."""
+    javac = _javac()
+    assert javac is not None
+    java = str(Path(javac).with_name("java"))
+
+    sources = {
+        "src/main/java/com/example/shared/BaseEntity.java": (
+            "package com.example.shared;\n"
+            "import jakarta.persistence.Column;\n"
+            "import jakarta.persistence.EntityListeners;\n"
+            "import jakarta.persistence.MappedSuperclass;\n"
+            "import jakarta.persistence.Version;\n"
+            "import org.springframework.data.annotation.CreatedDate;\n"
+            "import org.springframework.data.jpa.domain.support.AuditingEntityListener;\n"
+            "@MappedSuperclass\n"
+            "@EntityListeners(AuditingEntityListener.class)\n"
+            "public abstract class BaseEntity {\n"
+            "    @Column(name = \"created_at\") @CreatedDate protected String createdAt;\n"
+            "    @Version protected Long version;\n"
+            "}\n"
+        ),
+        "src/main/java/com/example/blog/Article.java": (
+            "package com.example.blog;\n"
+            "import com.example.shared.BaseEntity;\n"
+            "import jakarta.persistence.*;\n"
+            "import org.hibernate.annotations.NaturalId;\n"
+            "@Entity @Table(name = \"articles\")\n"
+            "class Article extends BaseEntity {\n"
+            "    @Id private Long id;\n"
+            "    @NaturalId\n"
+            "    @Column(name = \"slug\") private String slug;\n"
+            "    public Long getId() { return id; }\n"
+            "    public String getSlug() { return slug; }\n"
+            "}\n"
+        ),
+        "src/main/java/com/example/blog/ArticleDto.java": (
+            "package com.example.blog;\n"
+            "public record ArticleDto(Long id, String slug) {}\n"
+        ),
+        "src/main/java/com/example/blog/ArticleMapper.java": (
+            "package com.example.blog;\n"
+            "import org.mapstruct.Mapper;\n"
+            "import org.mapstruct.Mapping;\n"
+            "@Mapper(componentModel = \"spring\")\n"
+            "interface ArticleMapper {\n"
+            "    @Mapping(target = \"slug\", source = \"slug\")\n"
+            "    ArticleDto toDto(Article article);\n"
+            "}\n"
+        ),
+        "src/main/java/com/example/blog/ArticleRepository.java": (
+            "package com.example.blog;\n"
+            "import org.springframework.data.jpa.repository.JpaRepository;\n"
+            "interface ArticleRepository extends JpaRepository<Article, Long> {\n"
+            "    Article findBySlug(String slug);\n"
+            "}\n"
+        ),
+        "src/main/java/com/example/blog/ArticleService.java": (
+            "package com.example.blog;\n"
+            "import org.springframework.context.ApplicationEventPublisher;\n"
+            "import org.springframework.security.access.AccessDeniedException;\n"
+            "import org.springframework.stereotype.Service;\n"
+            "import org.springframework.transaction.annotation.Propagation;\n"
+            "import org.springframework.transaction.annotation.Transactional;\n"
+            "@Service\n"
+            "public class ArticleService {\n"
+            "    private final ArticleRepository articleRepository;\n"
+            "    private final ApplicationEventPublisher publisher;\n"
+            "    ArticleService(ArticleRepository articleRepository, ApplicationEventPublisher publisher) {\n"
+            "        this.articleRepository = articleRepository;\n"
+            "        this.publisher = publisher;\n"
+            "    }\n"
+            "    @Transactional(propagation = Propagation.REQUIRES_NEW)\n"
+            "    public Object findArticle(String slug) {\n"
+            "        Object found = articleRepository.findBySlug(slug);\n"
+            "        if (found == null && slug == null) throw new AccessDeniedException(\"denied\");\n"
+            "        return found;\n"
+            "    }\n"
+            "    @Transactional(readOnly = true)\n"
+            "    public Object load(Long id) { return articleRepository.findById(id); }\n"
+            "}\n"
+        ),
+    }
+
+    scoped = select_relevant_java_sources(
+        sources,
+        [
+            {
+                "from": ["urn:ldp:staging:postgres:blog:articles#slug"],
+                "to": "service://blog/com.example.blog.ArticleService#findArticle",
+                "edgeType": "READS",
+                "provenanceId": "p-1",
+            }
+        ],
+    )
+    assert "src/main/java/com/example/blog/ArticleRepository.java" in scoped
+    assert "src/main/java/com/example/blog/ArticleService.java" in scoped
+    assert "src/main/java/com/example/shared/BaseEntity.java" in scoped
+
+    workspace = tmp_path / "src"
+    for relative, text in {**scoped, **generate_harness(scoped)}.items():
+        path = workspace / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text, encoding="utf-8")
+    listing = tmp_path / "files.txt"
+    listing.write_text(
+        "\n".join(str(path) for path in sorted(workspace.rglob("*.java"))),
+        encoding="utf-8",
+    )
+    compiled = subprocess.run(
+        [javac, "-d", str(tmp_path / "classes"), f"@{listing}"],
+        capture_output=True,
+        text=True,
+        timeout=180,
+        check=False,
+    )
+    assert compiled.returncode == 0, compiled.stderr
+    ran = subprocess.run(
+        [java, "-cp", str(tmp_path / "classes"), "harness.GeneratedRuntimeTest"],
+        capture_output=True,
+        text=True,
+        timeout=120,
+        check=False,
+    )
+    assert ran.returncode == 0, ran.stderr
+    observations = parse_observations(ran.stdout)
+    assert any(
+        observation.table == "articles" and observation.operation == "READ"
+        for observation in observations
+    )
+
+
+@pytest.mark.skipif(_javac() is None, reason="no JDK available; set LINEAGE_JAVA_HOME")
 def test_a_package_private_injection_site_across_packages_compiles_and_runs(
     tmp_path: Path,
 ) -> None:
@@ -384,4 +553,324 @@ def test_a_package_private_injection_site_across_packages_compiles_and_runs(
     assert observations, "expected the proxy to record the invoked repository call"
     assert observations[0].table == "visits"
     assert observations[0].operation == "READ"
-    assert "petId" in observations[0].fields
+    # The recorder reports the physical @Column name (`pet_id`), not the Java field
+    # name (`petId`): the physical column is what an SCA element edge names.
+    assert "pet_id" in observations[0].fields
+
+
+PETCLINIC_REST_SHAPE = {
+    "src/model/Team.java": (
+        "package example;\n"
+        "import jakarta.persistence.Entity;\n"
+        "import jakarta.persistence.Table;\n"
+        "@Entity @Table(name=\"teams\")\n"
+        "public class Team {}\n"
+    ),
+    "src/model/Owner.java": (
+        "package example;\n"
+        "import jakarta.persistence.Entity;\n"
+        "import jakarta.persistence.JoinColumn;\n"
+        "import jakarta.persistence.ManyToOne;\n"
+        "import jakarta.persistence.Table;\n"
+        "@Entity @Table(name=\"owners\")\n"
+        "public class Owner {\n"
+        "    private String lastName;\n"
+        "    @ManyToOne @JoinColumn(name = \"team_id\") private Team team;\n"
+        "}\n"
+    ),
+    "src/repository/OwnerRepository.java": (
+        "package example;\n"
+        "import java.util.Collection;\n"
+        "public interface OwnerRepository {\n"
+        "    Collection<Owner> findByLastName(String lastName);\n"
+        "    void save(Owner owner);\n"
+        "}\n"
+    ),
+    "src/springdatajpa/SpringDataOwnerRepository.java": (
+        "package example;\n"
+        "import org.springframework.data.repository.Repository;\n"
+        "public interface SpringDataOwnerRepository extends OwnerRepository, "
+        "Repository<Owner, Integer> {\n"
+        "}\n"
+    ),
+    "src/service/ClinicServiceImpl.java": (
+        "package example;\n"
+        "import java.util.Collection;\n"
+        "class ClinicServiceImpl {\n"
+        "    private final OwnerRepository ownerRepository;\n"
+        "    ClinicServiceImpl(OwnerRepository ownerRepository) {\n"
+        "        this.ownerRepository = ownerRepository;\n"
+        "    }\n"
+        "    public Collection<Owner> findOwnerByLastName(String lastName) {\n"
+        "        return ownerRepository.findByLastName(lastName);\n"
+        "    }\n"
+        "}\n"
+    ),
+}
+
+
+def test_a_spring_data_base_anywhere_in_the_extends_clause_is_recognized() -> None:
+    # spring-petclinic-rest declares `SpringDataOwnerRepository extends
+    # OwnerRepository, Repository<Owner, Integer>` -- the Spring Data base is not
+    # first in the clause, and the project's own abstract interface is remembered as
+    # a parent so injection sites typed against it can still be instrumented.
+    repositories = read_repositories(PETCLINIC_REST_SHAPE)
+
+    assert [(r.type_name, r.entity_type) for r in repositories] == [
+        ("SpringDataOwnerRepository", "Owner")
+    ]
+    assert repositories[0].parents == ("OwnerRepository",)
+
+
+def test_an_injection_site_typed_by_the_parent_interface_is_instrumented() -> None:
+    # ClinicServiceImpl injects `OwnerRepository` -- the abstract project interface
+    # the Spring Data repository extends -- never the Spring Data type itself.
+    repositories = read_repositories(PETCLINIC_REST_SHAPE)
+
+    sites = read_injection_sites(PETCLINIC_REST_SHAPE, repositories)
+
+    assert [site.type_name for site in sites] == ["ClinicServiceImpl"]
+    assert sites[0].repository_fields == (("ownerRepository", "OwnerRepository"),)
+
+
+@pytest.mark.skipif(_javac() is None, reason="no JDK available; set LINEAGE_JAVA_HOME")
+def test_the_parent_interface_injection_shape_compiles_and_witnesses(tmp_path: Path) -> None:
+    javac = _javac()
+    assert javac is not None
+    java = str(Path(javac).with_name("java"))
+
+    workspace = tmp_path / "src"
+    for relative, text in {**PETCLINIC_REST_SHAPE, **generate_harness(PETCLINIC_REST_SHAPE)}.items():
+        path = workspace / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text, encoding="utf-8")
+    listing = tmp_path / "files.txt"
+    listing.write_text(
+        "\n".join(str(path) for path in sorted(workspace.rglob("*.java"))), encoding="utf-8"
+    )
+    compiled = subprocess.run(
+        [javac, "-d", str(tmp_path / "classes"), f"@{listing}"],
+        capture_output=True, text=True, timeout=180, check=False,
+    )
+    assert compiled.returncode == 0, compiled.stderr
+    ran = subprocess.run(
+        [java, "-cp", str(tmp_path / "classes"), "harness.GeneratedRuntimeTest"],
+        capture_output=True, text=True, timeout=120, check=False,
+    )
+    assert ran.returncode == 0, ran.stderr
+
+    observations = parse_observations(ran.stdout)
+
+    assert {(o.method, o.table, o.operation) for o in observations} >= {
+        ("findByLastName", "owners", "READ"),
+    }
+    owner_read = next(o for o in observations if o.method == "findByLastName")
+    # A to-one association's physical @JoinColumn name is the witnessable element --
+    # SCA resolves `findVisitsByPetId` to `pet_id`, never to the Java field `pet`.
+    assert "team_id" in owner_read.fields
+    assert "lastName" in owner_read.fields
+
+
+def test_stub_source_map_declares_every_stub_exactly_once() -> None:
+    """A duplicated dict key in the stub map silently shadows the earlier (often
+    richer) definition -- jhipster-sample-app lost `Cacheable#cacheNames` exactly
+    this way. The literal must declare each stub path once."""
+    import collections
+    import inspect
+    import re
+
+    import lineage_api.services.java_runtime_verification as module
+
+    source = inspect.getsource(module)
+    keys = re.findall(r'"([\w/]+\.java)":', source)
+    duplicated = [key for key, count in collections.Counter(keys).items() if count > 1]
+    assert duplicated == [], f"stub paths declared more than once: {duplicated}"
+
+
+@pytest.mark.skipif(_javac() is None, reason="no JDK available; set LINEAGE_JAVA_HOME")
+def test_a_jhipster_shaped_resource_compiles_and_runs(tmp_path: Path) -> None:
+    """The jhipster-sample-app shape: `@Column(precision, scale)`, an inline
+    fully-qualified `@org.springframework.data.annotation.Transient`, a repository
+    with `@Cacheable(cacheNames, unless)`, a resource using `@PatchMapping`,
+    `existsById`, paged `findAll(Pageable)` behind an inline
+    `@org.springdoc.core.annotations.ParameterObject`, and
+    `HttpStatus.BAD_REQUEST.value()`. Every one of these failed the harness
+    compile before the stub surface grew to cover them."""
+    javac = _javac()
+    assert javac is not None
+    java = str(Path(javac).with_name("java"))
+
+    sources = {
+        "bank/domain/BankAccount.java": (
+            "package bank.domain;\n"
+            "import jakarta.persistence.*;\n"
+            "@Entity @Table(name = \"bank_account\")\n"
+            "public class BankAccount {\n"
+            "    @Id @GeneratedValue(strategy = GenerationType.IDENTITY) private Long id;\n"
+            "    @Column(name = \"balance\", precision = 21, scale = 2, nullable = false)\n"
+            "    private java.math.BigDecimal balance;\n"
+            "    @org.springframework.data.annotation.Transient\n"
+            "    private boolean audited;\n"
+            "    public Long getId() { return id; }\n"
+            "}\n"
+        ),
+        "bank/repository/BankAccountRepository.java": (
+            "package bank.repository;\n"
+            "import bank.domain.BankAccount;\n"
+            "import org.springframework.cache.annotation.Cacheable;\n"
+            "import org.springframework.data.jpa.repository.JpaRepository;\n"
+            "public interface BankAccountRepository extends JpaRepository<BankAccount, Long> {\n"
+            "    @Cacheable(cacheNames = \"accounts\", unless = \"#result == null\")\n"
+            "    java.util.Optional<BankAccount> findOneById(Long id);\n"
+            "}\n"
+        ),
+        "bank/web/BankAccountResource.java": (
+            "package bank.web;\n"
+            "import bank.domain.BankAccount;\n"
+            "import bank.repository.BankAccountRepository;\n"
+            "import org.springframework.data.domain.Page;\n"
+            "import org.springframework.data.domain.Pageable;\n"
+            "import org.springframework.http.HttpStatus;\n"
+            "import org.springframework.web.bind.annotation.GetMapping;\n"
+            "import org.springframework.web.bind.annotation.PatchMapping;\n"
+            "import org.springframework.web.bind.annotation.RestController;\n"
+            "@RestController\n"
+            "class BankAccountResource {\n"
+            "    private final BankAccountRepository bankAccountRepository;\n"
+            "    BankAccountResource(BankAccountRepository bankAccountRepository) {\n"
+            "        this.bankAccountRepository = bankAccountRepository;\n"
+            "    }\n"
+            "    @GetMapping(\"/api/bank-accounts\")\n"
+            "    public java.util.List<BankAccount> all() {\n"
+            "        return bankAccountRepository.findAll();\n"
+            "    }\n"
+            "    @GetMapping(\"/api/bank-accounts/paged\")\n"
+            "    public int paged(@org.springdoc.core.annotations.ParameterObject Pageable pageable) {\n"
+            "        Page<BankAccount> page = bankAccountRepository.findAll(pageable);\n"
+            "        return page == null ? HttpStatus.BAD_REQUEST.value() : page.getTotalPages();\n"
+            "    }\n"
+            "    @PatchMapping(value = \"/{id}\", consumes = { \"application/json\", \"application/merge-patch+json\" })\n"
+            "    public boolean exists(Long id) {\n"
+            "        return bankAccountRepository.existsById(id);\n"
+            "    }\n"
+            "}\n"
+        ),
+    }
+    workspace = tmp_path / "src"
+    for relative, text in {**sources, **generate_harness(sources)}.items():
+        path = workspace / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text, encoding="utf-8")
+
+    listing = tmp_path / "files.txt"
+    listing.write_text(
+        "\n".join(str(path) for path in sorted(workspace.rglob("*.java"))), encoding="utf-8"
+    )
+    compiled = subprocess.run(
+        [javac, "-d", str(tmp_path / "classes"), f"@{listing}"],
+        capture_output=True,
+        text=True,
+        timeout=180,
+        check=False,
+    )
+    assert compiled.returncode == 0, compiled.stderr
+
+    ran = subprocess.run(
+        [java, "-cp", str(tmp_path / "classes"), "harness.GeneratedRuntimeTest"],
+        capture_output=True,
+        text=True,
+        timeout=120,
+        check=False,
+    )
+    assert ran.returncode == 0, ran.stderr
+
+    observations = parse_observations(ran.stdout)
+    assert any(
+        observation.table == "bank_account" and observation.operation == "READ"
+        for observation in observations
+    ), f"expected a bank_account read observation, got {observations!r}"
+
+
+@pytest.mark.skipif(_javac() is None, reason="no JDK available; set LINEAGE_JAVA_HOME")
+def test_an_injection_site_with_non_repository_constructor_params_still_records(
+    tmp_path: Path,
+) -> None:
+    """jhipster's UserService shape: the constructor mixes repositories with
+    collaborators the harness does not provide (a PasswordEncoder, a CacheManager).
+    The generated test must construct the site anyway — proxies for repository
+    parameters, null for the rest — so repository calls still record."""
+    javac = _javac()
+    assert javac is not None
+    java = str(Path(javac).with_name("java"))
+
+    sources = {
+        "acct/domain/Account.java": (
+            "package acct;\n"
+            "import jakarta.persistence.*;\n"
+            "@Entity @Table(name = \"accounts\")\n"
+            "public class Account {\n"
+            "    @Id @GeneratedValue(strategy = GenerationType.IDENTITY) private Long id;\n"
+            "    @Column(name = \"login\") private String login;\n"
+            "}\n"
+        ),
+        "acct/repository/AccountRepository.java": (
+            "package acct;\n"
+            "import org.springframework.data.jpa.repository.JpaRepository;\n"
+            "public interface AccountRepository extends JpaRepository<Account, Long> {\n"
+            "    java.util.Optional<Account> findOneByLogin(String login);\n"
+            "}\n"
+        ),
+        "acct/service/AccountService.java": (
+            "package acct;\n"
+            "import org.springframework.cache.CacheManager;\n"
+            "import org.springframework.security.crypto.password.PasswordEncoder;\n"
+            "import org.springframework.stereotype.Service;\n"
+            "@Service\n"
+            "public class AccountService {\n"
+            "    private final AccountRepository accountRepository;\n"
+            "    private final PasswordEncoder passwordEncoder;\n"
+            "    private final CacheManager cacheManager;\n"
+            "    public AccountService(AccountRepository accountRepository, PasswordEncoder passwordEncoder, CacheManager cacheManager) {\n"
+            "        this.accountRepository = accountRepository;\n"
+            "        this.passwordEncoder = passwordEncoder;\n"
+            "        this.cacheManager = cacheManager;\n"
+            "    }\n"
+            "    public java.util.Optional<Account> lookup(String login) {\n"
+            "        return accountRepository.findOneByLogin(login);\n"
+            "    }\n"
+            "}\n"
+        ),
+    }
+    workspace = tmp_path / "src"
+    for relative, text in {**sources, **generate_harness(sources)}.items():
+        path = workspace / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text, encoding="utf-8")
+
+    listing = tmp_path / "files.txt"
+    listing.write_text(
+        "\n".join(str(path) for path in sorted(workspace.rglob("*.java"))), encoding="utf-8"
+    )
+    compiled = subprocess.run(
+        [javac, "-d", str(tmp_path / "classes"), f"@{listing}"],
+        capture_output=True,
+        text=True,
+        timeout=180,
+        check=False,
+    )
+    assert compiled.returncode == 0, compiled.stderr
+
+    ran = subprocess.run(
+        [java, "-cp", str(tmp_path / "classes"), "harness.GeneratedRuntimeTest"],
+        capture_output=True,
+        text=True,
+        timeout=120,
+        check=False,
+    )
+    assert ran.returncode == 0, ran.stderr
+
+    observations = parse_observations(ran.stdout)
+    assert any(
+        observation.table == "accounts" and observation.operation == "READ"
+        for observation in observations
+    ), f"expected an accounts read via the mixed-constructor site, got {observations!r}"

@@ -1,0 +1,539 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<template id="__bundler_thumbnail" data-bg-color="#7a5a18">
+  <svg viewBox="0 0 1200 800" xmlns="http://www.w3.org/2000/svg">
+    <rect width="1200" height="800" fill="#7a5a18"/>
+    <rect x="300" y="250" width="600" height="44" rx="8" fill="#ffffff" opacity="0.95"/>
+    <rect x="300" y="330" width="200" height="40" rx="6" fill="#6f8fd6"/>
+    <rect x="520" y="330" width="360" height="40" rx="6" fill="#5aa87a"/>
+    <rect x="300" y="390" width="120" height="40" rx="6" fill="#6f8fd6"/>
+    <rect x="440" y="390" width="440" height="40" rx="6" fill="#5aa87a"/>
+    <rect x="300" y="450" width="580" height="40" rx="6" fill="#5aa87a"/>
+  </svg>
+</template>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,600&display=swap" rel="stylesheet">
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+  a { color: inherit; }
+  ::-webkit-scrollbar { width: 10px; height: 10px; }
+  ::-webkit-scrollbar-thumb { background: oklch(88% 0.006 262); border-radius: 6px; border: 2px solid transparent; background-clip: padding-box; }
+  @media print { .no-print { display: none !important; } .page { box-shadow: none !important; margin: 0 !important; } body { background: #fff !important; } }
+</style>
+</helmet>
+
+<div style="background:oklch(95.5% 0.004 262);min-height:100vh;font-family:'IBM Plex Sans',sans-serif;-webkit-font-smoothing:antialiased;color:oklch(30% 0.02 262)">
+  <div style="max-width:1200px;margin:0 auto;display:flex;gap:34px;padding:40px 28px 80px;align-items:flex-start">
+
+    <!-- TOC -->
+    <aside class="no-print" style="flex:none;width:186px;position:sticky;top:40px;display:flex;flex-direction:column;gap:3px">
+      <div style="display:flex;align-items:center;gap:9px;margin-bottom:14px">
+        <span style="width:22px;height:22px;border-radius:6px;background:oklch(54% 0.10 70);display:block"></span>
+        <span style="font:700 15px 'IBM Plex Sans';color:oklch(26% 0.02 262);letter-spacing:-0.01em">Throughline</span>
+      </div>
+      <div style="font:600 8.5px 'IBM Plex Mono';letter-spacing:.12em;text-transform:uppercase;color:oklch(60% 0.02 262);margin:0 0 8px 2px">Roadmap &amp; effort</div>
+      <sc-for list="{{ toc }}" as="t" hint-placeholder-count="7">
+        <a href="{{ t.href }}" style="display:flex;gap:9px;padding:5px 8px;border-radius:6px;text-decoration:none;font:500 12px 'IBM Plex Sans';color:oklch(46% 0.02 262)" style-hover="background:oklch(92% 0.01 262)"><span style="font:600 10px 'IBM Plex Mono';color:oklch(68% 0.02 262);width:12px;flex:none">{{ t.n }}</span><span>{{ t.label }}</span></a>
+      </sc-for>
+      <div style="margin-top:16px;padding-top:14px;border-top:1px solid oklch(90% 0.006 262);display:flex;flex-direction:column;gap:6px">
+        <div style="font:600 8.5px 'IBM Plex Mono';letter-spacing:.12em;text-transform:uppercase;color:oklch(60% 0.02 262);margin:0 0 2px 2px">Suite</div>
+        <a href="Index - Throughline PRDs.dc.html" style="font:500 11.5px 'IBM Plex Sans';color:oklch(50% 0.02 262);text-decoration:none;padding:3px 8px">Overview</a>
+        <a href="Throughline - Final.dc.html" style="font:500 11.5px 'IBM Plex Sans';color:oklch(50% 0.02 262);text-decoration:none;padding:3px 8px">Prototype</a>
+        <a href="Onboarding Estimator.dc.html" style="font:500 11.5px 'IBM Plex Sans';color:oklch(50% 0.02 262);text-decoration:none;padding:3px 8px">Onboarding estimator</a>
+      </div>
+    </aside>
+
+    <!-- PAGE -->
+    <main class="page" style="flex:1;min-width:0;max-width:940px;background:#fff;border:1px solid oklch(91% 0.006 262);border-radius:3px;box-shadow:0 1px 3px rgba(20,30,50,.06);padding:52px 52px 68px">
+
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:22px">
+        <span style="font:600 9px 'IBM Plex Mono';letter-spacing:.14em;text-transform:uppercase;color:#fff;background:oklch(54% 0.10 70);padding:4px 9px;border-radius:4px">Delivery plan</span>
+        <span style="font:500 11px 'IBM Plex Mono';color:oklch(58% 0.02 262)">For leadership review</span>
+        <span style="font:500 11px 'IBM Plex Mono';color:oklch(58% 0.02 262);margin-left:auto">18-month horizon</span>
+      </div>
+      <h1 style="font:600 38px 'Newsreader',serif;color:oklch(22% 0.02 262);letter-spacing:-0.01em;line-height:1.12;margin:0 0 14px;max-width:20ch">Delivering 15 critical use cases in 18 months</h1>
+      <p style="font:400 16px/1.65 'IBM Plex Sans';color:oklch(42% 0.02 262);margin:0 0 4px;max-width:60ch">We build the platform with <strong style="font-weight:600">2 teams in the first 6 months</strong>, then scale to <strong style="font-weight:600">3 teams for the next 12 months</strong> to take all <strong style="font-weight:600">15 critical use cases</strong> fully live — each with complete lineage capture, impact analysis, and change-safe PR gating.</p>
+
+      <!-- at a glance -->
+      <div style="display:flex;gap:10px;margin:28px 0 4px;flex-wrap:wrap">
+        <sc-for list="{{ glance }}" as="g" hint-placeholder-count="4">
+          <div style="flex:1;min-width:150px;border:1px solid oklch(92% 0.006 262);border-radius:11px;padding:14px 16px;border-top:3px solid {{ g.color }}">
+            <div style="font:700 21px 'IBM Plex Sans';color:oklch(26% 0.02 262)">{{ g.value }}</div>
+            <div style="font:400 11px/1.4 'IBM Plex Sans';color:oklch(52% 0.02 262);margin-top:4px">{{ g.label }}</div>
+          </div>
+        </sc-for>
+      </div>
+
+      <!-- 1 STAFFING -->
+      <h2 id="s1" style="font:600 21px 'Newsreader',serif;color:oklch(24% 0.02 262);margin:44px 0 6px"><span style="font:600 13px 'IBM Plex Mono';color:oklch(54% 0.10 70);margin-right:10px">01</span>How we staff it</h2>
+      <p style="font:400 13.5px/1.6 'IBM Plex Sans';color:oklch(44% 0.02 262);margin:0 0 16px;max-width:64ch">A deliberate two-step ramp: a small focused team proves the platform first, then we add capacity to onboard use cases in parallel — so investment grows only after the approach is proven.</p>
+      <div style="display:flex;border:1px solid oklch(91% 0.006 262);border-radius:12px;overflow:hidden;margin-bottom:10px">
+        <sc-for list="{{ staffing }}" as="s" hint-placeholder-count="2">
+          <div style="flex:{{ s.flex }};background:{{ s.bg }};padding:16px 18px;border-right:{{ s.border }}">
+            <div style="display:flex;align-items:center;gap:8px"><span style="font:700 9px 'IBM Plex Mono';letter-spacing:.06em;text-transform:uppercase;color:{{ s.fg }}">{{ s.window }}</span></div>
+            <div style="font:700 17px 'IBM Plex Sans';color:oklch(28% 0.02 262);margin-top:6px">{{ s.teams }}</div>
+            <div style="font:400 11.5px/1.5 'IBM Plex Sans';color:oklch(48% 0.02 262);margin-top:4px">{{ s.people }} · {{ s.focus }}</div>
+          </div>
+        </sc-for>
+      </div>
+      <p style="font:400 11px 'IBM Plex Sans';color:oklch(58% 0.02 262);margin:0">Team = 5 engineers. Capacity across the plan: <strong style="font-weight:600;color:oklch(44% 0.02 262)">{{ capPm }} person-months</strong> (2×5×6 + 3×5×12).</p>
+
+      <!-- 2 TWO CHAPTERS -->
+      <h2 id="s2" style="font:600 21px 'Newsreader',serif;color:oklch(24% 0.02 262);margin:44px 0 12px"><span style="font:600 13px 'IBM Plex Mono';color:oklch(54% 0.10 70);margin-right:10px">02</span>The plan in two chapters</h2>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+        <sc-for list="{{ chapters }}" as="c" hint-placeholder-count="2">
+          <div style="border:1px solid oklch(92% 0.006 262);border-radius:12px;padding:18px 20px;border-top:4px solid {{ c.color }}">
+            <div style="display:flex;align-items:baseline;gap:9px;margin-bottom:3px"><span style="font:600 9px 'IBM Plex Mono';letter-spacing:.06em;text-transform:uppercase;color:{{ c.color }}">{{ c.tag }}</span><span style="font:500 10px 'IBM Plex Mono';color:oklch(58% 0.02 262);margin-left:auto">{{ c.window }}</span></div>
+            <div style="font:700 16px 'IBM Plex Sans';color:oklch(28% 0.02 262)">{{ c.title }}</div>
+            <div style="font:400 12.5px/1.55 'IBM Plex Sans';color:oklch(46% 0.02 262);margin-top:7px">{{ c.body }}</div>
+            <div style="margin-top:12px;display:flex;flex-direction:column;gap:5px">
+              <sc-for list="{{ c.delivers }}" as="d" hint-placeholder-count="3">
+                <div style="display:flex;gap:8px;align-items:flex-start"><span style="color:{{ c.color }};font:600 11px 'IBM Plex Mono';flex:none">✓</span><span style="font:500 11.5px/1.45 'IBM Plex Sans';color:oklch(40% 0.02 262)">{{ d.t }}</span></div>
+              </sc-for>
+            </div>
+          </div>
+        </sc-for>
+      </div>
+
+      <!-- 3 TIMELINE -->
+      <h2 id="s3" style="font:600 21px 'Newsreader',serif;color:oklch(24% 0.02 262);margin:44px 0 6px"><span style="font:600 13px 'IBM Plex Mono';color:oklch(54% 0.10 70);margin-right:10px">03</span>Timeline</h2>
+      <p style="font:400 13.5px/1.6 'IBM Plex Sans';color:oklch(44% 0.02 262);margin:0 0 16px;max-width:70ch">First, <strong style="font-weight:600">what each team owns</strong> — one bar per team shows a team works one mission at a time, so nothing assumes a single team doing everything at once. Below that, every feature is its own bar, colored by the owning team, with its finish month in the right column. Overlapping bars in <strong style="font-weight:600">different team colors = parallel work</strong>.</p>
+
+      <!-- team missions swimlane -->
+      <div style="border:1px solid oklch(91% 0.006 262);border-radius:12px;overflow:hidden;margin-bottom:16px">
+        <div style="display:flex;border-bottom:1px solid oklch(92% 0.006 262);background:oklch(98.5% 0.003 262)">
+          <div style="flex:none;width:250px;padding:8px 14px;font:600 8px 'IBM Plex Mono';letter-spacing:.08em;text-transform:uppercase;color:oklch(60% 0.02 262)">Who does what</div>
+          <div style="flex:1;display:flex">
+            <sc-for list="{{ ticks }}" as="k" hint-placeholder-count="9">
+              <div style="flex:1;padding:8px 0;text-align:center;font:600 8.5px 'IBM Plex Mono';color:{{ k.color }};border-left:1px solid oklch(93% 0.006 262)">{{ k.label }}</div>
+            </sc-for>
+          </div>
+        </div>
+        <sc-for list="{{ teamSwimlane }}" as="t" hint-placeholder-count="3">
+          <div style="display:flex;align-items:stretch;border-bottom:1px solid oklch(96% 0.004 262)">
+            <div style="flex:none;width:250px;padding:9px 12px 9px 14px;display:flex;align-items:center;gap:8px;background:{{ t.bg }}">
+              <span style="font:700 8px 'IBM Plex Mono';color:#fff;background:{{ t.color }};padding:3px 6px;border-radius:3px;flex:none">{{ t.team }}</span>
+              <span style="font:600 10.5px 'IBM Plex Sans';color:oklch(34% 0.02 262);line-height:1.25">{{ t.name }}</span>
+            </div>
+            <div style="flex:1;position:relative;min-height:40px;background-image:repeating-linear-gradient(to right, transparent, transparent calc(11.111% - 1px), oklch(95.5% 0.004 262) calc(11.111% - 1px), oklch(95.5% 0.004 262) 11.111%)">
+              <sc-for list="{{ t.bars }}" as="b" hint-placeholder-count="3">
+                <div style="position:absolute;top:9px;height:22px;left:{{ b.left }};width:{{ b.width }};background:{{ b.color }};border-radius:5px;display:flex;align-items:center;padding:0 9px;overflow:hidden;min-width:8px">
+                  <span style="font:600 8.5px 'IBM Plex Sans';color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ b.label }}</span>
+                </div>
+              </sc-for>
+            </div>
+          </div>
+        </sc-for>
+      </div>
+
+      <div style="font:600 8.5px 'IBM Plex Mono';letter-spacing:.08em;text-transform:uppercase;color:oklch(58% 0.02 262);margin:0 0 8px 2px">Feature-level detail</div>
+      <div style="border:1px solid oklch(91% 0.006 262);border-radius:12px;overflow:hidden">
+        <!-- month axis -->
+        <div style="display:flex;border-bottom:1px solid oklch(92% 0.006 262);background:oklch(98.5% 0.003 262)">
+          <div style="flex:none;width:250px;padding:8px 14px;font:600 8px 'IBM Plex Mono';letter-spacing:.08em;text-transform:uppercase;color:oklch(60% 0.02 262)">Feature</div>
+          <div style="flex:1;display:flex">
+            <sc-for list="{{ ticks }}" as="k" hint-placeholder-count="6">
+              <div style="flex:1;padding:8px 0;text-align:center;font:600 8.5px 'IBM Plex Mono';color:{{ k.color }};border-left:1px solid oklch(93% 0.006 262)">{{ k.label }}</div>
+            </sc-for>
+          </div>
+          <div style="flex:none;width:52px;padding:8px 0;text-align:center;font:600 8px 'IBM Plex Mono';letter-spacing:.06em;text-transform:uppercase;color:oklch(60% 0.02 262);border-left:1px solid oklch(93% 0.006 262)">Done</div>
+        </div>
+        <sc-for list="{{ ganttGroups }}" as="grp" hint-placeholder-count="6">
+          <div>
+            <div style="display:flex;align-items:center;gap:8px;padding:6px 14px;background:{{ grp.bg }};border-bottom:1px solid oklch(95% 0.004 262)">
+              <span style="width:8px;height:8px;border-radius:2px;background:{{ grp.color }};flex:none"></span>
+              <span style="font:600 9px 'IBM Plex Mono';letter-spacing:.06em;text-transform:uppercase;color:{{ grp.fg }};flex:none">{{ grp.name }}</span>
+              <span style="font:400 9.5px 'IBM Plex Sans';color:oklch(56% 0.02 262);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">— {{ grp.sub }}</span>
+              <span style="font:500 9px 'IBM Plex Mono';color:oklch(52% 0.02 262);margin-left:auto;flex:none">{{ grp.window }}</span>
+            </div>
+            <sc-for list="{{ grp.rows }}" as="r" hint-placeholder-count="5">
+              <div style="display:flex;align-items:center;border-bottom:1px solid oklch(96% 0.004 262);min-height:30px">
+                <div style="flex:none;width:250px;padding:4px 12px 4px 14px;display:flex;align-items:center;gap:8px">
+                  <span style="font:600 7.5px 'IBM Plex Mono';color:#fff;background:{{ r.laneColor }};padding:2px 5px;border-radius:3px;flex:none;letter-spacing:.02em">{{ r.lane }}</span>
+                  <span style="font:500 11px 'IBM Plex Sans';color:oklch(38% 0.02 262);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ r.label }}</span>
+                </div>
+                <div style="flex:1;position:relative;height:30px;background-image:repeating-linear-gradient(to right, transparent, transparent calc(11.111% - 1px), oklch(95.5% 0.004 262) calc(11.111% - 1px), oklch(95.5% 0.004 262) 11.111%)">
+                  <div style="position:absolute;top:7px;height:16px;left:{{ r.left }};width:{{ r.width }};background:{{ r.color }};border-radius:5px;min-width:8px"></div>
+                </div>
+                <div style="flex:none;width:52px;text-align:center;font:600 9.5px 'IBM Plex Mono';color:{{ r.color }};border-left:1px solid oklch(96% 0.004 262)">{{ r.done }}</div>
+              </div>
+            </sc-for>
+          </div>
+        </sc-for>
+        <!-- milestones -->
+        <div style="display:flex;align-items:center;background:oklch(98.5% 0.003 262)">
+          <div style="flex:none;width:250px;padding:8px 14px;font:600 8px 'IBM Plex Mono';letter-spacing:.08em;text-transform:uppercase;color:oklch(60% 0.02 262)">Value checkpoints</div>
+          <div style="flex:1;position:relative;height:44px">
+            <sc-for list="{{ milestones }}" as="m" hint-placeholder-count="3">
+              <div style="position:absolute;top:0;left:{{ m.left }};transform:translateX(-50%);display:flex;flex-direction:column;align-items:center;width:60px">
+                <span style="font:600 12px 'IBM Plex Sans';color:{{ m.color }}">◆</span>
+                <span style="font:700 9px 'IBM Plex Mono';color:{{ m.color }};text-align:center;margin-top:2px">{{ m.label }}</span>
+              </div>
+            </sc-for>
+          </div>
+          <div style="flex:none;width:52px"></div>
+        </div>
+      </div>
+      <div style="display:flex;gap:16px;margin-top:12px;flex-wrap:wrap;align-items:center">
+        <sc-for list="{{ teamLegend }}" as="t" hint-placeholder-count="2">
+          <span style="display:flex;align-items:center;gap:7px;font:600 11px 'IBM Plex Sans';color:oklch(40% 0.02 262)"><span style="width:12px;height:12px;border-radius:3px;background:{{ t.color }}"></span>{{ t.label }}</span>
+        </sc-for>
+        <span style="font:400 10.5px 'IBM Plex Sans';color:oklch(56% 0.02 262)">T1 / T2 / T3 tags mark the owning team on each row — rows overlapping in time in different team colors run in parallel.</span>
+      </div>
+
+      <!-- 3b MILESTONES & VALUE -->
+      <div style="margin-top:22px">
+        <div style="font:600 13.5px 'IBM Plex Sans';color:oklch(30% 0.02 262);margin-bottom:3px">Milestones &amp; the value each delivers</div>
+        <p style="font:400 12px/1.5 'IBM Plex Sans';color:oklch(48% 0.02 262);margin:0 0 14px;max-width:70ch">A checkpoint every two months, each a concrete outcome to track progress against — blue = the 2-team foundation phase, green = the 3-team scale phase.</p>
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:9px">
+          <sc-for list="{{ milestoneValues }}" as="m" hint-placeholder-count="9">
+            <div style="border:1px solid oklch(92% 0.006 262);border-radius:10px;padding:12px 13px;border-top:3px solid {{ m.color }}">
+              <div style="display:flex;align-items:center;gap:7px;margin-bottom:6px">
+                <span style="font:700 11px 'IBM Plex Mono';color:#fff;background:{{ m.color }};padding:2px 7px;border-radius:5px">{{ m.when }}</span>
+                <span style="font:500 8px 'IBM Plex Mono';letter-spacing:.03em;color:oklch(56% 0.02 262);margin-left:auto">{{ m.phase }}</span>
+              </div>
+              <div style="font:700 12px 'IBM Plex Sans';color:oklch(28% 0.02 262);margin-bottom:4px">{{ m.title }}</div>
+              <div style="font:400 10.5px/1.45 'IBM Plex Sans';color:oklch(48% 0.02 262)">{{ m.value }}</div>
+            </div>
+          </sc-for>
+        </div>
+      </div>
+
+      <!-- 4 THE 15 USE CASES -->
+      <h2 id="s4" style="font:600 21px 'Newsreader',serif;color:oklch(24% 0.02 262);margin:44px 0 6px"><span style="font:600 13px 'IBM Plex Mono';color:oklch(54% 0.10 70);margin-right:10px">04</span>The 15 use cases</h2>
+      <p style="font:400 13.5px/1.6 'IBM Plex Sans';color:oklch(44% 0.02 262);margin:0 0 8px;max-width:66ch">Each use case is a full vertical slice — several services, data apps and platforms — delivered <strong style="font-weight:600">end to end</strong>: lineage capture, impact analysis, and PR gating. Use Case 01 is proven in Chapter 1; the remaining 14 onboard in <strong style="font-weight:600">waves whose velocity ramps</strong> — one lane (Team 3) while the platform is completed, two lanes once Team 2 joins at M13 — rather than a flat rate.</p>
+      <div style="display:flex;gap:14px;align-items:center;margin-bottom:14px;flex-wrap:wrap">
+        <sc-for list="{{ ucCapabilities }}" as="c" hint-placeholder-count="3">
+          <span style="display:flex;align-items:center;gap:7px;font:600 10.5px 'IBM Plex Sans';color:{{ c.color }};background:{{ c.bg }};border:1px solid {{ c.border }};padding:5px 11px;border-radius:20px">{{ c.glyph }} {{ c.label }}</span>
+        </sc-for>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:9px">
+        <sc-for list="{{ waves }}" as="w" hint-placeholder-count="5">
+          <div style="display:flex;align-items:center;gap:14px;border:1px solid oklch(92% 0.006 262);border-radius:11px;padding:12px 15px;border-left:4px solid {{ w.color }}">
+            <div style="flex:none;width:118px">
+              <div style="font:600 12px 'IBM Plex Sans';color:oklch(30% 0.02 262)">{{ w.name }}</div>
+              <div style="font:500 9.5px 'IBM Plex Mono';color:oklch(58% 0.02 262);margin-top:1px">{{ w.window }}</div>
+            </div>
+            <div style="flex:1;display:flex;gap:8px;flex-wrap:wrap">
+              <sc-for list="{{ w.cases }}" as="u" hint-placeholder-count="3">
+                <span style="font:600 11px 'IBM Plex Mono';color:{{ w.color }};background:{{ w.bg }};border:1px solid {{ w.ring }};padding:5px 10px;border-radius:6px">{{ u }}</span>
+              </sc-for>
+            </div>
+            <div style="flex:none;font:500 10px 'IBM Plex Mono';color:oklch(56% 0.02 262)">{{ w.parallel }}</div>
+          </div>
+        </sc-for>
+      </div>
+
+      <div style="display:flex;gap:12px;margin-top:14px;flex-wrap:wrap">
+        <div style="flex:1;min-width:230px;border:1px solid oklch(92% 0.006 262);border-radius:10px;padding:13px 15px">
+          <div style="font:600 9px 'IBM Plex Mono';letter-spacing:.06em;text-transform:uppercase;color:oklch(52% 0.13 165);margin-bottom:7px">Why the velocity is credible</div>
+          <div style="font:400 11.5px/1.55 'IBM Plex Sans';color:oklch(46% 0.02 262)">One 5-engineer lane has ~10 person-months per 2-month wave; a use case costs ~{{ perSlicePm }} pm — so <strong style="font-weight:600;color:oklch(32% 0.02 262)">~2 concurrent per lane</strong>, rising to ~3 as tooling matures. One lane delivers 7 by M13; two lanes deliver the remaining 7 by M18.</div>
+        </div>
+        <div style="flex:1;min-width:230px;border:1px solid oklch(92% 0.006 262);border-radius:10px;padding:13px 15px">
+          <div style="font:600 9px 'IBM Plex Mono';letter-spacing:.06em;text-transform:uppercase;color:oklch(52% 0.13 252);margin-bottom:7px">New patterns will appear</div>
+          <div style="font:400 11.5px/1.55 'IBM Plex Sans';color:oklch(46% 0.02 262)">New use cases will surface lineage patterns the collectors don't yet handle. Team 1 runs a <strong style="font-weight:600;color:oklch(32% 0.02 262)">rolling capability-build lane from M11</strong>: gaps found by onboarding become collector work without stalling the waves.</div>
+        </div>
+        <div style="flex:1;min-width:230px;border:1px solid oklch(92% 0.006 262);border-radius:10px;padding:13px 15px">
+          <div style="font:600 9px 'IBM Plex Mono';letter-spacing:.06em;text-transform:uppercase;color:oklch(52% 0.13 300);margin-bottom:7px">Onboarded ≠ done</div>
+          <div style="font:400 11.5px/1.55 'IBM Plex Sans';color:oklch(46% 0.02 262)">Live use cases need support — drift, breakages, questions. From M14 Team 1 formally owns <strong style="font-weight:600;color:oklch(32% 0.02 262)">platform support &amp; maintenance</strong>, so onboarding lanes never get pulled back into sustaining work.</div>
+        </div>
+      </div>
+
+      <!-- 5 VALUE BY PHASE -->
+      <h2 id="s5" style="font:600 21px 'Newsreader',serif;color:oklch(24% 0.02 262);margin:44px 0 6px"><span style="font:600 13px 'IBM Plex Mono';color:oklch(54% 0.10 70);margin-right:10px">05</span>What leadership gets, by phase</h2>
+      <p style="font:400 13.5px/1.6 'IBM Plex Sans';color:oklch(44% 0.02 262);margin:0 0 16px;max-width:64ch">Every phase ends on a concrete, fundable outcome — so investment continues against proof, not promises.</p>
+      <div style="display:flex;flex-direction:column;gap:0">
+        <sc-for list="{{ valuePhases }}" as="v" hint-placeholder-count="4">
+          <div style="display:flex;gap:16px;align-items:flex-start">
+            <div style="flex:none;width:96px;text-align:right;padding-top:2px"><div style="font:700 13px 'IBM Plex Sans';color:{{ v.color }}">{{ v.when }}</div></div>
+            <div style="flex:none;display:flex;flex-direction:column;align-items:center;align-self:stretch"><span style="width:13px;height:13px;border-radius:50%;background:{{ v.color }};flex:none;margin-top:3px"></span><span style="flex:1;width:2px;background:oklch(92% 0.006 262)"></span></div>
+            <div style="flex:1;padding-bottom:18px"><div style="font:600 13.5px 'IBM Plex Sans';color:oklch(30% 0.02 262)">{{ v.title }}</div><div style="font:400 12px/1.55 'IBM Plex Sans';color:oklch(48% 0.02 262);margin-top:3px">{{ v.body }}</div></div>
+          </div>
+        </sc-for>
+      </div>
+
+      <!-- 6 LEVEL OF EFFORT -->
+      <h2 id="s6" style="font:600 21px 'Newsreader',serif;color:oklch(24% 0.02 262);margin:44px 0 6px"><span style="font:600 13px 'IBM Plex Mono';color:oklch(54% 0.10 70);margin-right:10px">06</span>Level of effort</h2>
+      <p style="font:400 13.5px/1.6 'IBM Plex Sans';color:oklch(44% 0.02 262);margin:0 0 16px;max-width:66ch">The whole program fits inside the {{ capPm }} person-months of capacity — platform build plus 15 use-case onboardings, with room to harden and a buffer. Numbers below tie exactly to the staffing.</p>
+      <table style="width:100%;border-collapse:collapse;font-family:'IBM Plex Sans'">
+        <thead><tr style="background:oklch(97% 0.004 262)">
+          <th style="text-align:left;font:600 8.5px 'IBM Plex Mono';letter-spacing:.05em;text-transform:uppercase;color:oklch(58% 0.02 262);padding:10px 12px;border-bottom:1px solid oklch(91% 0.006 262)">Where the effort goes</th>
+          <th style="text-align:left;font:600 8.5px 'IBM Plex Mono';letter-spacing:.05em;text-transform:uppercase;color:oklch(58% 0.02 262);padding:10px 12px;border-bottom:1px solid oklch(91% 0.006 262)">What it covers</th>
+          <th style="text-align:right;font:600 8.5px 'IBM Plex Mono';letter-spacing:.05em;text-transform:uppercase;color:oklch(58% 0.02 262);padding:10px 12px;border-bottom:1px solid oklch(91% 0.006 262);width:110px">Person-months</th>
+        </tr></thead>
+        <tbody>
+          <sc-for list="{{ loe }}" as="l" hint-placeholder-count="4">
+            <tr data-comment-anchor="{{ l.anchor }}" style="border-bottom:1px solid oklch(95.5% 0.004 262)">
+              <td style="padding:10px 12px;font:600 12px 'IBM Plex Sans';color:oklch(32% 0.02 262);vertical-align:top"><span style="display:inline-block;width:8px;height:8px;border-radius:2px;background:{{ l.color }};margin-right:8px"></span>{{ l.name }}</td>
+              <td style="padding:10px 12px;font:400 11px/1.5 'IBM Plex Sans';color:oklch(48% 0.02 262);vertical-align:top">{{ l.covers }}</td>
+              <td style="padding:10px 12px;font:600 12px 'IBM Plex Mono';color:oklch(34% 0.02 262);text-align:right;vertical-align:top">{{ l.pm }}</td>
+            </tr>
+          </sc-for>
+          <tr style="background:oklch(98% 0.003 262)">
+            <td style="padding:11px 12px;font:700 12.5px 'IBM Plex Sans';color:oklch(26% 0.02 262)" colspan="2">Total — matches available capacity</td>
+            <td style="padding:11px 12px;font:700 13px 'IBM Plex Mono';color:oklch(28% 0.02 262);text-align:right">{{ capPm }}</td>
+          </tr>
+        </tbody>
+      </table>
+      <div style="display:flex;gap:12px;margin-top:14px;flex-wrap:wrap">
+        <div style="flex:1;min-width:250px;border:1px solid oklch(92% 0.006 262);border-radius:10px;padding:13px 15px">
+          <div style="font:600 9px 'IBM Plex Mono';letter-spacing:.06em;text-transform:uppercase;color:oklch(58% 0.02 262);margin-bottom:7px">Per use case</div>
+          <div style="font:400 12px/1.6 'IBM Plex Sans';color:oklch(46% 0.02 262)">~<strong style="font-weight:600;color:oklch(32% 0.02 262)">{{ perSlicePm }} person-months</strong> to onboard one full use case end-to-end once the platform is mature — a known, repeatable unit grounded in the <a href="Onboarding Estimator.dc.html" style="color:oklch(48% 0.12 165);font-weight:600;text-decoration:none">onboarding estimator</a>. The first (Chapter 1) is heavier as it beds in the platform.</div>
+        </div>
+        <div style="flex:1;min-width:250px;border:1px solid oklch(92% 0.006 262);border-radius:10px;padding:13px 15px;background:oklch(98.6% 0.006 165)">
+          <div style="font:600 9px 'IBM Plex Mono';letter-spacing:.06em;text-transform:uppercase;color:oklch(46% 0.10 165);margin-bottom:7px">Why 18 months holds</div>
+          <div style="font:400 12px/1.6 'IBM Plex Sans';color:oklch(46% 0.02 262)">14 onboardings run across <strong style="font-weight:600">2 parallel lanes</strong> over months 7–18 (~7 each · ~{{ perSlicePm }} pm), gaining impact + PR as those land ~month 11. The third team keeps building &amp; maintaining the platform. All 15 reach full end-to-end by month 18.</div>
+        </div>
+      </div>
+
+      <!-- 7 CRITICAL PATH -->
+      <h2 id="s7" style="font:600 21px 'Newsreader',serif;color:oklch(24% 0.02 262);margin:44px 0 6px"><span style="font:600 13px 'IBM Plex Mono';color:oklch(54% 0.10 70);margin-right:10px">07</span>Critical path &amp; parallel work</h2>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+        <div style="border:1px solid oklch(92% 0.006 262);border-radius:11px;padding:16px 18px">
+          <div style="font:600 12.5px 'IBM Plex Sans';color:oklch(30% 0.02 262);margin-bottom:9px">Must happen in order</div>
+          <div style="display:flex;flex-direction:column;gap:7px">
+            <sc-for list="{{ critPath }}" as="c" hint-placeholder-count="4">
+              <div style="display:flex;gap:9px;align-items:baseline"><span style="font:700 10px 'IBM Plex Mono';color:oklch(54% 0.14 252);flex:none">{{ c.n }}</span><span style="font:400 11.5px/1.5 'IBM Plex Sans';color:oklch(44% 0.02 262)">{{ c.t }}</span></div>
+            </sc-for>
+          </div>
+        </div>
+        <div style="border:1px solid oklch(92% 0.006 262);border-radius:11px;padding:16px 18px;background:oklch(98.6% 0.006 165)">
+          <div style="font:600 12.5px 'IBM Plex Sans';color:oklch(30% 0.02 262);margin-bottom:9px">Runs in parallel</div>
+          <div style="display:flex;flex-direction:column;gap:7px">
+            <sc-for list="{{ parallel }}" as="p" hint-placeholder-count="3">
+              <div style="display:flex;gap:9px;align-items:baseline"><span style="color:oklch(48% 0.12 165);font:600 11px 'IBM Plex Mono';flex:none">∥</span><span style="font:400 11.5px/1.5 'IBM Plex Sans';color:oklch(44% 0.02 262)">{{ p.t }}</span></div>
+            </sc-for>
+          </div>
+        </div>
+      </div>
+
+      <!-- 8 RISKS -->
+      <h2 id="s8" style="font:600 21px 'Newsreader',serif;color:oklch(24% 0.02 262);margin:44px 0 12px"><span style="font:600 13px 'IBM Plex Mono';color:oklch(54% 0.10 70);margin-right:10px">08</span>Top risks we manage</h2>
+      <div style="display:flex;flex-direction:column;gap:9px">
+        <sc-for list="{{ risks }}" as="r" hint-placeholder-count="3">
+          <div style="display:flex;gap:14px;border:1px solid oklch(92% 0.006 262);border-radius:10px;padding:13px 16px">
+            <div style="flex:1"><div style="font:600 12.5px 'IBM Plex Sans';color:oklch(32% 0.02 262)">{{ r.title }}</div><div style="font:400 11.5px/1.5 'IBM Plex Sans';color:oklch(48% 0.02 262);margin-top:3px">{{ r.body }}</div></div>
+            <div style="flex:none;width:210px;border-left:1px solid oklch(94% 0.006 262);padding-left:14px"><div style="font:600 8px 'IBM Plex Mono';letter-spacing:.06em;text-transform:uppercase;color:oklch(48% 0.10 165);margin-bottom:3px">How we handle it</div><div style="font:400 11px/1.45 'IBM Plex Sans';color:oklch(44% 0.02 262)">{{ r.fix }}</div></div>
+          </div>
+        </sc-for>
+      </div>
+
+      <div style="margin-top:44px;padding-top:18px;border-top:1px solid oklch(91% 0.006 262);display:flex;align-items:center;gap:10px">
+        <a href="Index - Throughline PRDs.dc.html" style="font:600 11.5px 'IBM Plex Sans';color:oklch(50% 0.02 262);text-decoration:none">← Overview</a>
+        <span style="font:500 11px 'IBM Plex Mono';color:oklch(60% 0.02 262);margin:0 auto">Throughline · Roadmap &amp; effort</span>
+        <a href="Onboarding Estimator.dc.html" style="font:600 11.5px 'IBM Plex Sans';color:oklch(48% 0.12 165);text-decoration:none">Onboarding estimator →</a>
+      </div>
+    </main>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+class Component extends DCLogic {
+  // months 1..18 → percent across the track
+  bar(startM, months) { return { left: ((startM - 1) / 18 * 100) + '%', width: (months / 18 * 100) + '%' }; }
+  mark(m) { return { left: ((m) / 18 * 100) + '%' }; }
+
+  renderVals() {
+    const C = { build: 'oklch(55% 0.14 252)', scale: 'oklch(50% 0.12 165)', t2: 'oklch(56% 0.16 300)', value: 'oklch(54% 0.10 70)' };
+    const capPm = 240, perSlicePm = 4;
+
+    const toc = [
+      ['01', 'Staffing', '#s1'], ['02', 'Two chapters', '#s2'], ['03', 'Timeline', '#s3'], ['04', '15 use cases', '#s4'],
+      ['05', 'Value by phase', '#s5'], ['06', 'Level of effort', '#s6'], ['07', 'Critical path', '#s7'], ['08', 'Risks', '#s8'],
+    ].map(([n, label, href]) => ({ n, label, href }));
+
+    const glance = [
+      { value: '18 months', label: 'All 15 use cases live, within a 19-month target', color: C.value },
+      { value: '2 → 3 teams', label: '2 teams for 6 months, then 3 for 12', color: C.build },
+      { value: 'Month 6', label: 'First slice’s lineage experience live', color: C.t2 },
+      { value: 'Month 11', label: 'Full platform — impact + PR gating live', color: C.scale },
+    ];
+
+    const staffing = [
+      { flex: 1, window: 'Months 1–6', teams: '2 teams', people: '10 engineers', focus: 'build the platform + prove one use case', bg: 'oklch(97.5% 0.02 252)', fg: 'oklch(45% 0.14 252)', border: '1px solid oklch(92% 0.02 252)' },
+      { flex: 2, window: 'Months 7–18', teams: '3 teams', people: '15 engineers', focus: 'onboard the 15 use cases in parallel + harden', bg: 'oklch(97.5% 0.02 165)', fg: 'oklch(42% 0.12 165)', border: 'none' },
+    ];
+
+    const chapters = [
+      { tag: 'Chapter 1 · Foundation', window: 'Months 1–6 · 2 teams', color: C.build, title: 'Foundation + first slice’s lineage live',
+        body: 'Honest scope: two teams can stand up lineage capture and the UI to explore it, and get the lineage experience live end-to-end for one vertical slice. Impact analysis and PR gating begin here and are completed in Chapter 2 — not all capabilities finish in 6 months.',
+        delivers: [{ t: 'Lineage capture for the first slice (code + runtime)' }, { t: 'UI/UX experience to explore lineage end-to-end' }, { t: 'Impact analysis — first cut (matures in Ch. 2)' }, { t: 'Use Case 01: lineage experience live' }] },
+      { tag: 'Chapter 2 · Complete & scale', window: 'Months 7–18 · 3 teams', color: C.scale, title: 'Finish the capabilities, onboard all 15',
+        body: 'A third team joins. One team finishes and maintains the platform — impact analysis, PR gating, richer UI and new development that specific slices need — while two teams onboard use cases in parallel.',
+        delivers: [{ t: 'Impact analysis & PR gating fully live (~month 11)' }, { t: 'Full UI/UX across all lenses' }, { t: 'Use Cases 02–15 onboarded in parallel waves' }, { t: 'All 15 live end-to-end by month 18' }] },
+    ];
+
+    // ---- timeline: feature-level schedule, colored by the 2→3 team phase theme ----
+    const ticks = ['M2', 'M4', 'M6', 'M8', 'M10', 'M12', 'M14', 'M16', 'M18'].map((label) => ({ label, color: label === 'M6' ? 'oklch(45% 0.14 252)' : 'oklch(60% 0.02 262)' }));
+    const PH1 = C.build;                 // Chapter 1 · 2 teams · M1–6 (blue)
+    const PH2 = 'oklch(52% 0.13 165)';   // Chapter 2 · 3 teams · M7–18 (green)
+    const BG1 = 'oklch(98.5% 0.012 252)', BG2 = 'oklch(98.5% 0.012 165)', BGX = 'oklch(98.6% 0.004 262)';
+    const TEAM = {
+      T1: { label: 'T1', name: 'Team 1 · Collection & Trust', color: 'oklch(52% 0.13 252)', bg: 'oklch(96% 0.03 252)' },
+      T2: { label: 'T2', name: 'Team 2 · Experience & Impact', color: 'oklch(52% 0.13 300)', bg: 'oklch(96% 0.03 300)' },
+      T3: { label: 'T3', name: 'Team 3 · Onboarding (from M7)', color: 'oklch(50% 0.13 165)', bg: 'oklch(96% 0.03 165)' },
+    };
+    // feature bar colored by OWNING TEAM (answers "who does what"); tag shows the team
+    const F = (label, team, s, m) => ({ label, lane: TEAM[team].label, laneColor: TEAM[team].color,
+      ...this.bar(s, m), color: TEAM[team].color, done: 'M' + (s + m - 1) });
+    // team missions swimlane — one bar at a time per team = a team can't do everything at once
+    const M_ = (team, label, s, m) => ({ label, ...this.bar(s, m), color: TEAM[team].color });
+    const teamSwimlane = [
+      { team: 'T1', name: TEAM.T1.name, color: TEAM.T1.color, bg: TEAM.T1.bg, bars: [
+        M_('T1', 'Signal integration + lineage collection', 1, 6),
+        M_('T1', 'Signal hardening + confidence scoring', 7, 4),
+        M_('T1', 'New-pattern capabilities + platform maintenance', 11, 8),
+      ]},
+      { team: 'T2', name: TEAM.T2.name, color: TEAM.T2.color, bg: TEAM.T2.bg, bars: [
+        M_('T2', 'UI/UX experience + impact v1', 1, 6),
+        M_('T2', 'Impact analysis → production', 7, 3),
+        M_('T2', 'PR handling & gating', 10, 3),
+        M_('T2', 'Onboarding', 13, 6),
+      ]},
+      { team: 'T3', name: TEAM.T3.name, color: TEAM.T3.color, bg: TEAM.T3.bg, bars: [
+        M_('T3', 'Use-case onboarding (lead lane)', 7, 12),
+      ]},
+    ];
+    const ganttGroups = [
+      { name: '★ Signal integration', sub: 'Link SCA+LLM with OTel, Spark & Dask signals into one reconciled graph — the critical proof point', window: 'Team 1 · gate M2 · hardened M9', color: TEAM.T1.color, fg: TEAM.T1.color, bg: BG1, rows: [
+        F('Feasibility spike — can signals be linked?', 'T1', 1, 2),
+        F('Entity resolution & ID mapping', 'T1', 3, 2),
+        F('Reconcile signals + confidence baseline', 'T1', 4, 3),
+        F('Reconciliation hardening at scale', 'T1', 7, 3),
+      ]},
+      { name: '① Lineage collection', sub: 'Capture how data moves, down to the field', window: 'Team 1 · complete by M6', color: TEAM.T1.color, fg: TEAM.T1.color, bg: BG1, rows: [
+        F('Unified graph + identity', 'T1', 1, 2),
+        F('Static code + LLM extraction', 'T1', 2, 3),
+        F('Runtime signals (OTel)', 'T1', 3, 3),
+        F('Spark & Dask job lineage', 'T1', 4, 3),
+        F('Streaming / topic flows', 'T1', 5, 2),
+        F('Field-to-field derivations', 'T1', 5, 2),
+      ]},
+      { name: '② UI/UX experience', sub: 'See and explore the lineage', window: 'Team 2 · complete by M6', color: TEAM.T2.color, fg: TEAM.T2.color, bg: 'oklch(98.5% 0.012 300)', rows: [
+        F('End-to-end flow canvas', 'T2', 2, 2),
+        F('Progressive disclosure', 'T2', 3, 2),
+        F('Element-level attributes', 'T2', 4, 2),
+        F('Search & focus', 'T2', 4, 2),
+        F('Right-panel inspector', 'T2', 5, 2),
+      ]},
+      { name: '③ Impact analysis', sub: 'What breaks if something changes — Team 2, v1 in Ch.1 → production in Ch.2', window: 'Team 2 · live by M9', color: TEAM.T2.color, fg: TEAM.T2.color, bg: 'oklch(98.5% 0.012 300)', rows: [
+        F('Blast radius (v1)', 'T2', 5, 2),
+        F('Schema-change simulation (v1)', 'T2', 6, 1),
+        F('Before / after diff', 'T2', 7, 2),
+        F('Consumer break / warn flags', 'T2', 7, 2),
+        F('Pre-commit change simulation', 'T2', 8, 2),
+      ]},
+      { name: '④ Confidence scoring', sub: 'How much to trust each edge — Team 1, in parallel with impact', window: 'Team 1 · complete by M10', color: TEAM.T1.color, fg: TEAM.T1.color, bg: BG1, rows: [
+        F('Per-edge confidence score', 'T1', 7, 2),
+        F('Signal agreement (code vs runtime)', 'T1', 8, 2),
+        F('Provenance view', 'T1', 9, 1),
+        F('Runtime verification before deploy', 'T1', 9, 2),
+        F('Low-confidence surfacing', 'T1', 10, 1),
+      ]},
+      { name: '⑤ PR handling & gating', sub: 'Catch breaking changes before merge — Team 2, after impact', window: 'Team 2 · complete by M12', color: TEAM.T2.color, fg: TEAM.T2.color, bg: 'oklch(98.5% 0.012 300)', rows: [
+        F('CI lineage diff per PR', 'T2', 10, 1),
+        F('Baseline vs proposed compare', 'T2', 10, 2),
+        F('Change-safe gate (observe→warn→block)', 'T2', 11, 2),
+        F('Reviewer impact summary', 'T2', 11, 1),
+        F('Data-contract alerts', 'T2', 12, 1),
+      ]},
+      { name: 'Proof & onboarding', sub: 'One lane ramps to two as Team 2 frees up; Team 1 builds new-pattern capabilities and sustains the platform', window: 'UC01 M6 · all 15 by M18', color: TEAM.T3.color, fg: TEAM.T3.color, bg: BG2, rows: [
+        F('Use Case 01 — lineage live', 'T2', 5, 2),
+        F('Onboarding lane 1 — Team 3', 'T3', 7, 11),
+        F('Onboarding lane 2 — Team 2 joins', 'T2', 13, 5),
+        F('New-pattern capability build (rolling)', 'T1', 11, 4),
+        F('Platform support & maintenance', 'T1', 14, 5),
+      ]},
+    ];
+    const milestones = [
+      { label: 'M2', ...this.mark(2), color: PH1 },
+      { label: 'M4', ...this.mark(4), color: PH1 },
+      { label: 'M6', ...this.mark(6), color: PH1 },
+      { label: 'M8', ...this.mark(8), color: PH2 },
+      { label: 'M10', ...this.mark(10), color: PH2 },
+      { label: 'M12', ...this.mark(12), color: PH2 },
+      { label: 'M14', ...this.mark(14), color: PH2 },
+      { label: 'M16', ...this.mark(16), color: PH2 },
+      { label: 'M18', ...this.mark(18), color: PH2 },
+    ];
+    const milestoneValues = [
+      { when: 'M2', phase: '2 teams', title: 'Signal-linking spike passes', value: 'Highest-risk assumption de-risked — SCA+LLM and OTel/Spark/Dask signals reconcile into one graph. Go/no-go gate.', color: PH1 },
+      { when: 'M4', phase: '2 teams', title: 'Collectors + graph converge', value: 'Static+LLM extraction and runtime (OTel) signals landing into the unified graph; UI flow canvas in progress.', color: PH1 },
+      { when: 'M6', phase: '2 → 3 teams', title: 'First slice’s lineage live', value: 'Use Case 01 end-to-end, element-level lineage visible in the product. Chapter 1 complete; third team joins.', color: PH1 },
+      { when: 'M8', phase: '3 teams', title: 'Impact analysis to production', value: 'Before/after diff + consumer break/warn flags live; confidence scoring started; onboarding wave 1 underway.', color: PH2 },
+      { when: 'M10', phase: '3 teams', title: 'Signals hardened + simulation live', value: 'Signal reconciliation hardened at enterprise scale (proven on Wave 1); impact analysis production-ready; ~4 use cases onboarded.', color: PH2 },
+      { when: 'M12', phase: '3 teams', title: 'Full platform · velocity about to double', value: 'PR gating in observe/warn; confidence live. ~6 of 15 use cases live; Team 2 joins onboarding at M13, doubling lanes.', color: PH2 },
+      { when: 'M14', phase: '3 teams', title: 'Onboarding at volume', value: 'PR gating enforcing change-safe merges; ~10 of 15 use cases live.', color: PH2 },
+      { when: 'M16', phase: '3 teams', title: 'Portfolio mostly covered', value: '~13 of 15 use cases live; platform hardening for scale and adoption.', color: PH2 },
+      { when: 'M18', phase: '3 teams', title: 'All 15 use cases live', value: 'Complete critical-portfolio coverage, each delivered end-to-end. Ready to extend org-wide.', color: PH2 },
+    ];
+    const teamLegend = [
+      { label: TEAM.T1.name, color: TEAM.T1.color },
+      { label: TEAM.T2.name, color: TEAM.T2.color },
+      { label: TEAM.T3.name, color: TEAM.T3.color },
+    ];
+    // ---- 15 use cases in 5 waves ----
+    const ucCapabilities = [
+      { glyph: '⇄', label: 'Lineage capture', color: 'oklch(45% 0.14 252)', bg: 'oklch(97% 0.025 252)', border: 'oklch(90% 0.04 252)' },
+      { glyph: '◎', label: 'Impact analysis', color: 'oklch(50% 0.15 35)', bg: 'oklch(97% 0.025 38)', border: 'oklch(90% 0.05 38)' },
+      { glyph: '⑃', label: 'PR gating', color: 'oklch(48% 0.13 300)', bg: 'oklch(97% 0.025 300)', border: 'oklch(90% 0.04 300)' },
+    ];
+    const waves = [
+      { name: 'Chapter 1', window: 'Months 5–6', cases: ['Use Case 01'], parallel: 'lineage live', color: C.value, bg: 'oklch(97% 0.04 75)', ring: 'oklch(90% 0.05 75)' },
+      { name: 'Wave 1', window: 'Months 7–9', cases: ['Use Case 02', 'Use Case 03'], parallel: 'Team 3 · 1 lane · validates signals', color: C.scale, bg: 'oklch(97% 0.03 165)', ring: 'oklch(90% 0.04 165)' },
+      { name: 'Wave 2', window: 'Months 9–11', cases: ['Use Case 04', 'Use Case 05'], parallel: 'Team 3 · 1 lane · ~1/mo', color: C.scale, bg: 'oklch(97% 0.03 165)', ring: 'oklch(90% 0.04 165)' },
+      { name: 'Wave 3', window: 'Months 11–13', cases: ['Use Case 06', 'Use Case 07', 'Use Case 08'], parallel: 'Team 3 · tooling matures · ~1.5/mo', color: C.scale, bg: 'oklch(97% 0.03 165)', ring: 'oklch(90% 0.04 165)' },
+      { name: 'Wave 4', window: 'Months 13–15', cases: ['Use Case 09', 'Use Case 10', 'Use Case 11', 'Use Case 12'], parallel: 'Teams 3+2 · 2 lanes · ~2/mo', color: C.scale, bg: 'oklch(97% 0.03 165)', ring: 'oklch(90% 0.04 165)' },
+      { name: 'Wave 5', window: 'Months 15–18', cases: ['Use Case 13', 'Use Case 14', 'Use Case 15'], parallel: '2 lanes + schedule buffer', color: C.scale, bg: 'oklch(97% 0.03 165)', ring: 'oklch(90% 0.04 165)' },
+    ];
+
+    const valuePhases = [
+      { when: 'Month 3', color: C.build, title: 'Platform skeleton stands up', body: 'Lineage begins capturing for the first services — proof the collection approach works on real systems.' },
+      { when: 'Month 6', color: C.value, title: 'First slice’s lineage experience live', body: 'Use Case 01’s end-to-end, element-level lineage is visible in the UI — the honest month-6 milestone. Impact analysis and PR gating are in build, not yet live.' },
+      { when: 'Month 11', color: C.t2, title: 'Full platform live', body: 'Impact analysis and PR gating go to production; the complete UI experience is available. Onboarding is already underway (~4–5 use cases in).' },
+      { when: 'Month 18', color: C.scale, title: 'All 15 use cases live', body: 'Every critical use case delivered end-to-end — lineage, impact and PR gating — and operating; ready to extend org-wide as a run-rate.' },
+    ];
+
+    const loe = [
+      { name: 'Signal integration — proof point', covers: 'Link SCA+LLM lineage with OTel, Spark & Dask runtime signals into one reconciled graph. Highest-risk, done first (Team 1, M1–6) with scale hardening M7–9.', pm: '~18', color: C.build, anchor: '' },
+      { name: 'Platform build', covers: 'Collectors ~26 · impact engine ~16 · confidence ~12 · PR gating ~10 · UI ~8 (person-months). Lineage + UI in Ch. 1; the rest completes in Ch. 2.', pm: '~72', color: C.t2, anchor: '4eb9d35da7-td' },
+      { name: '15 use-case onboardings', covers: '15 × ~4 pm each (estimator-based): connect collectors, validate lineage, wire impact + PR as those land.', pm: '~60', color: C.scale, anchor: '197-slices' },
+      { name: 'Build & maintenance + scale', covers: 'New-pattern collector builds ~20 · support & maintenance of live use cases ~30 · performance & scale hardening ~20 — Team 1 from M11, alongside onboarding.', pm: '~70', color: 'oklch(58% 0.10 210)', anchor: '' },
+      { name: 'Contingency buffer', covers: 'Schedule protection on the critical path (signal integration + platform — the least-certain work).', pm: '~20', color: 'oklch(56% 0.03 250)', anchor: '' },
+    ];
+
+    const critPath = [
+      { n: '1', t: 'The signal-integration proof point (linking SCA+LLM with OTel/Spark/Dask) is the first gate — everything reads from the reconciled graph.' },
+      { n: '2', t: 'Lineage collection & the UI make Use Case 01’s experience live at month 6.' },
+      { n: '3', t: 'Impact analysis, confidence scoring and the PR gate build on that lineage — fully live ~month 11.' },
+      { n: '4', t: 'Full-capability onboarding of the remaining 14 accelerates once impact + PR land.' },
+    ];
+    const parallel = [
+      { t: 'The 15 use cases are independent — they onboard in 2 lanes at the same time.' },
+      { t: 'One team keeps building & maintaining the platform (new-slice dev) alongside onboarding.' },
+      { t: 'Adding an onboarding lane increases throughput — coverage is a staffing dial.' },
+    ];
+
+    const risks = [
+      { title: 'Matching the same entity across signals', body: 'Joining code, runtime and trace data into one graph is the hardest technical step.', fix: 'M2 go/no-go spike, single-slice proof by M6, then dedicated hardening at scale (M7–9) validated on Wave 1 before onboarding accelerates.' },
+      { title: 'Coverage across varied tech stacks', body: 'Different languages and engines need different collectors.', fix: 'Sequence connectors by how much of the estate they unlock; make gaps visible.' },
+      { title: 'Teams adopting the PR gate', body: 'Blocking merges only works if engineers trust it.', fix: 'Roll out observe → warn → block per team, with an easy override.' },
+    ];
+
+    return { toc, glance, staffing, capPm, perSlicePm, chapters, ticks, ganttGroups, teamSwimlane, milestones, milestoneValues, teamLegend,
+      ucCapabilities, waves, valuePhases, loe, critPath, parallel, risks };
+  }
+}
+</script>
+</body>
+</html>

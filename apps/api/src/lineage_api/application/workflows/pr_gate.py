@@ -150,7 +150,7 @@ class PRGateWorkflow:
         if final_environment != initial_environment:
             self._add_reason(reasons, "ENVIRONMENT_CHANGED")
 
-        verdict = "WARN" if reasons else ("BLOCK" if calibrated_block else "PASS")
+        verdict = "BLOCK" if calibrated_block else ("WARN" if reasons else "PASS")
         environment_version = (
             initial_environment.graph_version if initial_environment is not None else "MISSING"
         )

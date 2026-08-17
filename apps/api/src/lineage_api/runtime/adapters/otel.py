@@ -6,7 +6,19 @@ from datetime import UTC, datetime
 from typing import Protocol
 
 from lineage_api.runtime.adapters import AdapterIssue, AdapterResult, canonical, checksum
+from lineage_api.runtime.adapters.otel_interactions import normalize_interaction_span
 
+
+# A span carrying any of these is an interaction witness and must never be reduced to a
+# host-only connectivity edge.
+_INTERACTION_TRIGGER_KEYS = frozenset(
+    {
+        "http.route",
+        "rpc.method",
+        "graphql.operation.name",
+        "messaging.destination.name",
+    }
+)
 
 _CONTROL_ATTRIBUTES = {
     "lineage.contract.schema_url",
@@ -53,7 +65,12 @@ class OtelProfile:
     def __post_init__(self) -> None:
         if not self.semantic_convention_version:
             raise ValueError("OTel semantic convention version must be non-empty")
-        if not self.permitted_granularity <= {"CONNECTIVITY", "DATASET", "ELEMENT"}:
+        if not self.permitted_granularity <= {
+            "CONNECTIVITY",
+            "DATASET",
+            "ELEMENT",
+            "INTERACTION",
+        }:
             raise ValueError("OTel permitted granularity is invalid")
 
 
@@ -71,6 +88,7 @@ class OtelAdapter:
         if self._forwarder is not None:
             self._forwarder.forward(payload)
         observations: list[dict[str, object]] = []
+        interactions: list[dict[str, object]] = []
         unsupported: list[AdapterIssue] = []
         quarantined: list[AdapterIssue] = []
         if len(canonical(payload).encode()) > _MAX_SOURCE_BYTES:
@@ -165,7 +183,7 @@ class OtelAdapter:
                             )
                         )
                         continue
-                    normalized, issue = self._normalize_span(
+                    normalized, interaction, issue = self._normalize_span(
                         span,
                         service_name=service_name,
                         profile=profile,
@@ -174,6 +192,8 @@ class OtelAdapter:
                     )
                     if issue is not None:
                         unsupported.append(issue)
+                    elif interaction is not None:
+                        interactions.append(interaction)
                     elif normalized is not None:
                         observations.append(normalized)
         return AdapterResult.build(
@@ -181,6 +201,7 @@ class OtelAdapter:
             unsupported=unsupported,
             quarantined=quarantined,
             source=payload,
+            interactions=() if quarantined else interactions,
         )
 
     def _normalize_span(
@@ -191,7 +212,7 @@ class OtelAdapter:
         profile: OtelProfile,
         source_checksum: str,
         location: str,
-    ) -> tuple[dict[str, object] | None, AdapterIssue | None]:
+    ) -> tuple[dict[str, object] | None, dict[str, object] | None, AdapterIssue | None]:
         attributes = self._attributes(span.get("attributes"))
         safe = {
             key: value
@@ -209,12 +230,12 @@ class OtelAdapter:
         if custom_keys & set(safe):
             contract = profile.custom_contract
             if contract is None or safe.get("lineage.contract.schema_url") != contract.schema_url:
-                return None, AdapterIssue("OTEL_ATTRIBUTE_CONTRACT_UNAPPROVED", location)
+                return None, None, AdapterIssue("OTEL_ATTRIBUTE_CONTRACT_UNAPPROVED", location)
             if safe.get("lineage.profile.version") != contract.profile_version:
-                return None, AdapterIssue("OTEL_PROFILE_VERSION_UNSUPPORTED", location)
+                return None, None, AdapterIssue("OTEL_PROFILE_VERSION_UNSUPPORTED", location)
             required = custom_keys
             if not required <= set(safe) or "ELEMENT" not in profile.permitted_granularity:
-                return None, AdapterIssue("OTEL_ATTRIBUTE_CONTRACT_UNAPPROVED", location)
+                return None, None, AdapterIssue("OTEL_ATTRIBUTE_CONTRACT_UNAPPROVED", location)
             body: dict[str, object] = {
                 "granularity": "ELEMENT",
                 "sourceDatasets": [str(safe["lineage.source.dataset"])],
@@ -231,7 +252,7 @@ class OtelAdapter:
             "db.collection.name",
         } <= set(safe):
             if "DATASET" not in profile.permitted_granularity:
-                return None, AdapterIssue("OTEL_GRANULARITY_UNSUPPORTED", location)
+                return None, None, AdapterIssue("OTEL_GRANULARITY_UNSUPPORTED", location)
             dataset = (
                 f"{safe['db.system.name']}://{safe['db.namespace']}/"
                 f"{safe['db.collection.name']}"
@@ -251,9 +272,32 @@ class OtelAdapter:
                 "edgeType": edge_type,
                 "exact": False,
             }
+        elif _INTERACTION_TRIGGER_KEYS & set(safe):
+            if "INTERACTION" not in profile.permitted_granularity:
+                # The span witnesses an interaction the profile has not approved.
+                # Downgrading it to a host-only CONNECTIVITY edge would silently
+                # discard the route, so this fails closed instead.
+                return None, None, AdapterIssue("OTEL_GRANULARITY_UNSUPPORTED", location)
+            interaction, interaction_issue = normalize_interaction_span(
+                {
+                    "attributes": safe,
+                    "traceId": span.get("traceId", ""),
+                    "spanId": span.get("spanId", ""),
+                },
+                service_name=service_name,
+                observed_at=self._timestamp(span.get("startTimeUnixNano")),
+            )
+            if interaction is None:
+                code = (
+                    interaction_issue.code
+                    if interaction_issue is not None
+                    else "OTEL_INTERACTION_NOT_MAPPABLE"
+                )
+                return None, None, AdapterIssue(code, location)
+            return None, interaction, None
         elif "server.address" in safe:
             if "CONNECTIVITY" not in profile.permitted_granularity:
-                return None, AdapterIssue("OTEL_GRANULARITY_UNSUPPORTED", location)
+                return None, None, AdapterIssue("OTEL_GRANULARITY_UNSUPPORTED", location)
             body = {
                 "granularity": "CONNECTIVITY",
                 "sourceDatasets": [f"service://{service_name}"],
@@ -262,7 +306,7 @@ class OtelAdapter:
                 "exact": False,
             }
         else:
-            return None, AdapterIssue("OTEL_LINEAGE_NOT_MAPPABLE", location)
+            return None, None, AdapterIssue("OTEL_LINEAGE_NOT_MAPPABLE", location)
         trace_id = str(span.get("traceId", ""))
         span_id = str(span.get("spanId", ""))
         identity = {
@@ -283,6 +327,7 @@ class OtelAdapter:
                 "sourceChecksum": source_checksum,
                 **body,
             },
+            None,
             None,
         )
 

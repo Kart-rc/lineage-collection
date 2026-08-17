@@ -42,8 +42,10 @@ class Control:
 
 
 class Artifacts:
-    def __init__(self) -> None:
+    def __init__(self, documents: dict[str, object] | None = None) -> None:
         self.writes: list[tuple[str, str, object, str]] = []
+        self.documents = documents or {}
+        self.reads: list[object] = []
 
     def put(self, kind: str, key: str, body: object, version: str) -> dict[str, object]:
         self.writes.append((kind, key, body, version))
@@ -54,6 +56,11 @@ class Artifacts:
             "sha256": f"{len(self.writes):064x}",
             "sizeBytes": 200,
         }
+
+    def get(self, reference: object) -> object:
+        self.reads.append(reference)
+        assert isinstance(reference, dict)
+        return self.documents[reference["key"]]
 
 
 class Projection:
@@ -93,6 +100,9 @@ def _port(
     control: Control | None = None,
     artifacts: Artifacts | None = None,
     projection: Projection | None = None,
+    sqs: Client | None = None,
+    queue_urls: tuple[str, ...] = (),
+    dead_letter_queue_urls: tuple[str, ...] = (),
 ) -> AwsProductQueryProjection:
     return AwsProductQueryProjection(
         client,
@@ -103,6 +113,9 @@ def _port(
         ledger_table="ledger",
         proposal_table="proposal",
         clock=lambda: datetime(2026, 8, 8, 18, 0, tzinfo=UTC),
+        sqs=sqs,
+        queue_urls=queue_urls,
+        dead_letter_queue_urls=dead_letter_queue_urls,
     )
 
 
@@ -624,3 +637,325 @@ def test_collection_submit_fails_closed_until_the_acquisition_stage_exists() -> 
     assert caught.value.status_code == 501
     assert caught.value.code == "COLLECTION_SUBMIT_NOT_CONFIGURED"
     assert client.calls == [], "a refused submit must not touch AWS"
+
+
+def _assert_snapshot_is_structurally_complete(snapshot: dict[str, Any]) -> None:
+    # The web client only checks the three top-level blocks before casting the
+    # rest, so any missing nested field would crash the control room.
+    assert set(snapshot) == {
+        "schemaVersion",
+        "capturedAt",
+        "status",
+        "correlation",
+        "queue",
+        "coverage",
+        "review",
+        "publication",
+        "productionSignals",
+    }
+    assert set(snapshot["correlation"]) == {"status", "trackedCount", "missingCount"}
+    assert set(snapshot["queue"]) == {
+        "status",
+        "depth",
+        "oldestAgeSeconds",
+        "saturation",
+        "retryCount",
+        "deadLetterCount",
+        "leaseStealCount",
+    }
+    assert set(snapshot["queue"]["saturation"]) == {"status", "observedDepth", "capacity"}
+    assert set(snapshot["coverage"]) == {"status", "incompleteCount", "runtimeJoin", "baseline"}
+    assert set(snapshot["coverage"]["runtimeJoin"]) == {"status", "joined", "eligible", "rate"}
+    assert set(snapshot["coverage"]["baseline"]) == {"status", "ageSeconds", "maxAgeSeconds"}
+    assert set(snapshot["review"]) == {"status", "oldestApprovalAgeSeconds"}
+    assert set(snapshot["publication"]) == {
+        "status",
+        "publishLagSeconds",
+        "pointerPackage",
+        "watermark",
+    }
+    assert set(snapshot["publication"]["pointerPackage"]) == {
+        "status",
+        "activeVersion",
+        "packageVersion",
+    }
+    assert set(snapshot["publication"]["watermark"]) == {
+        "status",
+        "version",
+        "updatedAt",
+        "ageSeconds",
+    }
+    assert set(snapshot["productionSignals"]) == {
+        "replication",
+        "errorBudgetBurn",
+        "unitCost",
+    }
+    for signal in snapshot["productionSignals"].values():
+        assert signal == {"status": "NOT_CONFIGURED", "value": None}
+
+
+def test_resilience_reports_not_available_signals_when_nothing_is_recorded() -> None:
+    client = Client(query=[{"Items": []}, {"Items": []}, {"Items": []}])
+    control = Control(
+        pointer={
+            "environment": "staging",
+            "graphVersion": "NONE",
+            "fence": 0,
+            "correlationId": None,
+        }
+    )
+
+    snapshot = _port(client, control=control).resilience(
+        environment=None, principal="reader", correlation_id="corr-api"
+    )
+
+    _assert_snapshot_is_structurally_complete(snapshot)
+    assert snapshot["capturedAt"] == "2026-08-08T18:00:00Z"
+    assert snapshot["status"] == "NOT_AVAILABLE"
+    assert snapshot["queue"]["status"] == "NOT_AVAILABLE"
+    assert snapshot["queue"]["oldestAgeSeconds"] is None
+    assert snapshot["queue"]["saturation"]["status"] == "NOT_CONFIGURED"
+    assert snapshot["correlation"] == {
+        "status": "NOT_AVAILABLE",
+        "trackedCount": 0,
+        "missingCount": 0,
+    }
+    assert snapshot["coverage"]["status"] == "NOT_AVAILABLE"
+    assert snapshot["coverage"]["runtimeJoin"] == {
+        "status": "NOT_AVAILABLE",
+        "joined": 0,
+        "eligible": 0,
+        "rate": None,
+    }
+    assert snapshot["coverage"]["baseline"] == {
+        "status": "NOT_AVAILABLE",
+        "ageSeconds": None,
+        "maxAgeSeconds": 86_400,
+    }
+    assert snapshot["review"] == {"status": "HEALTHY", "oldestApprovalAgeSeconds": None}
+    assert snapshot["publication"]["status"] == "NOT_AVAILABLE"
+    assert snapshot["publication"]["pointerPackage"]["activeVersion"] is None
+    assert snapshot["publication"]["watermark"]["status"] == "NOT_AVAILABLE"
+    assert all(name == "query" for name, _kwargs in client.calls)
+
+
+def _baseline_summary() -> dict[str, Any]:
+    item = _run_summary("cmd-base")
+    item["workflowKind"] = {"S": "BASELINE"}
+    item["updatedAt"] = {"S": "2026-08-08T17:30:00Z"}
+    return item
+
+
+def _stage_item(stage_id: str, key: str) -> dict[str, Any]:
+    return {
+        "sk": {"S": f"STAGE#{stage_id}#idem"},
+        "stageId": {"S": stage_id},
+        "stageName": {"S": stage_id},
+        "status": {"S": "COMPLETED"},
+        "completedAt": {"S": "2026-08-08T17:05:00Z"},
+        "output": {
+            "S": json.dumps(
+                {
+                    "bucket": "evidence",
+                    "key": key,
+                    "versionId": "v1",
+                    "sha256": "a" * 64,
+                    "sizeBytes": 100,
+                }
+            )
+        },
+    }
+
+
+def test_resilience_derives_signals_from_the_ledger_proposals_pointer_and_queues() -> None:
+    deployment = _run_summary("cmd-deploy")
+    deployment["workflowKind"] = {"S": "DEPLOYMENT"}
+    del deployment["correlationId"]
+    client = Client(
+        query=[
+            {"Items": [_run_summary("cmd-1"), deployment]},
+            {"Items": [{"document": {"S": json.dumps(_proposal())}}]},
+            {"Items": [_baseline_summary()]},
+            {"Items": [_stage_item("I6", "I6.json"), _stage_item("I7", "I7.json")]},
+        ]
+    )
+    sqs = Client(
+        get_queue_attributes=[
+            {
+                "Attributes": {
+                    "ApproximateNumberOfMessages": "2",
+                    "ApproximateAgeOfOldestMessage": "12",
+                }
+            },
+            {
+                "Attributes": {
+                    "ApproximateNumberOfMessages": "1",
+                    "ApproximateAgeOfOldestMessage": "45",
+                }
+            },
+            {"Attributes": {"ApproximateNumberOfMessages": "0"}},
+        ]
+    )
+    control = Control()
+    control.pointer["package"] = {
+        "bucket": "packages",
+        "key": "package.json",
+        "versionId": "v1",
+        "sha256": "d" * 64,
+        "sizeBytes": 100,
+    }
+    control.pointer["activatedAt"] = "2026-08-08T17:58:30Z"
+    artifacts = Artifacts(
+        documents={
+            "I6.json": {"runtimeCoverage": {"status": "VALIDATED"}},
+            "I7.json": {"coverage": {"state": "COMPLETE"}},
+        }
+    )
+
+    snapshot = _port(
+        client,
+        control=control,
+        artifacts=artifacts,
+        sqs=sqs,
+        queue_urls=("http://queues/interactive", "http://queues/batch"),
+        dead_letter_queue_urls=("http://queues/interactive-dlq",),
+    ).resilience(environment=None, principal="reader", correlation_id="corr-api")
+
+    _assert_snapshot_is_structurally_complete(snapshot)
+    assert snapshot["queue"]["status"] == "HEALTHY"
+    assert snapshot["queue"]["depth"] == 3
+    assert snapshot["queue"]["oldestAgeSeconds"] == 45
+    assert snapshot["queue"]["deadLetterCount"] == 0
+    assert snapshot["correlation"] == {
+        "status": "INCOMPLETE",
+        "trackedCount": 2,
+        "missingCount": 1,
+    }
+    assert snapshot["coverage"]["status"] == "COMPLETE"
+    assert snapshot["coverage"]["runtimeJoin"] == {
+        "status": "COMPLETE",
+        "joined": 1,
+        "eligible": 1,
+        "rate": 1.0,
+    }
+    assert snapshot["coverage"]["baseline"]["status"] == "CURRENT"
+    assert snapshot["coverage"]["baseline"]["ageSeconds"] == 1_800
+    assert snapshot["review"]["status"] == "DEGRADED"
+    assert snapshot["review"]["oldestApprovalAgeSeconds"] == 3_360
+    assert snapshot["publication"]["status"] == "HEALTHY"
+    assert snapshot["publication"]["pointerPackage"] == {
+        "status": "IN_SYNC",
+        "activeVersion": "graph-v7",
+        "packageVersion": "graph-v7",
+    }
+    assert snapshot["publication"]["watermark"] == {
+        "status": "CURRENT",
+        "version": "graph-v7",
+        "updatedAt": "2026-08-08T17:58:30Z",
+        "ageSeconds": 90,
+    }
+    assert snapshot["status"] == "DEGRADED"
+    queries = [kwargs for name, kwargs in client.calls if name == "query"]
+    assert all(name == "query" for name, _kwargs in client.calls)
+    assert queries[1]["ScanIndexForward"] is True, "oldest approval must come first"
+    assert queries[2]["FilterExpression"].startswith("workflowKind")
+    assert queries[3]["ExpressionAttributeValues"][":pk"] == {"S": "COMMAND#cmd-1"}
+    assert [name for name, _kwargs in sqs.calls] == ["get_queue_attributes"] * 3
+    assert [reference["key"] for reference in artifacts.reads] == ["I6.json", "I7.json"]
+
+
+def test_resilience_queue_signal_degrades_on_dead_letters_and_old_messages() -> None:
+    client = Client(query=[{"Items": []}, {"Items": []}, {"Items": []}])
+    sqs = Client(
+        get_queue_attributes=[
+            {
+                "Attributes": {
+                    "ApproximateNumberOfMessages": "1",
+                    "ApproximateAgeOfOldestMessage": "600",
+                }
+            },
+            {"Attributes": {"ApproximateNumberOfMessages": "2"}},
+        ]
+    )
+
+    control = Control(
+        pointer={
+            "environment": "staging",
+            "graphVersion": "NONE",
+            "fence": 0,
+            "correlationId": None,
+        }
+    )
+
+    snapshot = _port(
+        client,
+        control=control,
+        sqs=sqs,
+        queue_urls=("http://queues/batch",),
+        dead_letter_queue_urls=("http://queues/batch-dlq",),
+    ).resilience(environment=None, principal="reader", correlation_id="corr-api")
+
+    assert snapshot["queue"]["status"] == "DEGRADED"
+    assert snapshot["queue"]["depth"] == 1
+    assert snapshot["queue"]["oldestAgeSeconds"] == 600
+    assert snapshot["queue"]["deadLetterCount"] == 2
+    assert snapshot["status"] == "DEGRADED"
+
+
+def test_build_product_api_wires_the_lane_queues_from_the_environment() -> None:
+    from lineage_api.infrastructure.aws.query_projection import build_product_api
+
+    dynamodb = Client(query=[{"Items": []}, {"Items": []}, {"Items": []}])
+    dynamodb.responses["get_item"] = [{}]
+    sqs = Client(get_queue_attributes=[{"Attributes": {}}] * 3)
+    service = build_product_api(
+        env={
+            "LINEAGE_CONTROL_TABLE": "control",
+            "LINEAGE_LEDGER_TABLE": "ledger",
+            "LINEAGE_PROPOSAL_TABLE": "proposal",
+            "LINEAGE_POINTER_TABLE": "pointer",
+            "LINEAGE_EVIDENCE_BUCKET": "evidence",
+            "LINEAGE_PACKAGE_BUCKET": "packages",
+            "LINEAGE_RUNTIME_STREAM": "runtime",
+            "LINEAGE_NEPTUNE_ENDPOINT": "neptune.example.com",
+            "LINEAGE_ENTERPRISE_ENDPOINT": "https://enterprise.example.com",
+            "AWS_REGION": "us-east-1",
+            "LINEAGE_BATCH_QUEUE_URL": "http://queues/batch",
+            "LINEAGE_EVENTS_QUEUE_URL": "http://queues/events",
+            "LINEAGE_BATCH_DLQ_URL": "http://queues/batch-dlq",
+        },
+        clients={"dynamodb": dynamodb, "s3": Client(), "neptunedata": Client(), "sqs": sqs},
+    )
+
+    response = service.handle(
+        method="GET",
+        path="/api/operations/resilience",
+        query={},
+        body=None,
+        principal="reader",
+        correlation_id="corr-api",
+    )
+
+    assert response.status_code == 200
+    assert response.document["queue"]["status"] in {"HEALTHY", "DEGRADED"}
+    polled = sorted(kwargs["QueueUrl"] for _name, kwargs in sqs.calls)
+    assert polled == [
+        "http://queues/batch",
+        "http://queues/batch-dlq",
+        "http://queues/events",
+    ]
+
+
+def test_overview_embeds_the_resilience_snapshot() -> None:
+    client = Client(query=[{"Items": []}] * 5)
+
+    overview = _port(client).overview(
+        environment=None, principal="reader", correlation_id="corr-api"
+    )
+
+    assert overview["activeVersion"] == "graph-v7"
+    _assert_snapshot_is_structurally_complete(overview["resilience"])
+    assert (
+        overview["resilience"]["publication"]["pointerPackage"]["activeVersion"]
+        == "graph-v7"
+    )

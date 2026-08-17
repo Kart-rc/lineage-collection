@@ -6,8 +6,6 @@ import json
 import shutil
 from pathlib import Path
 
-import pytest
-
 from lineage_api.config import Settings
 from lineage_api.services.intake import PushDelivery
 
@@ -170,34 +168,3 @@ def test_baseline_fully_accounted_empty_repository_records_no_lineage(
     assert result["coverageManifest"]["expectedScope"] == ["README.md"]
     assert result["coverageManifest"]["skippedScope"] == ["README.md"]
     assert result["evidenceManifest"]["edges"] == []
-
-
-def test_baseline_planning_bounds_fanout_and_accounts_unsupported_packs(
-    tmp_path: Path,
-) -> None:
-    try:
-        from lineage_api.application.workflows.baseline import (
-            BaselineFanoutExceeded,
-            BaselineWorkflow,
-        )
-    except ModuleNotFoundError:
-        pytest.fail("Baseline workflow is not implemented")
-
-    repository = tmp_path / "repo"
-    repository.mkdir()
-    (repository / "pipeline.py").write_text("pass\n", encoding="utf-8")
-    (repository / "job.scala").write_text("object Job {}\n", encoding="utf-8")
-    (repository / "manifest.json").write_text("{}\n", encoding="utf-8")
-    (repository / "README.md").write_text("documentation\n", encoding="utf-8")
-
-    plan = BaselineWorkflow.plan_repository(repository, max_fanout=4)
-
-    assert plan == {
-        "expectedScope": ["README.md", "job.scala", "manifest.json", "pipeline.py"],
-        "recomputedScope": ["pipeline.py"],
-        "skippedScope": ["README.md"],
-        "unsupportedScope": ["job.scala", "manifest.json"],
-        "fanout": [{"pack": "python-ast", "paths": ["pipeline.py"]}],
-    }
-    with pytest.raises(BaselineFanoutExceeded, match="4 exceeds limit 1"):
-        BaselineWorkflow.plan_repository(repository, max_fanout=1)

@@ -511,7 +511,12 @@ def test_architecture_deck_marks_every_service_absent_from_infrastructure() -> N
 def test_architecture_deck_analyzer_packs_match_the_closed_registry() -> None:
     registry = _read("apps/api/src/lineage_api/services/analyzer_registry.py")
     packs = set(re.findall(r'AnalyzerDefinition\(\s*"([a-z0-9-]+-v\d+)"', registry))
-    assert packs == {"python-fixture-v1", "java-spring-data-jpa-v1"}, packs
+    assert packs == {
+        "python-fixture-v1",
+        "java-spring-data-jpa-v1",
+        "kafka-streams-v1",
+        "sql-transformation-v1",
+    }, packs
 
     for deck in _deck_paths():
         text = _deck_text(deck)

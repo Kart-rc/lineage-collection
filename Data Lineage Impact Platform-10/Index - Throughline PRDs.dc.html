@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,600&display=swap" rel="stylesheet">
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+  a { color: inherit; text-decoration: none; }
+</style>
+</helmet>
+
+<div style="min-height:100vh;background:oklch(96% 0.004 262);font-family:'IBM Plex Sans',sans-serif;-webkit-font-smoothing:antialiased;color:oklch(30% 0.02 262)">
+  <div style="max-width:980px;margin:0 auto;padding:64px 32px 90px">
+
+    <!-- hero -->
+    <div style="display:flex;align-items:center;gap:12px;margin-bottom:30px">
+      <span style="width:30px;height:30px;border-radius:8px;background:oklch(55% 0.14 252);display:block"></span>
+      <span style="font:700 22px 'IBM Plex Sans';color:oklch(24% 0.02 262);letter-spacing:-0.02em">Throughline</span>
+      <span style="font:500 11px 'IBM Plex Mono';color:oklch(58% 0.02 262);border:1px solid oklch(90% 0.006 262);padding:4px 9px;border-radius:5px;margin-left:6px">Product Requirements · v0.9</span>
+    </div>
+    <h1 style="font:600 44px 'Newsreader',serif;color:oklch(20% 0.02 262);letter-spacing:-0.01em;line-height:1.08;margin:0 0 16px;max-width:18ch">End-to-end lineage capture &amp; impact analysis</h1>
+    <p style="font:400 17px/1.6 'IBM Plex Sans';color:oklch(44% 0.02 262);margin:0 0 8px;max-width:64ch">A platform that builds one trusted, column-level lineage graph across services, streams, S3 and file transfers — and turns any upstream schema change into a pre-merge impact question. Three PRDs and a working prototype.</p>
+
+    <!-- pillars -->
+    <div style="display:flex;gap:10px;margin:30px 0 44px;flex-wrap:wrap">
+      <sc-for list="{{ pillars }}" as="p" hint-placeholder-count="3">
+        <span style="display:flex;align-items:center;gap:8px;font:500 12.5px 'IBM Plex Sans';color:oklch(40% 0.02 262);background:#fff;border:1px solid oklch(91% 0.006 262);border-radius:9px;padding:9px 13px"><span style="width:9px;height:9px;border-radius:3px;background:{{ p.color }}"></span>{{ p.label }}</span>
+      </sc-for>
+    </div>
+
+    <!-- START HERE — executive narrative -->
+    <a href="Executive Narrative.dc.html" style="display:flex;gap:22px;background:linear-gradient(150deg, oklch(28% 0.05 275), oklch(34% 0.07 285));border:1px solid oklch(40% 0.06 275);border-radius:14px;padding:24px 26px;box-shadow:0 2px 10px rgba(30,25,60,.14);margin-bottom:34px" style-hover="box-shadow:0 6px 20px rgba(30,25,60,.22)">
+      <div style="flex:none;width:54px;height:54px;border-radius:13px;background:oklch(85% 0.09 280);display:flex;align-items:center;justify-content:center;font:600 22px 'IBM Plex Mono';color:oklch(32% 0.08 278)">◆</div>
+      <div style="flex:1;min-width:0">
+        <div style="display:flex;align-items:baseline;gap:10px">
+          <span style="font:600 9px 'IBM Plex Mono';letter-spacing:.12em;text-transform:uppercase;color:oklch(85% 0.09 280)">Start here · for leadership</span>
+          <span style="font:600 19px 'IBM Plex Sans';color:#fff">Executive narrative — the story &amp; the ask</span>
+        </div>
+        <p style="font:400 13.5px/1.55 'IBM Plex Sans';color:oklch(88% 0.03 280);margin:7px 0 12px;max-width:62ch">The 15-minute read that ties it together: the four-act arc from “every change is a blind bet” to the funding decision, each beat backed by an artifact — plus a talk track and the answers to the questions leadership will ask.</p>
+        <div style="display:flex;gap:7px;flex-wrap:wrap">
+          <sc-for list="{{ narrativeTags }}" as="t" hint-placeholder-count="4">
+            <span style="font:500 10.5px 'IBM Plex Mono';color:oklch(88% 0.03 280);background:oklch(38% 0.05 278);border:1px solid oklch(48% 0.06 278);padding:3px 8px;border-radius:5px">{{ t.t }}</span>
+          </sc-for>
+        </div>
+      </div>
+      <span style="flex:none;align-self:center;font:400 20px 'IBM Plex Sans';color:oklch(85% 0.09 280)">→</span>
+    </a>
+
+    <!-- PRD cards -->
+    <div style="font:600 9px 'IBM Plex Mono';letter-spacing:.14em;text-transform:uppercase;color:oklch(58% 0.02 262);margin:0 0 14px">The three documents</div>
+    <div style="display:flex;flex-direction:column;gap:14px">
+      <sc-for list="{{ prds }}" as="d" hint-placeholder-count="3">
+        <a href="{{ d.href }}" style="display:flex;gap:22px;background:#fff;border:1px solid oklch(91% 0.006 262);border-radius:14px;padding:24px 26px;box-shadow:0 1px 3px rgba(20,30,50,.05);border-left:4px solid {{ d.color }}" style-hover="box-shadow:0 4px 16px rgba(20,30,50,.10)">
+          <div style="flex:none;width:54px;height:54px;border-radius:13px;background:{{ d.bg }};display:flex;align-items:center;justify-content:center;font:600 20px 'IBM Plex Mono';color:{{ d.color }}">{{ d.glyph }}</div>
+          <div style="flex:1;min-width:0">
+            <div style="display:flex;align-items:baseline;gap:10px">
+              <span style="font:600 9px 'IBM Plex Mono';letter-spacing:.1em;text-transform:uppercase;color:{{ d.color }}">PRD {{ d.num }}</span>
+              <span style="font:600 19px 'IBM Plex Sans';color:oklch(24% 0.02 262)">{{ d.title }}</span>
+            </div>
+            <p style="font:400 13.5px/1.55 'IBM Plex Sans';color:oklch(46% 0.02 262);margin:7px 0 12px;max-width:60ch">{{ d.body }}</p>
+            <div style="display:flex;gap:7px;flex-wrap:wrap">
+              <sc-for list="{{ d.tags }}" as="t" hint-placeholder-count="3">
+                <span style="font:500 10.5px 'IBM Plex Mono';color:oklch(50% 0.02 262);background:oklch(97% 0.004 262);border:1px solid oklch(93% 0.006 262);padding:3px 8px;border-radius:5px">{{ t.t }}</span>
+              </sc-for>
+            </div>
+          </div>
+          <span style="flex:none;align-self:center;font:400 20px 'IBM Plex Sans';color:{{ d.color }}">→</span>
+        </a>
+      </sc-for>
+    </div>
+
+    <!-- roadmap -->
+    <div style="font:600 9px 'IBM Plex Mono';letter-spacing:.14em;text-transform:uppercase;color:oklch(58% 0.02 262);margin:34px 0 14px">Delivery plan</div>
+    <a href="Roadmap & LOE.dc.html" style="display:flex;gap:22px;background:#fff;border:1px solid oklch(91% 0.006 262);border-radius:14px;padding:24px 26px;box-shadow:0 1px 3px rgba(20,30,50,.05);border-left:4px solid oklch(54% 0.10 70)" style-hover="box-shadow:0 4px 16px rgba(20,30,50,.10)">
+      <div style="flex:none;width:54px;height:54px;border-radius:13px;background:oklch(95% 0.05 80);display:flex;align-items:center;justify-content:center;font:600 20px 'IBM Plex Mono';color:oklch(54% 0.10 70)">▤</div>
+      <div style="flex:1;min-width:0">
+        <div style="display:flex;align-items:baseline;gap:10px">
+          <span style="font:600 9px 'IBM Plex Mono';letter-spacing:.1em;text-transform:uppercase;color:oklch(54% 0.10 70)">Roadmap &amp; LOE</span>
+          <span style="font:600 19px 'IBM Plex Sans';color:oklch(24% 0.02 262)">24-month delivery plan</span>
+        </div>
+        <p style="font:400 13.5px/1.55 'IBM Plex Sans';color:oklch(46% 0.02 262);margin:7px 0 12px;max-width:60ch">How the three PRDs sequence into one build: critical path vs. parallel work, a quarter-by-quarter Gantt, level of effort per workstream, team capacity, and the levers to compress the timeline.</p>
+        <div style="display:flex;gap:7px;flex-wrap:wrap">
+          <sc-for list="{{ roadmapTags }}" as="t" hint-placeholder-count="4">
+            <span style="font:500 10.5px 'IBM Plex Mono';color:oklch(50% 0.02 262);background:oklch(97% 0.004 262);border:1px solid oklch(93% 0.006 262);padding:3px 8px;border-radius:5px">{{ t.t }}</span>
+          </sc-for>
+        </div>
+      </div>
+      <span style="flex:none;align-self:center;font:400 20px 'IBM Plex Sans';color:oklch(54% 0.10 70)">→</span>
+    </a>
+
+    <!-- architecture -->
+    <div style="font:600 9px 'IBM Plex Mono';letter-spacing:.14em;text-transform:uppercase;color:oklch(58% 0.02 262);margin:34px 0 14px">Technical reference</div>
+    <a href="Architecture & Scale.dc.html" style="display:flex;gap:22px;background:#fff;border:1px solid oklch(91% 0.006 262);border-radius:14px;padding:24px 26px;box-shadow:0 1px 3px rgba(20,30,50,.05);border-left:4px solid oklch(48% 0.10 220)" style-hover="box-shadow:0 4px 16px rgba(20,30,50,.10)">
+      <div style="flex:none;width:54px;height:54px;border-radius:13px;background:oklch(95% 0.04 220);display:flex;align-items:center;justify-content:center;font:600 20px 'IBM Plex Mono';color:oklch(48% 0.10 220)">◈</div>
+      <div style="flex:1;min-width:0">
+        <div style="display:flex;align-items:baseline;gap:10px">
+          <span style="font:600 9px 'IBM Plex Mono';letter-spacing:.1em;text-transform:uppercase;color:oklch(48% 0.10 220)">Architecture &amp; Scale</span>
+          <span style="font:600 19px 'IBM Plex Sans';color:oklch(24% 0.02 262)">System design &amp; sizing</span>
+        </div>
+        <p style="font:400 13.5px/1.55 'IBM Plex Sans';color:oklch(46% 0.02 262);margin:7px 0 12px;max-width:60ch">The build behind the PRDs: the four-plane architecture, end-to-end process flows, the REST + GraphQL API surface, entity &amp; payload schemas, and a back-of-the-envelope sizing for tens of thousands of services.</p>
+        <div style="display:flex;gap:7px;flex-wrap:wrap">
+          <sc-for list="{{ archTags }}" as="t" hint-placeholder-count="4">
+            <span style="font:500 10.5px 'IBM Plex Mono';color:oklch(50% 0.02 262);background:oklch(97% 0.004 262);border:1px solid oklch(93% 0.006 262);padding:3px 8px;border-radius:5px">{{ t.t }}</span>
+          </sc-for>
+        </div>
+      </div>
+      <span style="flex:none;align-self:center;font:400 20px 'IBM Plex Sans';color:oklch(48% 0.10 220)">→</span>
+    </a>
+    <!-- worked example -->
+    <div style="font:600 9px 'IBM Plex Mono';letter-spacing:.14em;text-transform:uppercase;color:oklch(58% 0.02 262);margin:34px 0 14px">Walkthrough</div>
+    <a href="Worked Example.dc.html" style="display:flex;gap:22px;background:#fff;border:1px solid oklch(91% 0.006 262);border-radius:14px;padding:24px 26px;box-shadow:0 1px 3px rgba(20,30,50,.05);border-left:4px solid oklch(52% 0.13 155)" style-hover="box-shadow:0 4px 16px rgba(20,30,50,.10)">
+      <div style="flex:none;width:54px;height:54px;border-radius:13px;background:oklch(95% 0.04 155);display:flex;align-items:center;justify-content:center;font:600 20px 'IBM Plex Mono';color:oklch(48% 0.12 155)">↯</div>
+      <div style="flex:1;min-width:0">
+        <div style="display:flex;align-items:baseline;gap:10px">
+          <span style="font:600 9px 'IBM Plex Mono';letter-spacing:.1em;text-transform:uppercase;color:oklch(48% 0.12 155)">Worked Example</span>
+          <span style="font:600 19px 'IBM Plex Sans';color:oklch(24% 0.02 262)">One column, traced end to end</span>
+        </div>
+        <p style="font:400 13.5px/1.55 'IBM Plex Sans';color:oklch(46% 0.02 262);margin:7px 0 12px;max-width:60ch">Two scenarios — order capture to S3, then S3 to ML features — each walked through collection, CI/CD, OTel runtime, impact and UI. They chain: one money-type change ripples six hops across two teams.</p>
+        <div style="display:flex;gap:7px;flex-wrap:wrap">
+          <sc-for list="{{ exampleTags }}" as="t" hint-placeholder-count="4">
+            <span style="font:500 10.5px 'IBM Plex Mono';color:oklch(50% 0.02 262);background:oklch(97% 0.004 262);border:1px solid oklch(93% 0.006 262);padding:3px 8px;border-radius:5px">{{ t.t }}</span>
+          </sc-for>
+        </div>
+      </div>
+      <span style="flex:none;align-self:center;font:400 20px 'IBM Plex Sans';color:oklch(48% 0.12 155)">→</span>
+    </a>
+    <div style="font:600 9px 'IBM Plex Mono';letter-spacing:.14em;text-transform:uppercase;color:oklch(58% 0.02 262);margin:34px 0 14px">Planning tool</div>
+    <a href="Onboarding Estimator.dc.html" style="display:flex;gap:22px;background:#fff;border:1px solid oklch(91% 0.006 262);border-radius:14px;padding:24px 26px;box-shadow:0 1px 3px rgba(20,30,50,.05);border-left:4px solid oklch(52% 0.13 165)" style-hover="box-shadow:0 4px 16px rgba(20,30,50,.10)">
+      <div style="flex:none;width:54px;height:54px;border-radius:13px;background:oklch(95% 0.04 165);display:flex;align-items:center;justify-content:center;font:600 20px 'IBM Plex Mono';color:oklch(48% 0.12 165)">◷</div>
+      <div style="flex:1;min-width:0">
+        <div style="display:flex;align-items:baseline;gap:10px">
+          <span style="font:600 9px 'IBM Plex Mono';letter-spacing:.1em;text-transform:uppercase;color:oklch(48% 0.12 165)">Onboarding Estimator</span>
+          <span style="font:600 19px 'IBM Plex Sans';color:oklch(24% 0.02 262)">Time-to-onboard a vertical slice</span>
+        </div>
+        <p style="font:400 13.5px/1.55 'IBM Plex Sans';color:oklch(46% 0.02 262);margin:7px 0 12px;max-width:60ch">An interactive model that quotes onboarding time for end-to-end element-level lineage. Decompose a slice into archetypes, map each to its collectors, apply calibrated baselines with a connector-reuse learning curve — preloaded with the Orders slice.</p>
+        <div style="display:flex;gap:7px;flex-wrap:wrap">
+          <sc-for list="{{ estimatorTags }}" as="t" hint-placeholder-count="4">
+            <span style="font:500 10.5px 'IBM Plex Mono';color:oklch(50% 0.02 262);background:oklch(97% 0.004 262);border:1px solid oklch(93% 0.006 262);padding:3px 8px;border-radius:5px">{{ t.t }}</span>
+          </sc-for>
+        </div>
+      </div>
+      <span style="flex:none;align-self:center;font:400 20px 'IBM Plex Sans';color:oklch(48% 0.12 165)">→</span>
+    </a>
+    <div style="font:600 9px 'IBM Plex Mono';letter-spacing:.14em;text-transform:uppercase;color:oklch(58% 0.02 262);margin:34px 0 14px">Pre-leadership review</div>
+    <a href="Critical Review.dc.html" style="display:flex;gap:22px;background:#fff;border:1px solid oklch(91% 0.006 262);border-radius:14px;padding:24px 26px;box-shadow:0 1px 3px rgba(20,30,50,.05);border-left:4px solid oklch(50% 0.16 25)" style-hover="box-shadow:0 4px 16px rgba(20,30,50,.10)">
+      <div style="flex:none;width:54px;height:54px;border-radius:13px;background:oklch(95% 0.05 28);display:flex;align-items:center;justify-content:center;font:600 22px 'IBM Plex Mono';color:oklch(50% 0.16 25)">⚑</div>
+      <div style="flex:1;min-width:0">
+        <div style="display:flex;align-items:baseline;gap:10px">
+          <span style="font:600 9px 'IBM Plex Mono';letter-spacing:.1em;text-transform:uppercase;color:oklch(50% 0.16 25)">Critical Review</span>
+          <span style="font:600 19px 'IBM Plex Sans';color:oklch(24% 0.02 262)">Red-team read &amp; path to buy-in</span>
+        </div>
+        <p style="font:400 13.5px/1.55 'IBM Plex Sans';color:oklch(46% 0.02 262);margin:7px 0 12px;max-width:60ch">An adversarial review across ease of use, scalability, and the 24-month plan — the objections a skeptical CFO/CTO will raise, each paired with a remedial action, plus a prioritized checklist to clear before the funding meeting.</p>
+        <div style="display:flex;gap:7px;flex-wrap:wrap">
+          <sc-for list="{{ reviewTags }}" as="t" hint-placeholder-count="4">
+            <span style="font:500 10.5px 'IBM Plex Mono';color:oklch(50% 0.02 262);background:oklch(97% 0.004 262);border:1px solid oklch(93% 0.006 262);padding:3px 8px;border-radius:5px">{{ t.t }}</span>
+          </sc-for>
+        </div>
+      </div>
+      <span style="flex:none;align-self:center;font:400 20px 'IBM Plex Sans';color:oklch(50% 0.16 25)">→</span>
+    </a>
+    <div style="font:600 9px 'IBM Plex Mono';letter-spacing:.14em;text-transform:uppercase;color:oklch(58% 0.02 262);margin:34px 0 14px">Response to review</div>
+    <a href="Remediation Plan.dc.html" style="display:flex;gap:22px;background:#fff;border:1px solid oklch(91% 0.006 262);border-radius:14px;padding:24px 26px;box-shadow:0 1px 3px rgba(20,30,50,.05);border-left:4px solid oklch(48% 0.13 165)" style-hover="box-shadow:0 4px 16px rgba(20,30,50,.10)">
+      <div style="flex:none;width:54px;height:54px;border-radius:13px;background:oklch(95% 0.04 165);display:flex;align-items:center;justify-content:center;font:600 22px 'IBM Plex Mono';color:oklch(46% 0.13 165)">✓</div>
+      <div style="flex:1;min-width:0">
+        <div style="display:flex;align-items:baseline;gap:10px">
+          <span style="font:600 9px 'IBM Plex Mono';letter-spacing:.1em;text-transform:uppercase;color:oklch(46% 0.13 165)">Remediation Plan</span>
+          <span style="font:600 19px 'IBM Plex Sans';color:oklch(24% 0.02 262)">Closing the review before leadership</span>
+        </div>
+        <p style="font:400 13.5px/1.55 'IBM Plex Sans';color:oklch(46% 0.02 262);margin:7px 0 12px;max-width:60ch">The accepted findings turned into owned, dated actions: business value every 6-week PI, the capacity reconciliation, a P0 identity-resolution spike, the adoption workstream, role-based entry, and leading indicators with targets.</p>
+        <div style="display:flex;gap:7px;flex-wrap:wrap">
+          <sc-for list="{{ remedyTags }}" as="t" hint-placeholder-count="4">
+            <span style="font:500 10.5px 'IBM Plex Mono';color:oklch(50% 0.02 262);background:oklch(97% 0.004 262);border:1px solid oklch(93% 0.006 262);padding:3px 8px;border-radius:5px">{{ t.t }}</span>
+          </sc-for>
+        </div>
+      </div>
+      <span style="flex:none;align-self:center;font:400 20px 'IBM Plex Sans';color:oklch(46% 0.13 165)">→</span>
+    </a>
+    <div style="font:600 9px 'IBM Plex Mono';letter-spacing:.14em;text-transform:uppercase;color:oklch(58% 0.02 262);margin:40px 0 14px">Reference prototype</div>
+    <a href="Throughline - Final.dc.html" style="display:flex;gap:22px;align-items:center;background:oklch(22% 0.03 262);border-radius:14px;padding:24px 28px;box-shadow:0 2px 10px rgba(20,30,50,.12)" style-hover="box-shadow:0 6px 22px rgba(20,30,50,.2)">
+      <div style="flex:1">
+        <div style="font:600 18px 'IBM Plex Sans';color:#fff">Throughline — interactive prototype</div>
+        <p style="font:400 13px/1.55 'IBM Plex Sans';color:oklch(78% 0.02 262);margin:7px 0 0;max-width:60ch">The working four-lens app these PRDs describe: altitude navigation, progressive disclosure to column level, the interaction matrix, confidence-scored provenance, and impact blast radius.</p>
+        <div style="display:flex;gap:7px;margin-top:13px;flex-wrap:wrap">
+          <sc-for list="{{ lensChips }}" as="c" hint-placeholder-count="4">
+            <span style="display:flex;align-items:center;gap:6px;font:500 10.5px 'IBM Plex Mono';color:oklch(85% 0.02 262);background:oklch(30% 0.03 262);padding:4px 9px;border-radius:5px"><span style="width:7px;height:7px;border-radius:2px;background:{{ c.color }}"></span>{{ c.label }}</span>
+          </sc-for>
+        </div>
+      </div>
+      <span style="flex:none;font:600 13px 'IBM Plex Sans';color:oklch(22% 0.03 262);background:#fff;padding:11px 18px;border-radius:9px">Open ↗</span>
+    </a>
+
+    <div style="margin-top:44px;padding-top:20px;border-top:1px solid oklch(91% 0.006 262);font:500 11px 'IBM Plex Mono';color:oklch(60% 0.02 262)">Throughline · internal draft for review · not for distribution</div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+class Component extends DCLogic {
+  renderVals() {
+    const pillars = [
+      { label: 'Multi-signal collection', color: 'oklch(55% 0.14 252)' },
+      { label: 'Confidence-scored edges', color: 'oklch(56% 0.16 300)' },
+      { label: 'Impact before merge', color: 'oklch(57% 0.16 35)' },
+      { label: 'Scales to 2,000+ assets', color: 'oklch(52% 0.13 190)' },
+    ];
+    const prds = [
+      { num: '1', num0: 1, glyph: '{ }', title: 'Lineage Collection', color: 'oklch(55% 0.14 252)', bg: 'oklch(96% 0.03 252)', href: 'PRD 1 - Lineage Collection.dc.html',
+        body: 'How the graph is built and continuously trusted from four signals \u2014 static + LLM baseline, CI/CD diff, Spark/Dask runtime, and OTel \u2014 with a confidence score on every edge.',
+        tags: ['Architecture', 'Data model', 'Confidence spec'].map(t => ({ t })) },
+      { num: '2', num0: 2, glyph: '\u26A0', title: 'Impact Analysis', color: 'oklch(57% 0.16 35)', bg: 'oklch(96% 0.035 38)', href: 'PRD 2 - Impact Analysis.dc.html',
+        body: 'How a schema change becomes a blast radius: downstream traversal, the change-type \u00d7 usage severity model, confidence tiering, and three modes \u2014 explore, simulate, CI/CD gate.',
+        tags: ['Traversal logic', 'Severity model', 'Three modes'].map(t => ({ t })) },
+      { num: '3', num0: 3, glyph: '\u25EC', title: 'UI & Representation', color: 'oklch(52% 0.13 190)', bg: 'oklch(96% 0.03 190)', href: 'PRD 3 - UI Representation.dc.html',
+        body: 'How thousands of nodes become legible: altitude navigation (domain \u2192 app \u2192 service \u2192 column), four coordinated lenses, and a consistent visual encoding for channel, state and confidence.',
+        tags: ['Altitude model', 'Four lenses', 'Encoding system'].map(t => ({ t })) },
+    ];
+    const lensChips = [
+      { label: 'Lineage', color: 'oklch(60% 0.14 252)' },
+      { label: 'Interactions', color: 'oklch(58% 0.12 190)' },
+      { label: 'Impact', color: 'oklch(64% 0.16 38)' },
+      { label: 'Provenance', color: 'oklch(62% 0.16 300)' },
+    ];
+    const roadmapTags = ['Gantt · 8 quarters', 'Critical path', 'LOE & capacity', 'Expedite levers'].map(t => ({ t }));
+    const archTags = ['4-plane architecture', 'API + schemas', 'Process flows', 'Scale estimate'].map(t => ({ t }));
+    const exampleTags = ['2 use cases', '5 capabilities each', 'Real payloads', 'Chained impact'].map(t => ({ t }));
+    const reviewTags = ['UI · scale · plan', 'Severity-tagged', 'Remediation checklist', 'Build-vs-buy'].map(t => ({ t }));
+    const remedyTags = ['6-week PI value', 'Capacity reconciled', 'Identity spike', 'Leading indicators'].map(t => ({ t }));
+    const estimatorTags = ['Archetype → collectors', 'Effort baselines', 'Learning curve', 'Live calculator'].map(t => ({ t }));
+    const narrativeTags = ['4-act story arc', 'Backed by artifacts', '15-min talk track', 'Anticipated Qs'].map(t => ({ t }));
+    return { pillars, prds, lensChips, roadmapTags, archTags, exampleTags, reviewTags, remedyTags, estimatorTags, narrativeTags };
+  }
+}
+</script>
+</body>
+</html>

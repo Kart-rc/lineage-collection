@@ -30,6 +30,7 @@ export interface IntakeStackProps extends StackProps {
 export class IntakeStack extends Stack {
   readonly eventBus: events.EventBus;
   readonly queues: Record<string, sqs.Queue>;
+  readonly deadLetterQueues: Record<string, sqs.Queue>;
   readonly intake: RuntimeTarget;
 
   constructor(scope: Construct, id: string, props: IntakeStackProps) {
@@ -44,6 +45,7 @@ export class IntakeStack extends Stack {
     });
 
     this.queues = {};
+    this.deadLetterQueues = {};
     const pagingTopic = props.config.pagingTopicArn
       ? sns.Topic.fromTopicArn(this, "PagingTopic", props.config.pagingTopicArn)
       : undefined;
@@ -57,6 +59,7 @@ export class IntakeStack extends Stack {
         enforceSSL: true,
         retentionPeriod: Duration.days(14),
       });
+      this.deadLetterQueues[lane] = deadLetterQueue;
       this.queues[lane] = new sqs.Queue(this, `${lane}Queue`, {
         queueName: `${props.config.resourcePrefix}-${lane}${fifo ? ".fifo" : ""}`,
         fifo,

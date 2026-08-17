@@ -2286,7 +2286,6 @@ def production_stage_use_cases(
         use_cases[("BASELINE", "B7")] = consolidation
         use_cases[("BASELINE", "B8")] = consolidation
         use_cases[("INCREMENTAL", "I7")] = consolidation
-        use_cases[("PR_GATE", "P4")] = consolidation
         pr_control = pr_gate_control or cast(
             PrGateControlPort | None, publication_control
         )

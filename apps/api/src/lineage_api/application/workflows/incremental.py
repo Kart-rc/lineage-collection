@@ -64,10 +64,6 @@ class IncrementalWorkflow:
             self.fault_injector(stage_id)
         return body
 
-    def load(self, stage_id: str) -> dict[str, Any] | None:
-        result = self.commands.completed_stage(self._identity(stage_id))
-        return None if result is None else self._load(result.output_ref)
-
     @staticmethod
     def runtime_coverage(runtime: dict[str, Any]) -> dict[str, object]:
         body = runtime["runtime"]

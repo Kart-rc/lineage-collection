@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import os
+import re
 import shutil
 import subprocess
 import tempfile
@@ -13,6 +14,7 @@ from lineage_api.domain.urns import is_element_scoped_dataset_urn
 from lineage_api.services.java_runtime_verification import (
     JavaObservation,
     generate_harness,
+    generate_stub_sources,
     parse_observations,
     read_entities,
     read_injection_sites,
@@ -179,13 +181,136 @@ def select_relevant_java_sources(
         else sources
     )
     repositories = read_repositories(scoped)
-    return {
+    structural = {
         path: text
         for path, text in scoped.items()
         if read_entities({path: text})
         or read_repositories({path: text})
         or read_injection_sites({path: text}, repositories)
     }
+    return _compile_feasible(_with_reference_closure(structural, scoped))
+
+
+_JAVA_COMMENT = re.compile(r"/\*[\s\S]*?\*/|//[^\n]*")
+
+
+def _with_reference_closure(
+    selected: dict[str, str], pool: Mapping[str, str]
+) -> dict[str, str]:
+    """Add every pool source whose declared type a selected source references.
+
+    The structural filter keeps only entity/repository/injection-site files, but a
+    real checkout's entities extend project-local bases (`Owner extends Person
+    extends BaseEntity`, a `@MappedSuperclass` in another package) that match no
+    structural shape -- and a same-package supertype is reachable with no import at
+    all. `javac` compiles the selected set in one invocation, so every project type
+    a kept file names must be kept too, to a fixpoint. Comments are stripped before
+    scanning so prose naming a type never resurrects a dropped file.
+    """
+    # A simple name can be declared by several files (jhipster ships both
+    # `service.InvalidPasswordException` and `web.rest.errors.InvalidPasswordException`);
+    # a reference by simple name must pull in every declaration, or the same-package
+    # one javac actually resolves may be the one left behind.
+    declared_by_name: dict[str, list[str]] = {}
+    for path in pool:
+        declared_by_name.setdefault(
+            path.rsplit("/", 1)[-1].removesuffix(".java"), []
+        ).append(path)
+    result = dict(selected)
+    frontier = list(selected.values())
+    while frontier:
+        text = _JAVA_COMMENT.sub(" ", frontier.pop())
+        for simple, paths in declared_by_name.items():
+            if all(path in result for path in paths):
+                continue
+            if re.search(rf"\b{re.escape(simple)}\b", text):
+                for path in paths:
+                    if path not in result:
+                        result[path] = pool[path]
+                        frontier.append(pool[path])
+    return result
+
+
+_JAVA_IMPORT = re.compile(r"^\s*import\s+(?:static\s+)?([\w.]+(?:\.\*)?)\s*;", re.MULTILINE)
+
+
+def _compile_feasible(selected: dict[str, str]) -> dict[str, str]:
+    """Drop files the harness `javac` invocation cannot possibly compile.
+
+    A selected file is compile-feasible only when every import resolves to the JDK,
+    the harness's framework stub surface, or another kept project file. A file with
+    an unstubbable framework import (`jakarta.mail`, Spring Security, a template
+    engine) would fail the single-shot compile and thereby starve every edge —
+    including edges whose own types compile fine. Dropping the infeasible file (and,
+    to a fixpoint, anything that references it) keeps the harness honest: excluded
+    types simply record no observations, so their edges stay static-only instead of
+    poisoning the whole run.
+    """
+    stub_types = {
+        path.removesuffix(".java").replace("/", ".")
+        for path in generate_stub_sources()
+        if not path.startswith("harness/")
+    }
+    stub_packages = {name.rsplit(".", 1)[0] for name in stub_types}
+
+    def import_satisfied(
+        imported: str, kept_names: set[str], kept_packages: set[str]
+    ) -> bool:
+        if imported.endswith(".*"):
+            package = imported[: -len(".*")]
+            # A wildcard over a package the kept project files themselves declare
+            # (`import io.github…web.rest.errors.*`) resolves against those files.
+            return (
+                package.startswith("java.")
+                or package in stub_packages
+                or package in kept_packages
+            )
+        if imported.startswith("java."):
+            return True
+        if imported in stub_types:
+            return True
+        # A nested type (`Outer.Inner`) is satisfied by its stubbed outer type.
+        outer = imported.rsplit(".", 1)[0]
+        if outer in stub_types:
+            return True
+        return imported.rsplit(".", 1)[-1] in kept_names
+
+    package_of = re.compile(r"^\s*package\s+([\w.]+)\s*;", re.MULTILINE)
+    result = dict(selected)
+    while True:
+        kept_names = {
+            path.rsplit("/", 1)[-1].removesuffix(".java") for path in result
+        }
+        kept_packages = {
+            match.group(1)
+            for text in result.values()
+            if (match := package_of.search(text))
+        }
+        dropped_names = {
+            path.rsplit("/", 1)[-1].removesuffix(".java")
+            for path in selected
+            if path not in result
+        }
+        infeasible = []
+        for path, text in result.items():
+            stripped = _JAVA_COMMENT.sub(" ", text)
+            if any(
+                not import_satisfied(imported, kept_names, kept_packages)
+                for imported in _JAVA_IMPORT.findall(stripped)
+            ):
+                infeasible.append(path)
+                continue
+            # A kept file may reference a dropped project type without an import
+            # (same package); it would fail the same compile, so it goes too.
+            if any(
+                re.search(rf"\b{re.escape(name)}\b", stripped)
+                for name in dropped_names
+            ):
+                infeasible.append(path)
+        if not infeasible:
+            return result
+        for path in infeasible:
+            result.pop(path, None)
 
 
 def _minimal_subprocess_env(java_home: str | None) -> dict[str, str]:

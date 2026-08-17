@@ -30,6 +30,11 @@ _CHANGE_TYPES = frozenset(
 )
 _KILL_SWITCH_SCOPES = frozenset({"GLOBAL", "ENVIRONMENT", "WORKLOAD"})
 _IDENTIFIER = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:@/+=,-]*$")
+# Graph subjects additionally allow one '#' separator: element URNs
+# (dataset#element) and analyzer service endpoints (Type#method).
+_SUBJECT = re.compile(
+    r"^[A-Za-z0-9][A-Za-z0-9._:@/+=,-]*(?:#[A-Za-z0-9._:@/+=,-]+)?$"
+)
 
 
 @dataclass(frozen=True)
@@ -145,7 +150,7 @@ class ProductApiService:
             if direction not in _LINEAGE_DIRECTIONS:
                 raise _bad("direction", "is not supported")
             document = self._port.lineage(
-                subject=_identifier("subject", value),
+                subject=_subject_identifier("subject", value),
                 direction=direction,
                 depth=_integer(query.get("depth", "3"), "depth", 1, MAX_GRAPH_DEPTH),
                 limit=_integer(
@@ -153,6 +158,12 @@ class ProductApiService:
                 ),
                 version=_optional_identifier(query, "version"),
                 **common,
+            )
+        elif method == "GET" and path == "/api/interactions":
+            # The second lineage plane — service-to-service interactions.
+            _keys(query, {"system"}, "query")
+            document = self._port.interactions(
+                system=_optional_identifier(query, "system"), **common
             )
         elif method == "GET" and (value := _route(path, r"/api/edges/([^/]+)")):
             _keys(query, {"version"}, "query")
@@ -249,7 +260,7 @@ class ProductApiService:
         if change_type not in _CHANGE_TYPES:
             raise _bad("changeType", "is not supported")
         return self._port.impact(
-            subject=_identifier(
+            subject=_subject_identifier(
                 "subject", _body_text(body, "subject", MAX_IDENTIFIER_LENGTH)
             ),
             change_type=change_type,
@@ -344,6 +355,13 @@ def _required_text(field: str, value: object, maximum: int) -> str:
 def _identifier(field: str, value: object) -> str:
     result = _required_text(field, value, MAX_IDENTIFIER_LENGTH)
     if not _IDENTIFIER.fullmatch(result):
+        raise _bad(field, "contains unsupported characters")
+    return result
+
+
+def _subject_identifier(field: str, value: object) -> str:
+    result = _required_text(field, value, MAX_IDENTIFIER_LENGTH)
+    if not _SUBJECT.fullmatch(result):
         raise _bad(field, "contains unsupported characters")
     return result
 

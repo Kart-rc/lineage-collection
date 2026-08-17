@@ -745,9 +745,9 @@ class DynamoDbControlAdapter:
             "workflowKind = :workflowKind, workflowVersion = :workflowVersion, "
             "currentStageId = :stageId, currentStageName = :stageName, "
             "#status = :status, correlationId = :correlationId, "
-            "environment = :environment, system = :system, "
+            "environment = :environment, #system = :system, "
             "createdAt = if_not_exists(createdAt, :createdAt), updatedAt = :updatedAt, "
-            "stageOrdinal = :stageOrdinal, output = :output"
+            "stageOrdinal = :stageOrdinal, #output = :output"
         )
         summary_values: dict[str, Any] = {
             ":queryPk": {"S": "RUN"},
@@ -797,7 +797,11 @@ class DynamoDbControlAdapter:
                             "attribute_not_exists(stageOrdinal) OR "
                             "stageOrdinal <= :stageOrdinal"
                         ),
-                        "ExpressionAttributeNames": {"#status": "status"},
+                        "ExpressionAttributeNames": {
+                            "#status": "status",
+                            "#system": "system",
+                            "#output": "output",
+                        },
                         "ExpressionAttributeValues": summary_values,
                     }
                 },
@@ -884,6 +888,8 @@ class DynamoDbControlAdapter:
             pointer["graphChecksum"] = item["graphChecksum"]["S"]
         if "packageReference" in item:
             pointer["package"] = json.loads(item["packageReference"]["S"])
+        if "activatedAt" in item:
+            pointer["activatedAt"] = item["activatedAt"]["S"]
         return pointer
 
     def activate_pointer(
@@ -1126,9 +1132,10 @@ class DynamoDbControlAdapter:
             ),
             ConditionExpression=(
                 "eventId = :eventId AND correlationId = :correlationId AND "
-                "(#status = :recorded OR result = :result)"
+                "(#status = :authoritative OR #status = :recorded OR "
+                "attribute_exists(#result))"
             ),
-            ExpressionAttributeNames={"#status": "status"},
+            ExpressionAttributeNames={"#status": "status", "#result": "result"},
             ExpressionAttributeValues={
                 ":artifactDigest": (
                     {"S": str(artifact)} if artifact is not None else {"NULL": True}
@@ -1137,6 +1144,7 @@ class DynamoDbControlAdapter:
                 ":auditRef": {"S": str(event["auditRef"])},
                 ":occurredAt": {"S": str(event["occurredAt"])},
                 ":recorded": {"S": "RECORDED"},
+                ":authoritative": {"S": "AUTHORITATIVE"},
                 ":eventId": {"S": str(event["eventId"])},
                 ":correlationId": {"S": str(event["correlationId"])},
             },
@@ -1270,12 +1278,11 @@ class DynamoDbControlAdapter:
             Key=self._deployment_state_key(
                 str(event["system"]), str(event["environment"])
             ),
-            UpdateExpression="SET #status = :completed, result = :result",
+            UpdateExpression="SET #status = :completed, #result = :result",
             ConditionExpression="eventId = :eventId AND correlationId = :correlationId",
-            ExpressionAttributeNames={"#status": "status"},
+            ExpressionAttributeNames={"#status": "status", "#result": "result"},
             ExpressionAttributeValues={
                 ":completed": {"S": str(result["terminalOutcome"])},
-                ":recorded": {"S": "RECORDED"},
                 ":result": {"S": _json(persisted)},
                 ":eventId": {"S": str(event["eventId"])},
                 ":correlationId": {"S": str(event["correlationId"])},

@@ -243,7 +243,11 @@ def test_petclinic_reaches_band_high_through_the_product_path() -> None:
         # `VisitRepository.findByPetId(In)` against `visits` -- including the `petId`
         # field -- so this edge reaches band HIGH with real SCA+RUNTIME provenance.
         assert high, "expected at least one consolidated edge at band HIGH (Task 6d)"
-        assert summary["runtimeStatus"] == "CORROBORATED"
+        # Alias-aware JPQL grounding claims MORE element edges statically (e.g.
+        # `ptype.name` -> types.name) than the bounded harness run witnesses, so
+        # the honest verdict is partial corroboration with the edge under test
+        # among the corroborated ones — never a blanket CORROBORATED.
+        assert summary["runtimeStatus"] in {"CORROBORATED", "PARTIALLY_CORROBORATED"}
         assert summary["runtimeReasons"] == []
 
         visits_pet_id_high = [

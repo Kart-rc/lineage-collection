@@ -102,7 +102,8 @@ uv run --project apps/api python -m lineage_api.cli collect-checkout \
   --profile postgres
 ```
 
-At that pinned revision the accepted oracle is 15 static edges (10 reads and 5 writes), zero
+At that pinned revision the accepted oracle is 23 static edges (18 reads and 5 writes -- 15
+dataset-scope plus 8 element-scope `dataset#column` edges), zero
 unresolved invocations, proposal `IN_REVIEW`, and runtime `NOT_PROVIDED`. Repeating the identical
 command targets that exact durable command: queued or redrivable work resumes through the same
 stage ledger, while a completed command returns `DUPLICATE` with the same command, run and proposal
@@ -119,7 +120,7 @@ LINEAGE_REAL_REPOSITORY_CHECKOUT=/path/to/spring-petclinic \
 ```
 
 It submits the checkout through `POST /api/collections`, polls `GET /api/collections/{commandId}`,
-and requires the 15/10/5 oracle, the complete 131-path disposition, `NOT_PROVIDED` runtime status,
+and requires the 23/18/5 oracle, the complete 131-path disposition, `NOT_PROVIDED` runtime status,
 and a duplicate submission with byte-identical database and evidence digests.
 
 To run the reproducible compatibility proof rather than the one-shot operator command, use the
@@ -133,7 +134,7 @@ export LINEAGE_ACCEPTANCE_RUN_ID=spring-petclinic-local
 
 The runner verifies the official origin and exact revision, composes two fresh local SQLite/object
 states, runs the actual durable `collect-checkout` flow in each, repeats one delivery to prove
-duplicate no-effect, and requires the complete 131-path disposition and exact 15-edge oracle. The
+duplicate no-effect, and requires the complete 131-path disposition and exact 23-edge oracle. The
 duplicate proof opens SQLite read-only with `query_only`, holds one transaction across every read,
 and dynamically snapshots every user table (currently 34). The bounded canonical proof includes
 every `sqlite_schema` table/index/view/trigger record, `table_xinfo`, foreign keys, index metadata,

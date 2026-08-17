@@ -1,0 +1,885 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet data-dc-atomics>
+<meta name="design_doc_mode" content="canvas">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&amp;family=IBM+Plex+Mono:wght@400;500;600&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:oklch(95.8% 0.004 255);font-family:'IBM Plex Sans',sans-serif;-webkit-font-smoothing:antialiased}
+a{color:oklch(48% 0.13 258)}a:hover{color:oklch(40% 0.14 258)}
+.dv-turn{padding:40px 44px 32px;scroll-margin-top:16px}
+.dv-thd{display:flex;align-items:baseline;gap:10px;margin:0 0 22px}
+.dv-tid{font:600 10px 'IBM Plex Mono',monospace;padding:3px 7px;background:#191d26;color:#fff;border-radius:4px;text-decoration:none}
+.dv-tname{font:600 13px/1.2 'IBM Plex Sans',sans-serif;color:#191d26}
+.dv-opts{display:flex;flex-wrap:wrap;gap:40px;align-items:flex-start}
+.dv-opt{flex:none;display:flex;flex-direction:column;gap:9px;scroll-margin-top:16px}
+.dv-oid{font:600 10.5px 'IBM Plex Mono',monospace;padding:3px 7px;background:rgba(20,25,40,.08);color:#191d26;border-radius:5px;text-decoration:none}
+.dv-olabel{display:flex;align-items:baseline;gap:8px;font:400 11.5px/1.3 'IBM Plex Sans',sans-serif;color:rgba(15,20,35,.55)}
+.dv-card{max-width:100%;background:#fff;border:1px solid rgba(15,20,35,.09);border-radius:10px;box-shadow:0 1px 4px rgba(16,24,40,.06),0 12px 32px -18px rgba(16,24,40,.18);overflow:hidden}
+.dv-opt:target .dv-oid{background:#3b62d9;color:#fff}
+.dv-next{margin:26px 0 0;font:12px/1.5 'IBM Plex Sans',sans-serif;color:rgba(15,20,35,.5)}
+.dv-note{font:400 11px/1.55 'IBM Plex Sans',sans-serif;color:rgba(15,20,35,.48);max-width:1080px;margin:0}
+</style>
+</helmet>
+
+<section class="dv-turn" id="t1">
+<div class="dv-thd"><a class="dv-tid" href="#t1">1</a><span class="dv-tname">Throughline · Lineage Control Room — onboarding, operations, explorer, runs + compare · Stripe-level hierarchy</span></div>
+<div class="dv-opts">
+
+<!-- ═══════ 1a ONBOARDING · GUIDED WIZARD ═══════ -->
+<div class="dv-opt" id="1a" data-screen-label="Onboarding — guided wizard">
+<div class="dv-olabel"><a class="dv-oid" href="#1a">1a</a>Onboarding — guided 3-step wizard with live collection plan</div>
+<div class="dv-card" style="width:1240px">
+<div style="height:760px;display:flex;flex-direction:column;background:oklch(98.2% 0.003 255)">
+  <div style="display:flex;align-items:center;gap:12px;height:54px;padding:0 20px;background:#fff;border-bottom:1px solid oklch(92.5% 0.008 255);flex:none">
+    <span style="width:22px;height:22px;border-radius:6px;background:oklch(52% 0.14 258)"></span>
+    <span style="display:flex;flex-direction:column;gap:0"><span style="font:700 13.5px 'IBM Plex Sans';color:oklch(24% 0.02 262);letter-spacing:-0.01em;line-height:1.1">Throughline</span><span style="font:600 6.8px 'IBM Plex Mono';letter-spacing:.22em;color:oklch(58% 0.02 262)">LINEAGE CONTROL ROOM</span></span>
+    <span style="width:1px;height:18px;background:oklch(91% 0.006 262)"></span>
+    <span style="font:500 11px 'IBM Plex Mono';color:oklch(52% 0.02 262)">jhipster-sample · local</span>
+    <div style="flex:1;display:flex;justify-content:center;gap:2px">
+      <span style="font:600 11.5px 'IBM Plex Sans';color:oklch(50% 0.02 262);padding:6px 13px;border-radius:6px">Operations</span>
+      <span style="font:600 11.5px 'IBM Plex Sans';color:#fff;background:oklch(52% 0.14 258);padding:6px 13px;border-radius:6px">Onboarding</span>
+      <span style="font:600 11.5px 'IBM Plex Sans';color:oklch(50% 0.02 262);padding:6px 13px;border-radius:6px">Review queue</span>
+      <span style="font:600 11.5px 'IBM Plex Sans';color:oklch(50% 0.02 262);padding:6px 13px;border-radius:6px">Lineage explorer</span>
+      <span style="font:600 11.5px 'IBM Plex Sans';color:oklch(50% 0.02 262);padding:6px 13px;border-radius:6px">Runs</span>
+    </div>
+    <span style="font:500 10px 'IBM Plex Mono';color:oklch(52% 0.02 262);background:oklch(96.5% 0.004 262);border:1px solid oklch(91.5% 0.006 262);padding:4px 10px;border-radius:14px">● Seeded prototype</span>
+    <span style="width:26px;height:26px;border-radius:50%;background:oklch(62% 0.08 70)"></span>
+  </div>
+  <div style="flex:1;display:flex;min-height:0">
+    <div style="width:252px;flex:none;border-right:1px solid oklch(93% 0.006 262);padding:28px 22px;display:flex;flex-direction:column;background:#fff">
+      <div style="font:600 8.5px 'IBM Plex Mono';letter-spacing:.16em;color:oklch(60% 0.02 262);margin-bottom:20px">ONBOARD A REPOSITORY</div>
+      <sc-for list="{{ wizSteps }}" as="ws" hint-placeholder-count="3">
+        <div style="display:flex;gap:12px;padding:11px 12px;margin:0 -12px;border-radius:9px;background:{{ ws.bg }}">
+          <span style="width:22px;height:22px;border-radius:50%;background:{{ ws.dotBg }};border:{{ ws.dotBd }};color:{{ ws.dotFg }};font:600 10.5px 'IBM Plex Sans';display:flex;align-items:center;justify-content:center;flex:none">{{ ws.n }}</span>
+          <span style="display:flex;flex-direction:column;gap:2px"><span style="font:600 12px 'IBM Plex Sans';color:{{ ws.tFg }}">{{ ws.t }}</span><span style="font:400 10.5px 'IBM Plex Sans';color:oklch(60% 0.02 262)">{{ ws.d }}</span></span>
+        </div>
+        <sc-if value="{{ ws.line }}" hint-placeholder-val="{{ false }}"><span style="display:block;width:2px;height:14px;background:oklch(91% 0.006 262);margin-left:10px"></span></sc-if>
+      </sc-for>
+      <div style="margin-top:auto;background:oklch(97.5% 0.004 262);border:1px solid oklch(92.5% 0.006 262);border-radius:9px;padding:13px 14px">
+        <div style="font:600 8.5px 'IBM Plex Mono';letter-spacing:.14em;color:oklch(58% 0.02 262)">IDEMPOTENT</div>
+        <div style="font:400 10.5px/1.6 'IBM Plex Sans';color:oklch(48% 0.02 262);margin-top:5px">An equivalent request returns the same command, run and proposal — never a duplicate collection. No partial state ever publishes.</div>
+      </div>
+    </div>
+    <div style="flex:1;min-width:0;padding:32px 36px;overflow:hidden">
+      <div style="font:600 8.5px 'IBM Plex Mono';letter-spacing:.16em;color:oklch(52% 0.10 258)">STEP 2 OF 3</div>
+      <div style="font:600 21px 'IBM Plex Sans';color:oklch(22% 0.02 262);letter-spacing:-0.015em;margin-top:6px">Analysis profile</div>
+      <div style="font:400 12.5px/1.6 'IBM Plex Sans';color:oklch(52% 0.02 262);margin-top:5px;max-width:520px">We inspected <span style="font:500 11px 'IBM Plex Mono';color:oklch(38% 0.02 262);background:oklch(96% 0.004 262);padding:1px 6px;border-radius:4px">spring-petclinic @ 88e37c1</span> and pre-filled the profile. Everything is overridable.</div>
+      <div style="display:flex;flex-direction:column;gap:14px;margin-top:24px;max-width:560px">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">
+          <div style="display:flex;flex-direction:column;gap:6px"><span style="font:600 10.5px 'IBM Plex Sans';color:oklch(40% 0.02 262)">Environment</span><span style="display:flex;align-items:center;justify-content:space-between;border:1px solid oklch(90% 0.008 258);border-radius:8px;padding:9px 12px;background:#fff;box-shadow:0 1px 2px rgba(16,24,40,.04)"><span style="font:500 12px 'IBM Plex Sans';color:oklch(30% 0.02 262)">staging</span><span style="font:400 10px 'IBM Plex Sans';color:oklch(62% 0.02 262)">▾</span></span></div>
+          <div style="display:flex;flex-direction:column;gap:6px"><span style="font:600 10.5px 'IBM Plex Sans';color:oklch(40% 0.02 262)">Platform</span><span style="display:flex;align-items:center;justify-content:space-between;border:1px solid oklch(90% 0.008 258);border-radius:8px;padding:9px 12px;background:#fff;box-shadow:0 1px 2px rgba(16,24,40,.04)"><span style="font:500 12px 'IBM Plex Sans';color:oklch(30% 0.02 262)">postgres</span><span style="font:400 10px 'IBM Plex Sans';color:oklch(62% 0.02 262)">▾</span></span></div>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:6px">
+          <span style="display:flex;align-items:center;gap:8px"><span style="font:600 10.5px 'IBM Plex Sans';color:oklch(40% 0.02 262)">Analyzer pack</span><span style="font:600 8.5px 'IBM Plex Mono';color:oklch(45% 0.09 155);background:oklch(96.5% 0.03 155);padding:2px 7px;border-radius:8px">AUTO-DETECTED</span></span>
+          <div style="border:1.5px solid oklch(52% 0.14 258);border-radius:9px;padding:11px 13px;background:oklch(97.5% 0.012 258);display:flex;align-items:center;gap:11px">
+            <span style="width:30px;height:30px;border-radius:7px;background:oklch(52% 0.14 258);color:#fff;font:600 10px 'IBM Plex Mono';display:flex;align-items:center;justify-content:center">JPA</span>
+            <span style="display:flex;flex-direction:column;gap:1px;flex:1"><span style="font:600 12px 'IBM Plex Sans';color:oklch(28% 0.05 258)">java-spring-data-jpa-v1</span><span style="font:400 10.5px 'IBM Plex Sans';color:oklch(50% 0.04 258)">Spring Data repositories, JPA entities, JDBC templates</span></span>
+            <span style="font:500 10.5px 'IBM Plex Sans';color:oklch(48% 0.10 258)">Change</span>
+          </div>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">
+          <div style="display:flex;flex-direction:column;gap:6px"><span style="font:600 10.5px 'IBM Plex Sans';color:oklch(40% 0.02 262)">Ruleset</span><span style="display:flex;align-items:center;justify-content:space-between;border:1px solid oklch(90% 0.008 258);border-radius:8px;padding:9px 12px;background:#fff;box-shadow:0 1px 2px rgba(16,24,40,.04)"><span style="font:500 11.5px 'IBM Plex Mono';color:oklch(32% 0.02 262)">spring-data-rules-v1</span><span style="font:400 10px 'IBM Plex Sans';color:oklch(62% 0.02 262)">▾</span></span></div>
+          <div style="display:flex;flex-direction:column;gap:6px"><span style="font:600 10.5px 'IBM Plex Sans';color:oklch(40% 0.02 262)">Schema profile</span><span style="display:flex;align-items:center;justify-content:space-between;border:1px solid oklch(90% 0.008 258);border-radius:8px;padding:9px 12px;background:#fff;box-shadow:0 1px 2px rgba(16,24,40,.04)"><span style="font:500 11.5px 'IBM Plex Mono';color:oklch(32% 0.02 262)">postgres</span><span style="font:400 10px 'IBM Plex Sans';color:oklch(62% 0.02 262)">▾</span></span></div>
+        </div>
+        <div style="display:flex;align-items:center;gap:10px;border:1px solid oklch(92.5% 0.006 262);border-radius:9px;padding:11px 13px;background:#fff">
+          <span style="width:30px;height:17px;border-radius:9px;background:oklch(52% 0.14 258);position:relative;flex:none"><span style="position:absolute;right:2px;top:2px;width:13px;height:13px;border-radius:50%;background:#fff"></span></span>
+          <span style="display:flex;flex-direction:column;gap:1px"><span style="font:600 11.5px 'IBM Plex Sans';color:oklch(32% 0.02 262)">Derive element-level lineage</span><span style="font:400 10.5px 'IBM Plex Sans';color:oklch(56% 0.02 262)">Column → field mapping where the analyzer can prove it</span></span>
+        </div>
+      </div>
+      <div style="display:flex;align-items:center;gap:12px;margin-top:26px;max-width:560px">
+        <span style="font:600 12px 'IBM Plex Sans';color:oklch(46% 0.02 262);border:1px solid oklch(89% 0.008 258);background:#fff;padding:9px 18px;border-radius:8px">Back</span>
+        <div style="flex:1"></div>
+        <span style="font:600 12px 'IBM Plex Sans';color:#fff;background:oklch(52% 0.14 258);padding:9px 20px;border-radius:8px;box-shadow:0 1px 2px rgba(30,60,160,.3)">Review &amp; collect →</span>
+      </div>
+    </div>
+    <div style="width:296px;flex:none;border-left:1px solid oklch(93% 0.006 262);background:oklch(26% 0.025 262);padding:26px 24px;display:flex;flex-direction:column">
+      <div style="font:600 8.5px 'IBM Plex Mono';letter-spacing:.16em;color:oklch(70% 0.03 262)">COLLECTION PLAN</div>
+      <div style="display:flex;flex-direction:column;margin-top:16px">
+        <sc-for list="{{ plan }}" as="p" hint-placeholder-count="7">
+          <div style="display:flex;flex-direction:column;gap:2px;padding:9px 0;border-bottom:1px solid oklch(34% 0.025 262)">
+            <span style="font:600 8px 'IBM Plex Mono';letter-spacing:.12em;text-transform:uppercase;color:oklch(62% 0.03 262)">{{ p.k }}</span>
+            <span style="font:500 11px 'IBM Plex Mono';color:oklch(92% 0.005 262);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ p.v }}</span>
+          </div>
+        </sc-for>
+      </div>
+      <div style="margin-top:18px;background:oklch(32% 0.05 258);border:1px solid oklch(42% 0.07 258);border-radius:9px;padding:12px 13px">
+        <span style="font:600 10px 'IBM Plex Mono';color:oklch(80% 0.06 258)">PATH · BASELINE</span>
+        <div style="font:400 10.5px/1.6 'IBM Plex Sans';color:oklch(82% 0.02 262);margin-top:5px">First collection of this system. Re-submitting a new revision later automatically takes the <strong style="font-weight:600;color:#fff">incremental path</strong> and re-derives only what changed.</div>
+      </div>
+      <div style="margin-top:auto;font:400 10px/1.6 'IBM Plex Mono';color:oklch(60% 0.03 262)">Evidence before assertion —<br>no edge publishes without its receipt.</div>
+    </div>
+  </div>
+</div>
+</div>
+<sc-if value="{{ showNotes }}" hint-placeholder-val="{{ true }}"><p class="dv-note">Fixes the "wall of form fields": the wizard splits source / profile / review, auto-detects the analyzer pack as a highlighted decision card, and the dark Collection Plan rail builds as you type — the Stripe checkout pattern applied to repo onboarding.</p></sc-if>
+</div>
+
+<!-- ═══════ 1b ONBOARDING · SINGLE PAGE ═══════ -->
+<div class="dv-opt" id="1b" data-screen-label="Onboarding — single page">
+<div class="dv-olabel"><a class="dv-oid" href="#1b">1b</a>Onboarding — one-page form, grouped sections + pipeline preview</div>
+<div class="dv-card" style="width:1240px">
+<div style="height:760px;display:flex;flex-direction:column;background:oklch(98.2% 0.003 255)">
+  <div style="display:flex;align-items:center;gap:12px;height:54px;padding:0 20px;background:#fff;border-bottom:1px solid oklch(92.5% 0.008 255);flex:none">
+    <span style="width:22px;height:22px;border-radius:6px;background:oklch(52% 0.14 258)"></span>
+    <span style="display:flex;flex-direction:column"><span style="font:700 13.5px 'IBM Plex Sans';color:oklch(24% 0.02 262);letter-spacing:-0.01em;line-height:1.1">Throughline</span><span style="font:600 6.8px 'IBM Plex Mono';letter-spacing:.22em;color:oklch(58% 0.02 262)">LINEAGE CONTROL ROOM</span></span>
+    <span style="width:1px;height:18px;background:oklch(91% 0.006 262)"></span>
+    <span style="font:500 11px 'IBM Plex Mono';color:oklch(52% 0.02 262)">jhipster-sample · local</span>
+    <div style="flex:1;display:flex;justify-content:center;gap:2px">
+      <span style="font:600 11.5px 'IBM Plex Sans';color:oklch(50% 0.02 262);padding:6px 13px;border-radius:6px">Operations</span>
+      <span style="font:600 11.5px 'IBM Plex Sans';color:#fff;background:oklch(52% 0.14 258);padding:6px 13px;border-radius:6px">Onboarding</span>
+      <span style="font:600 11.5px 'IBM Plex Sans';color:oklch(50% 0.02 262);padding:6px 13px;border-radius:6px">Review queue</span>
+      <span style="font:600 11.5px 'IBM Plex Sans';color:oklch(50% 0.02 262);padding:6px 13px;border-radius:6px">Lineage explorer</span>
+      <span style="font:600 11.5px 'IBM Plex Sans';color:oklch(50% 0.02 262);padding:6px 13px;border-radius:6px">Runs</span>
+    </div>
+    <span style="font:500 10px 'IBM Plex Mono';color:oklch(52% 0.02 262);background:oklch(96.5% 0.004 262);border:1px solid oklch(91.5% 0.006 262);padding:4px 10px;border-radius:14px">● Seeded prototype</span>
+    <span style="width:26px;height:26px;border-radius:50%;background:oklch(62% 0.08 70)"></span>
+  </div>
+  <div style="flex:1;overflow:hidden;display:flex;justify-content:center">
+    <div style="width:1040px;display:grid;grid-template-columns:1.35fr 1fr;gap:28px;padding:30px 0">
+      <div style="display:flex;flex-direction:column;gap:16px;min-height:0">
+        <div>
+          <div style="font:600 8.5px 'IBM Plex Mono';letter-spacing:.16em;color:oklch(52% 0.10 258)">ONBOARDING</div>
+          <div style="font:600 21px 'IBM Plex Sans';color:oklch(22% 0.02 262);letter-spacing:-0.015em;margin-top:4px">Collect a repository</div>
+          <div style="font:400 12px/1.55 'IBM Plex Sans';color:oklch(52% 0.02 262);margin-top:4px">Submit an exact revision. Collection is durable and idempotent.</div>
+        </div>
+        <div style="background:#fff;border:1px solid oklch(92% 0.008 258);border-radius:11px;box-shadow:0 1px 3px rgba(16,24,40,.05);overflow:hidden">
+          <div style="display:flex;align-items:center;gap:9px;padding:11px 16px;border-bottom:1px solid oklch(94% 0.006 262)">
+            <span style="width:18px;height:18px;border-radius:50%;background:oklch(52% 0.14 258);color:#fff;font:600 9.5px 'IBM Plex Sans';display:flex;align-items:center;justify-content:center">1</span>
+            <span style="font:600 12.5px 'IBM Plex Sans';color:oklch(28% 0.02 262)">Source</span>
+            <span style="font:400 10.5px 'IBM Plex Sans';color:oklch(58% 0.02 262)">— what to collect</span>
+          </div>
+          <div style="padding:14px 16px;display:flex;flex-direction:column;gap:11px">
+            <div style="display:flex;flex-direction:column;gap:5px"><span style="font:600 10px 'IBM Plex Sans';color:oklch(42% 0.02 262)">Repository origin (HTTPS)</span><span style="border:1px solid oklch(90% 0.008 258);border-radius:7px;padding:8px 11px;font:500 11.5px 'IBM Plex Mono';color:oklch(34% 0.02 262);background:#fff">https://github.com/spring-projects/spring-petclinic</span></div>
+            <div style="display:grid;grid-template-columns:1.4fr 1fr;gap:11px">
+              <div style="display:flex;flex-direction:column;gap:5px"><span style="font:600 10px 'IBM Plex Sans';color:oklch(42% 0.02 262)">Exact commit (40 hex)</span><span style="border:1px solid oklch(90% 0.008 258);border-radius:7px;padding:8px 11px;font:500 11.5px 'IBM Plex Mono';color:oklch(34% 0.02 262)">88e37c15cf6fc8490b01bc3e8e2c800cec1ac272</span></div>
+              <div style="display:flex;flex-direction:column;gap:5px"><span style="font:600 10px 'IBM Plex Sans';color:oklch(42% 0.02 262)">Environment</span><span style="display:flex;justify-content:space-between;border:1px solid oklch(90% 0.008 258);border-radius:7px;padding:8px 11px;font:500 11.5px 'IBM Plex Sans';color:oklch(34% 0.02 262)">staging<span style="color:oklch(62% 0.02 262)">▾</span></span></div>
+            </div>
+          </div>
+        </div>
+        <div style="background:#fff;border:1px solid oklch(92% 0.008 258);border-radius:11px;box-shadow:0 1px 3px rgba(16,24,40,.05);overflow:hidden">
+          <div style="display:flex;align-items:center;gap:9px;padding:11px 16px;border-bottom:1px solid oklch(94% 0.006 262)">
+            <span style="width:18px;height:18px;border-radius:50%;background:oklch(52% 0.14 258);color:#fff;font:600 9.5px 'IBM Plex Sans';display:flex;align-items:center;justify-content:center">2</span>
+            <span style="font:600 12.5px 'IBM Plex Sans';color:oklch(28% 0.02 262)">Analysis profile</span>
+            <span style="font:600 8.5px 'IBM Plex Mono';color:oklch(45% 0.09 155);background:oklch(96.5% 0.03 155);padding:2px 7px;border-radius:8px">AUTO-DETECTED</span>
+            <div style="flex:1"></div><span style="font:500 10.5px 'IBM Plex Sans';color:oklch(48% 0.10 258)">Edit</span>
+          </div>
+          <div style="padding:12px 16px;display:grid;grid-template-columns:repeat(4,1fr);gap:10px">
+            <sc-for list="{{ profile }}" as="pf" hint-placeholder-count="4">
+              <div style="display:flex;flex-direction:column;gap:3px;background:oklch(97.5% 0.004 262);border:1px solid oklch(93% 0.006 262);border-radius:8px;padding:9px 11px">
+                <span style="font:600 7.5px 'IBM Plex Mono';letter-spacing:.1em;text-transform:uppercase;color:oklch(58% 0.02 262)">{{ pf.k }}</span>
+                <span style="font:500 10.5px 'IBM Plex Mono';color:oklch(34% 0.02 262);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ pf.v }}</span>
+              </div>
+            </sc-for>
+          </div>
+        </div>
+        <div style="display:flex;align-items:center;gap:14px;margin-top:2px">
+          <span style="font:600 12.5px 'IBM Plex Sans';color:#fff;background:oklch(52% 0.14 258);padding:10px 22px;border-radius:8px;box-shadow:0 1px 2px rgba(30,60,160,.3)">Start collection</span>
+          <span style="font:400 11px/1.5 'IBM Plex Sans';color:oklch(55% 0.02 262)">Baseline path · est. <strong style="font-weight:600;color:oklch(40% 0.02 262)">~4 min</strong> · nothing publishes without approval</span>
+        </div>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:14px">
+        <div style="background:#fff;border:1px solid oklch(92% 0.008 258);border-radius:11px;box-shadow:0 1px 3px rgba(16,24,40,.05);padding:16px 18px">
+          <div style="font:600 8.5px 'IBM Plex Mono';letter-spacing:.14em;color:oklch(58% 0.02 262)">WHAT HAPPENS NEXT</div>
+          <div style="display:flex;flex-direction:column;margin-top:12px">
+            <sc-for list="{{ nextSteps }}" as="ns" hint-placeholder-count="5">
+              <div style="display:flex;gap:11px">
+                <span style="display:flex;flex-direction:column;align-items:center"><span style="width:9px;height:9px;border-radius:50%;background:{{ ns.c }};margin-top:3px;flex:none"></span><sc-if value="{{ ns.line }}" hint-placeholder-val="{{ true }}"><span style="width:1.5px;flex:1;background:oklch(92% 0.006 262);margin:3px 0"></span></sc-if></span>
+                <span style="display:flex;flex-direction:column;gap:1px;padding-bottom:13px"><span style="font:600 11.5px 'IBM Plex Sans';color:oklch(32% 0.02 262)">{{ ns.t }}</span><span style="font:400 10.5px/1.5 'IBM Plex Sans';color:oklch(56% 0.02 262)">{{ ns.d }}</span></span>
+              </div>
+            </sc-for>
+          </div>
+        </div>
+        <div style="border:1.5px dashed oklch(86% 0.03 85);background:oklch(98% 0.015 90);border-radius:11px;padding:14px 16px">
+          <div style="font:600 8.5px 'IBM Plex Mono';letter-spacing:.14em;color:oklch(52% 0.08 80)">LOCAL DEVELOPMENT ONLY</div>
+          <div style="font:400 10.5px/1.55 'IBM Plex Sans';color:oklch(46% 0.05 80);margin-top:5px">Resets local state and replays the seeded delivery — it does not collect a real repository.</div>
+          <span style="display:inline-block;margin-top:9px;font:600 11px 'IBM Plex Sans';color:oklch(42% 0.08 80);background:#fff;border:1px solid oklch(86% 0.04 85);padding:6px 13px;border-radius:7px">Run seeded collection</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+</div>
+<sc-if value="{{ showNotes }}" hint-placeholder-val="{{ true }}"><p class="dv-note">Same content as today's form, restructured: numbered section cards create hierarchy, the auto-detected profile collapses six fields into a scannable chip grid, and "What happens next" turns the idempotency prose into a vertical pipeline the user can trust.</p></sc-if>
+</div>
+
+<!-- ═══════ 1c OPS DASHBOARD · SIGNAL-LED ═══════ -->
+<div class="dv-opt" id="1c" data-screen-label="Operations — signal-led">
+<div class="dv-olabel"><a class="dv-oid" href="#1c">1c</a>Operations — verdict banner, live signals, "needs attention" queue</div>
+<div class="dv-card" style="width:1240px">
+<div style="height:790px;display:flex;flex-direction:column;background:oklch(98.2% 0.003 255)">
+  <div style="display:flex;align-items:center;gap:12px;height:54px;padding:0 20px;background:#fff;border-bottom:1px solid oklch(92.5% 0.008 255);flex:none">
+    <span style="width:22px;height:22px;border-radius:6px;background:oklch(52% 0.14 258)"></span>
+    <span style="display:flex;flex-direction:column"><span style="font:700 13.5px 'IBM Plex Sans';color:oklch(24% 0.02 262);letter-spacing:-0.01em;line-height:1.1">Throughline</span><span style="font:600 6.8px 'IBM Plex Mono';letter-spacing:.22em;color:oklch(58% 0.02 262)">LINEAGE CONTROL ROOM</span></span>
+    <span style="width:1px;height:18px;background:oklch(91% 0.006 262)"></span>
+    <span style="font:500 11px 'IBM Plex Mono';color:oklch(52% 0.02 262)">jhipster-sample · local</span>
+    <div style="flex:1;display:flex;justify-content:center;gap:2px">
+      <span style="font:600 11.5px 'IBM Plex Sans';color:#fff;background:oklch(52% 0.14 258);padding:6px 13px;border-radius:6px">Operations</span>
+      <span style="font:600 11.5px 'IBM Plex Sans';color:oklch(50% 0.02 262);padding:6px 13px;border-radius:6px">Onboarding</span>
+      <span style="font:600 11.5px 'IBM Plex Sans';color:oklch(50% 0.02 262);padding:6px 13px;border-radius:6px">Review queue</span>
+      <span style="font:600 11.5px 'IBM Plex Sans';color:oklch(50% 0.02 262);padding:6px 13px;border-radius:6px">Lineage explorer</span>
+      <span style="font:600 11.5px 'IBM Plex Sans';color:oklch(50% 0.02 262);padding:6px 13px;border-radius:6px">Runs</span>
+    </div>
+    <span style="font:500 10px 'IBM Plex Mono';color:oklch(52% 0.02 262);background:oklch(96.5% 0.004 262);border:1px solid oklch(91.5% 0.006 262);padding:4px 10px;border-radius:14px">graph-1e852c…b457</span>
+    <span style="width:26px;height:26px;border-radius:50%;background:oklch(62% 0.08 70)"></span>
+  </div>
+  <div style="flex:1;padding:22px 26px;display:flex;flex-direction:column;gap:16px;min-height:0;overflow:hidden">
+    <div style="display:flex;align-items:center;gap:16px;background:#fff;border:1px solid oklch(92% 0.008 258);border-radius:12px;box-shadow:0 1px 3px rgba(16,24,40,.05);padding:16px 20px">
+      <span style="width:38px;height:38px;border-radius:10px;background:oklch(96.5% 0.03 155);border:1px solid oklch(90% 0.05 155);display:flex;align-items:center;justify-content:center;font:600 16px 'IBM Plex Sans';color:oklch(48% 0.11 155)">✓</span>
+      <span style="display:flex;flex-direction:column;gap:2px"><span style="font:600 15px 'IBM Plex Sans';color:oklch(24% 0.02 262);letter-spacing:-0.01em">The plane is healthy</span><span style="font:400 11.5px 'IBM Plex Sans';color:oklch(52% 0.02 262)">All six signals nominal · 2 items need a human — oldest has waited <strong style="font-weight:600;color:oklch(48% 0.10 70)">4.2 h</strong></span></span>
+      <div style="flex:1"></div>
+      <span style="display:flex;flex-direction:column;align-items:flex-end;gap:2px"><span style="font:600 8px 'IBM Plex Mono';letter-spacing:.12em;color:oklch(60% 0.02 262)">ACTIVE GRAPH</span><span style="font:500 10.5px 'IBM Plex Mono';color:oklch(40% 0.02 262)">graph-1e852c1603…710b457 · fenced pointer</span></span>
+      <span style="width:1px;height:30px;background:oklch(92% 0.006 262)"></span>
+      <span style="display:flex;flex-direction:column;align-items:flex-end;gap:2px"><span style="font:600 8px 'IBM Plex Mono';letter-spacing:.12em;color:oklch(60% 0.02 262)">REFRESHED</span><span style="font:500 10.5px 'IBM Plex Mono';color:oklch(40% 0.02 262)">32 s ago · auto</span></span>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(6,1fr);gap:12px">
+      <sc-for list="{{ signals }}" as="sg" hint-placeholder-count="6">
+        <div style="background:#fff;border:1px solid oklch(92% 0.008 258);border-radius:11px;box-shadow:0 1px 2px rgba(16,24,40,.04);padding:13px 14px;display:flex;flex-direction:column;gap:6px">
+          <span style="display:flex;align-items:center;gap:6px"><span style="width:7px;height:7px;border-radius:50%;background:{{ sg.dot }}"></span><span style="font:600 8px 'IBM Plex Mono';letter-spacing:.1em;text-transform:uppercase;color:oklch(56% 0.02 262)">{{ sg.label }}</span></span>
+          <span style="display:flex;align-items:baseline;gap:5px"><span style="font:600 20px 'IBM Plex Sans';color:oklch(24% 0.02 262);letter-spacing:-0.02em">{{ sg.value }}</span><span style="font:500 10px 'IBM Plex Sans';color:oklch(56% 0.02 262)">{{ sg.unit }}</span></span>
+          <span style="font:400 9.5px/1.45 'IBM Plex Sans';color:oklch(58% 0.02 262)">{{ sg.sub }}</span>
+        </div>
+      </sc-for>
+    </div>
+    <div style="flex:1;display:grid;grid-template-columns:1.15fr 1fr;gap:14px;min-height:0">
+      <div style="background:#fff;border:1px solid oklch(92% 0.008 258);border-radius:12px;box-shadow:0 1px 3px rgba(16,24,40,.05);padding:16px 18px;display:flex;flex-direction:column;min-height:0">
+        <div style="display:flex;align-items:baseline;gap:9px;margin-bottom:12px"><span style="font:600 13px 'IBM Plex Sans';color:oklch(26% 0.02 262)">Needs attention</span><span style="font:600 9.5px 'IBM Plex Mono';color:oklch(50% 0.10 70);background:oklch(97% 0.04 85);border:1px solid oklch(91% 0.05 85);padding:2px 8px;border-radius:9px">3</span></div>
+        <sc-for list="{{ attention }}" as="at" hint-placeholder-count="3">
+          <div style="display:flex;align-items:center;gap:12px;padding:12px 13px;border:1px solid oklch(93.5% 0.006 262);border-radius:10px;margin-bottom:9px">
+            <span style="width:8px;height:8px;border-radius:50%;background:{{ at.c }};flex:none"></span>
+            <span style="display:flex;flex-direction:column;gap:2px;min-width:0;flex:1"><span style="font:600 12px 'IBM Plex Sans';color:oklch(30% 0.02 262)">{{ at.title }}</span><span style="font:400 10px 'IBM Plex Mono';color:oklch(58% 0.02 262);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ at.meta }}</span></span>
+            <span style="font:600 11px 'IBM Plex Sans';color:oklch(46% 0.10 258);background:oklch(96.5% 0.015 258);border:1px solid oklch(91% 0.025 258);padding:5px 12px;border-radius:7px;white-space:nowrap">{{ at.cta }}</span>
+          </div>
+        </sc-for>
+        <div style="margin-top:auto;display:flex;align-items:flex-end;gap:3px;height:58px;border-top:1px dashed oklch(93.5% 0.006 262);padding-top:10px">
+          <sc-for list="{{ hourly }}" as="h" hint-placeholder-count="22">
+            <span style="flex:1;background:{{ h.c }};border-radius:2px 2px 0 0;height:{{ h.h }}"></span>
+          </sc-for>
+        </div>
+        <div style="display:flex;justify-content:space-between;font:400 9px 'IBM Plex Mono';color:oklch(62% 0.02 262);margin-top:4px"><span>runs / hour · 24 h</span><span>now</span></div>
+      </div>
+      <div style="background:#fff;border:1px solid oklch(92% 0.008 258);border-radius:12px;box-shadow:0 1px 3px rgba(16,24,40,.05);padding:16px 18px;display:flex;flex-direction:column;min-height:0">
+        <div style="display:flex;align-items:baseline;gap:9px;margin-bottom:12px"><span style="font:600 13px 'IBM Plex Sans';color:oklch(26% 0.02 262)">Recent runs</span><span style="font:400 10px 'IBM Plex Mono';color:oklch(58% 0.02 262)">execution ledger</span><div style="flex:1"></div><span style="font:500 10.5px 'IBM Plex Sans';color:oklch(48% 0.10 258)">All runs →</span></div>
+        <sc-for list="{{ recent }}" as="rc" hint-placeholder-count="5">
+          <div style="display:flex;align-items:center;gap:10px;padding:9px 4px;border-bottom:1px solid oklch(95.5% 0.004 262)">
+            <span style="font:600 8px 'IBM Plex Mono';letter-spacing:.06em;color:{{ rc.tFg }};background:{{ rc.tBg }};padding:3px 8px;border-radius:4px;flex:none;width:76px;text-align:center">{{ rc.type }}</span>
+            <span style="font:500 10.5px 'IBM Plex Mono';color:oklch(40% 0.02 262);flex:none">{{ rc.cmd }}</span>
+            <span style="font:400 10.5px 'IBM Plex Sans';color:oklch(55% 0.02 262);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1">{{ rc.sys }}</span>
+            <span style="display:flex;align-items:center;gap:5px;flex:none"><span style="width:6px;height:6px;border-radius:50%;background:{{ rc.dot }}"></span><span style="font:600 9px 'IBM Plex Mono';color:{{ rc.sFg }}">{{ rc.status }}</span></span>
+          </div>
+        </sc-for>
+        <div style="margin-top:auto;background:oklch(97.5% 0.004 262);border:1px solid oklch(93% 0.006 262);border-radius:9px;padding:11px 13px;display:flex;gap:10px;align-items:flex-start">
+          <span style="width:8px;height:8px;border-radius:50%;background:oklch(52% 0.13 295);flex:none;margin-top:3px"></span>
+          <span style="font:400 10.5px/1.55 'IBM Plex Sans';color:oklch(45% 0.02 262)"><strong style="font-weight:600">Every stage shares one correlation identity.</strong> 128 tracked · 0 missing — any break here would quarantine the run before derivation.</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+</div>
+<sc-if value="{{ showNotes }}" hint-placeholder-val="{{ true }}"><p class="dv-note">The current page leads with six "NOT AVAILABLE" boxes. This leads with a verdict ("the plane is healthy"), keeps the six signals as compact live cards, and gives the operator a triage queue — the page now answers "what do I do next", not just "what exists".</p></sc-if>
+</div>
+
+<!-- ═══════ 1d OPS DASHBOARD · FUNNEL + COVERAGE ═══════ -->
+<div class="dv-opt" id="1d" data-screen-label="Operations — funnel and coverage">
+<div class="dv-olabel"><a class="dv-oid" href="#1d">1d</a>Operations — pipeline funnel, queue lanes, per-system coverage table</div>
+<div class="dv-card" style="width:1240px">
+<div style="height:790px;display:flex;flex-direction:column;background:oklch(98.2% 0.003 255)">
+  <div style="display:flex;align-items:center;gap:12px;height:54px;padding:0 20px;background:#fff;border-bottom:1px solid oklch(92.5% 0.008 255);flex:none">
+    <span style="width:22px;height:22px;border-radius:6px;background:oklch(52% 0.14 258)"></span>
+    <span style="display:flex;flex-direction:column"><span style="font:700 13.5px 'IBM Plex Sans';color:oklch(24% 0.02 262);letter-spacing:-0.01em;line-height:1.1">Throughline</span><span style="font:600 6.8px 'IBM Plex Mono';letter-spacing:.22em;color:oklch(58% 0.02 262)">LINEAGE CONTROL ROOM</span></span>
+    <span style="width:1px;height:18px;background:oklch(91% 0.006 262)"></span>
+    <span style="font:500 11px 'IBM Plex Mono';color:oklch(52% 0.02 262)">jhipster-sample · local</span>
+    <div style="flex:1;display:flex;justify-content:center;gap:2px">
+      <span style="font:600 11.5px 'IBM Plex Sans';color:#fff;background:oklch(52% 0.14 258);padding:6px 13px;border-radius:6px">Operations</span>
+      <span style="font:600 11.5px 'IBM Plex Sans';color:oklch(50% 0.02 262);padding:6px 13px;border-radius:6px">Onboarding</span>
+      <span style="font:600 11.5px 'IBM Plex Sans';color:oklch(50% 0.02 262);padding:6px 13px;border-radius:6px">Review queue</span>
+      <span style="font:600 11.5px 'IBM Plex Sans';color:oklch(50% 0.02 262);padding:6px 13px;border-radius:6px">Lineage explorer</span>
+      <span style="font:600 11.5px 'IBM Plex Sans';color:oklch(50% 0.02 262);padding:6px 13px;border-radius:6px">Runs</span>
+    </div>
+    <span style="font:500 10px 'IBM Plex Mono';color:oklch(52% 0.02 262);background:oklch(96.5% 0.004 262);border:1px solid oklch(91.5% 0.006 262);padding:4px 10px;border-radius:14px">graph-1e852c…b457</span>
+    <span style="width:26px;height:26px;border-radius:50%;background:oklch(62% 0.08 70)"></span>
+  </div>
+  <div style="flex:1;padding:22px 26px;display:flex;flex-direction:column;gap:14px;min-height:0;overflow:hidden">
+    <div style="display:flex;align-items:baseline;gap:12px">
+      <span style="font:600 17px 'IBM Plex Sans';color:oklch(24% 0.02 262);letter-spacing:-0.01em">Operations</span>
+      <span style="font:400 11px 'IBM Plex Mono';color:oklch(56% 0.02 262)">from evidence to published graph · 24 h</span>
+      <div style="flex:1"></div>
+      <span style="font:600 10.5px 'IBM Plex Mono';color:oklch(45% 0.09 155);background:oklch(96.5% 0.03 155);border:1px solid oklch(90% 0.05 155);padding:4px 11px;border-radius:14px">● HEALTHY</span>
+    </div>
+    <div style="display:grid;grid-template-columns:1.1fr 1fr;gap:14px">
+      <div style="background:#fff;border:1px solid oklch(92% 0.008 258);border-radius:12px;box-shadow:0 1px 3px rgba(16,24,40,.05);padding:16px 18px">
+        <div style="display:flex;align-items:baseline;gap:8px;margin-bottom:13px"><span style="font:600 12.5px 'IBM Plex Sans';color:oklch(28% 0.02 262)">Delivery funnel</span><span style="font:400 10px 'IBM Plex Mono';color:oklch(58% 0.02 262)">where edges are right now</span></div>
+        <sc-for list="{{ funnel }}" as="fn" hint-placeholder-count="5">
+          <div style="display:grid;grid-template-columns:96px 1fr 92px;align-items:center;gap:12px;margin-bottom:9px">
+            <span style="font:500 11px 'IBM Plex Sans';color:oklch(42% 0.02 262)">{{ fn.name }}</span>
+            <span style="height:16px;background:oklch(96.5% 0.004 262);border-radius:4px;position:relative;overflow:hidden"><span style="position:absolute;top:0;bottom:0;left:0;width:{{ fn.w }};background:{{ fn.c }};border-radius:4px"></span></span>
+            <span style="font:600 11px 'IBM Plex Mono';color:oklch(38% 0.02 262);text-align:right">{{ fn.n }}</span>
+          </div>
+        </sc-for>
+        <div style="font:400 10px/1.5 'IBM Plex Sans';color:oklch(56% 0.02 262);margin-top:10px;border-top:1px dashed oklch(93.5% 0.006 262);padding-top:9px">188 proposed − 161 approved = <strong style="font-weight:600;color:oklch(48% 0.10 70)">27 edges waiting at the human gate</strong></div>
+      </div>
+      <div style="background:#fff;border:1px solid oklch(92% 0.008 258);border-radius:12px;box-shadow:0 1px 3px rgba(16,24,40,.05);padding:16px 18px;display:flex;flex-direction:column">
+        <div style="display:flex;align-items:baseline;gap:8px;margin-bottom:13px"><span style="font:600 12.5px 'IBM Plex Sans';color:oklch(28% 0.02 262)">Queue lanes</span><span style="font:400 10px 'IBM Plex Mono';color:oklch(58% 0.02 262)">depth · oldest · DLQ</span></div>
+        <sc-for list="{{ lanes }}" as="ln" hint-placeholder-count="3">
+          <div style="display:flex;flex-direction:column;gap:5px;margin-bottom:11px">
+            <div style="display:flex;align-items:center;gap:8px">
+              <span style="font:600 11px 'IBM Plex Sans';color:oklch(36% 0.02 262)">{{ ln.name }}</span>
+              <span style="font:400 9.5px 'IBM Plex Mono';color:oklch(60% 0.02 262)">oldest {{ ln.oldest }}</span>
+              <div style="flex:1"></div>
+              <span style="font:600 10.5px 'IBM Plex Mono';color:{{ ln.nC }}">{{ ln.depth }} msgs</span>
+              <span style="font:600 9px 'IBM Plex Mono';color:{{ ln.dlqFg }};background:{{ ln.dlqBg }};padding:2px 7px;border-radius:4px">DLQ {{ ln.dlq }}</span>
+              <sc-if value="{{ ln.redrive }}" hint-placeholder-val="{{ false }}"><span style="font:600 10px 'IBM Plex Sans';color:oklch(48% 0.12 30);border:1px solid oklch(88% 0.05 30);background:#fff;padding:3px 10px;border-radius:5px">Redrive</span></sc-if>
+            </div>
+            <div style="height:7px;border-radius:4px;background:oklch(96% 0.004 262);position:relative;overflow:hidden"><span style="position:absolute;top:0;bottom:0;left:0;width:{{ ln.w }};background:{{ ln.c }};border-radius:4px"></span></div>
+          </div>
+        </sc-for>
+        <div style="margin-top:auto;font:400 10px/1.5 'IBM Plex Sans';color:oklch(56% 0.02 262)">Lease steals <strong style="font-weight:600;color:oklch(40% 0.02 262)">0</strong> · retries <strong style="font-weight:600;color:oklch(40% 0.02 262)">2</strong> · no lane starved in 24 h</div>
+      </div>
+    </div>
+    <div style="flex:1;background:#fff;border:1px solid oklch(92% 0.008 258);border-radius:12px;box-shadow:0 1px 3px rgba(16,24,40,.05);display:flex;flex-direction:column;min-height:0;overflow:hidden">
+      <div style="display:flex;align-items:baseline;gap:9px;padding:14px 18px;border-bottom:1px solid oklch(94% 0.006 262)"><span style="font:600 12.5px 'IBM Plex Sans';color:oklch(28% 0.02 262)">Coverage by system</span><span style="font:400 10px 'IBM Plex Mono';color:oklch(58% 0.02 262)">baseline freshness · edge confidence mix</span><div style="flex:1"></div><span style="font:500 10.5px 'IBM Plex Sans';color:oklch(48% 0.10 258)">Onboard a repository →</span></div>
+      <div style="display:grid;grid-template-columns:1.3fr 90px 110px 90px 1.4fr 150px;gap:0 16px;padding:8px 18px;border-bottom:1px solid oklch(94% 0.006 262)">
+        <span style="font:600 8px 'IBM Plex Mono';letter-spacing:.12em;color:oklch(60% 0.02 262)">SYSTEM</span><span style="font:600 8px 'IBM Plex Mono';letter-spacing:.12em;color:oklch(60% 0.02 262)">ENV</span><span style="font:600 8px 'IBM Plex Mono';letter-spacing:.12em;color:oklch(60% 0.02 262)">BASELINE AGE</span><span style="font:600 8px 'IBM Plex Mono';letter-spacing:.12em;color:oklch(60% 0.02 262)">EDGES</span><span style="font:600 8px 'IBM Plex Mono';letter-spacing:.12em;color:oklch(60% 0.02 262)">VERIFIED VS PROBABLE</span><span style="font:600 8px 'IBM Plex Mono';letter-spacing:.12em;color:oklch(60% 0.02 262)">STATUS</span>
+      </div>
+      <sc-for list="{{ coverage }}" as="cv" hint-placeholder-count="4">
+        <div style="display:grid;grid-template-columns:1.3fr 90px 110px 90px 1.4fr 150px;gap:0 16px;align-items:center;padding:12px 18px;border-bottom:1px solid oklch(95.5% 0.004 262)">
+          <span style="font:600 12px 'IBM Plex Sans';color:oklch(30% 0.02 262)">{{ cv.sys }}</span>
+          <span style="font:500 10px 'IBM Plex Mono';color:oklch(52% 0.02 262)">{{ cv.env }}</span>
+          <span style="font:500 11px 'IBM Plex Mono';color:{{ cv.baseC }}">{{ cv.base }}</span>
+          <span style="font:500 11px 'IBM Plex Mono';color:oklch(45% 0.02 262)">{{ cv.edges }}</span>
+          <span style="display:flex;align-items:center;gap:8px"><span style="flex:1;height:8px;border-radius:4px;background:oklch(88% 0.06 85);position:relative;overflow:hidden"><span style="position:absolute;top:0;bottom:0;left:0;width:{{ cv.verW }};background:oklch(60% 0.11 155);border-radius:4px 0 0 4px"></span></span><span style="font:600 9.5px 'IBM Plex Mono';color:oklch(48% 0.08 155)">{{ cv.ver }}</span></span>
+          <span style="font:600 9px 'IBM Plex Mono';color:{{ cv.stFg }};background:{{ cv.stBg }};border:1px solid {{ cv.stBd }};padding:3px 9px;border-radius:5px;justify-self:start">{{ cv.status }}</span>
+        </div>
+      </sc-for>
+    </div>
+  </div>
+</div>
+</div>
+<sc-if value="{{ showNotes }}" hint-placeholder-val="{{ true }}"><p class="dv-note">A denser alternative to <a class="dv-oid" href="#1c">1c</a>: the funnel shows exactly where edges sit between collection and publication, and the coverage table makes stale baselines (qa · 9 d) impossible to miss. Verified-vs-probable is the platform's core quality metric, so it gets a bar per system.</p></sc-if>
+</div>
+
+<!-- ═══════ 1e LINEAGE EXPLORER ═══════ -->
+<div class="dv-opt" id="1e" data-screen-label="Lineage explorer">
+<div class="dv-olabel"><a class="dv-oid" href="#1e">1e</a>Lineage explorer — column walk with edge evidence inspector</div>
+<div class="dv-card" style="width:1240px">
+<div style="height:790px;display:flex;flex-direction:column;background:oklch(98.2% 0.003 255)">
+  <div style="display:flex;align-items:center;gap:12px;height:54px;padding:0 20px;background:#fff;border-bottom:1px solid oklch(92.5% 0.008 255);flex:none">
+    <span style="width:22px;height:22px;border-radius:6px;background:oklch(52% 0.14 258)"></span>
+    <span style="display:flex;flex-direction:column"><span style="font:700 13.5px 'IBM Plex Sans';color:oklch(24% 0.02 262);letter-spacing:-0.01em;line-height:1.1">Throughline</span><span style="font:600 6.8px 'IBM Plex Mono';letter-spacing:.22em;color:oklch(58% 0.02 262)">LINEAGE CONTROL ROOM</span></span>
+    <span style="width:1px;height:18px;background:oklch(91% 0.006 262)"></span>
+    <span style="font:500 11px 'IBM Plex Mono';color:oklch(52% 0.02 262)">jhipster-sample · local</span>
+    <div style="flex:1;display:flex;justify-content:center;gap:2px">
+      <span style="font:600 11.5px 'IBM Plex Sans';color:oklch(50% 0.02 262);padding:6px 13px;border-radius:6px">Operations</span>
+      <span style="font:600 11.5px 'IBM Plex Sans';color:oklch(50% 0.02 262);padding:6px 13px;border-radius:6px">Onboarding</span>
+      <span style="font:600 11.5px 'IBM Plex Sans';color:oklch(50% 0.02 262);padding:6px 13px;border-radius:6px">Review queue</span>
+      <span style="font:600 11.5px 'IBM Plex Sans';color:#fff;background:oklch(52% 0.14 258);padding:6px 13px;border-radius:6px">Lineage explorer</span>
+      <span style="font:600 11.5px 'IBM Plex Sans';color:oklch(50% 0.02 262);padding:6px 13px;border-radius:6px">Runs</span>
+    </div>
+    <span style="font:500 10px 'IBM Plex Mono';color:oklch(52% 0.02 262);background:oklch(96.5% 0.004 262);border:1px solid oklch(91.5% 0.006 262);padding:4px 10px;border-radius:14px">graph-1e852c…b457</span>
+    <span style="width:26px;height:26px;border-radius:50%;background:oklch(62% 0.08 70)"></span>
+  </div>
+  <div style="display:flex;align-items:center;gap:12px;padding:12px 26px;background:#fff;border-bottom:1px solid oklch(93% 0.006 262);flex:none">
+    <span style="display:flex;align-items:center;gap:9px;flex:1;border:1px solid oklch(90% 0.008 258);border-radius:8px;padding:8px 13px;background:#fff;box-shadow:0 1px 2px rgba(16,24,40,.04)">
+      <span style="font:600 7.5px 'IBM Plex Mono';letter-spacing:.1em;color:oklch(58% 0.02 262);flex:none">SUBJECT URN</span>
+      <span style="font:500 11.5px 'IBM Plex Mono';color:oklch(32% 0.02 262)">urn:ldp:staging:mysql:petclinic-rest:owners</span>
+    </span>
+    <span style="display:flex;align-items:center;gap:7px;border:1px solid oklch(91% 0.006 262);border-radius:8px;padding:8px 12px;font:500 11px 'IBM Plex Sans';color:oklch(40% 0.02 262)">Both directions <span style="color:oklch(62% 0.02 262)">▾</span></span>
+    <span style="display:flex;align-items:center;gap:7px;border:1px solid oklch(91% 0.006 262);border-radius:8px;padding:8px 12px;font:500 11px 'IBM Plex Sans';color:oklch(40% 0.02 262)">Depth 3 <span style="color:oklch(62% 0.02 262)">▾</span></span>
+    <span style="font:600 11.5px 'IBM Plex Sans';color:#fff;background:oklch(52% 0.14 258);padding:8px 16px;border-radius:8px">Explore</span>
+  </div>
+  <div style="flex:1;display:flex;min-height:0">
+    <div style="flex:1;min-width:0;padding:20px 24px;display:grid;grid-template-columns:1fr 1fr 1fr;gap:20px;overflow:hidden;background-image:linear-gradient(oklch(97.8% 0.003 255) 1px,transparent 1px),linear-gradient(90deg,oklch(97.8% 0.003 255) 1px,transparent 1px);background-size:26px 26px">
+      <div style="display:flex;flex-direction:column;gap:10px;min-height:0">
+        <span style="font:600 8.5px 'IBM Plex Mono';letter-spacing:.14em;color:oklch(58% 0.02 262)">UPSTREAM · 3</span>
+        <sc-for list="{{ upNodes }}" as="un" hint-placeholder-count="3">
+          <div style="background:#fff;border:1px solid oklch(91% 0.008 258);border-radius:10px;padding:11px 13px;box-shadow:0 1px 3px rgba(16,24,40,.05);display:flex;flex-direction:column;gap:5px">
+            <span style="display:flex;align-items:center;gap:7px"><span style="width:8px;height:8px;border-radius:{{ un.shape }};background:{{ un.nc }};flex:none"></span><span style="font:600 11.5px 'IBM Plex Mono';color:oklch(30% 0.02 262);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ un.name }}</span></span>
+            <span style="font:400 9.5px 'IBM Plex Mono';color:oklch(58% 0.02 262)">{{ un.meta }}</span>
+            <span style="display:flex;align-items:center;gap:6px;margin-top:1px"><span style="height:1.5px;flex:1;background:{{ un.lineC }}"></span><span style="font:600 8.5px 'IBM Plex Mono';color:{{ un.cFg }};background:{{ un.cBg }};padding:2px 7px;border-radius:8px;flex:none">{{ un.conf }}</span><span style="font-size:9px;color:oklch(60% 0.02 262)">→</span></span>
+          </div>
+        </sc-for>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:10px;justify-content:center;min-height:0">
+        <span style="font:600 8.5px 'IBM Plex Mono';letter-spacing:.14em;color:oklch(58% 0.02 262);text-align:center">SUBJECT</span>
+        <div style="background:oklch(26% 0.025 262);border-radius:12px;padding:16px;box-shadow:0 6px 20px -6px rgba(16,24,40,.35)">
+          <span style="display:flex;align-items:center;gap:8px"><span style="width:10px;height:10px;border-radius:3px;background:oklch(75% 0.11 90)"></span><span style="font:600 14px 'IBM Plex Sans';color:#fff">owners</span><span style="font:600 8px 'IBM Plex Mono';color:oklch(80% 0.02 262);background:oklch(36% 0.03 262);padding:2px 7px;border-radius:4px">DATASET</span></span>
+          <span style="display:block;font:400 9.5px 'IBM Plex Mono';color:oklch(72% 0.02 262);margin-top:6px">urn:ldp:staging:mysql:petclinic-rest:owners</span>
+          <div style="display:flex;gap:6px;margin-top:11px">
+            <span style="font:600 8.5px 'IBM Plex Mono';color:oklch(26% 0.025 262);background:oklch(85% 0.07 155);padding:3px 8px;border-radius:4px">8 VERIFIED</span>
+            <span style="font:600 8.5px 'IBM Plex Mono';color:oklch(26% 0.025 262);background:oklch(87% 0.08 85);padding:3px 8px;border-radius:4px">14 PROBABLE</span>
+            <span style="font:600 8.5px 'IBM Plex Mono';color:oklch(85% 0.02 262);background:oklch(36% 0.03 262);padding:3px 8px;border-radius:4px">6 ELEMENTS</span>
+          </div>
+        </div>
+        <div style="background:#fff;border:1px solid oklch(92.5% 0.006 262);border-radius:10px;padding:10px 13px;display:flex;flex-direction:column;gap:5px">
+          <span style="font:600 8px 'IBM Plex Mono';letter-spacing:.12em;color:oklch(58% 0.02 262)">ELEMENTS</span>
+          <sc-for list="{{ elements }}" as="el" hint-placeholder-count="3">
+            <span style="display:flex;align-items:center;gap:7px"><span style="width:7px;height:7px;transform:rotate(45deg);background:oklch(88% 0.008 262);border:1px solid oklch(78% 0.015 262);flex:none"></span><span style="font:500 10.5px 'IBM Plex Mono';color:oklch(42% 0.02 262)">{{ el.n }}</span><span style="font:400 9px 'IBM Plex Mono';color:oklch(62% 0.02 262)">{{ el.t }}</span></span>
+          </sc-for>
+        </div>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:10px;min-height:0">
+        <span style="font:600 8.5px 'IBM Plex Mono';letter-spacing:.14em;color:oklch(58% 0.02 262);text-align:right">DOWNSTREAM · 4</span>
+        <sc-for list="{{ downNodes }}" as="dn" hint-placeholder-count="4">
+          <div style="background:{{ dn.bg }};border:{{ dn.bd }};border-radius:10px;padding:11px 13px;box-shadow:0 1px 3px rgba(16,24,40,.05);display:flex;flex-direction:column;gap:5px">
+            <span style="display:flex;align-items:center;gap:6px"><span style="font-size:9px;color:oklch(60% 0.02 262)">→</span><span style="font:600 8.5px 'IBM Plex Mono';color:{{ dn.cFg }};background:{{ dn.cBg }};padding:2px 7px;border-radius:8px;flex:none">{{ dn.conf }}</span><span style="height:1.5px;flex:1;background:{{ dn.lineC }}"></span></span>
+            <span style="display:flex;align-items:center;gap:7px"><span style="width:8px;height:8px;border-radius:50%;background:{{ dn.nc }};flex:none"></span><span style="font:600 11.5px 'IBM Plex Mono';color:oklch(30% 0.02 262);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ dn.name }}</span></span>
+            <span style="font:400 9.5px 'IBM Plex Mono';color:oklch(58% 0.02 262)">{{ dn.meta }}</span>
+          </div>
+        </sc-for>
+      </div>
+    </div>
+    <div style="width:304px;flex:none;background:#fff;border-left:1px solid oklch(93% 0.006 262);padding:18px;display:flex;flex-direction:column;gap:13px;overflow:hidden">
+      <div>
+        <span style="font:600 8.5px 'IBM Plex Mono';letter-spacing:.14em;color:oklch(58% 0.02 262)">SELECTED EDGE</span>
+        <div style="font:600 12.5px 'IBM Plex Sans';color:oklch(26% 0.02 262);margin-top:6px">ClinicServiceImpl#saveOwner <span style="color:oklch(48% 0.10 258)">→ writes →</span> owners</div>
+      </div>
+      <div style="background:oklch(96.5% 0.03 155);border:1px solid oklch(90% 0.05 155);border-radius:10px;padding:12px 13px">
+        <span style="display:flex;align-items:baseline;gap:7px"><span style="font:600 12px 'IBM Plex Sans';color:oklch(36% 0.08 155)">VERIFIED · 92</span><span style="font:400 9.5px 'IBM Plex Mono';color:oklch(48% 0.06 155)">runtime + static agree</span></span>
+        <div style="height:6px;border-radius:3px;background:oklch(89% 0.04 155);margin-top:8px;position:relative;overflow:hidden"><span style="position:absolute;inset:0;right:8%;background:oklch(58% 0.11 155);border-radius:3px"></span></div>
+        <div style="font:400 10px/1.55 'IBM Plex Sans';color:oklch(42% 0.05 155);margin-top:7px">Observed in integration-test runtime and derived statically — the two strongest evidence classes concur.</div>
+      </div>
+      <div style="min-height:0;overflow:hidden">
+        <span style="font:600 8.5px 'IBM Plex Mono';letter-spacing:.14em;color:oklch(58% 0.02 262)">EVIDENCE · 3 RECEIPTS</span>
+        <div style="display:flex;flex-direction:column;gap:7px;margin-top:8px">
+          <sc-for list="{{ evid }}" as="ev" hint-placeholder-count="3">
+            <div style="display:flex;flex-direction:column;gap:3px;border:1px solid oklch(93% 0.006 262);border-radius:8px;padding:9px 11px">
+              <span style="display:flex;align-items:center;gap:7px"><span style="font:600 8px 'IBM Plex Mono';color:{{ ev.fg }};background:{{ ev.bg }};padding:2px 7px;border-radius:4px;flex:none">{{ ev.kind }}</span><span style="font:500 10px 'IBM Plex Mono';color:oklch(38% 0.02 262);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ ev.file }}</span></span>
+              <span style="font:400 9px 'IBM Plex Mono';color:oklch(60% 0.02 262)">{{ ev.meta }}</span>
+            </div>
+          </sc-for>
+        </div>
+      </div>
+      <div style="margin-top:auto;display:flex;flex-direction:column;gap:7px">
+        <span style="font:600 11.5px 'IBM Plex Sans';color:#fff;background:oklch(52% 0.14 258);padding:9px 0;border-radius:8px;text-align:center;box-shadow:0 1px 2px rgba(30,60,160,.3)">Open evidence bundle</span>
+        <div style="display:flex;gap:7px">
+          <span style="flex:1;font:600 10.5px 'IBM Plex Sans';color:oklch(45% 0.02 262);border:1px solid oklch(90% 0.006 262);padding:7px 0;border-radius:7px;text-align:center">Re-root walk</span>
+          <span style="flex:1;font:600 10.5px 'IBM Plex Sans';color:oklch(45% 0.02 262);border:1px solid oklch(90% 0.006 262);padding:7px 0;border-radius:7px;text-align:center">Dispute edge</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+</div>
+<sc-if value="{{ showNotes }}" hint-placeholder-val="{{ true }}"><p class="dv-note">Keeps the product's upstream / subject / downstream walk but gives it hierarchy: the subject is a dark anchor card, every edge wears its confidence chip on the connector itself, and the inspector answers "why believe this edge" with receipts. LLM/static-only edges stay amber; verified edges go green.</p></sc-if>
+</div>
+
+<!-- ═══════ 1f RUNS · EXECUTION LEDGER ═══════ -->
+<div class="dv-opt" id="1f" data-screen-label="Runs — execution ledger">
+<div class="dv-olabel"><a class="dv-oid" href="#1f">1f</a>Runs — execution ledger with stage pipelines + inline triage</div>
+<div class="dv-card" style="width:1240px">
+<div style="height:800px;display:flex;flex-direction:column;background:oklch(98.2% 0.003 255)">
+  <div style="display:flex;align-items:center;gap:12px;height:54px;padding:0 20px;background:#fff;border-bottom:1px solid oklch(92.5% 0.008 255);flex:none">
+    <span style="width:22px;height:22px;border-radius:6px;background:oklch(52% 0.14 258)"></span>
+    <span style="display:flex;flex-direction:column"><span style="font:700 13.5px 'IBM Plex Sans';color:oklch(24% 0.02 262);letter-spacing:-0.01em;line-height:1.1">Throughline</span><span style="font:600 6.8px 'IBM Plex Mono';letter-spacing:.22em;color:oklch(58% 0.02 262)">LINEAGE CONTROL ROOM</span></span>
+    <span style="width:1px;height:18px;background:oklch(91% 0.006 262)"></span>
+    <span style="font:500 11px 'IBM Plex Mono';color:oklch(52% 0.02 262)">jhipster-sample · local</span>
+    <div style="flex:1;display:flex;justify-content:center;gap:2px">
+      <span style="font:600 11.5px 'IBM Plex Sans';color:oklch(50% 0.02 262);padding:6px 13px;border-radius:6px">Operations</span>
+      <span style="font:600 11.5px 'IBM Plex Sans';color:oklch(50% 0.02 262);padding:6px 13px;border-radius:6px">Onboarding</span>
+      <span style="font:600 11.5px 'IBM Plex Sans';color:oklch(50% 0.02 262);padding:6px 13px;border-radius:6px">Review queue</span>
+      <span style="font:600 11.5px 'IBM Plex Sans';color:oklch(50% 0.02 262);padding:6px 13px;border-radius:6px">Lineage explorer</span>
+      <span style="font:600 11.5px 'IBM Plex Sans';color:#fff;background:oklch(52% 0.14 258);padding:6px 13px;border-radius:6px">Runs</span>
+    </div>
+    <span style="font:500 10px 'IBM Plex Mono';color:oklch(52% 0.02 262);background:oklch(96.5% 0.004 262);border:1px solid oklch(91.5% 0.006 262);padding:4px 10px;border-radius:14px">graph-1e852c…b457</span>
+    <span style="width:26px;height:26px;border-radius:50%;background:oklch(62% 0.08 70)"></span>
+  </div>
+  <div style="display:flex;align-items:center;gap:9px;padding:14px 26px;background:#fff;border-bottom:1px solid oklch(93% 0.006 262);flex:none">
+    <span style="display:flex;flex-direction:column;gap:1px;margin-right:8px"><span style="font:600 16px 'IBM Plex Sans';color:oklch(24% 0.02 262);letter-spacing:-0.01em">Runs</span><span style="font:400 10px 'IBM Plex Mono';color:oklch(58% 0.02 262)">execution ledger · durable stage histories</span></span>
+    <span style="font:600 10.5px 'IBM Plex Mono';color:#fff;background:oklch(32% 0.02 262);padding:5px 12px;border-radius:14px">All · 21</span>
+    <span style="font:600 10.5px 'IBM Plex Mono';color:oklch(42% 0.10 258);background:oklch(95.5% 0.02 258);padding:5px 12px;border-radius:14px">Running · 1</span>
+    <span style="font:600 10.5px 'IBM Plex Mono';color:oklch(48% 0.10 70);background:oklch(97% 0.04 85);padding:5px 12px;border-radius:14px">Awaiting approval · 3</span>
+    <span style="font:600 10.5px 'IBM Plex Mono';color:oklch(48% 0.13 25);background:oklch(97% 0.02 25);padding:5px 12px;border-radius:14px">Failed · 1</span>
+    <span style="font:600 10.5px 'IBM Plex Mono';color:oklch(55% 0.02 262);padding:5px 12px;border-radius:14px">Published · 16</span>
+    <div style="flex:1"></div>
+    <span style="font:500 10.5px 'IBM Plex Mono';color:oklch(50% 0.02 262);border:1px solid oklch(91% 0.006 262);padding:6px 12px;border-radius:8px">system: all ▾</span>
+    <span style="font:500 10.5px 'IBM Plex Mono';color:oklch(50% 0.02 262);border:1px solid oklch(91% 0.006 262);padding:6px 12px;border-radius:8px">7 d ▾</span>
+  </div>
+  <div style="display:grid;grid-template-columns:104px 200px 1fr 258px 84px 150px;gap:0 16px;padding:9px 26px;flex:none;border-bottom:1px solid oklch(93% 0.006 262);background:oklch(98.2% 0.003 255)">
+    <span style="font:600 8px 'IBM Plex Mono';letter-spacing:.12em;color:oklch(60% 0.02 262)">TYPE</span>
+    <span style="font:600 8px 'IBM Plex Mono';letter-spacing:.12em;color:oklch(60% 0.02 262)">COMMAND</span>
+    <span style="font:600 8px 'IBM Plex Mono';letter-spacing:.12em;color:oklch(60% 0.02 262)">SYSTEM · REVISION</span>
+    <span style="font:600 8px 'IBM Plex Mono';letter-spacing:.12em;color:oklch(60% 0.02 262)">STAGES — FE AN DE PR RV PB</span>
+    <span style="font:600 8px 'IBM Plex Mono';letter-spacing:.12em;color:oklch(60% 0.02 262)">EDGES</span>
+    <span style="font:600 8px 'IBM Plex Mono';letter-spacing:.12em;color:oklch(60% 0.02 262)">STATUS</span>
+  </div>
+  <div style="flex:1;overflow:auto;background:#fff">
+    <sc-for list="{{ runs }}" as="r" hint-placeholder-count="6">
+      <div style="border-bottom:1px solid oklch(95% 0.004 262);background:{{ r.rowBg }}">
+        <div style="display:grid;grid-template-columns:104px 200px 1fr 258px 84px 150px;gap:0 16px;align-items:center;padding:13px 26px">
+          <span style="font:600 8px 'IBM Plex Mono';letter-spacing:.05em;color:{{ r.tFg }};background:{{ r.tBg }};padding:3px 0;border-radius:4px;text-align:center">{{ r.type }}</span>
+          <span style="display:flex;flex-direction:column;gap:1px"><span style="font:500 10.5px 'IBM Plex Mono';color:oklch(36% 0.02 262)">{{ r.cmd }}</span><span style="font:400 9px 'IBM Plex Mono';color:oklch(62% 0.02 262)">{{ r.when }}</span></span>
+          <span style="display:flex;flex-direction:column;gap:1px;min-width:0"><span style="font:600 11.5px 'IBM Plex Sans';color:oklch(30% 0.02 262)">{{ r.sys }}</span><span style="font:400 9.5px 'IBM Plex Mono';color:oklch(58% 0.02 262);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ r.rev }}</span></span>
+          <span style="display:flex;gap:4px">
+            <sc-for list="{{ r.stages }}" as="st" hint-placeholder-count="6">
+              <span style="width:36px;height:18px;border-radius:4px;background:{{ st.bg }};color:{{ st.fg }};border:1px solid {{ st.bd }};font:600 8px 'IBM Plex Mono';display:flex;align-items:center;justify-content:center">{{ st.code }}</span>
+            </sc-for>
+          </span>
+          <span style="font:500 10.5px 'IBM Plex Mono';color:oklch(45% 0.02 262)">{{ r.edges }}</span>
+          <span style="display:flex;align-items:center;gap:6px"><span style="width:7px;height:7px;border-radius:50%;background:{{ r.dot }}"></span><span style="font:600 9px 'IBM Plex Mono';color:{{ r.sFg }};white-space:nowrap">{{ r.status }}</span></span>
+        </div>
+        <sc-if value="{{ r.expanded }}" hint-placeholder-val="{{ false }}">
+          <div style="margin:2px 26px 16px;border:1px solid oklch(91% 0.008 258);border-radius:11px;background:#fff;box-shadow:0 2px 8px -2px rgba(16,24,40,.08);overflow:hidden">
+            <div style="display:flex;align-items:center;gap:11px;padding:11px 16px;border-bottom:1px solid oklch(94% 0.006 262);background:oklch(98.5% 0.008 85)">
+              <span style="width:8px;height:8px;border-radius:50%;background:oklch(65% 0.13 75)"></span>
+              <span style="font:600 12px 'IBM Plex Sans';color:oklch(38% 0.08 70)">Waiting at the human gate — proposal-77c3af8b ready for review</span>
+              <span style="font:400 10px 'IBM Plex Mono';color:oklch(52% 0.05 70)">+43 −0 ~2 edges · waiting 4.2 h</span>
+              <div style="flex:1"></div>
+              <span style="font:600 10.5px 'IBM Plex Sans';color:#fff;background:oklch(52% 0.14 258);padding:6px 14px;border-radius:7px">Review proposal</span>
+              <span style="font:600 10.5px 'IBM Plex Sans';color:oklch(45% 0.02 262);border:1px solid oklch(90% 0.006 262);background:#fff;padding:6px 12px;border-radius:7px">Compare vs baseline</span>
+            </div>
+            <div style="display:grid;grid-template-columns:1.35fr 1fr;background:#fff">
+              <div style="padding:14px 16px;border-right:1px solid oklch(94.5% 0.006 262)">
+                <span style="font:600 8px 'IBM Plex Mono';letter-spacing:.12em;color:oklch(60% 0.02 262)">STAGE TIMELINE · 2m 41s TOTAL</span>
+                <div style="margin-top:11px;display:flex;flex-direction:column;gap:7px">
+                  <sc-for list="{{ detailStages }}" as="ds" hint-placeholder-count="6">
+                    <div style="display:grid;grid-template-columns:92px 1fr 110px;align-items:center;gap:11px">
+                      <span style="display:flex;align-items:center;gap:7px"><span style="width:7px;height:7px;border-radius:50%;background:{{ ds.c }}"></span><span style="font:500 10.5px 'IBM Plex Sans';color:oklch(40% 0.02 262)">{{ ds.name }}</span></span>
+                      <span style="height:9px;background:oklch(96.5% 0.004 262);border-radius:3px;position:relative;overflow:hidden"><span style="position:absolute;top:0;bottom:0;left:{{ ds.off }};width:{{ ds.w }};background:{{ ds.c }};border-radius:3px"></span></span>
+                      <span style="font:500 9.5px 'IBM Plex Mono';color:oklch(52% 0.02 262);text-align:right">{{ ds.dur }}</span>
+                    </div>
+                  </sc-for>
+                </div>
+              </div>
+              <div style="padding:14px 16px;display:flex;flex-direction:column;gap:8px">
+                <span style="font:600 8px 'IBM Plex Mono';letter-spacing:.12em;color:oklch(60% 0.02 262)">ARTIFACTS · CHECKSUMMED</span>
+                <sc-for list="{{ artifacts }}" as="af" hint-placeholder-count="3">
+                  <div style="display:flex;align-items:center;gap:9px;border:1px solid oklch(93.5% 0.006 262);border-radius:7px;padding:8px 11px">
+                    <span style="width:22px;height:22px;border-radius:6px;background:oklch(96% 0.01 258);border:1px solid oklch(91% 0.015 258);display:flex;align-items:center;justify-content:center;font:600 7.5px 'IBM Plex Mono';color:oklch(46% 0.08 258)">{{ af.ext }}</span>
+                    <span style="display:flex;flex-direction:column;gap:1px;min-width:0;flex:1"><span style="font:500 10.5px 'IBM Plex Mono';color:oklch(36% 0.02 262);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ af.name }}</span><span style="font:400 8.5px 'IBM Plex Mono';color:oklch(62% 0.02 262)">{{ af.meta }}</span></span>
+                    <span style="font:500 9px 'IBM Plex Mono';color:oklch(52% 0.02 262)">{{ af.size }}</span>
+                  </div>
+                </sc-for>
+              </div>
+            </div>
+          </div>
+        </sc-if>
+      </div>
+    </sc-for>
+  </div>
+  <div style="flex:none;display:flex;align-items:center;gap:13px;padding:10px 26px;background:#fff;border-top:1px solid oklch(93% 0.006 262)">
+    <span style="display:flex;align-items:center;gap:6px;font:400 9.5px 'IBM Plex Mono';color:oklch(56% 0.02 262)"><span style="width:12px;height:9px;border-radius:2px;background:oklch(58% 0.11 155)"></span>done</span>
+    <span style="display:flex;align-items:center;gap:6px;font:400 9.5px 'IBM Plex Mono';color:oklch(56% 0.02 262)"><span style="width:12px;height:9px;border-radius:2px;background:oklch(52% 0.14 258)"></span>active</span>
+    <span style="display:flex;align-items:center;gap:6px;font:400 9.5px 'IBM Plex Mono';color:oklch(56% 0.02 262)"><span style="width:12px;height:9px;border-radius:2px;background:oklch(65% 0.13 75)"></span>gate</span>
+    <span style="display:flex;align-items:center;gap:6px;font:400 9.5px 'IBM Plex Mono';color:oklch(56% 0.02 262)"><span style="width:12px;height:9px;border-radius:2px;background:oklch(56% 0.16 25)"></span>failed</span>
+    <span style="font:400 9.5px 'IBM Plex Mono';color:oklch(62% 0.02 262)">· FE fetch · AN analyze · DE derive · PR propose · RV review · PB publish</span>
+    <div style="flex:1"></div>
+    <span style="font:500 10px 'IBM Plex Mono';color:oklch(54% 0.02 262)">1–7 of 21</span>
+  </div>
+</div>
+</div>
+<sc-if value="{{ showNotes }}" hint-placeholder-val="{{ true }}"><p class="dv-note">The fix for the flat /runs list: every run wears its 6-stage pipeline, so "where is it stuck" is visible without clicking. The expanded row handles triage in place — review, compare, artifacts — and status counts double as filters.</p></sc-if>
+</div>
+
+<!-- ═══════ 1g RUNS · MASTER-DETAIL ═══════ -->
+<div class="dv-opt" id="1g" data-screen-label="Runs — master detail">
+<div class="dv-olabel"><a class="dv-oid" href="#1g">1g</a>Runs — master-detail: ledger left, full run anatomy right</div>
+<div class="dv-card" style="width:1240px">
+<div style="height:790px;display:flex;flex-direction:column;background:oklch(98.2% 0.003 255)">
+  <div style="display:flex;align-items:center;gap:12px;height:54px;padding:0 20px;background:#fff;border-bottom:1px solid oklch(92.5% 0.008 255);flex:none">
+    <span style="width:22px;height:22px;border-radius:6px;background:oklch(52% 0.14 258)"></span>
+    <span style="display:flex;flex-direction:column"><span style="font:700 13.5px 'IBM Plex Sans';color:oklch(24% 0.02 262);letter-spacing:-0.01em;line-height:1.1">Throughline</span><span style="font:600 6.8px 'IBM Plex Mono';letter-spacing:.22em;color:oklch(58% 0.02 262)">LINEAGE CONTROL ROOM</span></span>
+    <span style="width:1px;height:18px;background:oklch(91% 0.006 262)"></span>
+    <span style="font:500 11px 'IBM Plex Mono';color:oklch(52% 0.02 262)">jhipster-sample · local</span>
+    <div style="flex:1;display:flex;justify-content:center;gap:2px">
+      <span style="font:600 11.5px 'IBM Plex Sans';color:oklch(50% 0.02 262);padding:6px 13px;border-radius:6px">Operations</span>
+      <span style="font:600 11.5px 'IBM Plex Sans';color:oklch(50% 0.02 262);padding:6px 13px;border-radius:6px">Onboarding</span>
+      <span style="font:600 11.5px 'IBM Plex Sans';color:oklch(50% 0.02 262);padding:6px 13px;border-radius:6px">Review queue</span>
+      <span style="font:600 11.5px 'IBM Plex Sans';color:oklch(50% 0.02 262);padding:6px 13px;border-radius:6px">Lineage explorer</span>
+      <span style="font:600 11.5px 'IBM Plex Sans';color:#fff;background:oklch(52% 0.14 258);padding:6px 13px;border-radius:6px">Runs</span>
+    </div>
+    <span style="font:500 10px 'IBM Plex Mono';color:oklch(52% 0.02 262);background:oklch(96.5% 0.004 262);border:1px solid oklch(91.5% 0.006 262);padding:4px 10px;border-radius:14px">graph-1e852c…b457</span>
+    <span style="width:26px;height:26px;border-radius:50%;background:oklch(62% 0.08 70)"></span>
+  </div>
+  <div style="flex:1;display:flex;min-height:0">
+    <div style="width:392px;flex:none;background:#fff;border-right:1px solid oklch(93% 0.006 262);display:flex;flex-direction:column;min-height:0">
+      <div style="padding:14px 16px;border-bottom:1px solid oklch(94% 0.006 262);display:flex;align-items:center;gap:8px">
+        <span style="display:flex;align-items:center;gap:8px;flex:1;background:oklch(97.5% 0.004 262);border:1px solid oklch(92% 0.006 262);border-radius:7px;padding:7px 11px"><span style="width:11px;height:11px;border-radius:50%;border:1.6px solid oklch(66% 0.02 262)"></span><span style="font:400 11px 'IBM Plex Sans';color:oklch(64% 0.02 262)">Filter runs…</span></span>
+        <span style="font:500 10px 'IBM Plex Mono';color:oklch(50% 0.02 262);border:1px solid oklch(91% 0.006 262);padding:6px 10px;border-radius:7px">7 d ▾</span>
+      </div>
+      <div style="flex:1;overflow:auto">
+        <sc-for list="{{ runsD }}" as="rd" hint-placeholder-count="6">
+          <div style="display:flex;flex-direction:column;gap:6px;padding:12px 16px;border-bottom:1px solid oklch(95% 0.004 262);background:{{ rd.bg }};border-left:3px solid {{ rd.edge }}">
+            <div style="display:flex;align-items:center;gap:8px">
+              <span style="font:600 8px 'IBM Plex Mono';color:{{ rd.tFg }};background:{{ rd.tBg }};padding:2px 8px;border-radius:4px">{{ rd.type }}</span>
+              <span style="font:500 10.5px 'IBM Plex Mono';color:oklch(38% 0.02 262)">{{ rd.cmd }}</span>
+              <div style="flex:1"></div>
+              <span style="font:400 9px 'IBM Plex Mono';color:oklch(60% 0.02 262)">{{ rd.when }}</span>
+            </div>
+            <div style="display:flex;align-items:center;gap:8px">
+              <span style="font:600 11px 'IBM Plex Sans';color:oklch(32% 0.02 262)">{{ rd.sys }}</span>
+              <div style="flex:1"></div>
+              <span style="display:flex;align-items:center;gap:5px"><span style="width:6px;height:6px;border-radius:50%;background:{{ rd.dot }}"></span><span style="font:600 8.5px 'IBM Plex Mono';color:{{ rd.sFg }}">{{ rd.status }}</span></span>
+            </div>
+          </div>
+        </sc-for>
+      </div>
+    </div>
+    <div style="flex:1;min-width:0;overflow:auto;padding:22px 26px;display:flex;flex-direction:column;gap:15px">
+      <div style="display:flex;align-items:flex-start;gap:14px">
+        <span style="display:flex;flex-direction:column;gap:3px;flex:1">
+          <span style="display:flex;align-items:center;gap:9px"><span style="font:600 16px 'IBM Plex Mono';color:oklch(24% 0.02 262)">cmd-ui-c9064e1a3f7b</span><span style="font:600 8.5px 'IBM Plex Mono';color:oklch(46% 0.10 295);background:oklch(96% 0.02 295);padding:3px 9px;border-radius:4px">INCREMENTAL</span></span>
+          <span style="font:400 11px 'IBM Plex Mono';color:oklch(54% 0.02 262)">petclinic-rest · staging · rev 88e37c1 → 9a02fd4 · started 8/15 09:47:09Z</span>
+        </span>
+        <span style="font:600 11px 'IBM Plex Sans';color:oklch(45% 0.02 262);border:1px solid oklch(90% 0.006 262);background:#fff;padding:7px 13px;border-radius:8px">Compare vs baseline</span>
+        <span style="font:600 11px 'IBM Plex Sans';color:#fff;background:oklch(52% 0.14 258);padding:7px 15px;border-radius:8px;box-shadow:0 1px 2px rgba(30,60,160,.3)">Review proposal</span>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:11px">
+        <sc-for list="{{ runKpis }}" as="rk" hint-placeholder-count="4">
+          <div style="background:#fff;border:1px solid oklch(92% 0.008 258);border-radius:10px;padding:11px 13px;display:flex;flex-direction:column;gap:2px">
+            <span style="font:600 7.5px 'IBM Plex Mono';letter-spacing:.1em;color:oklch(58% 0.02 262)">{{ rk.k }}</span>
+            <span style="font:600 15px 'IBM Plex Sans';color:{{ rk.c }};letter-spacing:-0.01em">{{ rk.v }}</span>
+          </div>
+        </sc-for>
+      </div>
+      <div style="background:#fff;border:1px solid oklch(92% 0.008 258);border-radius:11px;box-shadow:0 1px 3px rgba(16,24,40,.05);padding:15px 17px">
+        <span style="font:600 8px 'IBM Plex Mono';letter-spacing:.12em;color:oklch(60% 0.02 262)">STAGE TIMELINE</span>
+        <div style="margin-top:11px;display:flex;flex-direction:column;gap:7px">
+          <sc-for list="{{ detailStages }}" as="ds" hint-placeholder-count="6">
+            <div style="display:grid;grid-template-columns:92px 1fr 130px;align-items:center;gap:11px">
+              <span style="display:flex;align-items:center;gap:7px"><span style="width:7px;height:7px;border-radius:50%;background:{{ ds.c }}"></span><span style="font:500 10.5px 'IBM Plex Sans';color:oklch(40% 0.02 262)">{{ ds.name }}</span></span>
+              <span style="height:9px;background:oklch(96.5% 0.004 262);border-radius:3px;position:relative;overflow:hidden"><span style="position:absolute;top:0;bottom:0;left:{{ ds.off }};width:{{ ds.w }};background:{{ ds.c }};border-radius:3px"></span></span>
+              <span style="font:500 9.5px 'IBM Plex Mono';color:oklch(52% 0.02 262);text-align:right">{{ ds.dur }}</span>
+            </div>
+          </sc-for>
+        </div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:13px">
+        <div style="background:#fff;border:1px solid oklch(92% 0.008 258);border-radius:11px;padding:14px 16px;display:flex;flex-direction:column;gap:8px">
+          <span style="font:600 8px 'IBM Plex Mono';letter-spacing:.12em;color:oklch(60% 0.02 262)">PROPOSAL · +43 −0 ~2</span>
+          <div style="display:flex;gap:6px">
+            <span style="font:600 9px 'IBM Plex Mono';color:oklch(42% 0.09 155);background:oklch(96.5% 0.03 155);padding:4px 10px;border-radius:5px">43 added</span>
+            <span style="font:600 9px 'IBM Plex Mono';color:oklch(50% 0.02 262);background:oklch(96% 0.004 262);padding:4px 10px;border-radius:5px">0 removed</span>
+            <span style="font:600 9px 'IBM Plex Mono';color:oklch(48% 0.10 70);background:oklch(97% 0.04 85);padding:4px 10px;border-radius:5px">2 confidence shifts</span>
+          </div>
+          <span style="font:400 10.5px/1.55 'IBM Plex Sans';color:oklch(50% 0.02 262)">proposal-77c3af8b790d4a… awaits approval. Approving publishes under a fenced pointer swap — queries keep resolving graph-1e852c… until then.</span>
+        </div>
+        <div style="background:#fff;border:1px solid oklch(92% 0.008 258);border-radius:11px;padding:14px 16px;display:flex;flex-direction:column;gap:7px">
+          <span style="font:600 8px 'IBM Plex Mono';letter-spacing:.12em;color:oklch(60% 0.02 262)">ARTIFACTS</span>
+          <sc-for list="{{ artifacts }}" as="af" hint-placeholder-count="3">
+            <div style="display:flex;align-items:center;gap:9px;border:1px solid oklch(93.5% 0.006 262);border-radius:7px;padding:7px 10px">
+              <span style="width:20px;height:20px;border-radius:5px;background:oklch(96% 0.01 258);border:1px solid oklch(91% 0.015 258);display:flex;align-items:center;justify-content:center;font:600 7px 'IBM Plex Mono';color:oklch(46% 0.08 258)">{{ af.ext }}</span>
+              <span style="font:500 10px 'IBM Plex Mono';color:oklch(36% 0.02 262);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1">{{ af.name }}</span>
+              <span style="font:500 8.5px 'IBM Plex Mono';color:oklch(54% 0.02 262)">{{ af.size }}</span>
+            </div>
+          </sc-for>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+</div>
+<sc-if value="{{ showNotes }}" hint-placeholder-val="{{ true }}"><p class="dv-note">Alternative to <a class="dv-oid" href="#1f">1f</a> for investigation-heavy workflows: the ledger stays scannable on the left while the right pane gives one run its full anatomy — KPIs, stage timeline, proposal delta, checksummed artifacts — without navigation.</p></sc-if>
+</div>
+
+<!-- ═══════ 1h RUN COMPARE ═══════ -->
+<div class="dv-opt" id="1h" data-screen-label="Run compare">
+<div class="dv-olabel"><a class="dv-oid" href="#1h">1h</a>Run compare — dedicated diff between two runs of a system</div>
+<div class="dv-card" style="width:1240px">
+<div style="height:770px;display:flex;flex-direction:column;background:oklch(98.2% 0.003 255)">
+  <div style="display:flex;align-items:center;gap:12px;height:54px;padding:0 20px;background:#fff;border-bottom:1px solid oklch(92.5% 0.008 255);flex:none">
+    <span style="width:22px;height:22px;border-radius:6px;background:oklch(52% 0.14 258)"></span>
+    <span style="display:flex;flex-direction:column"><span style="font:700 13.5px 'IBM Plex Sans';color:oklch(24% 0.02 262);letter-spacing:-0.01em;line-height:1.1">Throughline</span><span style="font:600 6.8px 'IBM Plex Mono';letter-spacing:.22em;color:oklch(58% 0.02 262)">LINEAGE CONTROL ROOM</span></span>
+    <span style="width:1px;height:18px;background:oklch(91% 0.006 262)"></span>
+    <span style="font:500 11px 'IBM Plex Mono';color:oklch(52% 0.02 262)">Runs / <strong style="font-weight:600;color:oklch(36% 0.02 262)">Compare</strong></span>
+    <div style="flex:1"></div>
+    <span style="font:500 10px 'IBM Plex Mono';color:oklch(52% 0.02 262);background:oklch(96.5% 0.004 262);border:1px solid oklch(91.5% 0.006 262);padding:4px 10px;border-radius:14px">graph-1e852c…b457</span>
+    <span style="width:26px;height:26px;border-radius:50%;background:oklch(62% 0.08 70)"></span>
+  </div>
+  <div style="padding:18px 26px 0;flex:none">
+    <div style="display:flex;align-items:stretch;gap:0;background:#fff;border:1px solid oklch(92% 0.008 258);border-radius:12px;box-shadow:0 1px 3px rgba(16,24,40,.05);overflow:hidden">
+      <div style="flex:1;padding:15px 20px;display:flex;flex-direction:column;gap:4px">
+        <span style="font:600 8px 'IBM Plex Mono';letter-spacing:.14em;color:oklch(58% 0.02 262)">BASE · RUN A</span>
+        <span style="display:flex;align-items:center;gap:8px"><span style="font:600 13px 'IBM Plex Mono';color:oklch(28% 0.02 262)">cmd-ui-2cfca4715d45</span><span style="font:600 8px 'IBM Plex Mono';color:oklch(44% 0.10 258);background:oklch(95.5% 0.02 258);padding:2px 8px;border-radius:4px">BASELINE</span></span>
+        <span style="font:400 10px 'IBM Plex Mono';color:oklch(56% 0.02 262)">petclinic-rest · staging · rev 88e37c1 · published 8/14 · 128 edges</span>
+      </div>
+      <div style="width:52px;flex:none;display:flex;align-items:center;justify-content:center;background:oklch(97% 0.004 262);border-left:1px solid oklch(93% 0.006 262);border-right:1px solid oklch(93% 0.006 262)"><span style="font:600 15px 'IBM Plex Sans';color:oklch(52% 0.10 258)">→</span></div>
+      <div style="flex:1;padding:15px 20px;display:flex;flex-direction:column;gap:4px;background:oklch(98.5% 0.008 258)">
+        <span style="font:600 8px 'IBM Plex Mono';letter-spacing:.14em;color:oklch(50% 0.08 258)">CANDIDATE · RUN B</span>
+        <span style="display:flex;align-items:center;gap:8px"><span style="font:600 13px 'IBM Plex Mono';color:oklch(28% 0.02 262)">cmd-ui-c9064e1a3f7b</span><span style="font:600 8px 'IBM Plex Mono';color:oklch(46% 0.10 295);background:oklch(96% 0.02 295);padding:2px 8px;border-radius:4px">INCREMENTAL</span><span style="font:600 8px 'IBM Plex Mono';color:oklch(48% 0.10 70);background:oklch(97% 0.04 85);padding:2px 8px;border-radius:4px">AWAITING APPROVAL</span></span>
+        <span style="font:400 10px 'IBM Plex Mono';color:oklch(56% 0.02 262)">petclinic-rest · staging · rev 9a02fd4 · proposed 8/15 · 171 edges</span>
+      </div>
+      <div style="flex:none;display:flex;align-items:center;padding:0 18px;border-left:1px solid oklch(93% 0.006 262)"><span style="font:500 10.5px 'IBM Plex Mono';color:oklch(50% 0.02 262)">swap runs ⇄</span></div>
+    </div>
+  </div>
+  <div style="display:flex;align-items:center;gap:8px;padding:14px 26px;flex:none">
+    <span style="font:600 10.5px 'IBM Plex Mono';color:oklch(42% 0.09 155);background:oklch(96.5% 0.03 155);border:1px solid oklch(90% 0.05 155);padding:5px 12px;border-radius:14px">+43 added</span>
+    <span style="font:600 10.5px 'IBM Plex Mono';color:oklch(50% 0.02 262);background:oklch(96% 0.004 262);border:1px solid oklch(92% 0.006 262);padding:5px 12px;border-radius:14px">0 removed</span>
+    <span style="font:600 10.5px 'IBM Plex Mono';color:oklch(48% 0.10 70);background:oklch(97% 0.04 85);border:1px solid oklch(91% 0.05 85);padding:5px 12px;border-radius:14px">2 confidence shifts</span>
+    <span style="font:600 10.5px 'IBM Plex Mono';color:oklch(55% 0.02 262);padding:5px 12px;border-radius:14px">126 unchanged</span>
+    <div style="flex:1"></div>
+    <span style="font:500 10.5px 'IBM Plex Mono';color:oklch(50% 0.02 262);border:1px solid oklch(91% 0.006 262);padding:6px 12px;border-radius:8px;background:#fff">change: all ▾</span>
+    <span style="font:500 10.5px 'IBM Plex Mono';color:oklch(50% 0.02 262);border:1px solid oklch(91% 0.006 262);padding:6px 12px;border-radius:8px;background:#fff">evidence: all ▾</span>
+  </div>
+  <div style="flex:1;margin:0 26px;background:#fff;border:1px solid oklch(92% 0.008 258);border-radius:12px 12px 0 0;box-shadow:0 1px 3px rgba(16,24,40,.05);display:flex;flex-direction:column;min-height:0;overflow:hidden">
+    <div style="display:grid;grid-template-columns:92px 1fr 210px 170px 120px;gap:0 16px;padding:9px 18px;border-bottom:1px solid oklch(94% 0.006 262);background:oklch(98.5% 0.003 255)">
+      <span style="font:600 8px 'IBM Plex Mono';letter-spacing:.12em;color:oklch(60% 0.02 262)">CHANGE</span>
+      <span style="font:600 8px 'IBM Plex Mono';letter-spacing:.12em;color:oklch(60% 0.02 262)">EDGE</span>
+      <span style="font:600 8px 'IBM Plex Mono';letter-spacing:.12em;color:oklch(60% 0.02 262)">CONFIDENCE A → B</span>
+      <span style="font:600 8px 'IBM Plex Mono';letter-spacing:.12em;color:oklch(60% 0.02 262)">EVIDENCE</span>
+      <span style="font:600 8px 'IBM Plex Mono';letter-spacing:.12em;color:oklch(60% 0.02 262)"></span>
+    </div>
+    <div style="flex:1;overflow:auto">
+      <sc-for list="{{ compareRows }}" as="cr" hint-placeholder-count="6">
+        <div style="display:grid;grid-template-columns:92px 1fr 210px 170px 120px;gap:0 16px;align-items:center;padding:11px 18px;border-bottom:1px solid oklch(95.5% 0.004 262);background:{{ cr.bg }}">
+          <span style="font:600 8px 'IBM Plex Mono';color:{{ cr.tagFg }};background:{{ cr.tagBg }};border:1px solid {{ cr.tagBd }};padding:3px 0;border-radius:4px;text-align:center">{{ cr.tag }}</span>
+          <span style="display:flex;align-items:center;gap:7px;min-width:0"><span style="font:500 10.5px 'IBM Plex Mono';color:oklch(34% 0.02 262);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ cr.edge }}</span></span>
+          <span style="font:500 9.5px 'IBM Plex Mono';color:oklch(46% 0.02 262)">{{ cr.conf }}</span>
+          <span style="font:600 8.5px 'IBM Plex Mono';color:{{ cr.evFg }};background:{{ cr.evBg }};padding:3px 9px;border-radius:8px;justify-self:start">{{ cr.ev }}</span>
+          <span style="font:500 10px 'IBM Plex Sans';color:oklch(48% 0.10 258);text-align:right">Evidence →</span>
+        </div>
+      </sc-for>
+    </div>
+    <div style="flex:none;display:flex;align-items:center;gap:12px;padding:12px 18px;border-top:1px solid oklch(93% 0.006 262);background:oklch(98.5% 0.008 85)">
+      <span style="width:8px;height:8px;border-radius:50%;background:oklch(65% 0.13 75)"></span>
+      <span style="font:400 11px/1.5 'IBM Plex Sans';color:oklch(42% 0.05 70)">Approving Run B publishes these 43 edges via <strong style="font-weight:600">fenced pointer swap</strong> — instant, atomic, reversible.</span>
+      <div style="flex:1"></div>
+      <span style="font:600 11px 'IBM Plex Sans';color:oklch(45% 0.02 262);border:1px solid oklch(90% 0.006 262);background:#fff;padding:7px 14px;border-radius:8px">Reject</span>
+      <span style="font:600 11px 'IBM Plex Sans';color:#fff;background:oklch(48% 0.11 155);padding:7px 16px;border-radius:8px;box-shadow:0 1px 2px rgba(20,90,50,.3)">Approve &amp; publish</span>
+    </div>
+  </div>
+</div>
+</div>
+<sc-if value="{{ showNotes }}" hint-placeholder-val="{{ true }}"><p class="dv-note">The dedicated compare view you asked for: base vs candidate header, delta chips that double as filters, and a per-edge diff table where confidence shifts (PROBABLE → VERIFIED) are first-class changes. The approve action lives here because the diff <em>is</em> the review.</p></sc-if>
+</div>
+
+</div>
+<p class="dv-next">Try next: "merge <a class="dv-oid" href="#1c">1c</a>'s verdict banner into <a class="dv-oid" href="#1d">1d</a>" · "show <a class="dv-oid" href="#1a">1a</a> step 3 (review &amp; collect)" · "failed-run state for <a class="dv-oid" href="#1f">1f</a>"</p>
+</section>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;showNotes&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;Canvas&quot;}}">
+class Component extends DCLogic {
+  renderVals() {
+    const OK='oklch(58% 0.11 155)',OKBG='oklch(96.5% 0.03 155)',OKFG='oklch(42% 0.09 155)';
+    const AM='oklch(65% 0.13 75)',AMBG='oklch(97% 0.04 85)',AMFG='oklch(48% 0.10 70)';
+    const RD='oklch(56% 0.16 25)',RDBG='oklch(97% 0.02 25)',RDFG='oklch(46% 0.13 25)';
+    const BL='oklch(52% 0.14 258)',BLBG='oklch(95.5% 0.02 258)',BLFG='oklch(42% 0.10 258)';
+    const PU='oklch(52% 0.13 295)',PUBG='oklch(96% 0.02 295)',PUFG='oklch(46% 0.10 295)';
+    const TE='oklch(55% 0.09 190)',TEBG='oklch(96% 0.025 190)',TEFG='oklch(40% 0.07 190)';
+    const PEND='oklch(96% 0.004 262)',PENDBD='oklch(90% 0.006 262)',PENDFG='oklch(58% 0.02 262)';
+    const codes=['FE','AN','DE','PR','RV','PB'];
+    const mk=s=>s.map((st,i)=>({code:codes[i],
+      bg:st==='d'?OK:st==='a'?BL:st==='g'?AM:st==='f'?RD:PEND,
+      fg:st==='p'?PENDFG:'#fff',
+      bd:st==='d'?OK:st==='a'?BL:st==='g'?AM:st==='f'?RD:PENDBD}));
+    return {
+      showNotes: this.props.showNotes ?? true,
+      wizSteps:[
+        {n:'✓',t:'Source',d:'spring-petclinic @ 88e37c1',bg:'transparent',dotBg:OK,dotBd:'none',dotFg:'#fff',tFg:'oklch(42% 0.02 262)',line:true},
+        {n:'2',t:'Analysis profile',d:'Platform, analyzer, rules',bg:'oklch(96.5% 0.015 258)',dotBg:BL,dotBd:'none',dotFg:'#fff',tFg:'oklch(28% 0.06 258)',line:true},
+        {n:'3',t:'Review & collect',d:'Idempotent submission',bg:'transparent',dotBg:'#fff',dotBd:'1.5px solid oklch(86% 0.006 262)',dotFg:'oklch(58% 0.02 262)',tFg:'oklch(56% 0.02 262)',line:false}],
+      plan:[
+        {k:'source',v:'spring-projects/spring-petclinic'},
+        {k:'commit',v:'88e37c15cf6f…ac272'},
+        {k:'environment',v:'staging'},
+        {k:'system',v:'petclinic-rest'},
+        {k:'platform',v:'postgres'},
+        {k:'analyzer pack',v:'java-spring-data-jpa-v1'},
+        {k:'ruleset',v:'spring-data-rules-v1'}],
+      profile:[
+        {k:'platform',v:'postgres'},{k:'analyzer',v:'java-spring-data-jpa-v1'},{k:'ruleset',v:'spring-data-rules-v1'},{k:'schema',v:'postgres'}],
+      nextSteps:[
+        {t:'Fetch & analyze',d:'The exact revision is fetched and analyzed stage by stage.',c:BL,line:true},
+        {t:'Derive lineage',d:'Edges derived with evidence receipts — static, runtime, rules.',c:BL,line:true},
+        {t:'Propose',d:'A proposal package is created. Nothing touches the graph yet.',c:PU,line:true},
+        {t:'Human gate',d:'You review the diff and approve or reject.',c:AM,line:true},
+        {t:'Fenced publish',d:'Atomic pointer swap activates the new graph for queries.',c:OK,line:false}],
+      signals:[
+        {label:'Queue',value:'3',unit:'pending',sub:'0 retries · 0 dead-letter · oldest 41 s',dot:OK},
+        {label:'Correlation',value:'128',unit:'tracked',sub:'0 missing — every stage shares one identity',dot:OK},
+        {label:'Coverage',value:'12',unit:'systems',sub:'2 stale baselines · 0 incomplete',dot:AM},
+        {label:'Review latency',value:'4.2',unit:'h oldest',sub:'the human gate ahead of every publication',dot:AM},
+        {label:'Publication',value:'12',unit:'min lag',sub:'pointer 1e852c16 · watermark 09:47Z',dot:OK},
+        {label:'Control plane',value:'OK',unit:'fenced',sub:'lease held · fencing token verified',dot:OK}],
+      attention:[
+        {c:AM,title:'2 proposals awaiting approval',meta:'petclinic-rest +43 edges · qa +23 · oldest 4.2 h',cta:'Review queue →'},
+        {c:RD,title:'Derive lane DLQ has 3 messages',meta:'cmd-ui-284234d0f5fd · lease steal at 09:12Z',cta:'Redrive →'},
+        {c:AM,title:'Baseline aging — qa',meta:'last baseline 9 d ago · incremental path degrading',cta:'Recollect →'}],
+      hourly:[18,26,22,34,30,42,38,52,44,60,48,40,56,64,50,44,58,66,54,48,62,72].map((v,i)=>({h:(v*100/72).toFixed(0)+'%',c:i===21?'oklch(52% 0.14 258)':'oklch(90% 0.012 258)'})),
+      recent:[
+        {type:'DEPLOYMENT',tFg:TEFG,tBg:TEBG,cmd:'cmd-uideploy-2026…',sys:'jhipster-sample',status:'PROMOTED',sFg:TEFG,dot:TE},
+        {type:'INCREMENTAL',tFg:PUFG,tBg:PUBG,cmd:'cmd-ui-3dae6709dcbe',sys:'jhipster-sample',status:'PUBLISHED',sFg:OKFG,dot:OK},
+        {type:'INCREMENTAL',tFg:PUFG,tBg:PUBG,cmd:'cmd-ui-c9064e1a3f7b',sys:'petclinic-rest',status:'AWAITING',sFg:AMFG,dot:AM},
+        {type:'BASELINE',tFg:BLFG,tBg:BLBG,cmd:'cmd-ui-284234d0f5fd',sys:'qa',status:'FAILED',sFg:RDFG,dot:RD},
+        {type:'BASELINE',tFg:BLFG,tBg:BLBG,cmd:'cmd-ui-aca096988d5a',sys:'jhipster-sample',status:'PUBLISHED',sFg:OKFG,dot:OK}],
+      funnel:[
+        {name:'Collected',n:'21 runs',w:'100%',c:'oklch(78% 0.05 258)'},
+        {name:'Derived',n:'1,284 edges',w:'88%',c:'oklch(66% 0.10 258)'},
+        {name:'Proposed',n:'188 edges',w:'38%',c:PU},
+        {name:'Approved',n:'161 edges',w:'33%',c:OK},
+        {name:'Published',n:'161 edges',w:'33%',c:'oklch(48% 0.11 155)'}],
+      lanes:[
+        {name:'Fetch lane',oldest:'41 s',depth:'2',w:'14%',c:OK,nC:'oklch(40% 0.02 262)',dlq:'0',dlqFg:PENDFG,dlqBg:PEND,redrive:false},
+        {name:'Analyze lane',oldest:'2 m',depth:'5',w:'32%',c:OK,nC:'oklch(40% 0.02 262)',dlq:'0',dlqFg:PENDFG,dlqBg:PEND,redrive:false},
+        {name:'Derive lane',oldest:'11 m',depth:'9',w:'62%',c:AM,nC:AMFG,dlq:'3',dlqFg:RDFG,dlqBg:RDBG,redrive:true}],
+      coverage:[
+        {sys:'petclinic-rest',env:'staging',base:'2 h',baseC:'oklch(42% 0.02 262)',edges:'412',ver:'64%',verW:'64%',status:'AWAITING APPROVAL',stFg:AMFG,stBg:AMBG,stBd:'oklch(91% 0.05 85)'},
+        {sys:'jhipster-sample',env:'local',base:'6 h',baseC:'oklch(42% 0.02 262)',edges:'388',ver:'71%',verW:'71%',status:'PUBLISHED',stFg:OKFG,stBg:OKBG,stBd:'oklch(90% 0.05 155)'},
+        {sys:'spring-petclinic',env:'staging',base:'1 d',baseC:'oklch(42% 0.02 262)',edges:'356',ver:'58%',verW:'58%',status:'PUBLISHED',stFg:OKFG,stBg:OKBG,stBd:'oklch(90% 0.05 155)'},
+        {sys:'qa',env:'staging',base:'9 d',baseC:RDFG,edges:'128',ver:'22%',verW:'22%',status:'STALE BASELINE',stFg:RDFG,stBg:RDBG,stBd:'oklch(92% 0.03 25)'}],
+      upNodes:[
+        {name:'ClinicServiceImpl#saveOwner',meta:'spring-petclinic-rest · method',conf:'VERIFIED 92',cFg:OKFG,cBg:OKBG,lineC:'oklch(70% 0.09 155)',nc:TE,shape:'3px'},
+        {name:'ClinicServiceImpl#deleteOwner',meta:'spring-petclinic-rest · method',conf:'PROBABLE 70',cFg:AMFG,cBg:AMBG,lineC:'oklch(85% 0.06 85)',nc:TE,shape:'3px'},
+        {name:'owners#last_name',meta:'petclinic-rest-preflight · element',conf:'PROBABLE 70',cFg:AMFG,cBg:AMBG,lineC:'oklch(85% 0.06 85)',nc:'oklch(80% 0.02 262)',shape:'50%'}],
+      elements:[{n:'owners#id',t:'pk · int8'},{n:'owners#first_name',t:'text'},{n:'owners#last_name',t:'text'},{n:'owners#city',t:'text'}],
+      downNodes:[
+        {name:'JdbcPetRepositoryImpl#findById',meta:'spring-petclinic-rest · method',conf:'VERIFIED 92',cFg:OKFG,cBg:OKBG,lineC:'oklch(70% 0.09 155)',nc:TE,bg:'#fff',bd:'1px solid oklch(91% 0.008 258)'},
+        {name:'ClinicServiceImpl#findAll',meta:'spring-petclinic-rest · method',conf:'PROBABLE 70',cFg:AMFG,cBg:AMBG,lineC:'oklch(85% 0.06 85)',nc:TE,bg:'#fff',bd:'1px solid oklch(91% 0.008 258)'},
+        {name:'ClinicServiceImpl#findOwner',meta:'selected · edge inspected',conf:'VERIFIED 92',cFg:OKFG,cBg:OKBG,lineC:'oklch(58% 0.11 155)',nc:TE,bg:'oklch(97.5% 0.012 258)',bd:'1.5px solid oklch(52% 0.14 258)'},
+        {name:'OwnerResource#list',meta:'petclinic-rest · endpoint',conf:'PROBABLE 70',cFg:AMFG,cBg:AMBG,lineC:'oklch(85% 0.06 85)',nc:'oklch(62% 0.08 70)',bg:'#fff',bd:'1px solid oklch(91% 0.008 258)'}],
+      evid:[
+        {kind:'RUNTIME',file:'otel-span 8f21c4…d44',meta:'integration test · cmd-ui-637a4d8f6260 · 07:42Z',fg:OKFG,bg:OKBG},
+        {kind:'STATIC',file:'JdbcOwnerRepositoryImpl.java L84–96',meta:'analyzer java-spring-data-jpa-v1 · AST proof',fg:TEFG,bg:TEBG},
+        {kind:'RULE',file:'spring-data-rules-v1 · R-114',meta:'derived join · precedence level 2',fg:PUFG,bg:PUBG}],
+      runs:[
+        {type:'INCREMENTAL',tFg:PUFG,tBg:PUBG,cmd:'cmd-ui-c9064e1a3f7b',when:'8/15 09:47Z',sys:'petclinic-rest',rev:'88e37c1 → 9a02fd4 · staging',stages:mk(['d','d','d','d','g','p']),edges:'+43 ~2',dot:AM,sFg:AMFG,status:'AWAITING APPROVAL',rowBg:'oklch(98.8% 0.006 85)',expanded:true},
+        {type:'DEPLOYMENT',tFg:TEFG,tBg:TEBG,cmd:'cmd-uideploy-2026…',when:'8/15 15:58Z',sys:'jhipster-sample',rev:'stage D6 · promote to prod pointer',stages:mk(['d','d','d','d','d','d']),edges:'—',dot:TE,sFg:TEFG,status:'PROMOTED',rowBg:'#fff',expanded:false},
+        {type:'INCREMENTAL',tFg:PUFG,tBg:PUBG,cmd:'cmd-ui-3dae6709dcbe',when:'8/15 11:20Z',sys:'jhipster-sample',rev:'3dae670 · local',stages:mk(['d','d','d','d','d','d']),edges:'+12',dot:OK,sFg:OKFG,status:'PUBLISHED',rowBg:'#fff',expanded:false},
+        {type:'BASELINE',tFg:BLFG,tBg:BLBG,cmd:'cmd-ui-284234d0f5fd',when:'8/15 09:12Z',sys:'qa',rev:'284234d · staging',stages:mk(['d','d','f','p','p','p']),edges:'—',dot:RD,sFg:RDFG,status:'FAILED · DERIVE',rowBg:'#fff',expanded:false},
+        {type:'BASELINE',tFg:BLFG,tBg:BLBG,cmd:'cmd-ui-aca096988d5a',when:'8/14 16:05Z',sys:'jhipster-sample',rev:'aca0969 · local',stages:mk(['d','d','d','d','d','d']),edges:'128',dot:OK,sFg:OKFG,status:'PUBLISHED',rowBg:'#fff',expanded:false},
+        {type:'BASELINE',tFg:BLFG,tBg:BLBG,cmd:'cmd-ui-2cfca4715d45',when:'8/14 09:31Z',sys:'petclinic-rest',rev:'88e37c1 · staging',stages:mk(['d','d','d','d','d','d']),edges:'128',dot:OK,sFg:OKFG,status:'PUBLISHED',rowBg:'#fff',expanded:false},
+        {type:'BASELINE',tFg:BLFG,tBg:BLBG,cmd:'cmd-seed-2026081…',when:'8/15 03:36Z',sys:'petclinic',rev:'seeded delivery replay',stages:mk(['d','d','d','d','d','d']),edges:'96',dot:OK,sFg:OKFG,status:'PUBLISHED',rowBg:'#fff',expanded:false}],
+      detailStages:[
+        {name:'Fetch',dur:'12 s',off:'0%',w:'7%',c:OK},
+        {name:'Analyze',dur:'48 s',off:'7%',w:'26%',c:OK},
+        {name:'Derive',dur:'1 m 04 s',off:'33%',w:'36%',c:OK},
+        {name:'Propose',dur:'37 s',off:'69%',w:'21%',c:OK},
+        {name:'Review',dur:'waiting 4.2 h',off:'90%',w:'10%',c:AM},
+        {name:'Publish',dur:'—',off:'100%',w:'0%',c:PEND}],
+      artifacts:[
+        {ext:'JSON',name:'evidence-bundle.json',meta:'sha256 8f21c4…d44 · Object Lock',size:'1.2 MB'},
+        {ext:'JSON',name:'proposal-77c3af8b790d4a.json',meta:'sha256 77c3af…0d4 · +43 −0 ~2',size:'214 KB'},
+        {ext:'LOG',name:'stage-log.ndjson',meta:'correlation ldp-c9064e1a · 6 stages',size:'3.8 MB'}],
+      runsD:[
+        {type:'INCR',tFg:PUFG,tBg:PUBG,cmd:'cmd-ui-c9064e1a3f7b',sys:'petclinic-rest',when:'09:47Z',status:'AWAITING',dot:AM,sFg:AMFG,bg:'oklch(97.5% 0.012 258)',edge:'oklch(52% 0.14 258)'},
+        {type:'DEPLOY',tFg:TEFG,tBg:TEBG,cmd:'cmd-uideploy-2026…',sys:'jhipster-sample',when:'15:58Z',status:'PROMOTED',dot:TE,sFg:TEFG,bg:'#fff',edge:'transparent'},
+        {type:'INCR',tFg:PUFG,tBg:PUBG,cmd:'cmd-ui-3dae6709dcbe',sys:'jhipster-sample',when:'11:20Z',status:'PUBLISHED',dot:OK,sFg:OKFG,bg:'#fff',edge:'transparent'},
+        {type:'BASE',tFg:BLFG,tBg:BLBG,cmd:'cmd-ui-284234d0f5fd',sys:'qa',when:'09:12Z',status:'FAILED',dot:RD,sFg:RDFG,bg:'#fff',edge:'transparent'},
+        {type:'BASE',tFg:BLFG,tBg:BLBG,cmd:'cmd-ui-aca096988d5a',sys:'jhipster-sample',when:'8/14',status:'PUBLISHED',dot:OK,sFg:OKFG,bg:'#fff',edge:'transparent'},
+        {type:'BASE',tFg:BLFG,tBg:BLBG,cmd:'cmd-ui-2cfca4715d45',sys:'petclinic-rest',when:'8/14',status:'PUBLISHED',dot:OK,sFg:OKFG,bg:'#fff',edge:'transparent'}],
+      runKpis:[
+        {k:'DURATION',v:'2m 41s',c:'oklch(26% 0.02 262)'},
+        {k:'EDGES DERIVED',v:'171',c:'oklch(26% 0.02 262)'},
+        {k:'PROPOSAL DELTA',v:'+43 ~2',c:'oklch(46% 0.10 295)'},
+        {k:'GATE WAIT',v:'4.2 h',c:'oklch(48% 0.10 70)'}],
+      compareRows:[
+        {tag:'ADDED',tagFg:OKFG,tagBg:OKBG,tagBd:'oklch(90% 0.05 155)',edge:'ClinicServiceImpl#findOwner → owners',conf:'— → PROBABLE 70',ev:'STATIC-ONLY',evFg:AMFG,evBg:AMBG,bg:'#fff'},
+        {tag:'ADDED',tagFg:OKFG,tagBg:OKBG,tagBd:'oklch(90% 0.05 155)',edge:'owners#city → OwnerDTO#city',conf:'— → PROBABLE 70',ev:'STATIC-ONLY',evFg:AMFG,evBg:AMBG,bg:'#fff'},
+        {tag:'CONF ↑',tagFg:AMFG,tagBg:AMBG,tagBd:'oklch(91% 0.05 85)',edge:'ClinicServiceImpl#saveOwner → owners',conf:'PROBABLE 70 → VERIFIED 92',ev:'RUNTIME-VERIFIED',evFg:OKFG,evBg:OKBG,bg:'oklch(98.8% 0.006 85)'},
+        {tag:'ADDED',tagFg:OKFG,tagBg:OKBG,tagBd:'oklch(90% 0.05 155)',edge:'JdbcPetRepositoryImpl#findById → pets',conf:'— → VERIFIED 92',ev:'RUNTIME-VERIFIED',evFg:OKFG,evBg:OKBG,bg:'#fff'},
+        {tag:'CONF ↑',tagFg:AMFG,tagBg:AMBG,tagBd:'oklch(91% 0.05 85)',edge:'owners → OwnerResource#list',conf:'PROBABLE 70 → VERIFIED 92',ev:'RUNTIME-VERIFIED',evFg:OKFG,evBg:OKBG,bg:'oklch(98.8% 0.006 85)'},
+        {tag:'ADDED',tagFg:OKFG,tagBg:OKBG,tagBd:'oklch(90% 0.05 155)',edge:'owners#telephone → OwnerDTO#telephone',conf:'— → PROBABLE 70',ev:'STATIC-ONLY',evFg:AMFG,evBg:AMBG,bg:'#fff'},
+        {tag:'ADDED',tagFg:OKFG,tagBg:OKBG,tagBd:'oklch(90% 0.05 155)',edge:'PetValidator#validate → pets',conf:'— → PROBABLE 70',ev:'RULE-DERIVED',evFg:PUFG,evBg:PUBG,bg:'#fff'}],
+    };
+  }
+}
+</script>
+</body>
+</html>

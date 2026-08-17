@@ -2,17 +2,12 @@ from __future__ import annotations
 
 import json
 from collections.abc import Callable
-from pathlib import Path
 from typing import Any
 
 from lineage_api.application.models import Command, Lease, StageIdentity, StageResult
 from lineage_api.application.ports import ArtifactStorePort, ClockPort, CommandStorePort
 from lineage_api.application.workflows.definitions import BASELINE
 from lineage_api.domain.evidence import EvidenceRef
-
-
-class BaselineFanoutExceeded(ValueError):
-    """The repository contains more lineage-relevant paths than the configured bound."""
 
 
 class BaselineWorkflow:
@@ -75,41 +70,6 @@ class BaselineWorkflow:
         return {
             "status": str(body["status"]),
             "sessionIds": sorted(set(str(value) for value in body.get("sessionIds", []))),
-        }
-
-    @staticmethod
-    def plan_repository(repository_root: Path, *, max_fanout: int) -> dict[str, Any]:
-        if max_fanout < 1:
-            raise ValueError("max fanout must be positive")
-        source_paths: list[str] = []
-        skipped_paths: list[str] = []
-        unsupported_paths: list[str] = []
-        for path in sorted(item for item in repository_root.rglob("*") if item.is_file()):
-            relative = path.relative_to(repository_root).as_posix()
-            if path.suffix == ".py":
-                source_paths.append(relative)
-            elif path.suffix == ".md" or relative in {
-                "expected-lineage.json",
-                "repository-evidence.json",
-            }:
-                skipped_paths.append(relative)
-            else:
-                unsupported_paths.append(relative)
-
-        expected_scope = sorted(source_paths + skipped_paths + unsupported_paths)
-        if len(expected_scope) > max_fanout:
-            raise BaselineFanoutExceeded(
-                f"baseline fanout {len(expected_scope)} exceeds limit {max_fanout}"
-            )
-        fanout = []
-        if source_paths:
-            fanout.append({"pack": "python-ast", "paths": source_paths})
-        return {
-            "expectedScope": expected_scope,
-            "recomputedScope": source_paths,
-            "skippedScope": skipped_paths,
-            "unsupportedScope": unsupported_paths,
-            "fanout": fanout,
         }
 
     def _identity(self, stage_id: str) -> StageIdentity:

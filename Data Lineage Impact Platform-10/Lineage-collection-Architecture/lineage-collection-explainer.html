@@ -1,0 +1,773 @@
+<title>Three Engines, One Trust Chain</title>
+<style>
+  :root {
+    --bg: #F4F6F5;
+    --panel: #FFFFFF;
+    --panel-2: #ECF0EE;
+    --ink: #1C2422;
+    --ink-soft: #4A5753;
+    --ink-faint: #71807B;
+    --line: #D5DCD9;
+    --line-strong: #B7C2BD;
+    --accent: #146B5E;
+    --accent-ink: #0E5045;
+    --accent-soft: rgba(20, 107, 94, 0.10);
+    --sca: #3A6EA5;
+    --sca-soft: rgba(58, 110, 165, 0.10);
+    --llm: #A87B2D;
+    --llm-soft: rgba(168, 123, 45, 0.12);
+    --rt: #4C8A54;
+    --rt-soft: rgba(76, 138, 84, 0.11);
+    --good: #2E7D4F;
+    --warn: #A8722D;
+    --hold: #8A5A44;
+    --shadow: 0 1px 2px rgba(28, 36, 34, 0.06), 0 8px 24px rgba(28, 36, 34, 0.07);
+  }
+  :root:not([data-theme="light"]) { }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #131A18;
+      --panel: #1B2421;
+      --panel-2: #212C29;
+      --ink: #E5ECE9;
+      --ink-soft: #AEBDB8;
+      --ink-faint: #7E8F89;
+      --line: #2E3B37;
+      --line-strong: #41524D;
+      --accent: #4FB3A0;
+      --accent-ink: #7CCDBD;
+      --accent-soft: rgba(79, 179, 160, 0.14);
+      --sca: #7FAEDC;
+      --sca-soft: rgba(127, 174, 220, 0.13);
+      --llm: #D9A84E;
+      --llm-soft: rgba(217, 168, 78, 0.13);
+      --rt: #7CBE84;
+      --rt-soft: rgba(124, 190, 132, 0.12);
+      --good: #6FBE8C;
+      --warn: #D2A45B;
+      --hold: #C99177;
+      --shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 8px 24px rgba(0, 0, 0, 0.35);
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #131A18;
+    --panel: #1B2421;
+    --panel-2: #212C29;
+    --ink: #E5ECE9;
+    --ink-soft: #AEBDB8;
+    --ink-faint: #7E8F89;
+    --line: #2E3B37;
+    --line-strong: #41524D;
+    --accent: #4FB3A0;
+    --accent-ink: #7CCDBD;
+    --accent-soft: rgba(79, 179, 160, 0.14);
+    --sca: #7FAEDC;
+    --sca-soft: rgba(127, 174, 220, 0.13);
+    --llm: #D9A84E;
+    --llm-soft: rgba(217, 168, 78, 0.13);
+    --rt: #7CBE84;
+    --rt-soft: rgba(124, 190, 132, 0.12);
+    --good: #6FBE8C;
+    --warn: #D2A45B;
+    --hold: #C99177;
+    --shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 8px 24px rgba(0, 0, 0, 0.35);
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    background: var(--bg);
+    color: var(--ink);
+    font-family: Charter, "Iowan Old Style", "Palatino Linotype", Georgia, serif;
+    font-size: 17px;
+    line-height: 1.6;
+    margin: 0;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 1040px; margin: 0 auto; padding: 0 24px 96px; }
+  h1, h2, h3, .sans {
+    font-family: "Avenir Next", Avenir, "Segoe UI", "Helvetica Neue", sans-serif;
+  }
+  h1 { font-size: clamp(2rem, 5vw, 3.1rem); font-weight: 600; line-height: 1.1; letter-spacing: -0.015em; margin: 0 0 14px; text-wrap: balance; }
+  h2 { font-size: 1.45rem; font-weight: 600; letter-spacing: -0.01em; margin: 0 0 6px; text-wrap: balance; }
+  h3 { font-size: 1.02rem; font-weight: 600; margin: 0 0 4px; }
+  p { margin: 0 0 1em; max-width: 68ch; }
+  code, .mono {
+    font-family: "SF Mono", "Cascadia Code", Menlo, Consolas, monospace;
+    font-size: 0.82em;
+  }
+  code { background: var(--panel-2); border: 1px solid var(--line); border-radius: 4px; padding: 1px 5px; }
+
+  .eyebrow {
+    font-family: "Avenir Next", Avenir, "Segoe UI", sans-serif;
+    font-size: 0.72rem; font-weight: 600; letter-spacing: 0.14em; text-transform: uppercase;
+    color: var(--accent); margin: 0 0 10px;
+  }
+  header.hero { padding: 72px 0 20px; }
+  .lede { font-size: 1.12rem; color: var(--ink-soft); max-width: 62ch; }
+  .rule-line {
+    margin: 26px 0 0; padding: 14px 18px;
+    border-left: 3px solid var(--accent);
+    background: var(--accent-soft);
+    border-radius: 0 8px 8px 0;
+    font-style: italic; color: var(--ink-soft); max-width: 72ch;
+  }
+  .rule-line strong { color: var(--ink); font-style: normal; }
+
+  section { margin-top: 64px; }
+  .section-intro { color: var(--ink-soft); max-width: 66ch; margin-bottom: 22px; }
+
+  /* ---------- diagram ---------- */
+  figure.diagram {
+    margin: 0; padding: 22px 18px 12px;
+    background: var(--panel); border: 1px solid var(--line); border-radius: 12px;
+    box-shadow: var(--shadow);
+    overflow-x: auto;
+  }
+  figure.diagram svg { min-width: 760px; width: 100%; height: auto; display: block; }
+  figcaption { font-family: "Avenir Next", Avenir, "Segoe UI", sans-serif; font-size: 0.82rem; color: var(--ink-faint); padding: 10px 6px 8px; }
+
+  /* ---------- legend chips ---------- */
+  .legend { display: flex; flex-wrap: wrap; gap: 14px 22px; margin-top: 14px; font-family: "Avenir Next", Avenir, "Segoe UI", sans-serif; font-size: 0.8rem; color: var(--ink-soft); }
+  .legend span { display: inline-flex; align-items: center; gap: 7px; }
+  .dot { width: 10px; height: 10px; border-radius: 3px; display: inline-block; }
+
+  /* ---------- pipeline rail ---------- */
+  .rail-groups { display: flex; flex-direction: column; gap: 18px; }
+  .rail-group-label {
+    font-family: "Avenir Next", Avenir, "Segoe UI", sans-serif;
+    font-size: 0.7rem; font-weight: 600; letter-spacing: 0.13em; text-transform: uppercase;
+    color: var(--ink-faint); margin-bottom: 8px;
+  }
+  .rail { display: flex; flex-wrap: wrap; gap: 8px; }
+  .stage-btn {
+    font-family: "Avenir Next", Avenir, "Segoe UI", sans-serif;
+    font-size: 0.86rem; font-weight: 500;
+    display: inline-flex; align-items: center; gap: 8px;
+    padding: 8px 14px; border-radius: 999px;
+    border: 1px solid var(--line-strong);
+    background: var(--panel); color: var(--ink);
+    cursor: pointer; transition: border-color 0.15s, background 0.15s, opacity 0.3s;
+  }
+  .stage-btn .lid { font-family: "SF Mono", Menlo, monospace; font-size: 0.68rem; color: var(--ink-faint); }
+  .stage-btn:hover { border-color: var(--accent); }
+  .stage-btn[aria-selected="true"] { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .stage-btn[aria-selected="true"] .lid { color: rgba(255,255,255,0.75); }
+  .stage-btn:focus-visible, .tab-btn:focus-visible, .switch:focus-visible input, button:focus-visible {
+    outline: 2px solid var(--accent); outline-offset: 2px;
+  }
+
+  .stage-detail {
+    margin-top: 20px; padding: 24px 26px;
+    background: var(--panel); border: 1px solid var(--line); border-radius: 12px;
+    box-shadow: var(--shadow);
+  }
+  .stage-detail .head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 10px 14px; margin-bottom: 10px; }
+  .stage-detail h3 { font-size: 1.2rem; margin: 0; }
+  .stage-detail .sub { color: var(--ink-faint); font-family: "Avenir Next", Avenir, "Segoe UI", sans-serif; font-size: 0.82rem; }
+  .stage-detail .machine {
+    font-family: "SF Mono", Menlo, monospace; font-size: 0.76rem;
+    color: var(--ink-soft); background: var(--panel-2);
+    border: 1px solid var(--line); border-radius: 8px;
+    padding: 10px 14px; margin: 14px 0; overflow-x: auto; white-space: nowrap;
+  }
+  .never {
+    border-left: 3px solid var(--hold); padding: 2px 0 2px 14px; margin: 14px 0 4px;
+    color: var(--ink-soft); font-size: 0.95rem;
+  }
+  .never b { color: var(--ink); font-family: "Avenir Next", Avenir, "Segoe UI", sans-serif; font-size: 0.78rem; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; display: block; margin-bottom: 2px; }
+
+  .chip {
+    font-family: "Avenir Next", Avenir, "Segoe UI", sans-serif;
+    font-size: 0.7rem; font-weight: 600; letter-spacing: 0.05em;
+    padding: 3px 10px; border-radius: 999px; white-space: nowrap;
+  }
+  .chip.proven { background: var(--rt-soft); color: var(--good); border: 1px solid var(--good); }
+  .chip.synth  { background: var(--llm-soft); color: var(--warn); border: 1px solid var(--warn); }
+  .chip.iface  { background: transparent; color: var(--hold); border: 1px dashed var(--hold); }
+
+  /* reality mode */
+  body.reality .stage-btn[data-status="iface"] { opacity: 0.38; }
+  body.reality .stage-btn[data-status="synth"] { opacity: 0.72; }
+
+  .switch {
+    display: inline-flex; align-items: center; gap: 10px; cursor: pointer;
+    font-family: "Avenir Next", Avenir, "Segoe UI", sans-serif; font-size: 0.88rem; color: var(--ink-soft);
+    user-select: none;
+  }
+  .switch input { position: absolute; opacity: 0; width: 40px; height: 22px; margin: 0; cursor: pointer; }
+  .switch .track {
+    width: 40px; height: 22px; border-radius: 999px; background: var(--line-strong);
+    position: relative; transition: background 0.2s; flex-shrink: 0;
+  }
+  .switch .track::after {
+    content: ""; position: absolute; top: 3px; left: 3px; width: 16px; height: 16px;
+    border-radius: 50%; background: var(--panel); transition: transform 0.2s;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.25);
+  }
+  .switch input:checked + .track { background: var(--accent); }
+  .switch input:checked + .track::after { transform: translateX(18px); }
+
+  /* ---------- engine tabs ---------- */
+  .tabs { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: -1px; position: relative; z-index: 1; }
+  .tab-btn {
+    font-family: "Avenir Next", Avenir, "Segoe UI", sans-serif;
+    font-size: 0.92rem; font-weight: 600;
+    padding: 10px 18px; border-radius: 10px 10px 0 0;
+    border: 1px solid var(--line); border-bottom-color: var(--line);
+    background: var(--panel-2); color: var(--ink-soft); cursor: pointer;
+    display: inline-flex; align-items: center; gap: 9px;
+  }
+  .tab-btn .dot { width: 9px; height: 9px; border-radius: 50%; }
+  .tab-btn[aria-selected="true"] { background: var(--panel); color: var(--ink); border-bottom-color: var(--panel); }
+  .tab-panel {
+    background: var(--panel); border: 1px solid var(--line); border-radius: 0 12px 12px 12px;
+    padding: 26px 28px; box-shadow: var(--shadow);
+  }
+  .tab-panel[hidden] { display: none; }
+  .engine-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 36px; }
+  @media (max-width: 720px) { .engine-grid { grid-template-columns: 1fr; } }
+  .engine-grid ul { margin: 6px 0 12px; padding-left: 20px; }
+  .engine-grid li { margin-bottom: 7px; }
+  .engine-tagline { font-size: 1.05rem; font-style: italic; color: var(--ink-soft); margin-bottom: 16px; }
+
+  /* ---------- confidence lab ---------- */
+  .lab {
+    background: var(--panel); border: 1px solid var(--line); border-radius: 12px;
+    padding: 26px 28px; box-shadow: var(--shadow);
+    display: grid; grid-template-columns: 250px 1fr; gap: 26px 44px;
+  }
+  @media (max-width: 720px) { .lab { grid-template-columns: 1fr; } }
+  .lab-toggles { display: flex; flex-direction: column; gap: 12px; }
+  .mech {
+    display: flex; align-items: center; gap: 12px;
+    font-family: "Avenir Next", Avenir, "Segoe UI", sans-serif; font-size: 0.95rem; font-weight: 500;
+    padding: 12px 14px; border: 1px solid var(--line-strong); border-radius: 10px;
+    cursor: pointer; user-select: none; transition: background 0.15s, border-color 0.15s;
+  }
+  .mech input { width: 17px; height: 17px; accent-color: var(--accent); cursor: pointer; }
+  .mech[data-on="true"] { border-color: var(--engine); background: var(--engine-soft); }
+  .mech small { display: block; font-weight: 400; color: var(--ink-faint); font-size: 0.76rem; }
+  .ladder { display: flex; flex-direction: column-reverse; gap: 6px; margin: 4px 0 18px; }
+  .band {
+    display: flex; align-items: center; gap: 14px;
+    font-family: "SF Mono", Menlo, monospace; font-size: 0.78rem;
+    color: var(--ink-faint);
+    padding: 8px 14px; border: 1px solid var(--line); border-radius: 8px;
+    transition: background 0.25s, color 0.25s, border-color 0.25s;
+  }
+  .band .rung { font-family: "Avenir Next", Avenir, "Segoe UI", sans-serif; font-weight: 600; font-size: 0.85rem; width: 84px; color: var(--ink-soft); }
+  .band.active { border-color: var(--accent); background: var(--accent-soft); color: var(--ink); }
+  .band.active .rung { color: var(--accent-ink); }
+  .verdict { font-size: 1.02rem; max-width: 60ch; min-height: 3.2em; }
+  .verdict b { font-family: "Avenir Next", Avenir, "Segoe UI", sans-serif; }
+  .lab-note { font-size: 0.86rem; color: var(--ink-faint); border-top: 1px dashed var(--line); padding-top: 12px; margin-top: 6px; max-width: 62ch; }
+
+  /* ---------- invariants ---------- */
+  .inv-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 14px; }
+  .inv {
+    background: var(--panel); border: 1px solid var(--line); border-radius: 10px;
+    padding: 16px 18px; font-size: 0.94rem; color: var(--ink-soft);
+  }
+  .inv b { display: block; color: var(--ink); font-family: "Avenir Next", Avenir, "Segoe UI", sans-serif; font-size: 0.9rem; margin-bottom: 4px; }
+
+  /* ---------- reality section ---------- */
+  .reality-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+  @media (max-width: 720px) { .reality-cols { grid-template-columns: 1fr; } }
+  .reality-card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 22px 24px; box-shadow: var(--shadow); }
+  .reality-card ul { margin: 10px 0 0; padding-left: 20px; }
+  .reality-card li { margin-bottom: 9px; font-size: 0.96rem; }
+  .reality-card.built { border-top: 3px solid var(--good); }
+  .reality-card.gap { border-top: 3px solid var(--hold); }
+
+  footer { margin-top: 80px; border-top: 1px solid var(--line); padding-top: 18px; font-size: 0.85rem; color: var(--ink-faint); font-family: "Avenir Next", Avenir, "Segoe UI", sans-serif; }
+
+  @media (prefers-reduced-motion: reduce) {
+    * { transition: none !important; animation: none !important; }
+  }
+</style>
+
+<div class="wrap">
+
+<header class="hero">
+  <p class="eyebrow">Lineage Collection Platform · L01–L16</p>
+  <h1>Three engines, one trust chain</h1>
+  <p class="lede">How the platform collects element-level data lineage across thousands of repositories — and why an edge's confidence comes from <em>independent mechanisms agreeing</em>, never from any single signal.</p>
+  <p class="rule-line"><strong>The one-line rule:</strong> EventBridge routes, SQS buffers, Step&nbsp;Functions coordinates, Fargate analyzes, S3 preserves, DynamoDB controls, Neptune traverses — and a human, or an audited auto-publish policy, approves.</p>
+</header>
+
+<section aria-labelledby="map-h">
+  <p class="eyebrow">The mechanism at a glance</p>
+  <h2 id="map-h">From a git push to a trusted edge</h2>
+  <p class="section-intro">Every trigger fans out to up to three independent collection engines. Their output never goes straight to the graph — it lands as immutable evidence, merges by canonical identity, and crosses a human gate before anything becomes visible.</p>
+
+  <figure class="diagram">
+    <svg viewBox="0 0 1100 430" role="img" aria-label="Data flow: external events pass through intake and orchestration, fan out to the SCA, LLM, and runtime engines, converge as immutable evidence in the store, and merge in consolidation. SCA hands its residue to the LLM engine. The URN resolver underlies all three engines.">
+      <defs>
+        <marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <path d="M0 0 L10 5 L0 10 z" fill="currentColor"/>
+        </marker>
+        <marker id="arr-sca" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <path d="M0 0 L10 5 L0 10 z" fill="var(--sca)"/>
+        </marker>
+        <marker id="arr-llm" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <path d="M0 0 L10 5 L0 10 z" fill="var(--llm)"/>
+        </marker>
+        <marker id="arr-rt" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <path d="M0 0 L10 5 L0 10 z" fill="var(--rt)"/>
+        </marker>
+      </defs>
+
+      <g stroke="currentColor" fill="none" stroke-width="1.3">
+        <!-- external -> intake -->
+        <line x1="128" y1="195" x2="166" y2="195" marker-end="url(#arr)"/>
+        <!-- intake -> orchestration -->
+        <line x1="288" y1="195" x2="326" y2="195" marker-end="url(#arr)"/>
+        <!-- orchestration -> engines -->
+        <path d="M448 175 C 480 140, 490 90, 518 80" marker-end="url(#arr)"/>
+        <path d="M448 215 C 480 250, 490 300, 518 310" marker-end="url(#arr)"/>
+        <!-- SCA -> LLM residue (dashed accent) -->
+        <path d="M590 112 L590 158" stroke="var(--llm)" stroke-dasharray="5 4" marker-end="url(#arr-llm)"/>
+        <!-- engines -> evidence -->
+        <path d="M662 80 C 700 85, 710 140, 736 165" stroke="var(--sca)" marker-end="url(#arr-sca)"/>
+        <path d="M662 195 L 736 195" stroke="var(--llm)" marker-end="url(#arr-llm)"/>
+        <path d="M662 310 C 700 305, 710 250, 736 225" stroke="var(--rt)" marker-end="url(#arr-rt)"/>
+        <!-- evidence -> consolidation -->
+        <line x1="868" y1="195" x2="906" y2="195" marker-end="url(#arr)"/>
+        <!-- consolidation -> out -->
+        <line x1="1028" y1="195" x2="1072" y2="195" marker-end="url(#arr)"/>
+        <!-- resolver crosscut -->
+        <path d="M560 372 L560 342" stroke-dasharray="3 4"/>
+        <path d="M700 372 L770 250" stroke-dasharray="3 4"/>
+      </g>
+
+      <!-- boxes -->
+      <g stroke="currentColor" fill="var(--panel-2)" stroke-width="1.3">
+        <rect x="18" y="158" width="110" height="74" rx="8"/>
+        <rect x="168" y="158" width="120" height="74" rx="8"/>
+        <rect x="328" y="158" width="120" height="74" rx="8"/>
+        <rect x="738" y="152" width="130" height="86" rx="8"/>
+        <rect x="908" y="158" width="120" height="74" rx="8"/>
+        <rect x="440" y="374" width="330" height="40" rx="8" stroke-dasharray="4 4"/>
+      </g>
+      <g stroke-width="1.6" fill="var(--panel-2)">
+        <rect x="520" y="46" width="142" height="66" rx="8" stroke="var(--sca)"/>
+        <rect x="520" y="162" width="142" height="66" rx="8" stroke="var(--llm)"/>
+        <rect x="520" y="278" width="142" height="66" rx="8" stroke="var(--rt)"/>
+      </g>
+
+      <!-- labels -->
+      <g fill="currentColor" font-family="'Avenir Next', Avenir, 'Segoe UI', sans-serif" font-size="12.5" text-anchor="middle">
+        <text x="73" y="188" font-weight="600">Sources</text>
+        <text x="73" y="205" font-size="10.5" opacity="0.7">push · CI · tests</text>
+        <text x="73" y="219" font-size="10.5" opacity="0.7">schedules</text>
+        <text x="228" y="188" font-weight="600">Intake L02</text>
+        <text x="228" y="205" font-size="10.5" opacity="0.7">verify · dedupe</text>
+        <text x="228" y="219" font-size="10.5" opacity="0.7">3 priority lanes</text>
+        <text x="388" y="188" font-weight="600">Orchestration L03</text>
+        <text x="388" y="205" font-size="10.5" opacity="0.7">4 workflows</text>
+        <text x="388" y="219" font-size="10.5" opacity="0.7">pinned determinants</text>
+        <text x="591" y="73" font-weight="600">SCA engine L04</text>
+        <text x="591" y="90" font-size="10.5" opacity="0.7">parses code · proves</text>
+        <text x="591" y="103" font-size="10.5" opacity="0.7">file:line evidence</text>
+        <text x="591" y="189" font-weight="600">LLM gateway L05</text>
+        <text x="591" y="206" font-size="10.5" opacity="0.7">infers residue only</text>
+        <text x="591" y="219" font-size="10.5" opacity="0.7">4 guardrails</text>
+        <text x="591" y="305" font-weight="600">Runtime L06</text>
+        <text x="591" y="322" font-size="10.5" opacity="0.7">observes test runs</text>
+        <text x="591" y="335" font-size="10.5" opacity="0.7">metadata only</text>
+        <text x="803" y="184" font-weight="600">Evidence L08</text>
+        <text x="803" y="201" font-size="10.5" opacity="0.7">immutable S3</text>
+        <text x="803" y="215" font-size="10.5" opacity="0.7">checksummed</text>
+        <text x="803" y="229" font-size="10.5" opacity="0.7">write-once</text>
+        <text x="968" y="188" font-weight="600">Merge L07</text>
+        <text x="968" y="205" font-size="10.5" opacity="0.7">by URN triple</text>
+        <text x="968" y="219" font-size="10.5" opacity="0.7">agreement → band</text>
+        <text x="605" y="399" font-weight="600" font-size="11.5">URN resolver L01 — every name resolves or quarantines</text>
+      </g>
+
+      <!-- arrow labels -->
+      <g fill="currentColor" font-family="'Avenir Next', Avenir, 'Segoe UI', sans-serif" font-size="10.5" opacity="0.75">
+        <text x="470" y="120" text-anchor="middle">task spec</text>
+        <text x="468" y="282" text-anchor="middle">session grant</text>
+        <text x="601" y="140" fill="var(--llm)" opacity="1">residue only</text>
+        <text x="700" y="120" fill="var(--sca)" opacity="1">proven edges</text>
+        <text x="698" y="188" fill="var(--llm)" opacity="1">inferred</text>
+        <text x="700" y="286" fill="var(--rt)" opacity="1">observed</text>
+        <text x="1050" y="182" text-anchor="middle">to review</text>
+      </g>
+    </svg>
+    <figcaption>The collection fan: one trigger, three independent engines, one immutable evidence store. The SCA engine hands the LLM only what it could not prove — the LLM never sees work static analysis already settled.</figcaption>
+  </figure>
+  <div class="legend">
+    <span><span class="dot" style="background: var(--sca)"></span>Static analysis — proves</span>
+    <span><span class="dot" style="background: var(--llm)"></span>LLM inference — proposes</span>
+    <span><span class="dot" style="background: var(--rt)"></span>Runtime — corroborates</span>
+  </div>
+</section>
+
+<section aria-labelledby="rail-h">
+  <p class="eyebrow">Stage by stage</p>
+  <h2 id="rail-h">Walk the pipeline</h2>
+  <p class="section-intro">Select any stage to see what it does, what it emits, and the one thing it will <em>never</em> do. The status chip tells you how real that stage is today.</p>
+
+  <label class="switch" style="margin-bottom: 20px;">
+    <input type="checkbox" id="reality-toggle">
+    <span class="track" aria-hidden="true"></span>
+    Dim what isn't proven on real repositories yet
+  </label>
+
+  <div class="rail-groups">
+    <div>
+      <div class="rail-group-label">Trigger &amp; routing</div>
+      <div class="rail" role="tablist" aria-label="Pipeline stages: trigger and routing">
+        <button class="stage-btn" data-stage="intake" data-status="synth" role="tab" aria-selected="false"><span class="lid">L02</span>Event intake</button>
+        <button class="stage-btn" data-stage="classify" data-status="proven" role="tab" aria-selected="false"><span class="lid">L13</span>Classification</button>
+        <button class="stage-btn" data-stage="orch" data-status="proven" role="tab" aria-selected="false"><span class="lid">L03</span>Orchestration</button>
+      </div>
+    </div>
+    <div>
+      <div class="rail-group-label">Three collection engines</div>
+      <div class="rail" role="tablist" aria-label="Pipeline stages: engines">
+        <button class="stage-btn" data-stage="sca" data-status="proven" role="tab" aria-selected="true"><span class="lid">L04</span>Static analysis</button>
+        <button class="stage-btn" data-stage="llm" data-status="iface" role="tab" aria-selected="false"><span class="lid">L05</span>LLM inference</button>
+        <button class="stage-btn" data-stage="runtime" data-status="iface" role="tab" aria-selected="false"><span class="lid">L06</span>Runtime observation</button>
+      </div>
+    </div>
+    <div>
+      <div class="rail-group-label">Identity &amp; truth</div>
+      <div class="rail" role="tablist" aria-label="Pipeline stages: identity and truth">
+        <button class="stage-btn" data-stage="urn" data-status="proven" role="tab" aria-selected="false"><span class="lid">L01</span>URN resolution</button>
+        <button class="stage-btn" data-stage="evidence" data-status="synth" role="tab" aria-selected="false"><span class="lid">L08</span>Immutable evidence</button>
+        <button class="stage-btn" data-stage="merge" data-status="proven" role="tab" aria-selected="false"><span class="lid">L07</span>Consolidation</button>
+      </div>
+    </div>
+    <div>
+      <div class="rail-group-label">Decision &amp; publication</div>
+      <div class="rail" role="tablist" aria-label="Pipeline stages: decision and publication">
+        <button class="stage-btn" data-stage="review" data-status="proven" role="tab" aria-selected="false"><span class="lid">L09</span>Human review</button>
+        <button class="stage-btn" data-stage="publish" data-status="synth" role="tab" aria-selected="false"><span class="lid">L10</span>Fenced publication</button>
+        <button class="stage-btn" data-stage="query" data-status="synth" role="tab" aria-selected="false"><span class="lid">L11</span>Query &amp; PR gate</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="stage-detail" id="stage-detail" role="tabpanel" aria-live="polite"></div>
+</section>
+
+<section aria-labelledby="engines-h">
+  <p class="eyebrow">Why three engines</p>
+  <h2 id="engines-h">Each engine answers a different question</h2>
+  <p class="section-intro">Static analysis answers <em>what the code says</em>. The LLM answers <em>what static analysis could not parse</em>. Runtime answers <em>what actually executed</em>. They never overrule each other — they corroborate or conflict, and both outcomes are recorded.</p>
+
+  <div class="tabs" role="tablist" aria-label="Collection engines">
+    <button class="tab-btn" id="tab-sca" role="tab" aria-selected="true" aria-controls="panel-sca"><span class="dot" style="background: var(--sca)"></span>SCA — the backbone</button>
+    <button class="tab-btn" id="tab-llm" role="tab" aria-selected="false" aria-controls="panel-llm"><span class="dot" style="background: var(--llm)"></span>LLM — the gap filler</button>
+    <button class="tab-btn" id="tab-rt" role="tab" aria-selected="false" aria-controls="panel-rt"><span class="dot" style="background: var(--rt)"></span>Runtime — the witness</button>
+  </div>
+
+  <div class="tab-panel" id="panel-sca" role="tabpanel" aria-labelledby="tab-sca">
+    <p class="engine-tagline">"It never guesses." Deterministic parsing of the repository at an exact commit digest.</p>
+    <div class="stage-detail-machine machine mono" style="margin-bottom:18px;">CHECKOUT → DETECT/ROUTE → PARSE → AST-WALK → CONFIG-RESOLVE → RESOLVE(URN) → EMIT</div>
+    <div class="engine-grid">
+      <div>
+        <h3>How it collects</h3>
+        <ul>
+          <li>Shallow-clones at the digest with per-run read-only credentials; the workspace is destroyed after the run.</li>
+          <li>Deterministic parsers — sqlglot dialect matrix, dbt manifest, OpenAPI/proto — plus tree-sitter AST rule packs for Python, Java/Kotlin, JS/TS, Go.</li>
+          <li>Every edge carries <code>file:line</code> plus an AST path: no edge without proof.</li>
+          <li>Determinism is CI-enforced — same (digest, ruleset, config) must produce a byte-identical evidence file.</li>
+        </ul>
+      </div>
+      <div>
+        <h3>What it can't do, honestly</h3>
+        <ul>
+          <li>Dynamic names, reflection, and unparseable types become <b>residue</b> — each with a reason code, the file span, and nearby facts. Nothing is silently skipped.</li>
+          <li>That residue list is the contract that drives the LLM engine: it defines exactly what inference is allowed to touch.</li>
+          <li>Only its parser-exact edges qualify for auto-publish — the highest-trust class in the platform.</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <div class="tab-panel" id="panel-llm" role="tabpanel" aria-labelledby="tab-llm" hidden>
+    <p class="engine-tagline">"It proposes, never gates." Inference restricted to SCA's residue, behind a four-stage guardrail chain.</p>
+    <div class="machine mono" style="margin-bottom:18px;">TIER → CHUNK ≤8k → CONTEXT → CACHE → CALL → GUARDRAILS → EMIT | REJECT</div>
+    <div class="engine-grid">
+      <div>
+        <h3>How it collects</h3>
+        <ul>
+          <li>Three tiers: residue on cache miss, registered no-grammar files on baseline/nightly runs, and nightly verification samples for calibration. PR-path requests are rejected by design.</li>
+          <li>Chunks along AST boundaries (span + enclosing function + imports + config keys, ≤ 8k tokens) — never whole-repo prompting.</li>
+          <li>SCA's own facts and known URNs are injected as context, and the prompt records which facts were provided.</li>
+          <li>Cache keyed on (chunk digest, prompt version, model id): unchanged code is never re-billed. Hit rate ≥ 90% is a launch gate.</li>
+        </ul>
+      </div>
+      <div>
+        <h3>How it's kept honest</h3>
+        <ul>
+          <li>Guardrails in strict order: schema validates → the citation exists in the digest → the URN resolves → budget holds. First failure persists a typed reject.</li>
+          <li>Zero unvalidated edges reach the merge; free text is forbidden.</li>
+          <li>"I can't resolve this" is a first-class answer that feeds the runtime watch list — not an error.</li>
+          <li>LLM-only edges are capped at the lowest confidence band and can never gate a PR or auto-publish.</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <div class="tab-panel" id="panel-rt" role="tabpanel" aria-labelledby="tab-rt" hidden>
+    <p class="engine-tagline">"It proves execution, not intent." Observation of instrumented integration-test runs — names and shapes, never values.</p>
+    <div class="machine mono" style="margin-bottom:18px;">GRANT → READY → OBSERVING → DRAIN → CLOSED (COMPLETE | INCOMPLETE)</div>
+    <div class="engine-grid">
+      <div>
+        <h3>How it collects</h3>
+        <ul>
+          <li>No session, no ingestion: grants are signed, scoped to (repo, environment), and expire with the test budget.</li>
+          <li>Four emitters: OpenTelemetry auto-instrumentation, a custom <code>lineage.emit()</code> SDK, a Spark OpenLineage listener, and a Dask plugin. Only the SDK and Spark may assert element-level lists.</li>
+          <li>Records dataset names, operations, counts, and schema fingerprints — deterministic hashes of field names and types, never data values.</li>
+        </ul>
+      </div>
+      <div>
+        <h3>The hard boundary</h3>
+        <ul>
+          <li>Production is denied twice — once at IAM, again in the validator — and a weekly live probe must <em>fail</em> to inject.</li>
+          <li>Only sessions that close COMPLETE corroborate at full weight; an incomplete session never promotes confidence.</li>
+          <li>Absence of runtime evidence never demotes an edge — not seeing something is not evidence it's gone.</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section aria-labelledby="lab-h">
+  <p class="eyebrow">Interactive — try it</p>
+  <h2 id="lab-h">The confidence lab</h2>
+  <p class="section-intro">Confidence is not a score anyone assigns — it is <em>derived</em> from which independent mechanisms assert the same edge. Toggle the engines and watch the band the merge would compute.</p>
+
+  <div class="lab">
+    <div class="lab-toggles" role="group" aria-label="Which engines assert this edge">
+      <label class="mech" data-mech="sca" data-on="false" style="--engine: var(--sca); --engine-soft: var(--sca-soft);">
+        <input type="checkbox" id="m-sca">
+        <span>Static analysis<small>parser-proven, file:line evidence</small></span>
+      </label>
+      <label class="mech" data-mech="llm" data-on="false" style="--engine: var(--llm); --engine-soft: var(--llm-soft);">
+        <input type="checkbox" id="m-llm">
+        <span>LLM inference<small>guardrail-validated proposal</small></span>
+      </label>
+      <label class="mech" data-mech="rt" data-on="false" style="--engine: var(--rt); --engine-soft: var(--rt-soft);">
+        <input type="checkbox" id="m-rt">
+        <span>Runtime observation<small>seen in a completed test session</small></span>
+      </label>
+    </div>
+    <div>
+      <div class="ladder" aria-hidden="true">
+        <div class="band" data-band="LOWEST"><span class="rung">LOWEST</span>LLM alone — a plausible guess, clearly labeled as one</div>
+        <div class="band" data-band="SINGLE"><span class="rung">SINGLE</span>one non-LLM mechanism</div>
+        <div class="band" data-band="MEDIUM"><span class="rung">MEDIUM</span>a mechanism + LLM agreement</div>
+        <div class="band" data-band="HIGH"><span class="rung">HIGH</span>code says it and execution confirms it</div>
+        <div class="band" data-band="HIGHEST"><span class="rung">HIGHEST</span>all three mechanisms agree</div>
+      </div>
+      <p class="verdict" id="verdict" aria-live="polite"></p>
+      <p class="lab-note">Two rules keep this honest: conflicts are kept verbatim and sent to review — never averaged into a middle band. And dataset-level runtime containment is tracked as separate <em>corroboration</em>; it never changes the band itself.</p>
+    </div>
+  </div>
+</section>
+
+<section aria-labelledby="inv-h">
+  <p class="eyebrow">The guarantees</p>
+  <h2 id="inv-h">Invariants the whole chain leans on</h2>
+  <p class="section-intro">Each of these is enforced by a specific component, not by convention — and most are backed by a CI gate, a replay drill, or a live probe.</p>
+  <div class="inv-grid">
+    <div class="inv"><b>Nothing vanishes silently</b>Every trigger becomes a run, a dedupe, or a quarantine record with a reason.</div>
+    <div class="inv"><b>A guessed identity is a defect</b>Every name resolves against a pinned catalog snapshot or is quarantined with candidates. Zero matches or two equal matches both stop the line.</div>
+    <div class="inv"><b>Evidence is write-once</b>S3 objects are checksummed and immutable; the graph and every projection can be rebuilt from evidence alone, and a rebuild drill must show zero divergence.</div>
+    <div class="inv"><b>The band is re-derivable</b>Every confidence band can be recomputed from the provenance on the edge — there is no hidden judgment.</div>
+    <div class="inv"><b>Absence never demotes</b>An edge only decays after three consecutive silent analyses by the mechanism that asserted it — and it goes stale, never deleted.</div>
+    <div class="inv"><b>Publication is fenced</b>The visible graph pointer advances only under a monotonic fencing token; a stale writer can never win, and rollback is a pointer move, never a rewrite.</div>
+  </div>
+</section>
+
+<section aria-labelledby="real-h">
+  <p class="eyebrow">Design vs. today</p>
+  <h2 id="real-h">What's actually proven right now</h2>
+  <p class="section-intro">The mechanism above is fully specified and mostly implemented — but on a real repository today, collection is effectively <strong>one-signal</strong>: the static engine. That is a recorded, deliberate state, not an accident.</p>
+  <div class="reality-cols">
+    <div class="reality-card built">
+      <h3>Proven locally</h3>
+      <ul>
+        <li>Static engine with element-level Java/Spring&nbsp;Data&nbsp;JPA + Python coverage, validated on pinned real checkouts of Spring Petclinic — 15 edges on the official repo, 9/9 prototype-alignment on the 8-module microservices repo.</li>
+        <li>URN resolution, orchestration, classification, consolidation bands, and the review lifecycle all pass local acceptance; drift against the prototype expectation breaks the build.</li>
+        <li>Intake, evidence stores, fenced publication, and the PR gate pass on synthetic events, with live AWS behavior still to be exercised.</li>
+      </ul>
+    </div>
+    <div class="reality-card gap">
+      <h3>Designed, not yet real</h3>
+      <ul>
+        <li>The LLM gateway is interface-only — its skip and no-fabrication contracts pass, but no real model is ever called.</li>
+        <li>Runtime observation exists as local contracts; no collectors are installed, and running it isn't yet exposed on the CLI or collections API.</li>
+        <li>Consequence: no real edge can currently reach the high-agreement bands — the ones declared safe for automated impact gating. Closing that starts with putting runtime verification on the product path.</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<footer>
+  Distilled from the platform's second brain: component PRDs L01–L16, the architecture diagram, the implementation coverage matrix, and the collection gap assessment · 2026-08-14
+</footer>
+
+</div>
+
+<script>
+  const STAGES = {
+    intake: {
+      title: "Event intake", id: "L02", status: "synth",
+      body: "The signed front door. GitHub pushes, Jenkins deploys, test runs, and schedules arrive with per-producer signature verification, are deduplicated by event id (14-day memory), normalized into a canonical envelope, and routed onto one of three priority lanes — interactive (PR updates, never starved), events, and bulk. A 10,000-event burst must be absorbed with zero loss.",
+      machine: "RECEIVED → AUTHENTICATED → DEDUPED → NORMALIZED → ROUTED  (any failure → QUARANTINED with reason)",
+      never: "Never drops an event silently — every trigger ends as a run, a duplicate, or a quarantine record.",
+      out: "Emits an EventEnvelope plus a queue decision."
+    },
+    classify: {
+      title: "Repository classification", id: "L13", status: "proven",
+      body: "Before any expensive analysis, the repository (or monorepo path) is classified into one of nine classes via a strict seven-level evidence precedence — deciding its baseline and on-change treatment. Conflicting evidence resolves to UNKNOWN, which blocks analysis rather than guessing.",
+      machine: "evidence levels 1…7 → class ∈ 9-class taxonomy → ClassificationDecision",
+      never: "Never lets an unclassifiable repo slip through as a guess — UNKNOWN is loud, and it blocks.",
+      out: "Emits a ClassificationDecision that informs orchestration."
+    },
+    orch: {
+      title: "Orchestration", id: "L03", status: "proven",
+      body: "Four workflows — Incremental, Baseline, PR-gate (parsers and cache only, no LLM), and Nightly — coordinate every run. Each run is pinned to exact determinants: config, ruleset, resolver version, catalog snapshot, prompt version. Every stage transition is written to a run ledger, and failed runs redrive from the failed stage, idempotently.",
+      machine: "QUEUED → RUNNING(stage…) → MERGED → PROPOSED → PUBLISHED | NO_IMPACT | FAILED  (redrivable)",
+      never: "Never runs with floating dependencies — change a determinant and it's a different, comparable run. There is no manual \"run now\".",
+      out: "Emits CollectionRun stage history with a shared correlation id on every artifact."
+    },
+    sca: {
+      title: "Static analysis engine", id: "L04", status: "proven",
+      body: "The deterministic backbone. It clones the repo at an exact digest, routes language-appropriate parsers (sqlglot, dbt manifest, OpenAPI) and tree-sitter AST rule packs, resolves dynamic names from config, and emits edges that each carry file:line plus an AST path. Whatever it cannot prove becomes an explicit residue entry — with a reason code and the surrounding facts — which is the only work the LLM engine is allowed to touch.",
+      machine: "CHECKOUT → DETECT/ROUTE → PARSE → AST-WALK → CONFIG-RESOLVE → RESOLVE(URN) → EMIT",
+      never: "Never guesses and never runs user code. Same digest + ruleset + config must yield a byte-identical evidence file — any replay diff blocks the release.",
+      out: "Emits a ScaEvidenceFile: proven edges, residue, datasets seen, stats. Proven today on real Spring Petclinic checkouts."
+    },
+    llm: {
+      title: "LLM inference gateway", id: "L05", status: "iface",
+      body: "Fills static analysis' coverage gaps and nothing more. Residue spans are chunked along AST boundaries (≤ 8k tokens), enriched with SCA's own facts as context, checked against a cache so unchanged code is never re-billed, and every model response passes a four-stage guardrail chain: schema → citation exists in the code → URN resolves → budget. A response either passes whole or lands as a typed, logged reject.",
+      machine: "TIER → CHUNK → CONTEXT → CACHE → CALL → GUARDRAILS → EMIT | REJECT",
+      never: "Never gates a PR, never auto-publishes, never reaches the top confidence band alone — it proposes, humans and corroboration decide.",
+      out: "Emits guardrail-validated inferred edges, or first-class \"unresolvable\" answers that feed the runtime watch list. Today: interface-only — no real model is called yet."
+    },
+    runtime: {
+      title: "Runtime observation plane", id: "L06", status: "iface",
+      body: "Watches instrumented integration-test runs and records what actually executed: dataset names, operations, counts, and schema fingerprints — never data values. Sessions are granted per (repo, environment) with signed, expiring tokens; observations stream ordered per dataset into the evidence store. Its whole job is corroboration: independently confirming what the other engines asserted.",
+      machine: "GRANT → READY → OBSERVING → DRAIN → CLOSED(COMPLETE | INCOMPLETE)",
+      never: "Never touches production — denied at IAM and again in the validator, and a weekly probe must fail to inject. Never records values, only names and shapes.",
+      out: "Emits per-session observation files. Today: local contracts pass, but no collectors are installed on the product path."
+    },
+    urn: {
+      title: "URN resolution", id: "L01", status: "proven",
+      body: "The identity system every engine shares. Each raw name — a table in SQL, a JPA entity, an observed dataset — resolves at intake against a pinned, content-addressed snapshot of the enterprise catalog into a canonical URN. Resolution is deterministic across languages, and a run sees exactly one snapshot, so every engine means the same thing by the same name.",
+      machine: "urn:ldp:{env}:{platform}:{system}:{dataset}#{element}",
+      never: "Never guesses: zero matches quarantines as UNKNOWN with a gap report; two equal matches quarantine as AMBIGUOUS with all candidates. A URN not in the snapshot is a defect by definition.",
+      out: "Emits resolved URNs or quarantine records; the launch gate demands ≥ 80% of runtime names join to static URNs."
+    },
+    evidence: {
+      title: "Immutable evidence store", id: "L08", status: "synth",
+      body: "The platform's source of truth. Every engine output is serialized deterministically, checksummed, and written once to object storage under a content-addressed key — evidence, manifests, LLM rejects, quarantines all included. Graph databases and search indexes are treated as disposable projections: the standing drill is rebuilding them from this store alone, with zero divergence.",
+      machine: "evidence/sca/{repo}/{digest}/{ruleset}.json · evidence/runtime/{session}/{urn}/ · manifests/{env}/{version}.json",
+      never: "Never updates in place — a re-write is accepted only if the checksum is identical. Approvals and manifests are append-only history.",
+      out: "Emits EvidenceRefs (bucket, key, checksum, kind, schema version) that everything downstream cites."
+    },
+    merge: {
+      title: "Consolidation & confidence", id: "L07", status: "proven",
+      body: "The seam where three engines become one graph. Assertions merge idempotently into an edge ledger keyed on the URN triple (from, to, type); provenance is append-only, and the confidence band is derived purely from how many distinct mechanisms agree. Contradictions are never averaged — a real conflict goes to the review queue verbatim. Edges asserted and then unseen decay to stale only after three silent cycles.",
+      machine: "PROPOSED → PUBLISHED → STALE → TOMBSTONED  (+ CONFLICTING from any state)",
+      never: "Never destroys information and never writes the visible graph directly — its output is always a proposal.",
+      out: "Emits ConsolidatedEdges with bands, and stamps parser-exact SCA edges as the auto-publish class."
+    },
+    review: {
+      title: "Proposal & human review", id: "L09", status: "proven",
+      body: "The human gate. Reviewers see each proposal as a diff against the active graph version and approve, reject, or create a corrected successor — transitions are server-enforced and audited. The single exception to human approval: parser-exact SCA edges may auto-publish under a sampled-audit policy, where disagreement above 2% halts the policy itself.",
+      machine: "proposal diff → APPROVE | REJECT | CORRECTED SUCCESSOR  (server-enforced, audited)",
+      never: "Never lets LLM-only or conflicted edges auto-publish — material change requires an explicit, recorded human decision.",
+      out: "Emits approved manifests for publication and correction records that flow back into the calibration corpus."
+    },
+    publish: {
+      title: "Fenced publication", id: "L10", status: "synth",
+      body: "The single writer of the visible graph. An approved manifest is staged into an inactive namespace, verified by checksum, and made live by one atomic conditional pointer swap guarded by a monotonic fencing token — a stale or duplicate writer can never advance the pointer. Rolling back is simply pointing at the prior version.",
+      machine: "MANIFEST → RESERVE + FENCE → STAGE → VERIFY → SWAP | DISCARDED",
+      never: "Never rewrites a published version — every publication is a new namespace, every rollback a pointer event.",
+      out: "Emits AcceptedManifests and versioned graph namespaces the query layer reads through the active pointer."
+    },
+    query: {
+      title: "Query, impact & PR gate", id: "L11", status: "synth",
+      body: "The only surface anyone sees. Lineage and impact queries resolve through the active pointer — version-pinned, bounded traversal — and the PR gate renders BLOCK / WARN / INFO verdicts. Every answer carries its confidence band and provenance, so the UI never implies more certainty than the evidence supports.",
+      machine: "active pointer → traversal depth ≤ 5 → verdicts BLOCK | WARN | INFO",
+      never: "Never serves unapproved lineage and never writes anything — it is read-only over published versions.",
+      out: "Serves approved, versioned lineage: the blast radius a reviewer sees before merging a schema change."
+    }
+  };
+
+  const STATUS_LABELS = {
+    proven: ["chip proven", "Proven locally"],
+    synth: ["chip synth", "Built · live AWS pending"],
+    iface: ["chip iface", "Designed · not yet real"]
+  };
+
+  const detail = document.getElementById("stage-detail");
+  const stageButtons = Array.from(document.querySelectorAll(".stage-btn"));
+
+  function renderStage(key) {
+    const s = STAGES[key];
+    const [chipClass, chipLabel] = STATUS_LABELS[s.status];
+    detail.innerHTML =
+      '<div class="head"><h3>' + s.title + '</h3>' +
+      '<span class="sub mono">' + s.id + '</span>' +
+      '<span class="' + chipClass + '">' + chipLabel + '</span></div>' +
+      '<p>' + s.body + '</p>' +
+      '<div class="machine">' + s.machine + '</div>' +
+      '<div class="never"><b>Never</b>' + s.never + '</div>' +
+      '<p style="color: var(--ink-soft); font-size: 0.95rem; margin-top: 12px;">' + s.out + '</p>';
+    stageButtons.forEach(b => b.setAttribute("aria-selected", String(b.dataset.stage === key)));
+  }
+  stageButtons.forEach(b => b.addEventListener("click", () => renderStage(b.dataset.stage)));
+  renderStage("sca");
+
+  document.getElementById("reality-toggle").addEventListener("change", e => {
+    document.body.classList.toggle("reality", e.target.checked);
+  });
+
+  /* engine tabs */
+  const tabs = [["tab-sca", "panel-sca"], ["tab-llm", "panel-llm"], ["tab-rt", "panel-rt"]];
+  tabs.forEach(([tabId, panelId]) => {
+    document.getElementById(tabId).addEventListener("click", () => {
+      tabs.forEach(([t, p]) => {
+        document.getElementById(t).setAttribute("aria-selected", String(t === tabId));
+        document.getElementById(p).hidden = (p !== panelId);
+      });
+    });
+  });
+
+  /* confidence lab */
+  const mSca = document.getElementById("m-sca");
+  const mLlm = document.getElementById("m-llm");
+  const mRt = document.getElementById("m-rt");
+  const verdict = document.getElementById("verdict");
+  const bands = Array.from(document.querySelectorAll(".band"));
+
+  function computeBand(sca, llm, rt) {
+    const mech = (sca ? 1 : 0) + (rt ? 1 : 0);
+    if (!sca && !llm && !rt) return [null, "No engine asserts this edge — so it doesn't exist. The platform records assertions, never assumptions."];
+    if (sca && rt && llm) return ["HIGHEST", "<b>HIGHEST.</b> The code says it, execution confirms it, and inference agrees. All three independent mechanisms — this is the band the platform trusts most."];
+    if (sca && rt) return ["HIGH", "<b>HIGH.</b> Static analysis proved the edge and a completed test run observed it happening. Two independent non-LLM mechanisms in agreement."];
+    if (mech === 1 && llm) return ["MEDIUM", "<b>MEDIUM.</b> One hard mechanism plus LLM agreement. The inference corroborates, but it can never substitute for a second hard signal."];
+    if (mech === 1) return ["SINGLE", "<b>SINGLE.</b> One trustworthy mechanism asserts it — solid, but uncorroborated. This is where most real edges sit today."];
+    return ["LOWEST", "<b>LOWEST.</b> Only the LLM proposes this edge. It's kept, clearly labeled — but it can never gate a PR, never auto-publish, and never rise without corroboration."];
+  }
+
+  function updateLab() {
+    [mSca, mLlm, mRt].forEach(cb => cb.closest(".mech").dataset.on = String(cb.checked));
+    const [band, text] = computeBand(mSca.checked, mLlm.checked, mRt.checked);
+    bands.forEach(b => b.classList.toggle("active", b.dataset.band === band));
+    verdict.innerHTML = text;
+  }
+  [mSca, mLlm, mRt].forEach(cb => cb.addEventListener("change", updateLab));
+  mSca.checked = true;
+  updateLab();
+</script>

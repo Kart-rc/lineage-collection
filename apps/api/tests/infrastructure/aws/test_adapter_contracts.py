@@ -404,6 +404,26 @@ def test_dynamodb_accepts_only_an_exact_nightly_transaction_replay() -> None:
     assert adapter.complete_nightly(report, None) == report
 
 
+def test_dynamodb_active_pointer_surfaces_the_activation_watermark() -> None:
+    client = FakeClient(
+        get_item=[
+            {
+                "Item": {
+                    "graphVersion": {"S": "graph-v2"},
+                    "fence": {"N": "8"},
+                    "correlationId": {"S": "corr-publish"},
+                    "activatedAt": {"S": "2026-08-08T13:00:00Z"},
+                }
+            }
+        ]
+    )
+    adapter = DynamoDbControlAdapter(client, "control", "ledger", "pointer")
+
+    pointer = adapter.active_pointer("staging")
+
+    assert pointer["activatedAt"] == "2026-08-08T13:00:00Z"
+
+
 def test_dynamodb_reads_and_atomically_activates_pointer_with_outbox() -> None:
     package_reference = {
         "bucket": "packages",

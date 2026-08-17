@@ -35,19 +35,42 @@ _SUPPORTED_COORDINATES = {
 _ENTITY_FQN = "jakarta.persistence.Entity"
 _TABLE_FQN = "jakarta.persistence.Table"
 _COLUMN_FQN = "jakarta.persistence.Column"
+_JOIN_COLUMN_FQN = "jakarta.persistence.JoinColumn"
+_MANY_TO_ONE_FQN = "jakarta.persistence.ManyToOne"
+_ONE_TO_ONE_FQN = "jakarta.persistence.OneToOne"
+_ONE_TO_MANY_FQN = "jakarta.persistence.OneToMany"
+_MANY_TO_MANY_FQN = "jakarta.persistence.ManyToMany"
+_ASSOCIATION_FQNS = frozenset(
+    {_MANY_TO_ONE_FQN, _ONE_TO_ONE_FQN, _ONE_TO_MANY_FQN, _MANY_TO_MANY_FQN}
+)
 _JPA_REPOSITORY_FQN = "org.springframework.data.jpa.repository.JpaRepository"
 _REPOSITORY_FQN = "org.springframework.data.repository.Repository"
 _QUERY_FQN = "org.springframework.data.jpa.repository.Query"
 _AUTOWIRED_FQN = "org.springframework.beans.factory.annotation.Autowired"
+_JAKARTA_INJECT_FQN = "jakarta.inject.Inject"
+_JAVAX_INJECT_FQN = "javax.inject.Inject"
+_FIELD_INJECTION_FQNS = frozenset(
+    {_AUTOWIRED_FQN, _JAKARTA_INJECT_FQN, _JAVAX_INJECT_FQN}
+)
+# @Table attributes that never feed a resolved fact (nested annotations, arrays of
+# constraints) so a dynamic expression there must not block the literal `name`.
+_TABLE_IGNORED_ATTRIBUTE_KEYS = frozenset({"uniqueConstraints", "indexes"})
 _APPROVED_FRAMEWORK_SYMBOLS = frozenset(
     {
         _ENTITY_FQN,
         _TABLE_FQN,
         _COLUMN_FQN,
+        _JOIN_COLUMN_FQN,
+        _MANY_TO_ONE_FQN,
+        _ONE_TO_ONE_FQN,
+        _ONE_TO_MANY_FQN,
+        _MANY_TO_MANY_FQN,
         _JPA_REPOSITORY_FQN,
         _REPOSITORY_FQN,
         _QUERY_FQN,
         _AUTOWIRED_FQN,
+        _JAKARTA_INJECT_FQN,
+        _JAVAX_INJECT_FQN,
         "org.springframework.stereotype.Controller",
         "org.springframework.stereotype.Repository",
         "org.springframework.stereotype.Service",
@@ -100,6 +123,8 @@ _JPA_INHERITED_ARITIES = {
     "saveAllAndFlush": frozenset({1}),
     "saveAndFlush": frozenset({1}),
 }
+_JPQL_FETCH_JOIN = re.compile(r"(?i)\b(join)\s+fetch\b")
+_JPQL_CONSTRUCTOR = re.compile(r"(?i)\bnew\s+[A-Za-z_$][\w$.]*\s*\(")
 _DYNAMIC_BUILD_TOKEN = re.compile(r"(?:\$\{|\$[A-Za-z_]|\+)")
 _SEMANTIC_VERSION = re.compile(r"([0-9]+)\.([0-9]+)\.([0-9]+)")
 _EVIDENCE_JAVA_IDENTIFIER = re.compile(r"[A-Za-z_$][A-Za-z0-9_$]{0,127}")
@@ -142,6 +167,7 @@ _RESIDUE_CODES = frozenset(
         "missing-jpa-dependency",
         "missing-jpa-version",
         "missing-sql-dialect",
+        "ignored-repository-operation",
         "ignored-schema-statement",
         "shadowed-framework-symbol",
         "shadowed-repository-receiver",
@@ -158,6 +184,19 @@ _RESIDUE_CODES = frozenset(
         "unsupported-jpa-version",
         "unsupported-sql",
         "wildcard-framework-symbol",
+        # Migration-replay vocabulary: `_ingest_migrations` forwards residue produced
+        # by `schema_migrations` verbatim, so that closed set is part of this one.
+        "ambiguous-migration-version",
+        "ignored-changelog-change",
+        "malformed-changelog",
+        "malformed-migration-sql",
+        "missing-changelog-include",
+        "repeatable-migration-excluded",
+        "unknown-migration-table",
+        "unmodelled-changelog-change",
+        "unmodelled-migration-statement",
+        "unrecognised-migration-name",
+        "unsupported-changelog-format",
     }
 )
 
@@ -532,6 +571,12 @@ class _Operation:
     # declared over — Petclinic's PetRepository reads PetType. The edge then belongs to
     # that entity's table, which is more precise than refusing it as a conflict.
     entity_override: str | None = None
+    # When a default method resolved through its delegate, element grounding must
+    # look up the delegate's `spring.query-element` facts, not the wrapper's name.
+    element_method: str | None = None
+    # A JPQL join over independent entities reads each of them: every named
+    # entity here yields its own READS edge alongside the root entity's.
+    joined_entities: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -569,7 +614,13 @@ class _QualifiedTableIdentity:
 class JavaSpringEvidenceCompiler:
     """Compiles only complete Spring Data call-site proof chains into static edges."""
 
-    _NONBLOCKING_ANALYSIS_RESIDUE = frozenset({"ignored-schema-statement"})
+    _NONBLOCKING_ANALYSIS_RESIDUE = frozenset(
+        {
+            "ignored-schema-statement",
+            "ignored-changelog-change",
+            "ignored-repository-operation",
+        }
+    )
 
     def compile(
         self,
@@ -745,7 +796,6 @@ class JavaSpringEvidenceCompiler:
                 context.schema_profile,
             )
             if operation is None:
-                unresolved += 1
                 code = operation_error or "unsupported-operation"
                 residue.append(
                     JavaSpringCompilationResidue(
@@ -759,24 +809,31 @@ class JavaSpringEvidenceCompiler:
                         ),
                     )
                 )
+                if code in self._NONBLOCKING_ANALYSIS_RESIDUE:
+                    # Fully understood non-lineage operations (e.g. flush) are
+                    # evidence, not unresolved calls, and never gate completion.
+                    continue
+                unresolved += 1
                 status_reasons.add(code)
                 continue
 
-            if operation.entity_override is not None:
-                override = next(
+            def _entity_target(
+                entity_name: str,
+            ) -> tuple[SyntaxFact, SyntaxFact, str] | None:
+                named = next(
                     (
                         candidate
                         for _subject, candidate in entities.values
-                        if candidate.attribute("entityName") == operation.entity_override
+                        if candidate.attribute("entityName") == entity_name
                     ),
                     None,
                 )
-                override_identity = (
-                    _mapping_table_identity(override, context.schema_profile)
-                    if override is not None
+                named_identity = (
+                    _mapping_table_identity(named, context.schema_profile)
+                    if named is not None
                     else None
                 )
-                override_tables = (
+                named_tables = (
                     tuple(
                         item
                         for item in tables
@@ -787,14 +844,20 @@ class JavaSpringEvidenceCompiler:
                                 )
                             )
                             is not None
-                            and override_identity is not None
-                            and override_identity.matches(candidate)
+                            and named_identity is not None
+                            and named_identity.matches(candidate)
                         )
                     )
-                    if override_identity is not None
+                    if named_identity is not None
                     else ()
                 )
-                if len(override_tables) != 1:
+                if named is None or named_identity is None or len(named_tables) != 1:
+                    return None
+                return named, named_tables[0], named_identity.rendered
+
+            if operation.entity_override is not None:
+                resolved_override = _entity_target(operation.entity_override)
+                if resolved_override is None:
                     unresolved += 1
                     residue.append(
                         JavaSpringCompilationResidue(
@@ -805,86 +868,107 @@ class JavaSpringEvidenceCompiler:
                     )
                     status_reasons.add("query-entity-conflict")
                     continue
-                entity = override
-                table = override_tables[0]
-                table_identity = override_identity
-                table_name = override_identity.rendered
+                entity, table, table_name = resolved_override
+
+            targets = [(entity, table, table_name)]
+            joined_conflict = False
+            for joined_name in operation.joined_entities:
+                resolved_joined = _entity_target(joined_name)
+                if resolved_joined is None:
+                    joined_conflict = True
+                    break
+                targets.append(resolved_joined)
+            if joined_conflict:
+                unresolved += 1
+                residue.append(
+                    JavaSpringCompilationResidue(
+                        "query-entity-conflict",
+                        invocation.location,
+                        (invocation.identifier, repository.identifier),
+                    )
+                )
+                status_reasons.add("query-entity-conflict")
+                continue
 
             service_urn = f"service://{context.repository}/{owner_and_method}"
-            dataset_urn = str(
-                LineageUrn(
-                    context.environment,
-                    context.platform,
-                    context.system,
-                    table_name,
-                )
-            )
             repository_simple = repository.subject.rsplit(".", 1)[-1]
-            transform = f"{repository_simple}.{called} -> {table_name}{operation.label}"
-            from_urn, to_urn = (
-                (dataset_urn, service_urn)
-                if operation.edge_type == "READS"
-                else (service_urn, dataset_urn)
-            )
-            candidates.append(
-                _CompiledCandidate(
-                    from_urn,
-                    to_urn,
-                    operation.edge_type,
-                    transform,
-                    service_urn,
-                    dataset_urn,
-                    operation.rationale,
-                    invocation,
-                    repository,
-                    entity,
-                    table,
-                    operation.query,
-                )
-            )
-
-            # Additionally element-scope the dataset side for every provable column a
-            # `spring.query-element` fact ties to this exact invoked (repository, method)
-            # -- but only when that fact's own table agrees with the table this candidate
-            # already resolved to. A fact for a different table (a cross-entity JPQL
-            # projection, resolved against the repository's own declared entity rather
-            # than the entity the query actually targets) must never element-scope a
-            # candidate it does not describe; that stays an honest wall.
-            for element_table, column in elements_by_method.get(
-                (repository.subject, called), ()
-            ):
-                if element_table != table_name:
-                    continue
-                element_dataset_urn = str(
+            for target_entity, target_table, target_table_name in targets:
+                dataset_urn = str(
                     LineageUrn(
                         context.environment,
                         context.platform,
                         context.system,
-                        table_name,
-                    ).with_element(column)
+                        target_table_name,
+                    )
                 )
-                element_transform = f"{transform}#{column}"
-                element_from_urn, element_to_urn = (
-                    (element_dataset_urn, service_urn)
+                transform = (
+                    f"{repository_simple}.{called} -> {target_table_name}"
+                    f"{operation.label}"
+                )
+                from_urn, to_urn = (
+                    (dataset_urn, service_urn)
                     if operation.edge_type == "READS"
-                    else (service_urn, element_dataset_urn)
+                    else (service_urn, dataset_urn)
                 )
                 candidates.append(
                     _CompiledCandidate(
-                        element_from_urn,
-                        element_to_urn,
+                        from_urn,
+                        to_urn,
                         operation.edge_type,
-                        element_transform,
+                        transform,
                         service_urn,
-                        element_dataset_urn,
+                        dataset_urn,
                         operation.rationale,
                         invocation,
                         repository,
-                        entity,
-                        table,
+                        target_entity,
+                        target_table,
                         operation.query,
                     )
                 )
+
+                # Additionally element-scope the dataset side for every provable
+                # column a `spring.query-element` fact ties to this exact invoked
+                # (repository, method) -- but only when that fact's own table agrees
+                # with the table this candidate already resolved to. A fact for a
+                # different table (a cross-entity JPQL projection or an independent
+                # join's other side) must never element-scope a candidate it does
+                # not describe; that stays an honest wall.
+                for element_table, column in elements_by_method.get(
+                    (repository.subject, operation.element_method or called), ()
+                ):
+                    if element_table != target_table_name:
+                        continue
+                    element_dataset_urn = str(
+                        LineageUrn(
+                            context.environment,
+                            context.platform,
+                            context.system,
+                            target_table_name,
+                        ).with_element(column)
+                    )
+                    element_transform = f"{transform}#{column}"
+                    element_from_urn, element_to_urn = (
+                        (element_dataset_urn, service_urn)
+                        if operation.edge_type == "READS"
+                        else (service_urn, element_dataset_urn)
+                    )
+                    candidates.append(
+                        _CompiledCandidate(
+                            element_from_urn,
+                            element_to_urn,
+                            operation.edge_type,
+                            element_transform,
+                            service_urn,
+                            element_dataset_urn,
+                            operation.rationale,
+                            invocation,
+                            repository,
+                            target_entity,
+                            target_table,
+                            operation.query,
+                        )
+                    )
 
         edges = _collapse_java_spring_candidates(
             candidates, context, analysis.framework.evidence
@@ -1135,6 +1219,56 @@ def _resolve_operation(
         return None, "ambiguous-operation-overload"
     method = matching_methods[0] if matching_methods else None
     if method is not None and _optional_attribute(method, "declarationMode") != "abstract-interface":
+        # A `default` interface method whose body is exactly `return this.x(...);`
+        # (the jhipster-generated wrapper pattern) resolves through its delegate,
+        # provided the delegate is a single unambiguous abstract declaration.
+        if _optional_attribute(method, "declarationMode") == "default":
+            delegation_candidates = (
+                (
+                    _optional_attribute(method, "delegatesTo"),
+                    _optional_attribute(method, "delegateArity"),
+                ),
+                (
+                    _optional_attribute(method, "delegatesToInner"),
+                    _optional_attribute(method, "delegateInnerArity"),
+                ),
+            )
+            for delegate_name, delegate_arity in delegation_candidates:
+                if not isinstance(delegate_name, str) or not isinstance(
+                    delegate_arity, str
+                ):
+                    continue
+                delegates = tuple(
+                    candidate
+                    for candidate_facts in methods.values()
+                    for candidate in candidate_facts
+                    if candidate.subject.startswith(
+                        f"{repository.subject}#{delegate_name}("
+                    )
+                    and _optional_attribute(candidate, "name") == delegate_name
+                    and _optional_attribute(candidate, "arity") == delegate_arity
+                    and _optional_attribute(candidate, "declarationMode")
+                    == "abstract-interface"
+                )
+                if len(delegates) == 1:
+                    delegated, delegated_error = _resolve_operation(
+                        repository,
+                        entity,
+                        table,
+                        delegate_name,
+                        int(delegate_arity),
+                        table_identity,
+                        queries,
+                        query_annotations,
+                        methods,
+                        schema_profile,
+                    )
+                    if delegated is not None:
+                        return (
+                            replace(delegated, element_method=delegate_name),
+                            delegated_error,
+                        )
+                    return delegated, delegated_error
         return None, "unsupported-operation"
     inherited = (
         repository.attribute("baseFqn") == _JPA_REPOSITORY_FQN
@@ -1157,7 +1291,9 @@ def _resolve_operation(
         if len(query_facts) != 1:
             return None, "ambiguous-query"
         query = query_facts[0]
-        operation, target, language = _parse_explicit_query(query, schema_profile)
+        operation, target, language, joined_entities = _parse_explicit_query(
+            query, schema_profile
+        )
         if operation is None or target is None or language is None:
             return None, "unsupported-query"
         target_matches = (
@@ -1182,11 +1318,23 @@ def _resolve_operation(
                 f"explicit @Query parsed as {language} {operation}",
                 query,
                 override,
+                joined_entities=tuple(
+                    name
+                    for name in joined_entities
+                    if name != (override or entity.attribute("entityName"))
+                ),
             ),
             None,
         )
 
     if method is None and not inherited:
+        if (
+            called == "flush"
+            and invocation_arity == 0
+            and repository.attribute("baseFqn") == _JPA_REPOSITORY_FQN
+        ):
+            # JpaRepository#flush moves no table data — it is inventory, not lineage.
+            return None, "ignored-repository-operation"
         return None, "unsupported-operation"
     lower = called.casefold()
     if lower.startswith(("find", "get", "read", "count", "exists")):
@@ -1242,9 +1390,19 @@ def _parse_explicit_query(
     str | None,
     str | _QualifiedTableIdentity | None,
     str | None,
+    tuple[str, ...],
 ]:
     statement = str(query.attribute("query"))
     native = _optional_attribute(query, "nativeQuery") == "true"
+    if not native:
+        # JPQL `join fetch` is a join with eager loading; sqlglot cannot tokenize
+        # the FETCH keyword there, and the fetch marker changes nothing about
+        # which relations the query reads.
+        statement = _JPQL_FETCH_JOIN.sub(r"\1", statement)
+        # A constructor projection `select new pkg.Dto(a, b)` reads exactly the
+        # listed properties; dropping the constructor name leaves the identical
+        # read set as a plain tuple projection.
+        statement = _JPQL_CONSTRUCTOR.sub("(", statement)
     dialect_name = _SQLGLOT_DIALECTS[schema_profile]
     try:
         dialect = Dialect.get_or_raise(dialect_name if native else "postgres")
@@ -1252,31 +1410,31 @@ def _parse_explicit_query(
         if not tokens or any(
             token.token_type == TokenType.SEMICOLON for token in tokens
         ):
-            return None, None, None
+            return None, None, None, ()
         normalized = _normalize_jpa_positional_parameters(statement, tokens)
         expressions = _silent_sqlglot_parse(dialect, normalized)
     except (ParseError, ValueError, TokenError):
-        return None, None, None
+        return None, None, None, ()
     if len(expressions) != 1:
-        return None, None, None
-    parsed = (
-        _native_query_operation(expressions[0])
-        if native
-        else _jpql_query_operation(expressions[0])
-    )
+        return None, None, None, ()
+    if native:
+        native_parsed = _native_query_operation(expressions[0])
+        if native_parsed is None:
+            return None, None, None, ()
+        operation, table = native_parsed
+        if not table.name:
+            return None, None, None, ()
+        identity = _sql_expression_table_identity(table, dialect)
+        if identity is None:
+            return None, None, None, ()
+        return operation, identity, "SQL", ()
+    parsed = _jpql_query_operation(expressions[0])
     if parsed is None:
-        return None, None, None
-    operation, table = parsed
-    if not table.name:
-        return None, None, None
-    if not native:
-        if table.catalog or table.db:
-            return None, None, None
-        return operation, table.name, "JPQL"
-    identity = _sql_expression_table_identity(table, dialect)
-    if identity is None:
-        return None, None, None
-    return operation, identity, "SQL"
+        return None, None, None, ()
+    operation, table, joined = parsed
+    if not table.name or table.catalog or table.db:
+        return None, None, None, ()
+    return operation, table.name, "JPQL", tuple(item.name for item in joined)
 
 
 def _normalize_jpa_positional_parameters(
@@ -1318,18 +1476,54 @@ def _native_query_operation(
 
 def _jpql_query_operation(
     expression: exp.Expression,
-) -> tuple[str, exp.Table] | None:
+) -> tuple[str, exp.Table, tuple[exp.Table, ...]] | None:
     if any(
         expression.find(kind) is not None
-        for kind in (exp.Join, exp.Subquery, exp.Union, exp.With)
+        for kind in (exp.Subquery, exp.Union, exp.With)
     ):
         return None
     tables = tuple(expression.find_all(exp.Table))
+    joins = tuple(expression.find_all(exp.Join))
+    extras: list[exp.Table] = []
+    if joins:
+        # Two provable join shapes: an association path (`alias.attribute` rooted
+        # at the query's own range variable) traverses from the root entity, and
+        # an independent entity join with an explicit ON condition reads that
+        # entity as well. Anything else stays fail-closed.
+        root: exp.Table | None = None
+        if isinstance(expression, exp.Select):
+            source = expression.args.get("from")
+            if isinstance(source, exp.From) and isinstance(source.this, exp.Table):
+                root = source.this
+        if root is None or not root.alias:
+            return None
+        for join in joins:
+            target = join.this
+            if (
+                isinstance(target, exp.Table)
+                and target.db == root.alias
+                and not target.catalog
+            ):
+                continue
+            if (
+                isinstance(target, exp.Table)
+                and not target.db
+                and not target.catalog
+                and target.name != root.name
+                and _EVIDENCE_JAVA_IDENTIFIER.fullmatch(target.name)
+                and join.args.get("on") is not None
+            ):
+                if all(item.name != target.name for item in extras):
+                    extras.append(target)
+                continue
+            return None
+        tables = (root,)
     if len(tables) != 1:
         return None
     table = tables[0]
     if not _EVIDENCE_JAVA_IDENTIFIER.fullmatch(table.name):
         return None
+    joined = tuple(extras)
     if isinstance(expression, exp.Select):
         projection = expression.expressions
         source = expression.args.get("from")
@@ -1338,18 +1532,29 @@ def _jpql_query_operation(
         # `FROM X WHERE ...` is valid JPQL shorthand for selecting X; sqlglot renders the
         # absent projection as a star. Spring Data uses this form in real repositories.
         if len(projection) == 1 and isinstance(projection[0], exp.Star):
-            return "SELECT", table
-        if len(projection) != 1 or not isinstance(projection[0], exp.Column):
+            return "SELECT", table, joined
+        if len(projection) != 1:
             return None
-        return "SELECT", table
+        # A constructor projection (`select new Dto(a, b)`) normalizes to a tuple
+        # of columns; both it and a single column read only the joined entities.
+        if isinstance(projection[0], exp.Tuple) and all(
+            isinstance(item, exp.Column) for item in projection[0].expressions
+        ):
+            return "SELECT", table, joined
+        if not isinstance(projection[0], exp.Column):
+            return None
+        return "SELECT", table, joined
+    if joined:
+        # Independent-entity joins are provable only for SELECT.
+        return None
     if isinstance(expression, exp.Update):
         return (
-            ("UPDATE", table)
+            ("UPDATE", table, ())
             if expression.this is table and expression.expressions
             else None
         )
     if isinstance(expression, exp.Delete):
-        return ("DELETE", table) if expression.this is table else None
+        return ("DELETE", table, ()) if expression.this is table else None
     return None
 
 
@@ -2489,6 +2694,7 @@ class JavaSpringScaAnalyzer:
                 available = columns.get(table, set())
                 attributes = dict(fact.attributes)
                 explicit = attributes.get("column")
+                join_column = attributes.get("joinColumn")
                 if explicit is not None:
                     if explicit not in available:
                         # An explicit @Column naming a column the schema does not have is a
@@ -2501,6 +2707,24 @@ class JavaSpringScaAnalyzer:
                         )
                         continue
                     column, mapping = explicit, "explicit"
+                elif join_column is not None:
+                    if attributes.get("toMany") == "true":
+                        # A to-many @JoinColumn names the foreign key on the TARGET
+                        # entity's table; it neither claims nor contradicts a column
+                        # of the declaring entity's own table.
+                        continue
+                    if join_column not in available:
+                        # Same contradiction as an explicit @Column: a literal
+                        # @JoinColumn naming a column the entity's own table does not
+                        # have is a real mismatch, not a field to skip silently.
+                        self._add_residue(
+                            "unmapped-entity-column",
+                            "explicit @JoinColumn name is absent from the mapped table",
+                            f"{table}.{join_column}",
+                            fact.location,
+                        )
+                        continue
+                    column, mapping = join_column, "join-column"
                 else:
                     candidate = _snake_case(field)
                     if candidate not in available:
@@ -2527,14 +2751,17 @@ class JavaSpringScaAnalyzer:
         that does not correspond to a real column is quarantined rather than invented.
         """
         fields_by_entity: dict[str, dict[str, tuple[str, str]]] = {}
+        association_fields_by_entity: dict[str, dict[str, tuple[str, str]]] = {}
         for fact in self._facts:
             if fact.kind != "spring.entity-field":
                 continue
             attributes = dict(fact.attributes)
-            fields_by_entity.setdefault(attributes["entity"], {})[attributes["field"]] = (
-                attributes["column"],
-                attributes["table"],
-            )
+            entry = (attributes["column"], attributes["table"])
+            fields_by_entity.setdefault(attributes["entity"], {})[attributes["field"]] = entry
+            if attributes.get("mapping") == "join-column":
+                association_fields_by_entity.setdefault(attributes["entity"], {})[
+                    attributes["field"]
+                ] = entry
         if not fields_by_entity:
             return
         entity_by_repository = {
@@ -2547,6 +2774,28 @@ class JavaSpringScaAnalyzer:
             for fact in self._facts
             if fact.kind == "spring.query"
         }
+        entity_fqcn_by_name: dict[str, str | None] = {}
+        for fact in self._facts:
+            if fact.kind != "spring.entity-table":
+                continue
+            name = dict(fact.attributes).get("entityName")
+            if not isinstance(name, str):
+                continue
+            # A duplicated entity name is ambiguous; poison it rather than guess.
+            entity_fqcn_by_name[name] = (
+                fact.subject if name not in entity_fqcn_by_name else None
+            )
+        # Any field carrying a JPA relationship annotation, declared directly on the
+        # entity -- not just the join-column-backed ones -- so a JPQL `join fetch
+        # owner.pets` traversal can be told apart from a real, unproven property.
+        declared_associations_by_entity: dict[str, set[str]] = {}
+        for fact in self._facts:
+            if fact.kind != "java.field" or "#" not in fact.subject:
+                continue
+            if dict(fact.attributes).get("association") != "true":
+                continue
+            declaring, field = fact.subject.rsplit("#", 1)
+            declared_associations_by_entity.setdefault(declaring, set()).add(field)
 
         for fact in list(self._facts):
             if fact.kind != "java.method" or "#" not in fact.subject:
@@ -2561,21 +2810,58 @@ class JavaSpringScaAnalyzer:
             method = signature.split("(", 1)[0]
             query = queries.get(fact.subject)
             if query is not None:
-                properties: tuple[str, ...] | None = _jpql_properties(query)
+                # Constructor projections are dropped first so a DTO's dotted FQCN
+                # is never misread as property references.
+                normalized = _JPQL_CONSTRUCTOR.sub("(", query)
+                pairs: tuple[tuple[str | None, str], ...] = _jpql_properties(
+                    normalized
+                )
+                bindings = _jpql_alias_bindings(normalized)
                 derivation = "jpql"
             else:
-                properties = _derived_properties(method)
+                derived = _derived_properties(method)
+                pairs = tuple((None, prop) for prop in derived) if derived else ()
+                bindings = {}
                 derivation = "derived"
-            if not properties:
+            if not pairs:
                 continue
             role = (
                 "projection"
                 if derivation == "jpql"
                 else "predicate"
             )
-            for prop in properties:
-                mapped = fields.get(prop)
+            for alias, prop in pairs:
+                bound_name = bindings.get(alias) if alias is not None else None
+                bound_entity = (
+                    entity_fqcn_by_name.get(bound_name)
+                    if bound_name is not None
+                    else None
+                )
+                # An alias proven to bind an entity resolves against that entity;
+                # anything else keeps the legacy behavior of resolving against the
+                # repository's own declared entity.
+                lookup_entity = bound_entity or entity
+                lookup_fields = fields_by_entity.get(lookup_entity, {})
+                mapped = lookup_fields.get(prop)
+                if (
+                    mapped is None
+                    and derivation == "derived"
+                    and prop.endswith("Id")
+                    and len(prop) > len("Id")
+                ):
+                    # Association traversal: `findByPetId` on a `pet` association whose
+                    # `@JoinColumn` is a proven literal resolves straight to that join
+                    # column -- the property head is the association, `Id` is its key.
+                    head = prop[: -len("Id")]
+                    mapped = association_fields_by_entity.get(entity, {}).get(head)
                 if mapped is None:
+                    if derivation == "jpql" and prop in declared_associations_by_entity.get(
+                        lookup_entity, set()
+                    ):
+                        # A JPQL property naming a declared association (e.g. `left join
+                        # fetch owner.pets`) is association traversal, not a column
+                        # projection -- it contributes no column claim and is not residue.
+                        continue
                     self._add_residue(
                         "unresolved-query-property",
                         "query property does not map to a proven schema column",
@@ -2590,7 +2876,7 @@ class JavaSpringScaAnalyzer:
                     (
                         ("column", column),
                         ("derivation", derivation),
-                        ("entity", entity),
+                        ("entity", lookup_entity),
                         ("method", method),
                         ("property", prop),
                         ("repository", repository),
@@ -2670,8 +2956,11 @@ class JavaSpringScaAnalyzer:
                 continue
             name = _node_text(name_node, parsed.source.content)
             resolved = self._resolve_java_symbol(parsed, name, annotation, symbols)
+            ignored_keys = (
+                _TABLE_IGNORED_ATTRIBUTE_KEYS if resolved == _TABLE_FQN else frozenset()
+            )
             literal_values, dynamic_values = _annotation_values(
-                annotation, parsed.source.content
+                annotation, parsed.source.content, ignored_keys
             )
             attributes: list[tuple[str, FactValue]] = list(literal_values)
             if resolved is not None:
@@ -2811,17 +3100,25 @@ class JavaSpringScaAnalyzer:
                 ]
                 # Annotations belong to the declaration, so they are resolved once and
                 # attributed to its first declarator rather than emitted per name.
-                column_override = _column_override(
-                    self._emit_annotations(
-                        parsed, member, f"{owner}#{names[0]}", symbols
-                    )
+                field_annotations = self._emit_annotations(
+                    parsed, member, f"{owner}#{names[0]}", symbols
                 )
+                column_override = _column_override(field_annotations)
+                join_column_override = _join_column_override(field_annotations)
+                is_association = _is_association_field(field_annotations)
+                is_to_many = _is_to_many_association_field(field_annotations)
                 for declarator, name in zip(declarators, names):
                     attributes: list[tuple[str, FactValue]] = [
                         ("type", _node_text(field_type, parsed.source.content))
                     ]
                     if column_override is not None:
                         attributes.append(("column", column_override))
+                    if join_column_override is not None:
+                        attributes.append(("joinColumn", join_column_override))
+                    if is_association:
+                        attributes.append(("association", "true"))
+                    if is_to_many:
+                        attributes.append(("toMany", "true"))
                     self._add_fact(
                         "java.field",
                         f"{owner}#{name}",
@@ -2851,22 +3148,40 @@ class JavaSpringScaAnalyzer:
                 declaration_mode = _method_declaration_mode(
                     declaration, member, parsed.source.content
                 )
-                self._add_fact(
-                    "java.method",
-                    subject,
+                delegation = (
+                    _default_method_delegation(member, parsed.source.content)
+                    if declaration_mode == "default"
+                    else ()
+                )
+                method_attributes: list[tuple[str, FactValue]] = [
                     (
-                        (
-                            "returnType",
-                            _node_text(return_type, parsed.source.content)
-                            if return_type is not None
-                            else "void",
-                        ),
-                        ("arity", str(len(parameter_types))),
-                        ("declarationMode", declaration_mode),
+                        "returnType",
+                        _node_text(return_type, parsed.source.content)
+                        if return_type is not None
+                        else "void",
+                    ),
+                    ("arity", str(len(parameter_types))),
+                    ("declarationMode", declaration_mode),
+                ]
+                if delegation:
+                    method_attributes.append(("delegateArity", str(delegation[0][1])))
+                    method_attributes.append(("delegatesTo", delegation[0][0]))
+                if len(delegation) > 1:
+                    method_attributes.append(
+                        ("delegateInnerArity", str(delegation[1][1]))
+                    )
+                    method_attributes.append(("delegatesToInner", delegation[1][0]))
+                method_attributes.extend(
+                    (
                         ("name", method_name),
                         ("parameterTypes", parameter_types),
                         ("parameters", _parameter_signature(member, parsed.source.content)),
-                    ),
+                    )
+                )
+                self._add_fact(
+                    "java.method",
+                    subject,
+                    tuple(method_attributes),
                     self._node_location(parsed.source.path, member),
                 )
                 annotations = self._emit_annotations(
@@ -3099,6 +3414,51 @@ class JavaSpringScaAnalyzer:
                             fields[_node_text(field_name, parsed.source.content)] = type_name
 
                 bound_fields: set[str] = set()
+                # Field injection (`@Autowired`/`@Inject` directly on the field) is just
+                # as statically provable as a constructor parameter: the declared type is
+                # fixed at compile time, so the same binding semantics apply. Setter
+                # injection is deliberately excluded -- the annotation sits on the method,
+                # not the field, so this loop never sees it.
+                for member in body.named_children:
+                    if member.type != "field_declaration":
+                        continue
+                    field_type = member.child_by_field_name("type")
+                    if field_type is None:
+                        continue
+                    type_name = self._resolve_java_symbol(
+                        parsed,
+                        _node_text(field_type, parsed.source.content),
+                        field_type,
+                        symbols,
+                    )
+                    if type_name not in repository_types:
+                        continue
+                    if not any(
+                        self._has_resolved_annotation(parsed, member, symbols, fqn)
+                        for fqn in _FIELD_INJECTION_FQNS
+                    ):
+                        continue
+                    for declarator in (
+                        child
+                        for child in member.named_children
+                        if child.type == "variable_declarator"
+                    ):
+                        field_name_node = declarator.child_by_field_name("name")
+                        if field_name_node is None:
+                            continue
+                        field_name = _node_text(field_name_node, parsed.source.content)
+                        bound_fields.add(field_name)
+                        self._add_fact(
+                            "spring.repository-binding",
+                            f"{owner}#{field_name}",
+                            (
+                                ("field", field_name),
+                                ("injectionMode", "field"),
+                                ("parameter", ""),
+                                ("repositoryType", type_name),
+                            ),
+                            self._node_location(parsed.source.path, member),
+                        )
                 constructors = tuple(
                     member
                     for member in body.named_children
@@ -4003,7 +4363,9 @@ def _generic_parts(node: Node, content: bytes) -> tuple[str, tuple[str, ...]] | 
 
 
 def _annotation_values(
-    annotation: Node, content: bytes
+    annotation: Node,
+    content: bytes,
+    ignored_keys: frozenset[str] = frozenset(),
 ) -> tuple[tuple[tuple[str, str], ...], tuple[str, ...]]:
     arguments = annotation.child_by_field_name("arguments")
     if arguments is None:
@@ -4018,6 +4380,8 @@ def _annotation_values(
         else:
             name = "value"
             value = argument
+        if name in ignored_keys:
+            continue
         literal = _java_literal(value, content)
         if literal is None:
             dynamic.append(_node_text(value, content) if value is not None else "<missing>")
@@ -4031,6 +4395,8 @@ def _java_literal(node: Node | None, content: bytes) -> str | None:
         return None
     text = _node_text(node, content)
     if node.type == "string_literal":
+        if text.startswith('"""'):
+            return _text_block_value(text)
         try:
             value = json.loads(text)
         except json.JSONDecodeError:
@@ -4039,6 +4405,62 @@ def _java_literal(node: Node | None, content: bytes) -> str | None:
     if node.type in {"decimal_integer_literal", "false", "true"}:
         return text
     return None
+
+
+_TEXT_BLOCK_ESCAPES = {
+    "n": "\n",
+    "t": "\t",
+    "r": "\r",
+    "b": "\b",
+    "f": "\f",
+    "s": " ",
+    '"': '"',
+    "'": "'",
+    "\\": "\\",
+}
+
+
+def _text_block_value(text: str) -> str | None:
+    """The value of a Java text block per JLS 3.10.6, or None if outside the
+    modelled subset (an unknown escape stays fail-closed, never guessed)."""
+    if len(text) < 6 or not text.endswith('"""'):
+        return None
+    body = text[3:-3]
+    first_break = body.find("\n")
+    if first_break < 0 or body[:first_break].strip():
+        return None
+    body = body[first_break + 1 :]
+    lines = body.split("\n")
+    determining = [line for line in lines[:-1] if line.strip()]
+    # The line holding the closing delimiter always participates in the
+    # incidental-indentation minimum; a non-blank final segment is content too.
+    determining.append(lines[-1])
+    indent = min(len(line) - len(line.lstrip(" \t")) for line in determining)
+    stripped = [line[indent:].rstrip() for line in lines[:-1]]
+    value = "".join(line + "\n" for line in stripped)
+    last = lines[-1][indent:]
+    if last.strip():
+        value += last
+    escaped: list[str] = []
+    index = 0
+    while index < len(value):
+        char = value[index]
+        if char != "\\":
+            escaped.append(char)
+            index += 1
+            continue
+        if index + 1 >= len(value):
+            return None
+        follower = value[index + 1]
+        if follower in _TEXT_BLOCK_ESCAPES:
+            escaped.append(_TEXT_BLOCK_ESCAPES[follower])
+            index += 2
+            continue
+        if follower == "\n":
+            index += 2
+            continue
+        return None
+    return "".join(escaped)
 
 
 def _parameter_signature(declaration: Node, content: bytes) -> tuple[str, ...]:
@@ -4078,6 +4500,63 @@ def _method_declaration_mode(
         if re.search(rf"\b{mode}\b", modifier_text):
             return mode
     return "concrete"
+
+
+def _default_method_delegation(
+    declaration: Node, content: bytes
+) -> tuple[tuple[str, int], ...]:
+    """The (name, arity) candidates a `default` interface method delegates to.
+
+    jhipster-generated repositories wrap ``@Query`` methods either directly —
+    ``return this.name(...);`` — or through a bag-relationship hydrator —
+    ``return this.outer(this.inner(...));``. Candidates are returned outermost
+    first. Any richer body is not modelled and stays fail-closed as
+    `unsupported-operation`.
+    """
+    body = declaration.child_by_field_name("body")
+    if body is None:
+        return ()
+    statements = [
+        child
+        for child in body.named_children
+        if child.type not in {"line_comment", "block_comment"}
+    ]
+    if len(statements) != 1 or statements[0].type != "return_statement":
+        return ()
+    expressions = statements[0].named_children
+    if len(expressions) != 1 or expressions[0].type != "method_invocation":
+        return ()
+    invocation = expressions[0]
+    receiver = invocation.child_by_field_name("object")
+    if receiver is not None and receiver.type != "this":
+        return ()
+    name = invocation.child_by_field_name("name")
+    arguments = invocation.child_by_field_name("arguments")
+    if name is None or arguments is None:
+        return ()
+    candidates: list[tuple[str, int]] = [
+        (_node_text(name, content), len(arguments.named_children))
+    ]
+    nested = [
+        child for child in arguments.named_children if child.type == "method_invocation"
+    ]
+    if len(arguments.named_children) == 1 and len(nested) == 1:
+        inner = nested[0]
+        inner_receiver = inner.child_by_field_name("object")
+        inner_name = inner.child_by_field_name("name")
+        inner_arguments = inner.child_by_field_name("arguments")
+        if (
+            (inner_receiver is None or inner_receiver.type == "this")
+            and inner_name is not None
+            and inner_arguments is not None
+        ):
+            candidates.append(
+                (
+                    _node_text(inner_name, content),
+                    len(inner_arguments.named_children),
+                )
+            )
+    return tuple(candidates)
 
 
 def _parameters(declaration: Node, content: bytes) -> dict[str, str]:
@@ -4461,9 +4940,15 @@ def _valid_create_index_statement(
     table = index.args.get("table")
     parameters = index.args.get("params")
     columns = parameters.args.get("columns") if isinstance(parameters, exp.IndexParameters) else None
-    return (
+    # PostgreSQL's `CREATE INDEX ON table (col)` omits the index name and lets the
+    # server pick one; an anonymous index is structurally valid inventory. A present
+    # name must still be a bounded literal identifier.
+    name_is_valid = name is None or (
         isinstance(name, exp.Identifier)
         and _EVIDENCE_TABLE_IDENTIFIER.fullmatch(name.name) is not None
+    )
+    return (
+        name_is_valid
         and isinstance(table, exp.Table)
         and _sql_expression_table_identity(table, dialect) is not None
         and isinstance(columns, list)
@@ -4516,7 +5001,12 @@ def _closed_create_index_tokens(tokens: tuple[Token, ...]) -> bool:
             and consume_type(TokenType.EXISTS)
         ):
             return False
-    if not consume_identifier() or not consume_type(TokenType.ON):
+    # PostgreSQL allows the index name to be omitted (`CREATE INDEX ON t (c)`);
+    # the server names it. A present name must be a bounded literal identifier.
+    if position < len(tokens) and tokens[position].token_type != TokenType.ON:
+        if not consume_identifier():
+            return False
+    if not consume_type(TokenType.ON):
         return False
     if not consume_identifier():
         return False
@@ -4686,6 +5176,39 @@ def _column_override(annotations: tuple["_AnnotationRecord", ...]) -> str | None
     return None
 
 
+def _join_column_override(annotations: tuple["_AnnotationRecord", ...]) -> str | None:
+    """The literal column name from an exact `@JoinColumn(name=...)`, if provable.
+
+    An association's foreign-key column is only usable as a resolution anchor -- for
+    example a derived `findByXId` method -- when it names a bounded literal. Anything
+    else (no `@JoinColumn`, or a dynamic name) leaves the association without a
+    physical column of its own.
+    """
+    for record in annotations:
+        if record.resolved_fqn != _JOIN_COLUMN_FQN:
+            continue
+        name = dict(record.literal_values).get("name")
+        if isinstance(name, str) and _EVIDENCE_TABLE_IDENTIFIER.fullmatch(name):
+            return name
+        return None
+    return None
+
+
+def _is_association_field(annotations: tuple["_AnnotationRecord", ...]) -> bool:
+    """Whether a field carries one of JPA's exact relationship annotations."""
+    return any(record.resolved_fqn in _ASSOCIATION_FQNS for record in annotations)
+
+
+_TO_MANY_FQNS = frozenset({_ONE_TO_MANY_FQN, _MANY_TO_MANY_FQN})
+
+
+def _is_to_many_association_field(annotations: tuple["_AnnotationRecord", ...]) -> bool:
+    """Whether the field's relationship annotation targets a collection. A to-many
+    `@JoinColumn` names the foreign key on the TARGET entity's table, so it never
+    claims -- or contradicts -- a column of the declaring entity's own table."""
+    return any(record.resolved_fqn in _TO_MANY_FQNS for record in annotations)
+
+
 def _snake_case(name: str) -> str:
     """JPA's default physical naming: camelCase becomes snake_case."""
     return re.sub(r"(?<=[a-z0-9])(?=[A-Z])", "_", name).lower()
@@ -4697,6 +5220,10 @@ _DERIVED_SUBJECTS = (
     "countBy", "existsBy", "deleteBy", "removeBy",
 )
 _DERIVED_WRITE_SUBJECTS = ("deleteBy", "removeBy")
+_DERIVED_VERBS = (
+    "find", "read", "get", "query", "search", "stream",
+    "count", "exists", "delete", "remove",
+)
 # Trailing operator keywords that qualify a property rather than name one.
 _DERIVED_KEYWORDS = (
     "IsStartingWith", "IsEndingWith", "IsNotContaining", "IsContaining", "StartingWith",
@@ -4716,7 +5243,19 @@ def _derived_properties(method: str) -> tuple[str, ...] | None:
     """
     subject = next((item for item in _DERIVED_SUBJECTS if method.startswith(item)), None)
     if subject is None:
-        return None
+        # Spring Data's grammar allows limiter/projection words between the verb and
+        # `By` (`findOneByLogin`, `findAllByActivatedIsTrue`, `findOneWithAuthoritiesBy
+        # Login`). The predicate list always starts after the first `By` that opens a
+        # capitalised property, so anything before it belongs to the subject.
+        verb = next((item for item in _DERIVED_VERBS if method.startswith(item)), None)
+        if verb is None:
+            return None
+        index = method.find("By", len(verb))
+        while index > 0 and index + 2 < len(method) and not method[index + 2].isupper():
+            index = method.find("By", index + 2)
+        if index <= 0:
+            return None
+        subject = method[: index + 2]
     remainder = method[len(subject):]
     if not remainder:
         return ()
@@ -4735,15 +5274,38 @@ def _derived_properties(method: str) -> tuple[str, ...] | None:
     return tuple(properties)
 
 
-def _jpql_properties(query: str, alias_hint: str | None = None) -> tuple[str, ...]:
-    """Property references in a JPQL body, as `alias.property` pairs.
+_JPQL_ALIAS_BINDING = re.compile(
+    r"(?i)\b(?:from|join)\s+([A-Za-z_][A-Za-z0-9_]*)\s+(?:as\s+)?([A-Za-z_][A-Za-z0-9_]*)"
+)
+_JPQL_ALIAS_STOPWORDS = frozenset(
+    {"on", "where", "join", "left", "right", "inner", "outer", "fetch", "order", "group", "set"}
+)
+
+
+def _jpql_alias_bindings(query: str) -> dict[str, str]:
+    """Alias -> entity name for `from Entity alias` and independent `join Entity
+    alias` bindings. Association joins (`join alias.path other`) never match: the
+    dotted target fails the entity-name group."""
+    bindings: dict[str, str] = {}
+    for match in _JPQL_ALIAS_BINDING.finditer(query):
+        name, alias = match.group(1), match.group(2)
+        if alias.casefold() in _JPQL_ALIAS_STOPWORDS:
+            continue
+        bindings.setdefault(alias, name)
+    return bindings
+
+
+def _jpql_properties(query: str) -> tuple[tuple[str, str], ...]:
+    """Property references in a JPQL body, as (alias, property) pairs.
 
     Only dotted references are taken: a bare identifier could be an entity, an alias or a
     keyword, and guessing between them is exactly what this analyzer must not do.
     """
-    found: list[str] = []
-    for match in re.finditer(r"\b[A-Za-z_][A-Za-z0-9_]*\.([A-Za-z_][A-Za-z0-9_]*)", query):
-        name = match.group(1)
-        if name not in found:
-            found.append(name)
+    found: list[tuple[str, str]] = []
+    for match in re.finditer(
+        r"\b([A-Za-z_][A-Za-z0-9_]*)\.([A-Za-z_][A-Za-z0-9_]*)", query
+    ):
+        pair = (match.group(1), match.group(2))
+        if pair not in found:
+            found.append(pair)
     return tuple(found)

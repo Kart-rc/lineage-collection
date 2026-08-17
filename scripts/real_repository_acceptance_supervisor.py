@@ -28,8 +28,8 @@ _PASS_KEYS = frozenset(
     }
 )
 _PASS_COUNTS = {
-    "edges": 15,
-    "reads": 10,
+    "edges": 23,
+    "reads": 18,
     "residue": 8,
     "unresolved": 0,
     "writes": 5,

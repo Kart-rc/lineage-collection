@@ -55,6 +55,14 @@ export interface Proposal {
   version: number;
   system: string;
   state: string;
+  /** BASELINE | DELTA — present on floci/live payloads. */
+  proposalType?: string;
+  repository?: string;
+  commandId?: string;
+  environment?: string;
+  artifactDigest?: string;
+  approvedAt?: string;
+  approvalRef?: Record<string, unknown>;
   expectedBaseVersion: string;
   diff: {
     added: LineageEdge[];
@@ -91,6 +99,10 @@ export interface RunStage {
 export interface Run {
   runId: string;
   eventId: string;
+  /** BASELINE | INCREMENTAL | DEPLOYMENT | PR_GATE — live workflow lane. */
+  workflowKind: string;
+  /** Current or terminal stage id (B10, I10, D6, P8). */
+  currentStage: string;
   repo: string;
   digest: string;
   env: string;
@@ -247,10 +259,23 @@ export interface CollectionCoverage {
   };
 }
 
+export interface CollectionTiming {
+  readonly step: string;
+  readonly startedAt: string;
+  readonly completedAt: string;
+  readonly durationMs: number;
+  readonly detail?: string;
+}
+
 export interface RepositoryCollection {
   readonly commandId: string;
   readonly collectionId: string;
   readonly statusUrl: string;
+  readonly createdAt?: string;
+  /** Wall-clock per step: acquire, register-source, intake, stages, runtime-harness. */
+  readonly timings?: readonly CollectionTiming[];
+  /** BASELINE | INCREMENTAL — the path the collector chose for this revision. */
+  readonly workflowKind?: string;
   readonly sourceType: CollectionSourceType | "UNKNOWN";
   readonly origin: string;
   readonly repository: string;
@@ -274,9 +299,73 @@ export interface RepositoryCollection {
   readonly correlationId: string;
 }
 
+export type LineageDirection = "up" | "down" | "both";
+
+/* ---- the interactions plane: service-to-service API traffic ------------- */
+
+export interface InteractionFieldDoc {
+  readonly name: string;
+  readonly type: string;
+  readonly classification: "NONE" | "PII" | "SECRET";
+}
+
+export interface InteractionCitation {
+  readonly file: string;
+  readonly line: number;
+}
+
+export interface InboundInteraction {
+  readonly channel: string;
+  readonly operation: string;
+  readonly handler: string;
+  readonly requestFields: InteractionFieldDoc[];
+  readonly responseFields: InteractionFieldDoc[];
+  readonly citation: InteractionCitation;
+}
+
+export interface OutboundInteraction {
+  readonly fromService: string;
+  readonly toService: string;
+  readonly channel: string;
+  readonly operation: string;
+  readonly handler: string;
+  readonly citation: InteractionCitation;
+}
+
+export interface InteractionResidueDoc {
+  readonly code: string;
+  readonly path: string;
+  readonly line: number;
+  readonly symbol: string;
+}
+
+/** One system's statically-derived interactions, keyed to a collection run. */
+export interface SystemInteractions {
+  readonly schemaVersion: string;
+  readonly system: string;
+  readonly service: string;
+  readonly revision: string;
+  readonly commandId: string;
+  readonly correlationId: string;
+  readonly mechanism: string;
+  readonly inbound: InboundInteraction[];
+  readonly outbound: OutboundInteraction[];
+  readonly residue: InteractionResidueDoc[];
+  readonly evidenceRef?: Record<string, unknown>;
+}
+
+export interface InteractionsResponse {
+  readonly schemaVersion: string;
+  readonly items: SystemInteractions[];
+}
+
+export interface DeploymentSubmission {
+  readonly commandId: string;
+}
+
 export interface LineageResponse {
   subject: string;
-  direction: "up" | "down";
+  direction: LineageDirection;
   namespaceVersion: string;
   depthSearched: number;
   truncated: boolean;

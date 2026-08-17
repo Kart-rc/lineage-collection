@@ -173,7 +173,7 @@ def test_local_checkout_is_rejected_fail_closed_before_provider_or_collection(
         allow_local_repository_sources=False,
         local_snapshot_provider=lambda _request: pytest.fail("local provider called"),
         remote_snapshot_provider=lambda _request: pytest.fail("remote provider called"),
-        collect=lambda _descriptor: pytest.fail("collection called"),
+        collect=lambda _descriptor, **_kwargs: pytest.fail("collection called"),
     )
 
     with pytest.raises(RepositoryAcquisitionError) as captured:
@@ -206,7 +206,9 @@ def test_enabled_source_mode_uses_only_its_provider_and_approved_collection(
         calls.append(("remote", provided))
         return snapshot
 
-    def collect(descriptor: RepositoryCollectionDescriptor) -> dict[str, object]:
+    def collect(
+        descriptor: RepositoryCollectionDescriptor, *, runtime_execution: bool = False
+    ) -> dict[str, object]:
         calls.append(("collect", descriptor))
         assert descriptor.snapshot is snapshot
         assert descriptor.repository == request.repository_identity()
@@ -244,7 +246,7 @@ def test_provider_failures_are_bounded_without_path_source_or_raw_output(
         allow_local_repository_sources=True,
         local_snapshot_provider=fail_provider,
         remote_snapshot_provider=lambda _request: pytest.fail("remote provider called"),
-        collect=lambda _descriptor: pytest.fail("collection called"),
+        collect=lambda _descriptor, **_kwargs: pytest.fail("collection called"),
     )
 
     with pytest.raises(RepositoryAcquisitionError) as captured:

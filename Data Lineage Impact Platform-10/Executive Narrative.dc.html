@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,600&display=swap" rel="stylesheet">
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+  a { color: inherit; }
+  ::-webkit-scrollbar { width: 10px; height: 10px; }
+  ::-webkit-scrollbar-thumb { background: oklch(88% 0.006 262); border-radius: 6px; border: 2px solid transparent; background-clip: padding-box; }
+  @media print { .no-print { display: none !important; } .page { box-shadow: none !important; margin: 0 !important; } body { background: #fff !important; } }
+</style>
+</helmet>
+
+<div style="background:oklch(95.5% 0.004 262);min-height:100vh;font-family:'IBM Plex Sans',sans-serif;-webkit-font-smoothing:antialiased;color:oklch(30% 0.02 262)">
+  <div style="max-width:1300px;margin:0 auto;display:flex;gap:36px;padding:40px 28px 80px;align-items:flex-start">
+
+    <!-- TOC -->
+    <aside class="no-print" style="flex:none;width:206px;position:sticky;top:40px;display:flex;flex-direction:column;gap:3px">
+      <div style="display:flex;align-items:center;gap:9px;margin-bottom:14px">
+        <span style="width:22px;height:22px;border-radius:6px;background:oklch(46% 0.14 275);display:block"></span>
+        <span style="font:700 15px 'IBM Plex Sans';color:oklch(26% 0.02 262);letter-spacing:-0.01em">Throughline</span>
+      </div>
+      <div style="font:600 8.5px 'IBM Plex Mono';letter-spacing:.12em;text-transform:uppercase;color:oklch(60% 0.02 262);margin:0 0 8px 2px">Executive Narrative</div>
+      <sc-for list="{{ toc }}" as="t" hint-placeholder-count="6">
+        <a href="{{ t.href }}" style="display:flex;gap:9px;padding:5px 8px;border-radius:6px;text-decoration:none;font:500 12px 'IBM Plex Sans';color:oklch(46% 0.02 262)" style-hover="background:oklch(92% 0.01 262)"><span style="font:600 10px 'IBM Plex Mono';color:oklch(68% 0.02 262);width:14px;flex:none">{{ t.n }}</span><span>{{ t.label }}</span></a>
+      </sc-for>
+      <div style="margin-top:16px;padding-top:14px;border-top:1px solid oklch(90% 0.006 262);display:flex;flex-direction:column;gap:6px">
+        <div style="font:600 8.5px 'IBM Plex Mono';letter-spacing:.12em;text-transform:uppercase;color:oklch(60% 0.02 262);margin:0 0 2px 2px">The artifacts</div>
+        <a href="Throughline - Final.dc.html" style="font:500 11.5px 'IBM Plex Sans';color:oklch(50% 0.02 262);text-decoration:none;padding:3px 8px">Prototype</a>
+        <a href="Index - Throughline PRDs.dc.html" style="font:500 11.5px 'IBM Plex Sans';color:oklch(50% 0.02 262);text-decoration:none;padding:3px 8px">PRDs 1–3</a>
+        <a href="Roadmap & LOE.dc.html" style="font:500 11.5px 'IBM Plex Sans';color:oklch(50% 0.02 262);text-decoration:none;padding:3px 8px">Roadmap &amp; LOE</a>
+        <a href="Critical Review.dc.html" style="font:500 11.5px 'IBM Plex Sans';color:oklch(50% 0.02 262);text-decoration:none;padding:3px 8px">Critical Review</a>
+      </div>
+    </aside>
+
+    <!-- PAGE -->
+    <main class="page" style="flex:1;min-width:0;max-width:1000px;background:#fff;border:1px solid oklch(91% 0.006 262);border-radius:3px;box-shadow:0 1px 3px rgba(20,30,50,.06);padding:0 0 72px;overflow:hidden">
+
+      <!-- HERO -->
+      <div style="background:linear-gradient(150deg, oklch(26% 0.05 275), oklch(32% 0.07 285));padding:44px 56px 40px;color:#fff">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:22px">
+          <span style="font:600 9px 'IBM Plex Mono';letter-spacing:.14em;text-transform:uppercase;color:oklch(30% 0.05 275);background:oklch(85% 0.09 280);padding:4px 9px;border-radius:4px">Start here · for leadership</span>
+          <span style="font:500 11px 'IBM Plex Mono';color:oklch(80% 0.04 280)">15-minute read · the case for funding</span>
+        </div>
+        <h1 style="font:600 40px 'Newsreader',serif;letter-spacing:-0.01em;line-height:1.08;margin:0 0 14px;color:#fff">From blind to bulletproof</h1>
+        <p style="font:400 17px/1.55 'IBM Plex Sans';color:oklch(90% 0.03 280);margin:0;max-width:60ch">Today a single schema change is a bet placed in the dark. Throughline makes every data dependency <strong style="font-weight:600;color:#fff">visible, trustworthy, and enforced</strong> — so a breaking change is caught before it ships, not after it breaks. This is the story to tell, and the proof behind each claim.</p>
+        <div style="display:flex;gap:26px;margin-top:26px;flex-wrap:wrap">
+          <sc-for list="{{ heroStats }}" as="s" hint-placeholder-count="4">
+            <div><div style="font:700 22px 'IBM Plex Sans';color:#fff">{{ s.v }}</div><div style="font:500 10px 'IBM Plex Mono';color:oklch(78% 0.04 280);margin-top:2px">{{ s.l }}</div></div>
+          </sc-for>
+        </div>
+      </div>
+
+      <div style="padding:44px 56px 0">
+
+        <!-- 1 ARC AT A GLANCE -->
+        <h2 id="s1" style="font:600 21px 'Newsreader',serif;color:oklch(24% 0.02 262);margin:0 0 6px"><span style="font:600 13px 'IBM Plex Mono';color:oklch(46% 0.14 275);margin-right:10px">01</span>The arc at a glance</h2>
+        <p style="font:400 13px/1.6 'IBM Plex Sans';color:oklch(46% 0.02 262);margin:0 0 20px;max-width:66ch">Four acts. The tension rises from a problem everyone feels to a decision only leadership can make — with the live demo as the turn.</p>
+        <div style="position:relative;border:1px solid oklch(92% 0.006 262);border-radius:13px;padding:22px 24px 18px;background:oklch(98.7% 0.004 262);overflow:hidden">
+          <svg viewBox="0 0 900 150" width="100%" height="150" style="display:block" preserveAspectRatio="none">
+            <path d="M 20 130 C 240 128 250 96 440 82 C 620 68 640 40 880 22" fill="none" stroke="oklch(80% 0.03 275)" stroke-width="3" stroke-linecap="round"></path>
+            <circle cx="20" cy="130" r="7" fill="oklch(55% 0.16 30)"></circle>
+            <circle cx="300" cy="104" r="7" fill="oklch(52% 0.15 262)"></circle>
+            <circle cx="560" cy="66" r="7" fill="oklch(50% 0.13 155)"></circle>
+            <circle cx="880" cy="22" r="7" fill="oklch(52% 0.13 70)"></circle>
+          </svg>
+          <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-top:8px">
+            <sc-for list="{{ acts }}" as="a" hint-placeholder-count="4">
+              <div style="border-top:3px solid {{ a.color }};padding-top:10px">
+                <div style="font:600 8.5px 'IBM Plex Mono';letter-spacing:.06em;text-transform:uppercase;color:{{ a.color }}">{{ a.tag }}</div>
+                <div style="font:600 13px 'IBM Plex Sans';color:oklch(28% 0.02 262);margin-top:3px">{{ a.name }}</div>
+                <div style="font:400 11px/1.45 'IBM Plex Sans';color:oklch(50% 0.02 262);margin-top:4px">{{ a.oneLine }}</div>
+              </div>
+            </sc-for>
+          </div>
+        </div>
+
+        <!-- 2 THE NARRATIVE -->
+        <h2 id="s2" style="font:600 21px 'Newsreader',serif;color:oklch(24% 0.02 262);margin:44px 0 6px"><span style="font:600 13px 'IBM Plex Mono';color:oklch(46% 0.14 275);margin-right:10px">02</span>The narrative, beat by beat</h2>
+        <p style="font:400 13px/1.6 'IBM Plex Sans';color:oklch(46% 0.02 262);margin:0 0 20px;max-width:66ch">Ten beats. Each makes one claim — and each claim is backed by an artifact you can open in the room.</p>
+
+        <sc-for list="{{ actGroups }}" as="g" hint-placeholder-count="4">
+          <div style="margin-bottom:26px">
+            <div style="display:flex;align-items:center;gap:11px;margin-bottom:12px">
+              <span style="font:700 10px 'IBM Plex Mono';letter-spacing:.08em;text-transform:uppercase;color:#fff;background:{{ g.color }};padding:4px 10px;border-radius:5px">{{ g.tag }}</span>
+              <span style="font:600 15px 'IBM Plex Sans';color:oklch(28% 0.02 262)">{{ g.name }}</span>
+              <span style="flex:1;height:1px;background:oklch(93% 0.006 262)"></span>
+            </div>
+            <div style="display:flex;flex-direction:column;gap:9px">
+              <sc-for list="{{ g.beats }}" as="b" hint-placeholder-count="3">
+                <div style="display:flex;gap:14px;align-items:flex-start;border:1px solid oklch(92% 0.006 262);border-radius:11px;padding:15px 17px;border-left:4px solid {{ g.color }}">
+                  <span style="font:700 15px 'Newsreader',serif;color:{{ g.color }};min-width:26px;flex:none">{{ b.n }}</span>
+                  <div style="flex:1;min-width:0">
+                    <div style="font:600 14px 'IBM Plex Sans';color:oklch(26% 0.02 262)">{{ b.headline }}</div>
+                    <div style="font:400 12.5px/1.55 'IBM Plex Sans';color:oklch(46% 0.02 262);margin-top:4px">{{ b.body }}</div>
+                    <a href="{{ b.href }}" style="display:inline-flex;align-items:center;gap:6px;margin-top:10px;font:600 10.5px 'IBM Plex Mono';color:{{ g.color }};background:{{ b.chipBg }};border:1px solid {{ b.chipBd }};padding:4px 10px;border-radius:6px;text-decoration:none">{{ b.backedGlyph }} {{ b.backed }}</a>
+                  </div>
+                </div>
+              </sc-for>
+            </div>
+          </div>
+        </sc-for>
+
+        <!-- 3 THE ASK -->
+        <h2 id="s3" style="font:600 21px 'Newsreader',serif;color:oklch(24% 0.02 262);margin:44px 0 6px"><span style="font:600 13px 'IBM Plex Mono';color:oklch(46% 0.14 275);margin-right:10px">03</span>The ask — fund the first slice, stage the rest</h2>
+        <p style="font:400 13px/1.6 'IBM Plex Sans';color:oklch(46% 0.02 262);margin:0 0 18px;max-width:66ch">Not one 24-month bet. A staged commitment: each phase is re-funded only when the previous one clears a value gate. Downside is capped at a single phase; confidence compounds.</p>
+        <div style="display:flex;gap:0;align-items:stretch;flex-wrap:wrap;border:1px solid oklch(91% 0.006 262);border-radius:13px;overflow:hidden">
+          <sc-for list="{{ gates }}" as="g" hint-placeholder-count="4">
+            <div style="flex:1;min-width:190px;padding:16px 17px;border-right:1px solid oklch(94% 0.006 262);border-top:4px solid {{ g.color }}">
+              <div style="font:600 8.5px 'IBM Plex Mono';letter-spacing:.06em;text-transform:uppercase;color:{{ g.color }}">{{ g.gate }}</div>
+              <div style="font:600 13px 'IBM Plex Sans';color:oklch(28% 0.02 262);margin-top:5px">{{ g.phase }}</div>
+              <div style="font:500 10px 'IBM Plex Mono';color:oklch(58% 0.02 262);margin-top:2px">{{ g.pi }}</div>
+              <div style="font:400 11px/1.5 'IBM Plex Sans';color:oklch(48% 0.02 262);margin-top:8px">{{ g.proof }}</div>
+            </div>
+          </sc-for>
+        </div>
+        <div style="margin-top:14px;border-left:3px solid oklch(46% 0.14 275);background:oklch(98.5% 0.014 275);padding:13px 16px;border-radius:0 8px 8px 0">
+          <span style="font:600 11.5px 'IBM Plex Sans';color:oklch(44% 0.14 275)">The decision today.</span>
+          <span style="font:400 13px/1.6 'IBM Plex Sans';color:oklch(42% 0.02 262)"> Approve <strong style="font-weight:600">Phase 0</strong> — one vertical slice, ~4 PIs, two teams — to prove identity resolution, produce trustworthy element-level lineage, and catch the first breaking change. Everything after is earned, not assumed.</span>
+        </div>
+
+        <!-- 4 TELL IT IN 15 -->
+        <h2 id="s4" style="font:600 21px 'Newsreader',serif;color:oklch(24% 0.02 262);margin:46px 0 6px"><span style="font:600 13px 'IBM Plex Mono';color:oklch(46% 0.14 275);margin-right:10px">04</span>Tell it in 15 minutes</h2>
+        <p style="font:400 13px/1.6 'IBM Plex Sans';color:oklch(46% 0.02 262);margin:0 0 14px;max-width:66ch">A talk track for the room. The demo is the centerpiece — budget the most time there and let the artifact do the persuading.</p>
+        <table style="width:100%;border-collapse:collapse;font-family:'IBM Plex Sans'">
+          <thead><tr style="background:oklch(97% 0.004 262)">
+            <th style="text-align:left;font:600 8.5px 'IBM Plex Mono';letter-spacing:.05em;text-transform:uppercase;color:oklch(58% 0.02 262);padding:9px 11px;border-bottom:1px solid oklch(91% 0.006 262);width:64px">Time</th>
+            <th style="text-align:left;font:600 8.5px 'IBM Plex Mono';letter-spacing:.05em;text-transform:uppercase;color:oklch(58% 0.02 262);padding:9px 11px;border-bottom:1px solid oklch(91% 0.006 262)">Beat</th>
+            <th style="text-align:left;font:600 8.5px 'IBM Plex Mono';letter-spacing:.05em;text-transform:uppercase;color:oklch(58% 0.02 262);padding:9px 11px;border-bottom:1px solid oklch(91% 0.006 262)">Say / show</th>
+          </tr></thead>
+          <tbody>
+            <sc-for list="{{ talkTrack }}" as="t" hint-placeholder-count="7">
+              <tr style="border-bottom:1px solid oklch(95.5% 0.004 262);background:{{ t.rowBg }}">
+                <td style="padding:9px 11px;font:600 11px 'IBM Plex Mono';color:{{ t.timeColor }};vertical-align:top;white-space:nowrap">{{ t.time }}</td>
+                <td style="padding:9px 11px;font:600 11.5px 'IBM Plex Sans';color:oklch(32% 0.02 262);vertical-align:top">{{ t.beat }}</td>
+                <td style="padding:9px 11px;font:400 11px/1.45 'IBM Plex Sans';color:oklch(48% 0.02 262);vertical-align:top">{{ t.say }}</td>
+              </tr>
+            </sc-for>
+          </tbody>
+        </table>
+
+        <!-- 5 ANTICIPATED QUESTIONS -->
+        <h2 id="s5" style="font:600 21px 'Newsreader',serif;color:oklch(24% 0.02 262);margin:46px 0 6px"><span style="font:600 13px 'IBM Plex Mono';color:oklch(46% 0.14 275);margin-right:10px">05</span>Anticipated questions — have the answer ready</h2>
+        <p style="font:400 13px/1.6 'IBM Plex Sans';color:oklch(46% 0.02 262);margin:0 0 16px;max-width:66ch">The five a skeptical CFO/CTO will ask. Each is already handled in the artifacts — answer crisply and point.</p>
+        <div style="display:flex;flex-direction:column;gap:9px">
+          <sc-for list="{{ objections }}" as="o" hint-placeholder-count="5">
+            <div style="border:1px solid oklch(92% 0.006 262);border-radius:10px;padding:13px 16px">
+              <div style="display:flex;align-items:baseline;gap:9px">
+                <span style="font:600 12.5px 'IBM Plex Sans';color:oklch(30% 0.02 262)">“{{ o.q }}”</span>
+                <a href="{{ o.href }}" style="font:600 9px 'IBM Plex Mono';color:oklch(46% 0.14 275);text-decoration:none;margin-left:auto;flex:none">{{ o.src }} →</a>
+              </div>
+              <div style="font:400 12px/1.55 'IBM Plex Sans';color:oklch(46% 0.02 262);margin-top:5px">{{ o.a }}</div>
+            </div>
+          </sc-for>
+        </div>
+
+        <!-- close -->
+        <div style="margin-top:34px;background:linear-gradient(150deg, oklch(96% 0.02 275), oklch(97.5% 0.012 285));border:1px solid oklch(90% 0.03 275);border-radius:13px;padding:22px 24px">
+          <div style="font:600 9px 'IBM Plex Mono';letter-spacing:.1em;text-transform:uppercase;color:oklch(48% 0.12 275);margin-bottom:8px">The one line to land</div>
+          <div style="font:500 18px/1.5 'Newsreader',serif;color:oklch(26% 0.03 275)">“We can either keep finding breaking changes in production — or catch them in the pull request. Fund the slice, and in one quarter we'll show you the difference.”</div>
+        </div>
+
+        <div style="margin-top:34px;padding-top:18px;border-top:1px solid oklch(91% 0.006 262);display:flex;align-items:center;gap:10px">
+          <a href="Index - Throughline PRDs.dc.html" style="font:600 11.5px 'IBM Plex Sans';color:oklch(50% 0.02 262);text-decoration:none">← Overview</a>
+          <span style="font:500 11px 'IBM Plex Mono';color:oklch(60% 0.02 262);margin:0 auto">Throughline · Executive Narrative</span>
+          <a href="Throughline - Final.dc.html" style="font:600 11.5px 'IBM Plex Sans';color:oklch(46% 0.14 275);text-decoration:none">Open the prototype →</a>
+        </div>
+      </div>
+    </main>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+class Component extends DCLogic {
+  renderVals() {
+    const IND = 'oklch(46% 0.14 275)';
+    const C = { stakes: 'oklch(55% 0.16 30)', turn: 'oklch(52% 0.15 262)', proof: 'oklch(50% 0.13 155)', ask: 'oklch(52% 0.13 70)' };
+
+    const toc = [
+      ['01', 'Arc at a glance', '#s1'], ['02', 'The narrative', '#s2'], ['03', 'The ask', '#s3'],
+      ['04', 'Tell it in 15', '#s4'], ['05', 'Anticipated Qs', '#s5'],
+    ].map(([n, label, href]) => ({ n, label, href }));
+
+    const heroStats = [
+      { v: '2,000+', l: 'services in scope' },
+      { v: '4 acts', l: 'problem → decision' },
+      { v: '~90 days', l: 'to first proof' },
+      { v: '1 slice', l: 'to fund today' },
+    ];
+
+    const acts = [
+      { tag: 'Act I', name: 'The stakes', color: C.stakes, oneLine: 'Every change is a blind bet — and the estate is too big to reason about by hand.' },
+      { tag: 'Act II', name: 'The turn', color: C.turn, oneLine: 'Trust, don\u2019t just capture — then show the working prototype.' },
+      { tag: 'Act III', name: 'Proof & plan', color: C.proof, oneLine: 'Specified in PRDs, planned across 24 months, grounded in real estimates.' },
+      { tag: 'Act IV', name: 'The ask', color: C.ask, oneLine: 'Fund the first slice against a value gate; stage the rest.' },
+    ];
+
+    const chip = (bg, bd) => ({ chipBg: bg, chipBd: bd });
+    const beat = (n, headline, body, backed, href, glyph) => ({ n, headline, body, backed, href, backedGlyph: glyph, chipBg: 'oklch(98% 0.006 275)', chipBd: 'oklch(92% 0.02 275)' });
+
+    const actGroups = [
+      { tag: 'Act I', name: 'The stakes', color: C.stakes, beats: [
+        beat('1', 'Every schema change is a bet placed in the dark', 'A field widens in one service and a partner export silently breaks three hops downstream — discovered in production, during an incident, not before the merge.', 'See it: Impact in the prototype', 'Throughline - Final.dc.html', '\u25B8'),
+        beat('2', 'The cost is real and compounding', 'Production incidents, audit and compliance exposure on PII flows, and the quiet tax of teams too afraid to change anything because no one can see what depends on what.', 'Risk framing: Critical Review', 'Critical Review.dc.html', '\u25B8'),
+        beat('3', 'Why now — the estate outgrew human memory', 'At 2,000+ services, lineage lives in tribal knowledge and stale docs. AI-assisted code analysis plus runtime signals finally make complete, current lineage feasible.', 'How: PRD 1 · Collection', 'PRD 1 - Lineage Collection.dc.html', '\u25B8'),
+      ]},
+      { tag: 'Act II', name: 'The turn', color: C.turn, beats: [
+        beat('4', 'The insight: trust it, don\u2019t just capture it', 'No single source is complete. Fuse static + LLM (the shape) with runtime Spark, Dask and OTel (the truth), score every edge with confidence, and enforce it in CI/CD.', 'The model: PRD 1 · Collection', 'PRD 1 - Lineage Collection.dc.html', '\u25B8'),
+        beat('5', 'Show, don\u2019t tell — the prototype is real', 'Open it live: navigate end-to-end lineage down to the column, simulate a schema change, and watch the blast radius light up across services, datasets and fields. This is the moment the room believes.', 'Demo: the working prototype', 'Throughline - Final.dc.html', '\u25B8'),
+        beat('6', 'Impact you can act on, not just admire', 'Confirmed vs. possible impact, aware of which code paths actually run — so a warning means something and the CI/CD gate can be trusted to block.', 'The logic: PRD 2 · Impact', 'PRD 2 - Impact Analysis.dc.html', '\u25B8'),
+      ]},
+      { tag: 'Act III', name: 'Proof & plan', color: C.proof, beats: [
+        beat('7', 'Specified, not hand-waved', 'Three PRDs define exactly how lineage is collected, how impact is computed, and how it\u2019s represented for every audience — from analyst to platform engineer.', 'Read: PRDs 1\u20133', 'Index - Throughline PRDs.dc.html', '\u25B8'),
+        beat('8', 'A credible, staged plan', '24 months in four phases, with demonstrable value at every six-week PI. It starts with one vertical slice, end to end, to de-risk the hardest parts before scaling.', 'Plan: Roadmap & LOE', 'Roadmap & LOE.dc.html', '\u25B8'),
+        beat('9', 'Grounded estimates, adversarially tested', 'Level-of-effort tied to the timeline, an onboarding estimator for any new slice, and a red-team review that already surfaced and closed the biggest objections.', 'Rigor: Estimator & Review', 'Onboarding Estimator.dc.html', '\u25B8'),
+      ]},
+      { tag: 'Act IV', name: 'The ask', color: C.ask, beats: [
+        beat('10', 'Fund the first slice; stage the rest', 'Approve Phase 0 against a clear value gate. Each later phase is re-funded only on delivered value, so the commitment grows with the evidence — never ahead of it.', 'Gates: the staged ask below', '#s3', '\u25BE'),
+      ]},
+    ];
+
+    const gates = [
+      { gate: 'Gate 0 · fund now', phase: 'Phase 0 · Slice', pi: 'PI 1\u20134', color: C.stakes, proof: 'Identity resolution proven; trustworthy column-level lineage on one pilot app; the first impact answer.' },
+      { gate: 'Gate 1 · on proof', phase: 'Phase 1 · Domain', pi: 'PI 5\u20138', color: C.turn, proof: 'Runtime-confirmed lineage; an advisory impact check flags a real breaking change before merge.' },
+      { gate: 'Gate 2 · on proof', phase: 'Phase 2 · Critical apps', pi: 'PI 9\u201312', color: C.proof, proof: 'The gate blocks: a breaking change is stopped before production across critical applications.' },
+      { gate: 'Gate 3 · on proof', phase: 'Phase 3 · Trust', pi: 'PI 13\u201316', color: C.ask, proof: 'Org-wide coverage and confidence hardening — the funded end state.' },
+    ];
+
+    const tt = (time, beatN, say, hot) => ({ time, beat: beatN, say, rowBg: hot ? 'oklch(98% 0.02 275)' : '#fff', timeColor: hot ? IND : 'oklch(52% 0.02 262)' });
+    const talkTrack = [
+      tt('0:00', 'Open on the stakes', 'The blind-bet story — one field change, a partner export down in production. Make it visceral and specific.', false),
+      tt('2:00', 'The cost & why now', 'Incidents, audit exposure, change paralysis. Then: the estate is too big for humans, and AI + runtime finally make this solvable.', false),
+      tt('4:00', 'The insight', 'Trust, don\u2019t just capture: multi-signal + confidence + CI/CD gating. One slide, then move.', false),
+      tt('6:00', 'Demo the prototype', 'The centerpiece. Simulate the email type change; walk the blast radius live. Let silence do the work.', true),
+      tt('10:00', 'The plan', 'Four phases, value every PI, vertical slice first. Show the arc, not the detail.', false),
+      tt('12:00', 'The ask', 'Fund Phase 0 against a value gate; stage the rest. Land the one-liner.', false),
+      tt('14:00', 'Q&A / close', 'Take the top questions (next section) and end on the one line to land.', false),
+    ];
+
+    const objections = [
+      { q: 'Why build this instead of buying a catalog?', a: 'Off-the-shelf catalogs stop at table-level lineage. Code-path-level impact, CI/CD gating and per-edge confidence are our wedge — and we integrate with existing tools rather than rip-and-replace. Build-vs-buy is already settled.', src: 'Critical Review', href: 'Critical Review.dc.html' },
+      { q: 'Why 24 months and two teams?', a: 'It\u2019s staged, not a lump bet — each phase re-funded on value. Effort is reconciled to the timeline (\u2248605\u2013780 eng-weeks) so staffing and estimate line up.', src: 'Roadmap & LOE', href: 'Roadmap & LOE.dc.html' },
+      { q: 'When do we see real value?', a: 'A demonstrable win in ~90 days on the slice — catching one real breaking change — and value at every six-week PI thereafter. Leadership funds outcomes, so we tie gates to them.', src: 'Roadmap & LOE', href: 'Roadmap & LOE.dc.html' },
+      { q: 'What\u2019s the biggest technical risk?', a: 'Identity resolution across signals. It\u2019s pulled forward into a Phase 0 spike with a GO / PIVOT / STOP exit before the full plan is committed.', src: 'Critical Review', href: 'Critical Review.dc.html' },
+      { q: 'Will teams actually adopt it?', a: 'A funded adoption workstream with a named exec sponsor and an observe \u2192 warn \u2192 block rollout — we earn the right to block rather than starting there, so trust holds.', src: 'Critical Review', href: 'Critical Review.dc.html' },
+    ];
+
+    return { toc, heroStats, acts, actGroups, gates, talkTrack, objections };
+  }
+}
+</script>
+</body>
+</html>

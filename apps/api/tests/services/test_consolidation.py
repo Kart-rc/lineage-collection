@@ -450,3 +450,75 @@ def test_endpoint_observation_replay_is_idempotent(tmp_path: Path) -> None:
     )
 
     assert replay == first
+
+
+def test_a_resolver_answer_contradicting_the_wire_system_never_rebinds_the_dataset(
+    tmp_path: Path,
+) -> None:
+    """spring-petclinic-rest's `postgres://petclinic-rest/owners` observation was
+    resolved by bare table name to the DEMO catalog's `petclinic:owners` dataset,
+    so its own edge silently never corroborated -- and a same-named edge in another
+    system could have been corroborated falsely. A relational wire identifier's
+    authority IS the system (`wire_dataset` mints `platform://system/dataset`), so a
+    catalog answer naming a different system must be refused in favour of the wire.
+    """
+    from lineage_api.domain.urns import LineageUrn
+    from lineage_api.services.consolidation import ConsolidationService
+    from lineage_api.services.resolver import ResolvedName
+
+    class _WrongSystemResolver:
+        snapshot_id = "catalog-snapshot-test"
+
+        def resolve(self, raw, context):
+            table = raw.value.rsplit("/", 1)[-1]
+            return ResolvedName(
+                status="RESOLVED",
+                urn=LineageUrn("staging", "postgres", "petclinic", table),
+                element_urns=(),
+                catalog_ref="demo-catalog",
+                rules_applied=("name-match",),
+                resolver_version="test",
+                snapshot_id="catalog-snapshot-test",
+            )
+
+    database = Database(tmp_path / "lineage.db")
+    database.initialize()
+    service = ConsolidationService(
+        database, clock=lambda: "2026-08-14T00:00:00Z", resolver=_WrongSystemResolver()
+    )
+    rest_element = "urn:ldp:staging:postgres:petclinic-rest:owners#id"
+    rest_service = (
+        "service://spring-petclinic-rest/"
+        "org.springframework.samples.petclinic.service.ClinicServiceImpl#findOwnerById"
+    )
+    static = service.merge(
+        _sca_assertion(
+            "prov-sca-rest-owners",
+            from_urns=(rest_element,),
+            to_urn=rest_service,
+            edge_type="READS",
+        )
+    )
+    observation = {
+        "observationId": "runtime-rest-owners-1",
+        "granularity": "ELEMENT",
+        "sourceDatasets": ["postgres://petclinic-rest/owners"],
+        "targetDataset": "postgres://petclinic-rest/owners",
+        "sourceFields": ["id"],
+        "targetField": "id",
+        "endpoint": rest_service,
+        "edgeType": "READS",
+        "exact": True,
+    }
+
+    merged = service.merge_runtime_observation(
+        observation,
+        _endpoint_manifest("runtime-session-rest"),
+        environment="staging",
+        repo="spring-petclinic-rest",
+        correlation_id="corr-runtime-rest",
+    )
+
+    assert len(merged) == 1
+    assert merged[0].edge_key == static.edge_key
+    assert merged[0].band == "HIGH"

@@ -41,9 +41,16 @@ test("provides an accessible control-room shell and namespace watermark", async 
     "#main-content",
   );
   const navigation = screen.getByRole("navigation", { name: "Primary" });
-  for (const name of ["Operations", "Review queue", "Lineage explorer", "Runs"]) {
+  for (const name of [
+    "Operations",
+    "Onboarding",
+    "Review queue",
+    "Lineage explorer",
+    "Interactions",
+    "Runs",
+  ]) {
     expect(navigation).toHaveTextContent(name);
   }
-  expect(await screen.findByText("Active graph v1")).toBeVisible();
+  expect(await screen.findByText(/Active graph v1/)).toBeVisible();
   expect(screen.getByText("Seeded prototype")).toHaveTextContent("Seeded prototype");
 });

@@ -65,11 +65,21 @@ def _runtime_status_for_summary(envelope: dict[str, Any], runtime: dict[str, Any
 def _runtime_stage_diagnostic(stage: str, exc: Exception) -> dict[str, str]:
     """Bounded, operator-facing diagnostic for a runtime stage that raised. Recorded
     on run-stage detail only -- the closed-vocabulary wire `runtimeReasons` never
-    carries exception text, only the fixed "execution-failed" reason code."""
+    carries exception text, only the fixed "execution-failed" reason code.
+
+    `str(CalledProcessError)` is only the failed command line; the actionable detail
+    of a harness `javac` failure is the compiler's own errors on `stderr`, so a
+    bounded tail of captured stderr is appended when the exception carries one."""
+    message = str(exc)[:160]
+    stderr = getattr(exc, "stderr", None)
+    if isinstance(stderr, bytes):
+        stderr = stderr.decode(errors="replace")
+    if isinstance(stderr, str) and stderr.strip():
+        message = f"{message} | stderr: {stderr.strip()[-300:]}"
     return {
         "stage": stage,
         "exceptionType": type(exc).__name__,
-        "message": str(exc)[:160],
+        "message": message,
     }
 
 
@@ -1114,7 +1124,10 @@ class OrchestrationService:
             if edge.get("from") and is_java_service_anchored_edge(edge)
         ]
         if not python_edges and not java_edges:
-            return None, ["execution-failed"], []
+            # Nothing either seam could ground is not a failed execution -- nothing
+            # was executable. Say so, in the closed vocabulary, so an operator can
+            # tell "no element/service-anchored edge to witness" from a crash.
+            return None, ["no-groundable-edges"], []
         snapshot = self._snapshot_provider.resolve(envelope)
         read = lambda path: snapshot.read_bytes(path).decode()
         python_paths = [p for p in snapshot.paths if p.endswith(".py")]
@@ -1710,7 +1723,7 @@ class OrchestrationService:
         )
         run = self._run_for_correlation(decision.proposal.correlation_id)
         self._stage(run["runId"], "PUBLISHING", {"approvalId": decision.approval.approval_id})
-        published = self._publisher.publish(decision.proposal, decision.approval, env="staging")
+        published = self._publisher.publish(decision.proposal, decision.approval, env=run["env"])
         with self._database.connection() as connection:
             graph = connection.execute(
                 "SELECT checksum FROM graph_versions WHERE env = ? AND version = ?",

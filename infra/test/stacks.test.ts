@@ -36,7 +36,7 @@ function platform() {
     publication,
   });
   const intake = new IntakeStack(app, "Intake", { config, network, data, orchestration });
-  const api = new ApiStack(app, "Api", { config, network, data });
+  const api = new ApiStack(app, "Api", { config, network, data, intake });
   const web = new WebStack(app, "Web", {
     config,
     api,
@@ -498,6 +498,28 @@ describe("lineage platform stacks", () => {
     );
     Template.fromStack(stacks.operations).hasResourceProperties("AWS::Budgets::Budget", {
       Budget: Match.anyValue(),
+    });
+  });
+
+  it("lets the product API observe lane queue health read-only", () => {
+    Template.fromStack(stacks.api).hasResourceProperties("AWS::Lambda::Function", {
+      Environment: {
+        Variables: Match.objectLike({
+          LINEAGE_INTERACTIVE_QUEUE_URL: Match.anyValue(),
+          LINEAGE_EVENTS_QUEUE_URL: Match.anyValue(),
+          LINEAGE_BATCH_QUEUE_URL: Match.anyValue(),
+          LINEAGE_INTERACTIVE_DLQ_URL: Match.anyValue(),
+          LINEAGE_EVENTS_DLQ_URL: Match.anyValue(),
+          LINEAGE_BATCH_DLQ_URL: Match.anyValue(),
+        }),
+      },
+    });
+    Template.fromStack(stacks.api).hasResourceProperties("AWS::IAM::Policy", {
+      PolicyDocument: Match.objectLike({
+        Statement: Match.arrayWith([
+          Match.objectLike({ Action: "sqs:GetQueueAttributes" }),
+        ]),
+      }),
     });
   });
 

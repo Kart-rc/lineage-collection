@@ -502,9 +502,10 @@ def main() -> int:
 
     _rule("NOT COVERED — stated so the score is not read as completeness")
     for line in (
-        "OTel span enrichment to interactions: designed in the plan, not built.",
-        "Outbound extraction covers @FeignClient only; RestTemplate/WebClient call",
-        "  sites are not yet read.",
+        "OTel interaction enrichment exists at the adapter contract only; no",
+        "  enterprise collector feeds it (CTX-12), so no live span reaches it here.",
+        "Outbound extraction reads @FeignClient plus literal RestTemplate/WebClient",
+        "  URLs; variable-built URLs stay dynamic-endpoint residue by design.",
         "Liveness bands read COLD because the generated plan runs each edge once;",
         "  they describe this run, not production traffic.",
         "java-spring-corpus still yields zero edges by design (H2 compatibility).",

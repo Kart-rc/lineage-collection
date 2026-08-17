@@ -174,3 +174,61 @@ def test_session_and_index_statements_do_not_break_a_replay() -> None:
 
     assert [table.name for table in schema.tables] == ["owners"]
     assert schema.complete is True
+
+
+def test_sequence_and_data_statements_are_inventory_neutral() -> None:
+    # Sequences and data loads can never add or remove a table or column, so a
+    # replay containing them stays complete — mirroring the Liquibase side's
+    # createSequence/alterSequence/loadData handling.
+    schema = _replay(
+        (
+            "db/migration/V1__init.sql",
+            "create sequence user_id_seq start with 100 increment by 50;\n"
+            "create table users (id bigint not null default nextval('user_id_seq'),"
+            " email varchar(255) not null, primary key (id));\n"
+            "alter sequence user_id_seq restart with 101;",
+        ),
+        ("db/migration/V2__data.sql", "insert into users (id, email) values (1, 'a@b.c');"),
+        ("db/migration/V3__cleanup.sql", "drop sequence user_id_seq;"),
+    )
+
+    assert [table.name for table in schema.tables] == ["users"]
+    assert [column.name for column in schema.tables[0].columns] == ["id", "email"]
+    assert schema.complete is True
+    assert schema.residue == ()
+
+
+def test_data_updates_and_constraint_only_alters_are_inventory_neutral() -> None:
+    # UPDATE rewrites rows, and ALTER COLUMN SET NOT NULL / SET DEFAULT change
+    # constraints — none of them add or remove a table or column.
+    schema = _replay(
+        (
+            "db/migration/V1__init.sql",
+            "create table posts (id bigint, category_id bigint);",
+        ),
+        (
+            "db/migration/V2__constraints.sql",
+            "update posts set category_id = 3 where category_id is null;\n"
+            "alter table posts alter column category_id set not null;",
+        ),
+    )
+
+    assert [table.name for table in schema.tables] == ["posts"]
+    assert [column.name for column in schema.tables[0].columns] == ["id", "category_id"]
+    assert schema.complete is True
+    assert schema.residue == ()
+
+
+def test_an_alter_command_that_is_not_a_sequence_stays_residue() -> None:
+    schema = _replay(
+        (
+            "db/migration/V1__init.sql",
+            "create table owners (id integer);\nalter system set work_mem = '64MB';",
+        ),
+    )
+
+    assert schema.complete is False
+    assert any(
+        entry.code in {"unmodelled-migration-statement", "malformed-migration-sql"}
+        for entry in schema.residue
+    )

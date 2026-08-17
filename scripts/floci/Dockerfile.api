@@ -1,0 +1,12 @@
+# Product API over the floci-emulated AWS state (context: repo root).
+FROM python:3.12-slim
+WORKDIR /app
+COPY apps/api ./apps/api
+RUN pip install --no-cache-dir ./apps/api boto3 uvicorn
+# The floci harness modules (SQLite graph projection + Java-aware publication
+# seams) and the API server itself.
+COPY tests/integration/floci /app/floci_modules
+COPY scripts/floci/floci_product_api.py /app/serve/floci_product_api.py
+ENV PYTHONPATH=/app/floci_modules
+EXPOSE 8000
+CMD ["uvicorn", "--app-dir", "/app/serve", "floci_product_api:app", "--host", "0.0.0.0", "--port", "8000"]
