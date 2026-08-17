@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hmac
 import json
 import re
 from contextlib import asynccontextmanager
@@ -72,6 +73,35 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         allow_methods=["GET", "POST"],
         allow_headers=["Content-Type"],
     )
+
+    if configured.api_token is not None:
+        expected_token = configured.api_token
+
+        @application.middleware("http")
+        async def require_api_token(request: Request, call_next):
+            """Gate every route but the liveness probe on a bearer token.
+
+            Only installed when LINEAGE_API_TOKEN is configured, so a local
+            single-operator run is unaffected. Reads are gated alongside writes:
+            the lineage graph discloses the estate's schema and topology, so it is
+            not safe to expose merely because it mutates nothing.
+            """
+            if request.url.path == "/healthz" or request.method == "OPTIONS":
+                return await call_next(request)
+            supplied = request.headers.get("authorization", "")
+            scheme, _, presented = supplied.partition(" ")
+            if scheme.lower() != "bearer" or not hmac.compare_digest(
+                presented.strip(), expected_token
+            ):
+                return JSONResponse(
+                    {
+                        "code": "UNAUTHORIZED",
+                        "message": "A valid bearer token is required",
+                        "correlationId": _correlation_id(request),
+                    },
+                    status_code=401,
+                )
+            return await call_next(request)
 
     @application.exception_handler(DomainError)
     async def domain_error_handler(_: Request, error: DomainError) -> JSONResponse:
@@ -363,4 +393,21 @@ def _correlation_id(request: Request) -> str:
     return "collection-request"
 
 
-app = create_app()
+_app: FastAPI | None = None
+
+
+def __getattr__(name: str) -> Any:
+    """Build the ASGI app on first access rather than at import.
+
+    `uvicorn lineage_api.main:app` still resolves exactly as before, but simply
+    importing this module no longer reads configuration. That matters now that a
+    missing signing secret is a hard error: importing `create_app` for a test, or
+    for tooling that supplies its own Settings, must not require the environment
+    of a running server.
+    """
+    if name != "app":
+        raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+    global _app
+    if _app is None:
+        _app = create_app()
+    return _app

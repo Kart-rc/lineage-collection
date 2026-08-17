@@ -7,8 +7,8 @@
     "infra"
   ],
   "scripts": {
-    "dev": "concurrently -k -n api,web -c cyan,yellow \"uv run --project apps/api uvicorn lineage_api.main:app --reload --host 127.0.0.1 --port 8000\" \"npm run dev --workspace apps/web\"",
-    "reset": "uv run --project apps/api python -m lineage_api.cli reset",
+    "dev": "concurrently -k -n api,web -c cyan,yellow \"LINEAGE_DEV_MODE=1 uv run --project apps/api uvicorn lineage_api.main:app --reload --host 127.0.0.1 --port 8000\" \"npm run dev --workspace apps/web\"",
+    "reset": "LINEAGE_DEV_MODE=1 uv run --project apps/api python -m lineage_api.cli reset",
     "test": "npm run test:backend && npm run test:web && npm run test:infra",
     "test:backend": "uv run --project apps/api --extra dev pytest -q",
     "test:web": "npm test --workspace apps/web -- --run",
