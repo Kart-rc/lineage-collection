@@ -918,9 +918,9 @@
             <p>The guarded cleanup script validates account and namespace, but its current primary-stack loop does not enumerate the <code>web</code> stack. Treat “no unowned resources” as unproven until corrected and observed.</p>
           </article>
           <article class="gap-card">
-            <span class="status status--partial">source drift</span>
+            <span class="status status--verified">reconciled</span>
             <h3>Lambda count</h3>
-            <p><code>infra/lib/runtime-assets.ts</code> defines ten targets. The current README sentence says nine; the implementation inventory is authoritative and this change reconciles the text.</p>
+            <p><code>infra/lib/runtime-assets.ts</code> defines ten targets. The base README sentence said nine; this change reconciles the text to the implementation inventory.</p>
           </article>
         </div>
       </section>
@@ -1089,7 +1089,7 @@
         { kicker: "provenance", local: "Digest manifests", aws: "Digest manifests", detail: "source correlated", kind: "durable", component: "ecr" },
         { kicker: "foundation", local: "CDK synthesis", aws: "Recovery + network + data", detail: "ordered stacks", kind: "sync", component: "recovery" },
         { kicker: "registry", local: "OCI archives", aws: "ECR exact digests", detail: "immutable tags", kind: "durable", component: "ecr" },
-        { kicker: "topology", local: "CloudFormation templates", aws: "CDK deploy --all", detail: "nine stack families", kind: "sync", component: "step-functions" },
+        { kicker: "topology", local: "CloudFormation templates", aws: "CDK deploy --all", detail: "eleven stack families", kind: "sync", component: "step-functions" },
         { kicker: "release", local: "Handler smoke", aws: "Lambda canary + Fargate", detail: "live aliases", kind: "sync", component: "deployment" },
         { kicker: "evidence", local: "Deterministic smoke", aws: "Opt-in AWS smoke", detail: "retained proof", kind: "durable", component: "cloudwatch" },
         { kicker: "cleanup", local: "Namespace reset", aws: "Guarded stack destroy", detail: "web gap remains", kind: "durable", component: "recovery" },

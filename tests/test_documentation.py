@@ -100,6 +100,8 @@ def test_lineage_deployment_explorer_covers_collection_deployment_and_product_fl
         "neptune",
     ):
         assert service in lowered
+    assert "eleven stack families" in lowered
+    assert "base readme sentence said nine" in lowered
     for target in (
         "intake",
         "control-stage",
