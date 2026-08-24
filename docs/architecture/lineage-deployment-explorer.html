@@ -1,0 +1,1036 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <meta name="description" content="Interactive, evidence-grounded guide to lineage collection and AWS deployment in this repository.">
+  <title>Lineage Deployment Explorer</title>
+  <link rel="stylesheet" href="../architecture-deck/fonts.css">
+  <style>
+    :root {
+      --ink: #06131b;
+      --ink-raised: #0a1d27;
+      --panel: rgba(12, 35, 46, 0.88);
+      --panel-strong: #102a36;
+      --line: rgba(168, 213, 224, 0.18);
+      --line-bright: rgba(168, 213, 224, 0.36);
+      --paper: #edf8f7;
+      --muted: #9cb8bd;
+      --cyan: #47e2dc;
+      --cyan-soft: rgba(71, 226, 220, 0.13);
+      --lime: #b8eb70;
+      --green: #77d995;
+      --amber: #ffbf5b;
+      --red: #ff7c68;
+      --slate: #8da2aa;
+      --violet: #c7adff;
+      --shadow: 0 24px 70px rgba(0, 0, 0, 0.34);
+      --radius: 18px;
+      --mono: "IBM Plex Mono", ui-monospace, monospace;
+      --sans: "IBM Plex Sans", "Helvetica Neue", sans-serif;
+      --max: 1500px;
+    }
+
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      min-width: 300px;
+      color: var(--paper);
+      background:
+        radial-gradient(circle at 78% 7%, rgba(71, 226, 220, 0.12), transparent 30rem),
+        radial-gradient(circle at 12% 45%, rgba(199, 173, 255, 0.07), transparent 36rem),
+        linear-gradient(180deg, #06131b 0%, #081923 55%, #06131b 100%);
+      font-family: var(--sans);
+      line-height: 1.55;
+    }
+    body::before {
+      content: "";
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      opacity: 0.22;
+      background-image:
+        linear-gradient(rgba(117, 173, 184, 0.08) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(117, 173, 184, 0.08) 1px, transparent 1px);
+      background-size: 32px 32px;
+      mask-image: linear-gradient(to bottom, black, transparent 78%);
+    }
+    a { color: var(--cyan); text-underline-offset: 0.2em; }
+    a:hover { color: #a8fffb; }
+    button, select { font: inherit; }
+    button { color: inherit; }
+    code, pre, .mono { font-family: var(--mono); }
+    :focus-visible { outline: 3px solid var(--amber); outline-offset: 4px; }
+    [hidden] { display: none !important; }
+
+    .skip-link {
+      position: fixed;
+      z-index: 100;
+      top: 0.75rem;
+      left: 0.75rem;
+      transform: translateY(-160%);
+      padding: 0.75rem 1rem;
+      color: var(--ink);
+      background: var(--amber);
+      border-radius: 999px;
+      font-weight: 700;
+    }
+    .skip-link:focus { transform: translateY(0); }
+
+    .site-header {
+      position: sticky;
+      z-index: 50;
+      top: 0;
+      border-bottom: 1px solid var(--line);
+      background: rgba(6, 19, 27, 0.9);
+      backdrop-filter: blur(18px);
+    }
+    .site-header__inner {
+      width: min(calc(100% - 2rem), var(--max));
+      min-height: 68px;
+      margin: 0 auto;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 1rem;
+    }
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 0.8rem;
+      color: var(--paper);
+      text-decoration: none;
+    }
+    .brand__mark {
+      display: grid;
+      place-items: center;
+      width: 34px;
+      aspect-ratio: 1;
+      border: 1px solid var(--cyan);
+      border-radius: 50%;
+      color: var(--cyan);
+      box-shadow: 0 0 24px rgba(71, 226, 220, 0.3), inset 0 0 16px rgba(71, 226, 220, 0.14);
+      font-family: var(--mono);
+      font-size: 0.72rem;
+      font-weight: 700;
+    }
+    .brand__copy { display: grid; line-height: 1.05; }
+    .brand__copy strong { letter-spacing: -0.02em; }
+    .brand__copy span { color: var(--muted); font-family: var(--mono); font-size: 0.67rem; text-transform: uppercase; }
+    .site-nav { display: flex; gap: 0.25rem; }
+    .site-nav a {
+      padding: 0.55rem 0.7rem;
+      border-radius: 8px;
+      color: var(--muted);
+      font-size: 0.84rem;
+      font-weight: 600;
+      text-decoration: none;
+    }
+    .site-nav a:hover { color: var(--paper); background: var(--cyan-soft); }
+
+    .page-shell {
+      position: relative;
+      width: min(calc(100% - 2rem), var(--max));
+      margin: 0 auto;
+    }
+    .hero {
+      min-height: 690px;
+      padding: clamp(5rem, 9vw, 9rem) 0 4rem;
+      display: grid;
+      grid-template-columns: minmax(0, 1.15fr) minmax(320px, 0.65fr);
+      align-items: end;
+      gap: clamp(2.5rem, 7vw, 8rem);
+    }
+    .eyebrow {
+      margin: 0 0 1rem;
+      color: var(--cyan);
+      font-family: var(--mono);
+      font-size: 0.72rem;
+      font-weight: 600;
+      letter-spacing: 0.16em;
+      text-transform: uppercase;
+    }
+    .hero h1 {
+      max-width: 980px;
+      margin: 0;
+      font-size: clamp(3.4rem, 8.5vw, 8.8rem);
+      font-weight: 500;
+      letter-spacing: -0.075em;
+      line-height: 0.86;
+    }
+    .hero h1 span { display: block; color: transparent; -webkit-text-stroke: 1.3px rgba(237, 248, 247, 0.58); }
+    .hero__lede {
+      max-width: 780px;
+      margin: 2rem 0 0;
+      color: #c3d7d9;
+      font-size: clamp(1.05rem, 1.5vw, 1.3rem);
+    }
+    .hero__console {
+      position: relative;
+      padding: 1.3rem;
+      border: 1px solid var(--line-bright);
+      border-radius: var(--radius);
+      background: linear-gradient(155deg, rgba(18, 47, 58, 0.96), rgba(7, 24, 33, 0.9));
+      box-shadow: var(--shadow);
+    }
+    .hero__console::before {
+      content: "EVIDENCE BOUNDARY / CURRENT HEAD";
+      position: absolute;
+      top: -0.72rem;
+      left: 1rem;
+      padding: 0.15rem 0.45rem;
+      color: var(--muted);
+      background: var(--ink);
+      font-family: var(--mono);
+      font-size: 0.62rem;
+      letter-spacing: 0.12em;
+    }
+    .truth-list { margin: 0; display: grid; gap: 0.2rem; }
+    .truth-list div {
+      display: grid;
+      grid-template-columns: 92px 1fr;
+      gap: 1rem;
+      padding: 0.9rem 0;
+      border-bottom: 1px solid var(--line);
+    }
+    .truth-list div:last-child { border-bottom: 0; }
+    .truth-list dt { color: var(--muted); font-family: var(--mono); font-size: 0.68rem; text-transform: uppercase; }
+    .truth-list dd { margin: 0; font-size: 0.92rem; }
+
+    .status {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.35rem;
+      padding: 0.24rem 0.52rem;
+      border: 1px solid currentColor;
+      border-radius: 999px;
+      font-family: var(--mono);
+      font-size: 0.62rem;
+      font-weight: 600;
+      letter-spacing: 0.045em;
+      line-height: 1.15;
+      text-transform: uppercase;
+      white-space: nowrap;
+    }
+    .status::before { content: ""; width: 5px; height: 5px; border-radius: 50%; background: currentColor; }
+    .status--verified { color: var(--green); }
+    .status--synthesized { color: #81c8ff; }
+    .status--partial { color: var(--amber); }
+    .status--planned { color: var(--slate); }
+    .status--required { color: var(--red); }
+    .status--not-configured { color: var(--violet); }
+
+    .legend {
+      margin-top: 2rem;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+    }
+    .legend .status { opacity: 0.9; }
+
+    .evidence-rail {
+      margin: 0 0 8rem;
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      overflow: hidden;
+      background: rgba(5, 20, 29, 0.6);
+    }
+    .evidence-rail article { min-height: 190px; padding: 1.4rem; border-right: 1px solid var(--line); }
+    .evidence-rail article:last-child { border-right: 0; }
+    .evidence-rail h2 { margin: 0.8rem 0 0.4rem; font-size: 1.15rem; }
+    .evidence-rail p { margin: 0; color: var(--muted); font-size: 0.9rem; }
+
+    .section { margin: 0 0 10rem; scroll-margin-top: 100px; }
+    .section-heading {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(280px, 0.55fr);
+      gap: 2rem;
+      align-items: end;
+      margin-bottom: 2.5rem;
+    }
+    .section-heading h2 { margin: 0; max-width: 900px; font-size: clamp(2.3rem, 5vw, 5.2rem); font-weight: 500; letter-spacing: -0.055em; line-height: 0.96; }
+    .section-heading > p { margin: 0; color: var(--muted); }
+
+    .journey-tabs {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 1px;
+      padding: 1px;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      background: var(--line);
+      overflow: hidden;
+    }
+    .journey-tab {
+      min-height: 76px;
+      padding: 0.9rem 1rem;
+      border: 0;
+      background: #0a1c25;
+      text-align: left;
+      cursor: pointer;
+    }
+    .journey-tab:hover, .journey-tab[aria-selected="true"] { background: var(--panel-strong); }
+    .journey-tab[aria-selected="true"] { box-shadow: inset 0 -3px var(--cyan); }
+    .journey-tab small { display: block; margin-bottom: 0.2rem; color: var(--muted); font-family: var(--mono); font-size: 0.62rem; letter-spacing: 0.08em; }
+    .journey-tab strong { font-size: 0.94rem; }
+
+    .journey-stage {
+      margin-top: 1rem;
+      display: grid;
+      grid-template-columns: minmax(0, 1.4fr) minmax(300px, 0.6fr);
+      min-height: 680px;
+      border: 1px solid var(--line-bright);
+      border-radius: 24px;
+      background: rgba(8, 27, 36, 0.82);
+      overflow: hidden;
+      box-shadow: var(--shadow);
+    }
+    .journey-map { position: relative; padding: clamp(1.2rem, 3vw, 2.5rem); overflow: hidden; }
+    .journey-map::after {
+      content: "";
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      background: linear-gradient(135deg, rgba(71, 226, 220, 0.04), transparent 48%);
+    }
+    .journey-map__topline { position: relative; z-index: 2; display: flex; align-items: center; justify-content: space-between; gap: 1rem; margin-bottom: 2.5rem; }
+    .journey-map__label { color: var(--muted); font-family: var(--mono); font-size: 0.68rem; letter-spacing: 0.1em; text-transform: uppercase; }
+    .adapter-switch { display: inline-flex; padding: 3px; border: 1px solid var(--line); border-radius: 999px; background: rgba(0, 0, 0, 0.18); }
+    .adapter-switch button { padding: 0.42rem 0.72rem; border: 0; border-radius: 999px; color: var(--muted); background: transparent; font-family: var(--mono); font-size: 0.67rem; cursor: pointer; }
+    .adapter-switch button[aria-pressed="true"] { color: var(--ink); background: var(--cyan); }
+
+    .flow-graph {
+      position: relative;
+      z-index: 2;
+      margin: 0;
+      padding: 0;
+      display: grid;
+      grid-template-columns: repeat(3, minmax(130px, 1fr));
+      gap: 1.25rem 2rem;
+      list-style: none;
+    }
+    .flow-node {
+      position: relative;
+      min-height: 118px;
+      padding: 0.9rem;
+      border: 1px solid var(--line-bright);
+      border-radius: 12px;
+      background: rgba(7, 24, 32, 0.94);
+    }
+    .flow-node:not(:last-child)::after {
+      content: "→";
+      position: absolute;
+      right: -1.45rem;
+      top: 50%;
+      z-index: 2;
+      color: var(--muted);
+      font-family: var(--mono);
+      transform: translateY(-50%);
+    }
+    .flow-node:nth-child(3n):not(:last-child)::after { content: "↙"; right: auto; left: 50%; top: auto; bottom: -1.3rem; transform: translateX(-50%); }
+    .flow-node small { display: block; color: var(--cyan); font-family: var(--mono); font-size: 0.61rem; text-transform: uppercase; }
+    .flow-node strong { display: block; margin-top: 0.35rem; font-size: 0.91rem; line-height: 1.25; }
+    .flow-node span { display: block; margin-top: 0.45rem; color: var(--muted); font-family: var(--mono); font-size: 0.62rem; }
+    .flow-node[data-kind="durable"] { border-style: dashed; }
+
+    .journey-narrative { padding: clamp(1.4rem, 3vw, 2.3rem); border-left: 1px solid var(--line); background: rgba(4, 18, 26, 0.75); }
+    .journey-narrative h3 { margin: 0.5rem 0 1rem; font-size: clamp(1.7rem, 2.5vw, 2.5rem); letter-spacing: -0.035em; line-height: 1; }
+    .journey-narrative > p { color: #c5d8d9; }
+    .step-counter { color: var(--cyan); font-family: var(--mono); font-size: 0.68rem; letter-spacing: 0.1em; text-transform: uppercase; }
+    .step-contract { margin: 1.5rem 0; padding: 1rem; border-left: 2px solid var(--cyan); background: var(--cyan-soft); }
+    .step-contract small { display: block; color: var(--muted); font-family: var(--mono); font-size: 0.62rem; text-transform: uppercase; }
+    .step-contract code { display: block; margin-top: 0.35rem; color: var(--paper); font-size: 0.74rem; overflow-wrap: anywhere; }
+    .playback { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.5rem; margin-top: 1.5rem; }
+    .control-button {
+      min-height: 42px;
+      padding: 0.55rem;
+      border: 1px solid var(--line-bright);
+      border-radius: 9px;
+      background: rgba(15, 42, 53, 0.9);
+      cursor: pointer;
+      font-family: var(--mono);
+      font-size: 0.66rem;
+      text-transform: uppercase;
+    }
+    .control-button:hover { border-color: var(--cyan); color: var(--cyan); }
+    .control-button:disabled { opacity: 0.38; cursor: not-allowed; }
+    .progress-track { height: 3px; margin-top: 1rem; background: var(--line); }
+    .progress-track span { display: block; width: 9%; height: 100%; background: var(--cyan); }
+
+    .static-journeys { margin-top: 1rem; display: grid; grid-template-columns: repeat(2, 1fr); gap: 0.75rem; }
+    .static-journeys details { padding: 1rem; border: 1px solid var(--line); border-radius: 12px; background: rgba(11, 32, 41, 0.6); }
+    .static-journeys summary { cursor: pointer; font-weight: 700; }
+    .static-journeys p { margin-bottom: 0; color: var(--muted); font-size: 0.86rem; }
+
+    .artifact-line {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 0;
+      border-top: 1px solid var(--line-bright);
+      border-bottom: 1px solid var(--line-bright);
+    }
+    .artifact-card { position: relative; min-height: 260px; padding: 1.4rem; border-right: 1px solid var(--line); }
+    .artifact-card:nth-child(4n) { border-right: 0; }
+    .artifact-card:nth-child(n+5) { border-top: 1px solid var(--line); }
+    .artifact-card__number { color: var(--cyan); font-family: var(--mono); font-size: 0.65rem; }
+    .artifact-card h3 { margin: 2.4rem 0 0.7rem; font-size: 1.2rem; }
+    .artifact-card code { color: var(--amber); font-size: 0.7rem; overflow-wrap: anywhere; }
+    .artifact-card p { color: var(--muted); font-size: 0.84rem; }
+
+    .transport-callout {
+      margin-top: 2rem;
+      display: grid;
+      grid-template-columns: auto 1fr;
+      gap: 1rem;
+      align-items: start;
+      padding: 1.25rem;
+      border: 1px solid rgba(255, 191, 91, 0.44);
+      border-radius: 12px;
+      background: rgba(255, 191, 91, 0.06);
+    }
+    .transport-callout strong { color: var(--amber); font-family: var(--mono); font-size: 0.74rem; text-transform: uppercase; }
+    .transport-callout p { margin: 0; color: #d3c6aa; }
+
+    .inventory-toolbar {
+      position: sticky;
+      z-index: 20;
+      top: 82px;
+      margin-bottom: 1rem;
+      padding: 0.85rem;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 1rem;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      background: rgba(6, 20, 28, 0.93);
+      backdrop-filter: blur(16px);
+    }
+    .filter-set { display: flex; flex-wrap: wrap; align-items: center; gap: 0.45rem; }
+    .filter-button, .category-select {
+      min-height: 36px;
+      border: 1px solid var(--line-bright);
+      border-radius: 999px;
+      background: transparent;
+      color: var(--muted);
+      font-family: var(--mono);
+      font-size: 0.64rem;
+      cursor: pointer;
+    }
+    .filter-button { padding: 0.45rem 0.7rem; }
+    .filter-button[aria-pressed="true"] { color: var(--ink); background: var(--paper); }
+    .category-select { padding: 0.4rem 2rem 0.4rem 0.8rem; }
+    .inventory-count { color: var(--muted); font-family: var(--mono); font-size: 0.68rem; white-space: nowrap; }
+
+    .component-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.75rem; }
+    .component-card {
+      min-height: 245px;
+      padding: 1.1rem;
+      display: flex;
+      flex-direction: column;
+      align-items: stretch;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      background: linear-gradient(155deg, rgba(15, 43, 54, 0.75), rgba(7, 24, 32, 0.84));
+      text-align: left;
+      cursor: pointer;
+      transition: transform 180ms ease, border-color 180ms ease, background 180ms ease;
+    }
+    .component-card:hover { transform: translateY(-4px); border-color: var(--cyan); background: var(--panel-strong); }
+    .component-card__top { display: flex; justify-content: space-between; gap: 0.8rem; align-items: flex-start; }
+    .component-card__type { color: var(--muted); font-family: var(--mono); font-size: 0.6rem; text-transform: uppercase; }
+    .component-card h3 { margin: 2.6rem 0 0.6rem; font-size: 1.2rem; line-height: 1.05; }
+    .component-card p { margin: 0; color: var(--muted); font-size: 0.82rem; }
+    .component-card__spec { margin-top: auto; padding-top: 1rem; color: var(--cyan); font-family: var(--mono); font-size: 0.64rem; }
+
+    .gap-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.8rem; }
+    .gap-card { padding: 1.3rem; border: 1px solid var(--line); border-radius: 14px; background: rgba(10, 31, 41, 0.64); }
+    .gap-card h3 { margin: 1.5rem 0 0.6rem; font-size: 1.05rem; }
+    .gap-card p { margin: 0; color: var(--muted); font-size: 0.86rem; }
+    .gap-card code { color: var(--amber); }
+
+    .source-trail { display: grid; grid-template-columns: repeat(3, 1fr); border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; }
+    .source-group { padding: 1.3rem; border-right: 1px solid var(--line); }
+    .source-group:last-child { border-right: 0; }
+    .source-group h3 { margin: 0 0 1rem; font-size: 0.78rem; color: var(--muted); font-family: var(--mono); letter-spacing: 0.08em; text-transform: uppercase; }
+    .source-group ul { margin: 0; padding: 0; display: grid; gap: 0.65rem; list-style: none; }
+    .source-group a { font-family: var(--mono); font-size: 0.68rem; overflow-wrap: anywhere; }
+
+    .site-footer { margin-top: 8rem; padding: 2rem 0 4rem; border-top: 1px solid var(--line); display: flex; justify-content: space-between; gap: 2rem; color: var(--muted); font-size: 0.78rem; }
+    .site-footer p { margin: 0; }
+
+    .dialog-backdrop { position: fixed; z-index: 90; inset: 0; display: grid; place-items: stretch end; background: rgba(1, 9, 14, 0.72); backdrop-filter: blur(8px); }
+    .component-dialog { width: min(620px, 100%); height: 100%; padding: 1.5rem; overflow-y: auto; border: 0; border-left: 1px solid var(--line-bright); background: #091c25; box-shadow: -30px 0 80px rgba(0, 0, 0, 0.45); }
+    .dialog-close { float: right; width: 42px; aspect-ratio: 1; border: 1px solid var(--line-bright); border-radius: 50%; background: transparent; cursor: pointer; }
+    .component-dialog h2 { margin: 3.5rem 0 0.8rem; font-size: 2.5rem; letter-spacing: -0.04em; }
+    .dialog-meta { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+
+    @media (max-width: 1120px) {
+      .hero { grid-template-columns: 1fr; align-items: center; }
+      .hero__console { max-width: 720px; }
+      .journey-stage { grid-template-columns: 1fr; }
+      .journey-narrative { border-left: 0; border-top: 1px solid var(--line); }
+      .component-grid { grid-template-columns: repeat(3, 1fr); }
+      .artifact-line { grid-template-columns: repeat(2, 1fr); }
+      .artifact-card:nth-child(2n) { border-right: 0; }
+      .artifact-card:nth-child(n+3) { border-top: 1px solid var(--line); }
+    }
+    @media (max-width: 760px) {
+      .page-shell, .site-header__inner { width: min(calc(100% - 1rem), var(--max)); }
+      .site-nav { display: none; }
+      .hero { min-height: auto; padding-top: 5rem; }
+      .hero h1 { font-size: clamp(3.2rem, 20vw, 5.8rem); }
+      .evidence-rail, .section-heading, .gap-grid, .source-trail { grid-template-columns: 1fr; }
+      .evidence-rail article, .source-group { border-right: 0; border-bottom: 1px solid var(--line); }
+      .journey-tabs { grid-template-columns: repeat(4, minmax(170px, 1fr)); overflow-x: auto; }
+      .flow-graph { grid-template-columns: 1fr; }
+      .flow-node:not(:last-child)::after, .flow-node:nth-child(3n):not(:last-child)::after { content: "↓"; right: auto; left: 50%; top: auto; bottom: -1.25rem; transform: translateX(-50%); }
+      .static-journeys, .component-grid { grid-template-columns: 1fr; }
+      .inventory-toolbar { position: relative; top: auto; align-items: flex-start; flex-direction: column; }
+      .artifact-line { grid-template-columns: 1fr; }
+      .artifact-card { border-right: 0; border-bottom: 1px solid var(--line); }
+      .playback { grid-template-columns: repeat(2, 1fr); }
+      .site-footer { flex-direction: column; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { scroll-behavior: auto !important; animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; }
+    }
+  </style>
+</head>
+<body>
+  <a class="skip-link" href="#main-content">Skip to architecture explorer</a>
+
+  <header class="site-header">
+    <div class="site-header__inner">
+      <a class="brand" href="#top" aria-label="Lineage Deployment Explorer home">
+        <span class="brand__mark" aria-hidden="true">L01</span>
+        <span class="brand__copy"><strong>Lineage flight deck</strong><span>repository evidence map</span></span>
+      </a>
+      <nav class="site-nav" aria-label="Page sections">
+        <a href="#journeys">Journeys</a>
+        <a href="#artifacts">Artifacts</a>
+        <a href="#components">Components</a>
+        <a href="#gaps">Known gaps</a>
+        <a href="#sources">Sources</a>
+      </nav>
+    </div>
+  </header>
+
+  <div class="page-shell" id="top">
+    <main id="main-content">
+      <section class="hero" aria-labelledby="page-title">
+        <div>
+          <p class="eyebrow">Evidence-first architecture / 2026-08-24</p>
+          <h1 id="page-title">Lineage <span>under load.</span></h1>
+          <p class="hero__lede">
+            Follow static code analysis, runtime corroboration, product requests, and immutable
+            AWS deployment artifacts through the exact boundaries implemented in this repository.
+          </p>
+          <div class="legend" aria-label="Evidence status legend">
+            <span class="status status--verified">verified</span>
+            <span class="status status--synthesized">synthesized</span>
+            <span class="status status--partial">partial</span>
+            <span class="status status--planned">planned</span>
+            <span class="status status--not-configured">NOT_CONFIGURED</span>
+            <span class="status status--required">AWS_REQUIRED</span>
+          </div>
+        </div>
+
+        <aside class="hero__console" aria-label="Current implementation truth">
+          <dl class="truth-list">
+            <div>
+              <dt>Local</dt>
+              <dd><span class="status status--verified">verified</span><br>FastAPI, SQLite, immutable files, and React execute the collection/review path.</dd>
+            </div>
+            <div>
+              <dt>AWS shape</dt>
+              <dd><span class="status status--synthesized">synthesized</span><br>CDK, OCI packages, handlers, workflows, and adapters are proven offline.</dd>
+            </div>
+            <div>
+              <dt>Live AWS</dt>
+              <dd><span class="status status--required">AWS_REQUIRED</span><br>No retained approved-account deploy, canary, scale, or recovery evidence exists.</dd>
+            </div>
+            <div>
+              <dt>Submit</dt>
+              <dd><span class="status status--not-configured">NOT_CONFIGURED</span><br>AWS collection status reads exist; asynchronous acquisition/enqueue submission does not.</dd>
+            </div>
+          </dl>
+        </aside>
+      </section>
+
+      <section class="evidence-rail" aria-label="How to read implementation status">
+        <article>
+          <span class="status status--verified">behavior</span>
+          <h2>Executable locally</h2>
+          <p>Deterministic collection, leases, coverage, runtime validation, consolidation, review, publication, queries, and UI behavior have local test evidence.</p>
+        </article>
+        <article>
+          <span class="status status--synthesized">topology</span>
+          <h2>Production-shaped</h2>
+          <p>Lambda versions, ECS Fargate, SQS, Kinesis, DynamoDB, S3, Neptune, API Gateway, CloudFront, alarms, and recovery synthesize from CDK.</p>
+        </article>
+        <article>
+          <span class="status status--required">boundary</span>
+          <h2>No cloud inference</h2>
+          <p>Synthesis does not prove IAM, quotas, canary health, runtime hard-deny, cleanup, scale, or disaster recovery in a real AWS account.</p>
+        </article>
+      </section>
+
+      <section class="section" id="journeys" aria-labelledby="journeys-title">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">01 / guided signal paths</p>
+            <h2 id="journeys-title">Four journeys. One trust boundary.</h2>
+          </div>
+          <p>The domain stages stay stable across adapters. Select a journey, then step through the component and the contract crossing each boundary.</p>
+        </div>
+
+        <div class="journey-tabs" role="tablist" aria-label="Architecture journeys">
+          <button class="journey-tab" id="tab-sca" type="button" role="tab" aria-selected="true" aria-controls="journey-panel" tabindex="0" data-journey="sca">
+            <small>01 / deterministic</small><strong>SCA collection</strong>
+          </button>
+          <button class="journey-tab" id="tab-runtime" type="button" role="tab" aria-selected="false" aria-controls="journey-panel" tabindex="-1" data-journey="runtime">
+            <small>02 / corroborating</small><strong>Runtime corroboration</strong>
+          </button>
+          <button class="journey-tab" id="tab-product" type="button" role="tab" aria-selected="false" aria-controls="journey-panel" tabindex="-1" data-journey="product">
+            <small>03 / request-response</small><strong>API and UI</strong>
+          </button>
+          <button class="journey-tab" id="tab-deployment" type="button" role="tab" aria-selected="false" aria-controls="journey-panel" tabindex="-1" data-journey="deployment">
+            <small>04 / immutable release</small><strong>Deployment</strong>
+          </button>
+        </div>
+
+        <div class="journey-stage" id="journey-panel" role="tabpanel" aria-labelledby="tab-sca">
+          <div class="journey-map">
+            <div class="journey-map__topline">
+              <span class="journey-map__label" id="journey-map-label">AWS adapter path / baseline B1–B10</span>
+              <div class="adapter-switch" aria-label="Adapter comparison">
+                <button type="button" data-adapter="local" aria-pressed="false">Local</button>
+                <button type="button" data-adapter="aws" aria-pressed="true">AWS</button>
+              </div>
+            </div>
+            <ol class="flow-graph" id="flow-graph" aria-label="SCA collection component path">
+              <li class="flow-node" data-kind="sync"><small>Source</small><strong>Exact Git revision</strong><span>immutable snapshot</span></li>
+              <li class="flow-node" data-kind="durable"><small>Intake</small><strong>EventBridge + SQS</strong><span>durable command</span></li>
+              <li class="flow-node" data-kind="sync"><small>Workflow</small><strong>Step Functions</strong><span>B1–B10</span></li>
+              <li class="flow-node" data-kind="sync"><small>Plan</small><strong>Classification + coverage</strong><span>terminal disposition</span></li>
+              <li class="flow-node" data-kind="sync"><small>Compute</small><strong>ECS Fargate SCA</strong><span>ARM64 callback task</span></li>
+              <li class="flow-node" data-kind="durable"><small>Evidence</small><strong>S3 immutable object</strong><span>edges + residue</span></li>
+              <li class="flow-node" data-kind="sync"><small>Trust</small><strong>Consolidation Lambda</strong><span>band + conflicts</span></li>
+              <li class="flow-node" data-kind="durable"><small>Gate</small><strong>Proposal + human review</strong><span>approve / correct / reject</span></li>
+              <li class="flow-node" data-kind="durable"><small>Projection</small><strong>Fenced Neptune publish</strong><span>monotonic pointer</span></li>
+            </ol>
+          </div>
+
+          <aside class="journey-narrative">
+            <span class="step-counter" id="step-counter">Step 01 / 09</span>
+            <h3 id="step-title">Pin the source, not the branch.</h3>
+            <p id="step-description">A collection starts from an exact 40- or 64-character commit. Acquisition verifies origin, HEAD, object identities, tracked scope, bounds, and a clean checkout without executing Maven, Gradle, hooks, tests, or repository code.</p>
+            <div class="step-contract">
+              <small>boundary artifact</small>
+              <code id="step-contract">repository-checkout/1.0.0 · exact revision + scope digest</code>
+            </div>
+            <span class="status status--verified" id="step-status">verified</span>
+            <div class="playback" aria-label="Journey playback controls">
+              <button class="control-button" id="journey-previous" type="button" disabled>Previous</button>
+              <button class="control-button" id="journey-play" type="button">Play</button>
+              <button class="control-button" id="journey-next" type="button">Next</button>
+              <button class="control-button" id="journey-reset" type="button">Reset</button>
+            </div>
+            <div class="progress-track" aria-hidden="true"><span id="journey-progress"></span></div>
+          </aside>
+        </div>
+
+        <div class="static-journeys" aria-label="Static journey summaries">
+          <details>
+            <summary>SCA collection</summary>
+            <p>Exact source → durable command → coverage plan → isolated deterministic analysis → immutable evidence → consolidation → review → fenced publication. Coverage completion, not runtime availability, is the gate.</p>
+          </details>
+          <details>
+            <summary>Runtime corroboration</summary>
+            <p>Signed non-production lease → OTel, OpenLineage, or SDK metadata → Kinesis → runtime-validation Lambda → immutable evidence → non-blocking corroboration. No values or raw queries are retained.</p>
+          </details>
+          <details>
+            <summary>API and UI</summary>
+            <p>React from CloudFront/S3 → API Gateway → product-api Lambda → DynamoDB/Neptune. The local collection form submits and polls successfully; production AWS submit currently fails closed as NOT_CONFIGURED.</p>
+          </details>
+          <details>
+            <summary>Deployment</summary>
+            <p>Clean Git revision → tests/build → wheel, web bundle, two OCI images and digest manifests → ECR → ordered CDK deployment → Lambda canaries/Fargate task → smoke → separately authorized cleanup.</p>
+          </details>
+        </div>
+      </section>
+
+      <section class="section" id="artifacts" aria-labelledby="artifacts-title">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">02 / release material</p>
+            <h2 id="artifacts-title">What actually gets deployed.</h2>
+          </div>
+          <p>The deployment is content-addressed. Source revision, dependency lock, OCI image digest, archive digest, handler inventory, and stack outputs stay correlated.</p>
+        </div>
+
+        <div class="artifact-line">
+          <article class="artifact-card">
+            <span class="artifact-card__number">A01 / browser</span>
+            <h3>React production bundle</h3>
+            <code>apps/web/dist/</code>
+            <p>Content-hashed JS/CSS plus an uncached shell and environment-bound <code>runtime-config.js</code>. Deployed to a private S3 site bucket and served by CloudFront.</p>
+          </article>
+          <article class="artifact-card">
+            <span class="artifact-card__number">A02 / package</span>
+            <h3>Python wheel</h3>
+            <code>infra/dist/wheels/*.whl</code>
+            <p>The same application/domain package powers local adapters, ten Lambda handlers, and the SCA worker composition.</p>
+          </article>
+          <article class="artifact-card">
+            <span class="artifact-card__number">A03 / linux-amd64</span>
+            <h3>Shared Lambda OCI image</h3>
+            <code>infra/dist/images/lambda.oci.tar</code>
+            <p>Pinned AWS Python 3.12 base. CDK overrides the image command per independently versioned handler and alias.</p>
+          </article>
+          <article class="artifact-card">
+            <span class="artifact-card__number">A04 / linux-arm64</span>
+            <h3>SCA Fargate OCI image</h3>
+            <code>infra/dist/images/sca.oci.tar</code>
+            <p>Pinned slim Python base, non-root user, read-only root filesystem, bounded scratch volume, and callback-token entry point.</p>
+          </article>
+          <article class="artifact-card">
+            <span class="artifact-card__number">A05 / provenance</span>
+            <h3>Runtime build metadata</h3>
+            <code>infra/dist/runtime-build-metadata.json</code>
+            <p>Source revision, lock digest, runtime-input digest, OCI image and archive digests, Lambda handler inventory, and SCA entry point.</p>
+          </article>
+          <article class="artifact-card">
+            <span class="artifact-card__number">A06 / manifest</span>
+            <h3>Package manifest</h3>
+            <code>infra/dist/package-manifest.json</code>
+            <p>Build metadata plus the exact wheel names retained for promotion and audit.</p>
+          </article>
+          <article class="artifact-card">
+            <span class="artifact-card__number">A07 / workflows</span>
+            <h3>Generated ASL contracts</h3>
+            <code>infra/workflows/*.asl.json</code>
+            <p>Baseline, Incremental, PR Gate, and Nightly Standard workflows are exported from Python definitions and checked for drift.</p>
+          </article>
+          <article class="artifact-card">
+            <span class="artifact-card__number">A08 / infrastructure</span>
+            <h3>CDK assembly + outputs</h3>
+            <code>infra/cdk.out/ · output/ephemeral/*.json</code>
+            <p>CloudFormation templates, assets, target aliases, task ARNs, queue URLs, API URL, web URL, repositories, and durable-store identifiers.</p>
+          </article>
+        </div>
+
+        <div class="transport-callout">
+          <strong>SNS ≠ work queue</strong>
+          <p><b>SQS</b> carries interactive, events, and batch/bulk lineage work. <b>Kinesis</b> carries ordered runtime observation metadata. <b>SNS</b> is an approved external paging topic imported by ARN; CloudWatch Lambda, Fargate, lane-age, and DLQ alarms publish notifications to it.</p>
+        </div>
+      </section>
+
+      <section class="section" id="components" aria-labelledby="components-title">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">03 / deployable inventory</p>
+            <h2 id="components-title">Ten handlers. One heavy worker. Managed truth.</h2>
+          </div>
+          <p>The shared Python package is not one production service. CDK creates explicit targets with independent handler commands, IAM roles, sizing, reserved concurrency, versions, aliases, alarms, and canary groups.</p>
+        </div>
+
+        <div class="inventory-toolbar">
+          <div class="filter-set" aria-label="Component filters">
+            <select class="category-select" id="component-category" aria-label="Component category">
+              <option value="all">All categories</option>
+              <option value="compute">Compute</option>
+              <option value="transport">Transport</option>
+              <option value="state">State</option>
+              <option value="edge">API + UI</option>
+              <option value="operations">Operations</option>
+            </select>
+            <button class="filter-button" type="button" data-status-filter="verified" aria-pressed="true">Verified</button>
+            <button class="filter-button" type="button" data-status-filter="synthesized" aria-pressed="true">Synthesized</button>
+            <button class="filter-button" type="button" data-status-filter="partial" aria-pressed="true">Partial</button>
+            <button class="filter-button" type="button" data-status-filter="planned" aria-pressed="true">Planned</button>
+          </div>
+          <output class="inventory-count" id="inventory-count">26 components shown</output>
+        </div>
+
+        <div class="component-grid" id="component-grid">
+          <button class="component-card" type="button" data-component="intake" data-category="compute" data-status="synthesized">
+            <span class="component-card__top"><span class="component-card__type">Lambda / edge + queue consumer</span><span class="status status--synthesized">synthesized</span></span>
+            <h3>intake</h3><p>Canonicalizes signed events, deduplicates, routes lanes, and starts the selected workflow alias.</p><span class="component-card__spec">512 MiB · 30 s · concurrency 20</span>
+          </button>
+          <button class="component-card" type="button" data-component="control-stage" data-category="compute" data-status="verified">
+            <span class="component-card__top"><span class="component-card__type">Lambda / workflow controls</span><span class="status status--verified">verified</span></span>
+            <h3>control-stage</h3><p>Pins determinants and bases, fetches references, rechecks pointers, and evaluates bounded control stages.</p><span class="component-card__spec">512 MiB · 60 s · concurrency 30</span>
+          </button>
+          <button class="component-card" type="button" data-component="classification" data-category="compute" data-status="verified">
+            <span class="component-card__top"><span class="component-card__type">Lambda / repository policy</span><span class="status status--verified">verified</span></span>
+            <h3>classification</h3><p>Selects analyzer cells and path scope from immutable repository and policy determinants.</p><span class="component-card__spec">512 MiB · 60 s · concurrency 20</span>
+          </button>
+          <button class="component-card" type="button" data-component="coverage" data-category="compute" data-status="verified">
+            <span class="component-card__top"><span class="component-card__type">Lambda / completeness</span><span class="status status--verified">verified</span></span>
+            <h3>coverage</h3><p>Builds and verifies baseline or differential manifests; every tracked path must reach one disposition.</p><span class="component-card__spec">768 MiB · 90 s · concurrency 15</span>
+          </button>
+          <button class="component-card" type="button" data-component="runtime-validation" data-category="compute" data-status="verified">
+            <span class="component-card__top"><span class="component-card__type">Lambda / runtime trust</span><span class="status status--verified">verified</span></span>
+            <h3>runtime-validation</h3><p>Checks leases, window manifests, profiles, artifact identity, metadata shape, revocation, and hard-deny controls.</p><span class="component-card__spec">1024 MiB · 60 s · concurrency 20</span>
+          </button>
+          <button class="component-card" type="button" data-component="consolidation" data-category="compute" data-status="verified">
+            <span class="component-card__top"><span class="component-card__type">Lambda / trust engine</span><span class="status status--verified">verified</span></span>
+            <h3>consolidation</h3><p>Unions SCA, optional LLM, and runtime provenance by URN; derives bands, corroboration, conflicts, and tombstones.</p><span class="component-card__spec">1536 MiB · 180 s · concurrency 10</span>
+          </button>
+          <button class="component-card" type="button" data-component="proposal" data-category="compute" data-status="verified">
+            <span class="component-card__top"><span class="component-card__type">Lambda / review handoff</span><span class="status status--verified">verified</span></span>
+            <h3>proposal</h3><p>Creates or reuses versioned review proposals and preserves immutable human decision history.</p><span class="component-card__spec">768 MiB · 90 s · concurrency 10</span>
+          </button>
+          <button class="component-card" type="button" data-component="publication" data-category="compute" data-status="verified">
+            <span class="component-card__top"><span class="component-card__type">Lambda / fenced writer</span><span class="status status--verified">verified</span></span>
+            <h3>publication</h3><p>Consumes approved ledger events, stages and verifies a namespace, reserves a fence, activates, and reads back.</p><span class="component-card__spec">1536 MiB · 300 s · concurrency 5</span>
+          </button>
+          <button class="component-card" type="button" data-component="deployment" data-category="operations" data-status="verified">
+            <span class="component-card__top"><span class="component-card__type">Lambda / exact promotion</span><span class="status status--verified">verified</span></span>
+            <h3>deployment</h3><p>Runs D1–D6 sequentially for an authoritative outcome, exact artifact/package match, fenced promotion, and readback.</p><span class="component-card__spec">1024 MiB · 300 s · concurrency 2</span>
+          </button>
+          <button class="component-card" type="button" data-component="product-api" data-category="edge" data-status="partial">
+            <span class="component-card__top"><span class="component-card__type">Lambda / product boundary</span><span class="status status--partial">partial</span></span>
+            <h3>product-api</h3><p>Serves overview, runs, review, lineage, impact, runtime admin, and collection status through API Gateway.</p><span class="component-card__spec">1024 MiB · 29 s · concurrency 20</span>
+          </button>
+
+          <button class="component-card" type="button" data-component="sca-fargate" data-category="compute" data-status="synthesized">
+            <span class="component-card__top"><span class="component-card__type">ECS Fargate / callback task</span><span class="status status--synthesized">synthesized</span></span>
+            <h3>SCA worker</h3><p>Executes deterministic Java/Spring, SQL/schema, and Python analyzer cells without running repository code.</p><span class="component-card__spec">ARM64 · 2 vCPU · 4 GiB</span>
+          </button>
+          <button class="component-card" type="button" data-component="step-functions" data-category="compute" data-status="synthesized">
+            <span class="component-card__top"><span class="component-card__type">Step Functions / Standard</span><span class="status status--synthesized">synthesized</span></span>
+            <h3>Workflow aliases</h3><p>Four generated workflows: Baseline B1–B10, Incremental I1–I10, PR Gate P1–P8, and Nightly N1–N6.</p><span class="component-card__spec">versioned alias · S3 refs only</span>
+          </button>
+          <button class="component-card" type="button" data-component="eventbridge" data-category="transport" data-status="synthesized">
+            <span class="component-card__top"><span class="component-card__type">EventBridge / bus + archive</span><span class="status status--synthesized">synthesized</span></span>
+            <h3>Intake bus</h3><p>Routes lineage.*.requested events to isolated lanes and retains replayable signed event history.</p><span class="component-card__spec">canonical event · replay</span>
+          </button>
+          <button class="component-card" type="button" data-component="sqs" data-category="transport" data-status="synthesized">
+            <span class="component-card__top"><span class="component-card__type">SQS / lanes + DLQs</span><span class="status status--synthesized">synthesized</span></span>
+            <h3>Priority lanes</h3><p>Interactive and events FIFO queues plus bounded standard batch/bulk work, each with DLQ and alarms.</p><span class="component-card__spec">at-least-once · partial batch</span>
+          </button>
+          <button class="component-card" type="button" data-component="kinesis" data-category="transport" data-status="synthesized">
+            <span class="component-card__top"><span class="component-card__type">Kinesis / runtime stream</span><span class="status status--synthesized">synthesized</span></span>
+            <h3>Runtime evidence lane</h3><p>On-demand, KMS-encrypted transport for metadata-only observations, partitioned conceptually by dataset URN.</p><span class="component-card__spec">non-production · no values</span>
+          </button>
+          <button class="component-card" type="button" data-component="sns" data-category="operations" data-status="partial">
+            <span class="component-card__top"><span class="component-card__type">SNS / external paging</span><span class="status status--partial">partial</span></span>
+            <h3>Paging topic</h3><p>An approved topic ARN is required as context. CloudWatch alarm actions publish; CDK does not create or own the topic.</p><span class="component-card__spec">alarm notification only</span>
+          </button>
+          <button class="component-card" type="button" data-component="dynamodb" data-category="state" data-status="synthesized">
+            <span class="component-card__top"><span class="component-card__type">DynamoDB / authoritative control</span><span class="status status--synthesized">synthesized</span></span>
+            <h3>Four control tables</h3><p>Commands/leases, stage ledger/outbox, proposals/decisions, and active pointers/fencing tokens.</p><span class="component-card__spec">on-demand · PITR · KMS</span>
+          </button>
+          <button class="component-card" type="button" data-component="s3" data-category="state" data-status="synthesized">
+            <span class="component-card__top"><span class="component-card__type">S3 / immutable truth</span><span class="status status--synthesized">synthesized</span></span>
+            <h3>Evidence + package stores</h3><p>Versioned KMS objects, production Object Lock, and cross-region replication to recovery buckets.</p><span class="component-card__spec">references cross stages</span>
+          </button>
+          <button class="component-card" type="button" data-component="ecr" data-category="state" data-status="synthesized">
+            <span class="component-card__top"><span class="component-card__type">ECR / runtime images</span><span class="status status--synthesized">synthesized</span></span>
+            <h3>Two image repositories</h3><p>Immutable tags, KMS encryption, scan on push, digest-addressed Lambda and SCA runtime images.</p><span class="component-card__spec">latest 50 immutable builds</span>
+          </button>
+          <button class="component-card" type="button" data-component="neptune" data-category="state" data-status="synthesized">
+            <span class="component-card__top"><span class="component-card__type">Neptune / projection</span><span class="status status--synthesized">synthesized</span></span>
+            <h3>Versioned lineage graph</h3><p>One encrypted IAM-auth cluster and three r6g instances across availability zones; rebuildable from truth.</p><span class="component-card__spec">1 writer + 2 readers target</span>
+          </button>
+          <button class="component-card" type="button" data-component="api-gateway" data-category="edge" data-status="synthesized">
+            <span class="component-card__top"><span class="component-card__type">API Gateway / regional REST</span><span class="status status--synthesized">synthesized</span></span>
+            <h3>Product API edge</h3><p>IAM-authorized health and proxy routes with access logs, metrics, tracing, bounded bodies, and no data tracing.</p><span class="component-card__spec">Lambda live alias integration</span>
+          </button>
+          <button class="component-card" type="button" data-component="cloudfront" data-category="edge" data-status="synthesized">
+            <span class="component-card__top"><span class="component-card__type">CloudFront + S3 / SPA</span><span class="status status--synthesized">synthesized</span></span>
+            <h3>Web delivery</h3><p>Private static origin, /api proxy, SPA rewrite, immutable asset caching, uncached shell/config, and security headers.</p><span class="component-card__spec">HTTP/2 + HTTP/3 · TLS 1.2</span>
+          </button>
+          <button class="component-card" type="button" data-component="cloudwatch" data-category="operations" data-status="synthesized">
+            <span class="component-card__top"><span class="component-card__type">CloudWatch + X-Ray</span><span class="status status--synthesized">synthesized</span></span>
+            <h3>Signals and alarms</h3><p>Per-target logs/errors, SCA failure metrics, queue age, DLQ depth, API access logs, container insights, and traces.</p><span class="component-card__spec">SNS alarm actions when configured</span>
+          </button>
+          <button class="component-card" type="button" data-component="network" data-category="operations" data-status="synthesized">
+            <span class="component-card__top"><span class="component-card__type">VPC / private endpoints</span><span class="status status--synthesized">synthesized</span></span>
+            <h3>Isolated network</h3><p>No NAT; private subnets, scoped security groups, gateway/interface endpoints, and approved enterprise PrivateLink.</p><span class="component-card__spec">3 AZ required outside fixture</span>
+          </button>
+          <button class="component-card" type="button" data-component="recovery" data-category="operations" data-status="synthesized">
+            <span class="component-card__top"><span class="component-card__type">Recovery / secondary region</span><span class="status status--synthesized">synthesized</span></span>
+            <h3>Replicated truth</h3><p>Multi-region KMS, replicated evidence/package buckets, backup vault outside ephemeral, PITR, and warm-standby intent.</p><span class="component-card__spec">RPO/RTO remain AWS_REQUIRED</span>
+          </button>
+        </div>
+      </section>
+
+      <section class="section" id="gaps" aria-labelledby="gaps-title">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">04 / honest edges</p>
+            <h2 id="gaps-title">The plan is visible where the wiring stops.</h2>
+          </div>
+          <p>These are not cosmetic caveats. They separate executable behavior from infrastructure shape and approved production evidence.</p>
+        </div>
+        <div class="gap-grid">
+          <article class="gap-card">
+            <span class="status status--not-configured">NOT_CONFIGURED</span>
+            <h3>AWS collection submission</h3>
+            <p><code>POST /api/collections</code> fails closed in the AWS product projection. The missing acquisition/enqueue stage must return a durable <code>QUEUED</code> resource instead of performing local-shaped synchronous work.</p>
+          </article>
+          <article class="gap-card">
+            <span class="status status--required">AWS_REQUIRED</span>
+            <h3>Live operational proof</h3>
+            <p>No approved-account evidence yet proves IAM/KMS behavior, workflow execution, canaries, scale, runtime production hard-deny, recovery, or fully owned cleanup.</p>
+          </article>
+          <article class="gap-card">
+            <span class="status status--planned">planned</span>
+            <h3>Enterprise integrations</h3>
+            <p>Cognito/enterprise OIDC, AppConfig kill switches, CloudTrail evidence wiring, EventBridge schedules, Jenkins, OpenSearch, and deferred Spark/Dask analyzer packs are not configured.</p>
+          </article>
+          <article class="gap-card">
+            <span class="status status--partial">partial</span>
+            <h3>Runtime production boundary</h3>
+            <p>Validation, profiles, leases, revocation, closed schemas, emitters, and local kill-switch behavior exist. Production must remain hard-denied until independent IAM/AppConfig controls and probes are deployed.</p>
+          </article>
+          <article class="gap-card">
+            <span class="status status--partial">partial</span>
+            <h3>Deployment cleanup audit</h3>
+            <p>The guarded cleanup script validates account and namespace, but its current primary-stack loop does not enumerate the <code>web</code> stack. Treat “no unowned resources” as unproven until corrected and observed.</p>
+          </article>
+          <article class="gap-card">
+            <span class="status status--partial">source drift</span>
+            <h3>Lambda count</h3>
+            <p><code>infra/lib/runtime-assets.ts</code> defines ten targets. The current README sentence says nine; the implementation inventory is authoritative and this change reconciles the text.</p>
+          </article>
+        </div>
+      </section>
+
+      <section class="section" id="sources" aria-labelledby="sources-title">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">05 / inspect the source</p>
+            <h2 id="sources-title">Every claim has a trail.</h2>
+          </div>
+          <p>The canonical production topology remains the Mermaid source. This explainer links behavior and deployment claims to the current implementation.</p>
+        </div>
+        <div class="source-trail">
+          <section class="source-group" aria-labelledby="source-architecture">
+            <h3 id="source-architecture">Architecture + behavior</h3>
+            <ul>
+              <li><a href="lineage-platform-target.md">docs/architecture/lineage-platform-target.md</a></li>
+              <li><a href="../prototype-coverage.md">docs/prototype-coverage.md</a></li>
+              <li><a href="../plans/2026-08-05-lineage-collection-architecture-refactor-design.md">docs/plans/2026-08-05-lineage-collection-architecture-refactor-design.md</a></li>
+              <li><a href="../plans/2026-08-07-runtime-lineage-instrumentation-design.md">docs/plans/2026-08-07-runtime-lineage-instrumentation-design.md</a></li>
+              <li><a href="../../apps/api/src/lineage_api/application/workflows/definitions.py">apps/api/src/lineage_api/application/workflows/definitions.py</a></li>
+            </ul>
+          </section>
+          <section class="source-group" aria-labelledby="source-runtime">
+            <h3 id="source-runtime">Runtime + infrastructure</h3>
+            <ul>
+              <li><a href="../../infra/assets/lambda/Dockerfile">infra/assets/lambda/Dockerfile</a></li>
+              <li><a href="../../infra/assets/sca/Dockerfile">infra/assets/sca/Dockerfile</a></li>
+              <li><a href="../../infra/lib/runtime-assets.ts">infra/lib/runtime-assets.ts</a></li>
+              <li><a href="../../infra/lib/engines-stack.ts">infra/lib/engines-stack.ts</a></li>
+              <li><a href="../../infra/lib/intake-stack.ts">infra/lib/intake-stack.ts</a></li>
+              <li><a href="../../infra/lib/data-stack.ts">infra/lib/data-stack.ts</a></li>
+            </ul>
+          </section>
+          <section class="source-group" aria-labelledby="source-delivery">
+            <h3 id="source-delivery">Product + delivery</h3>
+            <ul>
+              <li><a href="../../infra/lib/api-stack.ts">infra/lib/api-stack.ts</a></li>
+              <li><a href="../../infra/lib/web-stack.ts">infra/lib/web-stack.ts</a></li>
+              <li><a href="../../apps/web/src/components/operations/RepositoryCollectionForm.tsx">apps/web/src/components/operations/RepositoryCollectionForm.tsx</a></li>
+              <li><a href="../../apps/api/src/lineage_api/infrastructure/aws/query_projection.py">apps/api/src/lineage_api/infrastructure/aws/query_projection.py</a></li>
+              <li><a href="../../scripts/deploy_ephemeral_aws.sh">scripts/deploy_ephemeral_aws.sh</a></li>
+              <li><a href="../../scripts/cleanup_ephemeral_aws.sh">scripts/cleanup_ephemeral_aws.sh</a></li>
+            </ul>
+          </section>
+        </div>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <p>Lineage Deployment Explorer · hand-authored companion to the generated canonical architecture.</p>
+      <p><a href="lineage-platform-target.html">Open the canonical offline architecture rendering</a></p>
+    </footer>
+  </div>
+
+  <div class="dialog-backdrop" id="dialog-backdrop" hidden>
+    <section class="component-dialog" id="component-dialog" role="dialog" aria-modal="true" aria-labelledby="dialog-title" tabindex="-1">
+      <button class="dialog-close" id="dialog-close" type="button" aria-label="Close component details">×</button>
+      <p class="eyebrow" id="dialog-kicker">Component detail</p>
+      <h2 id="dialog-title">Component</h2>
+      <div class="dialog-meta" id="dialog-meta"></div>
+      <div id="dialog-content"></div>
+    </section>
+  </div>
+  <p id="live-region" class="mono" aria-live="polite" hidden></p>
+
+  <script>
+    "use strict";
+
+    window.LINEAGE_EXPLORER_DATA = Object.freeze({
+      journeys: Object.freeze({
+        sca: Object.freeze({
+          title: "SCA collection",
+          workflow: "Baseline B1–B10 / Incremental I1–I10",
+          steps: Object.freeze([
+            ["Exact Git revision", "Repository acquisition verifies an immutable checkout without executing repository code.", "repository-checkout/1.0.0"],
+            ["Durable intake", "A canonical event and dedupe key become a durable command before acknowledgement.", "event-envelope/1.0.0 → durable-command/1.0.0"],
+            ["Versioned workflow", "Step Functions invokes closed stage owners with bounded S3 references.", "stage-execution/1.0.0"],
+            ["Classification + coverage", "Analyzer selection and every tracked path receive an explicit terminal disposition.", "coverage-manifest/1.0.0"],
+            ["ECS Fargate SCA", "The ARM64 callback task produces exact citations, edges, transforms, and bounded residue.", "sca-evidence/1.0.0"],
+            ["Immutable evidence", "Checksummed results land in the versioned S3 evidence store and are replay-safe.", "evidence-ref/1.0.0"],
+            ["Consolidation", "Provenance is joined by canonical URN; bands, corroboration, conflicts, and lifecycle are derived.", "consolidated-edge/1.0.0"],
+            ["Human trust gate", "A versioned proposal must be approved, corrected, or rejected before publication.", "proposal/1.0.0"],
+            ["Fenced publication", "A monotonic pointer compare-and-set activates the verified Neptune namespace.", "accepted-manifest/1.0.0"],
+          ]),
+        }),
+        runtime: Object.freeze({
+          title: "Runtime corroboration",
+          workflow: "Non-production runtime session",
+          steps: Object.freeze([
+            ["Session grant", "A signed, scoped, time-boxed lease is required; production targets are hard-denied.", "runtime-lease/1.0.0"],
+            ["Instrumented workload", "OTel, OpenLineage, and the custom SDK emit metadata only—never row values or payloads.", "runtime-instrumentation-profile/1.0.0"],
+            ["Kinesis transport", "Accepted observation metadata is ordered through the runtime evidence lane.", "runtime-observation/1.0.0"],
+            ["Runtime validation Lambda", "Signature, TTL, environment, profile, artifact, resolver, shape, revocation, and kill switch are checked.", "runtime-observation/1.0.0"],
+            ["Window manifest", "Attempted, accepted, rejected, duplicate, buffered, dropped, quarantined, and drained counts reconcile.", "runtime-window-manifest/1.0.0"],
+            ["Immutable evidence", "Complete or explicitly incomplete session evidence is stored by reference.", "runtime-session-manifest/1.0.0"],
+            ["Non-blocking join", "Runtime can corroborate an SCA/LLM edge but cannot gate consolidation or assert transforms.", "consolidated-edge/1.0.0"],
+          ]),
+        }),
+        product: Object.freeze({
+          title: "API and UI",
+          workflow: "CloudFront → API Gateway → product-api",
+          steps: Object.freeze([
+            ["React application", "Operations submits exact revisions; status polling stops when the durable collection is terminal.", "POST /api/collections"],
+            ["CloudFront + S3", "Hashed assets are immutable; shell and runtime config are uncached; /api routes proxy to the REST origin.", "runtime-config.js"],
+            ["API Gateway", "IAM authorization, bounded requests, access logs, metrics, and tracing front the live Lambda alias.", "regional REST proxy"],
+            ["product-api Lambda", "The neutral contract serves runs, review, lineage, impact, runtime admin, collections, and bounded errors.", "ProductApiService"],
+            ["Durable status", "DynamoDB ledgers project command, timeline, coverage, counts, proposal, and runtime status.", "GET /api/collections/{commandId}"],
+            ["Read projection", "Versioned Neptune traversal and impact remain bounded; pointer state chooses the active namespace.", "GET /api/lineage · POST /api/impact"],
+            ["Current AWS gap", "AWS submission returns 501 until acquisition/enqueue can honestly create a durable QUEUED command.", "COLLECTION_SUBMIT_NOT_CONFIGURED"],
+          ]),
+        }),
+        deployment: Object.freeze({
+          title: "Deployment",
+          workflow: "Guarded ephemeral AWS release",
+          steps: Object.freeze([
+            ["Validate authority", "Explicit profile, account, regions, three AZs, namespace, PrivateLink, paging topic, opt-in, and clean commit are required.", "ALLOW_LINEAGE_EPHEMERAL_AWS=1"],
+            ["Verify + build", "Backend, web, infrastructure, workflow parity, and web production build run from the exact revision.", "make verify · make workflow-check"],
+            ["Package runtimes", "A wheel plus linux/amd64 Lambda and linux/arm64 SCA OCI archives are built deterministically.", "make package-aws"],
+            ["Record digests", "Source, lock, runtime inputs, image, archive, handler, and wheel identities are retained.", "runtime-build-metadata.json"],
+            ["Create foundations", "Recovery, Network, and Data stacks create keys, private topology, buckets, tables, streams, graph, and ECR repositories first.", "LineageRecovery · LineageNetwork · LineageData"],
+            ["Push exact images", "Buildx pushes digest-addressed images and verifies the registry digest equals the packaged digest.", "lambda-runtime · sca-runtime"],
+            ["Deploy all stacks", "CDK binds immutable image digests, web assets, handlers, workflow aliases, data stores, queues, API, alarms, and operations.", "cdk deploy --all"],
+            ["Canary + callback", "Every Lambda target has a 10%/10-minute CodeDeploy canary; SCA runs as a callback-token Fargate task.", "live aliases · ECS waitForTaskToken"],
+            ["Retain smoke proof", "The opt-in test checks an Incremental path, durable artifacts, correlation, and duplicate no-effect.", "ALLOW_LINEAGE_EPHEMERAL_AWS_SMOKE=1"],
+            ["Guard cleanup", "A separate DESTROY acknowledgement deletes the validated namespace; current stack enumeration still needs web-stack reconciliation.", "ALLOW_LINEAGE_EPHEMERAL_AWS_CLEANUP=DESTROY"],
+          ]),
+        }),
+      }),
+    });
+  </script>
+</body>
+</html>
