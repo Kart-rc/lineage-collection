@@ -2,7 +2,7 @@
 
 A locally runnable, production-shaped implementation of evidence-first lineage collection. It accepts signed repository events, runs deterministic Baseline and Incremental collection, validates optional runtime evidence, creates and reviews proposals, publishes with fencing, handles exact-artifact deployment promotion, evaluates a bounded read-only PR gate, and serves version-pinned lineage and impact queries.
 
-The default operator path remains local: FastAPI + SQLite + a write-once object directory on the backend, and React + TypeScript + Vite on the frontend. The same repository also contains nine independently addressable Lambda handlers, an SCA Fargate worker, four generated Step Functions workflows, concrete AWS adapters, CDK stacks, deterministic OCI packaging, and guarded ephemeral-AWS verification. Local use does not require AWS credentials or an LLM key.
+The default operator path remains local: FastAPI + SQLite + a write-once object directory on the backend, and React + TypeScript + Vite on the frontend. The same repository also contains ten independently addressable Lambda handlers, an SCA Fargate worker, four generated Step Functions workflows, concrete AWS adapters, CDK stacks, deterministic OCI packaging, and guarded ephemeral-AWS verification. Local use does not require AWS credentials or an LLM key.
 
 ## Prerequisites
 

@@ -47,6 +47,7 @@ def test_readme_documents_every_local_operator_command_and_url() -> None:
     assert "http://127.0.0.1:5173" in readme
     assert "http://127.0.0.1:8000/healthz" in readme
     assert "## Demo walkthrough" in readme
+    assert "ten independently addressable Lambda handlers" in readme
 
 
 def test_operator_handoff_documents_workflows_generated_safety_and_acceptance() -> None:
@@ -112,6 +113,11 @@ def test_lineage_deployment_explorer_covers_collection_deployment_and_product_fl
         "product-api",
     ):
         assert f'data-component="{target}"' in explorer
+    lambda_targets = re.findall(
+        r'data-component="(?:intake|control-stage|classification|coverage|runtime-validation|consolidation|proposal|publication|deployment|product-api)"',
+        explorer,
+    )
+    assert len(lambda_targets) == 10
     for status in (
         "verified",
         "synthesized",
