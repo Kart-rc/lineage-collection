@@ -141,6 +141,28 @@ def test_lineage_deployment_explorer_covers_collection_deployment_and_product_fl
         assert source in explorer
 
 
+def test_lineage_deployment_explorer_exposes_offline_interaction_contract() -> None:
+    explorer = _read(LINEAGE_DEPLOYMENT_EXPLORER)
+
+    for hook in (
+        "function renderJourney",
+        "function selectJourney",
+        "function renderInventory",
+        "function openComponent",
+        "function closeDialog",
+        "function readHashState",
+        'addEventListener("hashchange"',
+        'addEventListener("keydown"',
+        'addEventListener("beforeunload"',
+        'matchMedia("(prefers-reduced-motion: reduce)")',
+        "data-flow-node",
+    ):
+        assert hook in explorer
+
+    assert "https://" not in explorer
+    assert "http://" not in explorer
+
+
 def test_coverage_matrix_accounts_for_every_component() -> None:
     coverage = _read("docs/prototype-coverage.md")
 

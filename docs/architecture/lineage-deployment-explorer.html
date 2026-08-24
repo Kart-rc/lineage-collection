@@ -64,6 +64,17 @@
     code, pre, .mono { font-family: var(--mono); }
     :focus-visible { outline: 3px solid var(--amber); outline-offset: 4px; }
     [hidden] { display: none !important; }
+    .sr-only {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      padding: 0;
+      margin: -1px;
+      overflow: hidden;
+      clip: rect(0, 0, 0, 0);
+      white-space: nowrap;
+      border: 0;
+    }
 
     .skip-link {
       position: fixed;
@@ -336,6 +347,9 @@
     .flow-node strong { display: block; margin-top: 0.35rem; font-size: 0.91rem; line-height: 1.25; }
     .flow-node span { display: block; margin-top: 0.45rem; color: var(--muted); font-family: var(--mono); font-size: 0.62rem; }
     .flow-node[data-kind="durable"] { border-style: dashed; }
+    .flow-node[data-flow-node] { cursor: pointer; transition: border-color 180ms ease, transform 180ms ease, background 180ms ease; }
+    .flow-node[data-flow-node]:hover { border-color: var(--cyan); transform: translateY(-2px); }
+    .flow-node[data-active="true"] { border-color: var(--cyan); background: var(--cyan-soft); box-shadow: inset 0 0 0 1px rgba(71, 226, 220, 0.18); }
 
     .journey-narrative { padding: clamp(1.4rem, 3vw, 2.3rem); border-left: 1px solid var(--line); background: rgba(4, 18, 26, 0.75); }
     .journey-narrative h3 { margin: 0.5rem 0 1rem; font-size: clamp(1.7rem, 2.5vw, 2.5rem); letter-spacing: -0.035em; line-height: 1; }
@@ -468,6 +482,11 @@
     .dialog-close { float: right; width: 42px; aspect-ratio: 1; border: 1px solid var(--line-bright); border-radius: 50%; background: transparent; cursor: pointer; }
     .component-dialog h2 { margin: 3.5rem 0 0.8rem; font-size: 2.5rem; letter-spacing: -0.04em; }
     .dialog-meta { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+    .dialog-field { margin-top: 1.6rem; padding-top: 1rem; border-top: 1px solid var(--line); }
+    .dialog-field h3 { margin: 0 0 0.45rem; color: var(--cyan); font-family: var(--mono); font-size: 0.68rem; letter-spacing: 0.1em; text-transform: uppercase; }
+    .dialog-field p { margin: 0; color: #c8dada; }
+    .dialog-sources { margin: 0; padding-left: 1.1rem; display: grid; gap: 0.6rem; }
+    .dialog-sources a { font-family: var(--mono); font-size: 0.72rem; overflow-wrap: anywhere; }
 
     @media (max-width: 1120px) {
       .hero { grid-template-columns: 1fr; align-items: center; }
@@ -755,7 +774,7 @@
             <button class="filter-button" type="button" data-status-filter="partial" aria-pressed="true">Partial</button>
             <button class="filter-button" type="button" data-status-filter="planned" aria-pressed="true">Planned</button>
           </div>
-          <output class="inventory-count" id="inventory-count">26 components shown</output>
+          <output class="inventory-count" id="inventory-count">25 components shown</output>
         </div>
 
         <div class="component-grid" id="component-grid">
@@ -965,7 +984,7 @@
       <div id="dialog-content"></div>
     </section>
   </div>
-  <p id="live-region" class="mono" aria-live="polite" hidden></p>
+  <p id="live-region" class="sr-only" aria-live="polite"></p>
 
   <script>
     "use strict";
@@ -1031,6 +1050,439 @@
         }),
       }),
     });
+
+    const FLOW_PATHS = Object.freeze({
+      sca: Object.freeze([
+        { kicker: "source", local: "Exact local checkout", aws: "Exact Git revision", detail: "immutable snapshot", kind: "sync", component: "control-stage" },
+        { kicker: "intake", local: "SQLite durable command", aws: "EventBridge + SQS", detail: "ack after durability", kind: "durable", component: "intake" },
+        { kicker: "workflow", local: "In-process runner", aws: "Step Functions", detail: "B1–B10", kind: "sync", component: "step-functions" },
+        { kicker: "plan", local: "Classification services", aws: "Classification Lambdas", detail: "coverage closure", kind: "sync", component: "classification" },
+        { kicker: "compute", local: "Local SCA worker", aws: "ECS Fargate SCA", detail: "isolated analyzer", kind: "sync", component: "sca-fargate" },
+        { kicker: "evidence", local: "Immutable filesystem", aws: "Versioned S3", detail: "checksummed refs", kind: "durable", component: "s3" },
+        { kicker: "trust", local: "Consolidation service", aws: "Consolidation Lambda", detail: "bands + conflicts", kind: "sync", component: "consolidation" },
+        { kicker: "gate", local: "Review ledger", aws: "Proposal Lambda", detail: "human decision", kind: "durable", component: "proposal" },
+        { kicker: "projection", local: "SQLite graph adapter", aws: "Fenced Neptune publish", detail: "monotonic pointer", kind: "durable", component: "publication" },
+      ]),
+      runtime: Object.freeze([
+        { kicker: "authority", local: "Local session lease", aws: "Signed session grant", detail: "non-production only", kind: "durable", component: "runtime-validation" },
+        { kicker: "emitter", local: "Fixture emitter", aws: "OTel · OpenLineage · SDK", detail: "metadata only", kind: "sync", component: "runtime-validation" },
+        { kicker: "transport", local: "In-memory adapter", aws: "Kinesis stream", detail: "ordered observations", kind: "durable", component: "kinesis" },
+        { kicker: "validation", local: "Runtime service", aws: "Validation Lambda", detail: "closed schema", kind: "sync", component: "runtime-validation" },
+        { kicker: "reconcile", local: "Window manifest", aws: "Window manifest", detail: "complete or explicit", kind: "durable", component: "dynamodb" },
+        { kicker: "evidence", local: "Immutable filesystem", aws: "Versioned S3", detail: "session evidence", kind: "durable", component: "s3" },
+        { kicker: "trust", local: "Local consolidation", aws: "Consolidation Lambda", detail: "corroboration only", kind: "sync", component: "consolidation" },
+      ]),
+      product: Object.freeze([
+        { kicker: "browser", local: "Vite React app", aws: "CloudFront React app", detail: "operations + review", kind: "sync", component: "cloudfront" },
+        { kicker: "delivery", local: "Vite dev server", aws: "Private S3 origin", detail: "hashed assets", kind: "durable", component: "cloudfront" },
+        { kicker: "edge", local: "FastAPI routes", aws: "API Gateway", detail: "IAM authorized", kind: "sync", component: "api-gateway" },
+        { kicker: "service", local: "FastAPI services", aws: "product-api Lambda", detail: "neutral contracts", kind: "sync", component: "product-api" },
+        { kicker: "status", local: "SQLite ledgers", aws: "DynamoDB ledgers", detail: "bounded polling", kind: "durable", component: "dynamodb" },
+        { kicker: "lineage", local: "SQLite projection", aws: "Neptune projection", detail: "bounded traversal", kind: "durable", component: "neptune" },
+        { kicker: "boundary", local: "Working local submit", aws: "Submit not configured", detail: "fails closed", kind: "sync", component: "product-api" },
+      ]),
+      deployment: Object.freeze([
+        { kicker: "authority", local: "Clean revision", aws: "Validated AWS context", detail: "explicit opt-in", kind: "sync", component: "network" },
+        { kicker: "verify", local: "uv + npm suites", aws: "Pre-deploy gates", detail: "behavior + parity", kind: "sync", component: "cloudwatch" },
+        { kicker: "package", local: "Wheel + OCI archives", aws: "Two OCI runtimes", detail: "amd64 + arm64", kind: "durable", component: "ecr" },
+        { kicker: "provenance", local: "Digest manifests", aws: "Digest manifests", detail: "source correlated", kind: "durable", component: "ecr" },
+        { kicker: "foundation", local: "CDK synthesis", aws: "Recovery + network + data", detail: "ordered stacks", kind: "sync", component: "recovery" },
+        { kicker: "registry", local: "OCI archives", aws: "ECR exact digests", detail: "immutable tags", kind: "durable", component: "ecr" },
+        { kicker: "topology", local: "CloudFormation templates", aws: "CDK deploy --all", detail: "nine stack families", kind: "sync", component: "step-functions" },
+        { kicker: "release", local: "Handler smoke", aws: "Lambda canary + Fargate", detail: "live aliases", kind: "sync", component: "deployment" },
+        { kicker: "evidence", local: "Deterministic smoke", aws: "Opt-in AWS smoke", detail: "retained proof", kind: "durable", component: "cloudwatch" },
+        { kicker: "cleanup", local: "Namespace reset", aws: "Guarded stack destroy", detail: "web gap remains", kind: "durable", component: "recovery" },
+      ]),
+    });
+
+    const STEP_STATUSES = Object.freeze({
+      sca: ["verified", "synthesized", "synthesized", "verified", "verified", "verified", "verified", "verified", "synthesized"],
+      runtime: ["verified", "verified", "synthesized", "verified", "verified", "verified", "verified"],
+      product: ["verified", "synthesized", "synthesized", "partial", "synthesized", "synthesized", "not-configured"],
+      deployment: ["verified", "verified", "verified", "verified", "synthesized", "synthesized", "synthesized", "synthesized", "required", "partial"],
+    });
+
+    const SOURCE_GROUPS = Object.freeze({
+      lambda: ["../../infra/lib/runtime-assets.ts", "../../infra/lib/engines-stack.ts", "../../apps/api/src/lineage_api/infrastructure/aws/aws_handlers.py"],
+      workflow: ["../../apps/api/src/lineage_api/application/workflows/definitions.py", "../../infra/lib/workflow-definition.ts", "../../infra/workflows/baseline.asl.json"],
+      intake: ["../../infra/lib/intake-stack.ts", "../../apps/api/src/lineage_api/infrastructure/aws/aws_handlers.py"],
+      sca: ["../../infra/assets/sca/Dockerfile", "../../infra/lib/runtime-assets.ts", "../../infra/lib/engines-stack.ts"],
+      data: ["../../infra/lib/data-stack.ts", "lineage-platform-target.md"],
+      edge: ["../../infra/lib/api-stack.ts", "../../infra/lib/web-stack.ts", "../../apps/web/src/components/operations/RepositoryCollectionForm.tsx"],
+      operations: ["../../infra/lib/operations-stack.ts", "../../scripts/deploy_ephemeral_aws.sh", "../../scripts/cleanup_ephemeral_aws.sh"],
+      network: ["../../infra/lib/network-stack.ts", "../../infra/lib/recovery-stack.ts"],
+    });
+
+    const COMPONENT_DETAILS = Object.freeze({
+      intake: { inputs: "Signed canonical events or lane messages plus exact source and policy determinants.", outputs: "A deduplicated durable command and a versioned workflow execution.", deployment: "Lambda live alias; EventBridge target and SQS event-source mappings.", sources: SOURCE_GROUPS.intake },
+      "control-stage": { inputs: "Bounded workflow state and immutable S3 references.", outputs: "Pinned determinants, bases, fetched references, and control-stage decisions.", deployment: "Shared Lambda OCI image with the control-stage command target.", sources: SOURCE_GROUPS.lambda },
+      classification: { inputs: "Repository manifest, language markers, scope, and policy snapshot.", outputs: "Analyzer cells and explicit path scope.", deployment: "Shared Lambda OCI image; independently versioned alias and canary.", sources: SOURCE_GROUPS.lambda },
+      coverage: { inputs: "Tracked paths, analyzer plan, exclusions, and prior accepted manifest when incremental.", outputs: "Baseline or differential coverage manifest with one terminal disposition per path.", deployment: "Shared Lambda OCI image; independently versioned alias and canary.", sources: SOURCE_GROUPS.lambda },
+      "runtime-validation": { inputs: "Signed lease, closed instrumentation profile, artifact identity, observation metadata, and window counts.", outputs: "Accepted, rejected, duplicate, quarantined, or incomplete runtime evidence.", deployment: "Shared Lambda OCI image with Kinesis batch handling; production remains hard-denied.", sources: SOURCE_GROUPS.lambda },
+      consolidation: { inputs: "SCA evidence, optional LLM evidence, runtime evidence, and prior accepted lifecycle state.", outputs: "URN-joined edges with confidence band, conflicts, corroboration, and tombstones.", deployment: "Shared Lambda OCI image; independently versioned alias and canary.", sources: SOURCE_GROUPS.lambda },
+      proposal: { inputs: "Consolidated evidence and proposal policy.", outputs: "Versioned proposal plus immutable approve, correct, or reject decision history.", deployment: "Shared Lambda OCI image; independently versioned alias and canary.", sources: SOURCE_GROUPS.lambda },
+      publication: { inputs: "Approved proposal, active pointer, fence token, and versioned namespace.", outputs: "Verified Neptune projection and monotonic active-pointer update.", deployment: "Shared Lambda OCI image with low reserved concurrency and long bounded timeout.", sources: SOURCE_GROUPS.lambda },
+      deployment: { inputs: "Authoritative outcome and exact artifact/package identity.", outputs: "Sequential D1–D6 promotion outcome, fenced activation, and readback proof.", deployment: "One Lambda handler owns the six sequential deployment stages.", sources: SOURCE_GROUPS.lambda },
+      "product-api": { inputs: "IAM-authorized REST requests for runs, review, lineage, impact, runtime admin, and collections.", outputs: "Bounded JSON contracts; AWS collection submit returns 501 until durable enqueue exists.", deployment: "Lambda live alias behind regional API Gateway.", sources: SOURCE_GROUPS.edge },
+      "sca-fargate": { inputs: "Task token, exact checkout reference, analyzer plan, bounds, and immutable destinations.", outputs: "Deterministic edge citations, transforms, residue, coverage, and callback result.", deployment: "linux/arm64 OCI task on ECS Fargate: 2 vCPU, 4 GiB, non-root, read-only root.", sources: SOURCE_GROUPS.sca },
+      "step-functions": { inputs: "Durable command and bounded S3 references.", outputs: "Baseline, Incremental, PR Gate, or Nightly terminal workflow outcome.", deployment: "Generated Standard ASL state machines published through versioned aliases.", sources: SOURCE_GROUPS.workflow },
+      eventbridge: { inputs: "Signed lineage.*.requested canonical events.", outputs: "Lane-routed messages plus replayable archive history.", deployment: "Custom bus, archive, rules, and SQS targets.", sources: SOURCE_GROUPS.intake },
+      sqs: { inputs: "Interactive, event, batch, or bulk durable commands.", outputs: "At-least-once Lambda batches with isolated DLQs.", deployment: "Two FIFO and two Standard queues with KMS, alarms, and partial-batch response.", sources: SOURCE_GROUPS.intake },
+      kinesis: { inputs: "Metadata-only runtime observations partitioned by stable dataset identity.", outputs: "Ordered batches for runtime validation.", deployment: "On-demand, KMS-encrypted stream; no row values, payloads, or raw queries.", sources: SOURCE_GROUPS.data },
+      sns: { inputs: "CloudWatch alarm state changes.", outputs: "External paging notifications only; never lineage work.", deployment: "Approved external topic ARN supplied as context; the CDK app does not own the topic.", sources: SOURCE_GROUPS.operations },
+      dynamodb: { inputs: "Commands, leases, stage outcomes, proposals, decisions, pointers, and fences.", outputs: "Authoritative control state and bounded product status projections.", deployment: "Four on-demand, PITR-enabled, KMS-encrypted tables.", sources: SOURCE_GROUPS.data },
+      s3: { inputs: "Checksummed evidence, packages, web assets, manifests, and workflow references.", outputs: "Versioned immutable objects and cross-region replicas where configured.", deployment: "KMS encryption, versioning, production Object Lock, and recovery replication.", sources: SOURCE_GROUPS.data },
+      ecr: { inputs: "Deterministically built Lambda and SCA OCI archives with recorded digests.", outputs: "Scan-on-push immutable runtime images addressed by digest.", deployment: "Two KMS-encrypted repositories retaining the latest fifty builds.", sources: SOURCE_GROUPS.sca },
+      neptune: { inputs: "Approved, fenced, versioned lineage namespaces.", outputs: "Bounded lineage and impact traversals selected by the active pointer.", deployment: "Encrypted IAM-auth cluster target with one writer and two readers across AZs.", sources: SOURCE_GROUPS.data },
+      "api-gateway": { inputs: "IAM-signed health and /api requests with bounded bodies.", outputs: "Lambda proxy responses plus access metrics and traces without data tracing.", deployment: "Regional REST API integrated with the product-api live alias.", sources: SOURCE_GROUPS.edge },
+      cloudfront: { inputs: "Browser page and /api requests.", outputs: "SPA assets from private S3 and proxied API responses.", deployment: "HTTP/2 and HTTP/3 distribution with TLS 1.2, security headers, immutable assets, and uncached shell/config.", sources: SOURCE_GROUPS.edge },
+      cloudwatch: { inputs: "Lambda, ECS, queue, API, workflow, and recovery metrics/logs/traces.", outputs: "Dashboards, alarms, retained logs, and SNS alarm actions when configured.", deployment: "Operations stack plus per-resource log groups and X-Ray integration.", sources: SOURCE_GROUPS.operations },
+      network: { inputs: "Approved account, three AZs, endpoint services, and enterprise PrivateLink context.", outputs: "NAT-free private connectivity with scoped security groups and endpoints.", deployment: "Dedicated VPC and endpoint stack; three AZs required outside fixture synthesis.", sources: SOURCE_GROUPS.network },
+      recovery: { inputs: "Primary-region immutable truth and backup policies.", outputs: "Replicated buckets, backup vault state, PITR, and warm-standby recovery inputs.", deployment: "Secondary-region KMS and storage foundations; live RPO/RTO proof remains AWS_REQUIRED.", sources: SOURCE_GROUPS.network },
+    });
+
+    const explorerState = {
+      journey: "sca",
+      step: 0,
+      adapter: "aws",
+      statuses: new Set(["verified", "synthesized", "partial", "planned"]),
+      category: "all",
+      selectedComponent: null,
+      timer: null,
+      lastFocus: null,
+    };
+
+    const explorerElements = {
+      panel: document.getElementById("journey-panel"),
+      graph: document.getElementById("flow-graph"),
+      mapLabel: document.getElementById("journey-map-label"),
+      counter: document.getElementById("step-counter"),
+      title: document.getElementById("step-title"),
+      description: document.getElementById("step-description"),
+      contract: document.getElementById("step-contract"),
+      status: document.getElementById("step-status"),
+      progress: document.getElementById("journey-progress"),
+      previous: document.getElementById("journey-previous"),
+      play: document.getElementById("journey-play"),
+      next: document.getElementById("journey-next"),
+      category: document.getElementById("component-category"),
+      count: document.getElementById("inventory-count"),
+      backdrop: document.getElementById("dialog-backdrop"),
+      dialog: document.getElementById("component-dialog"),
+      dialogKicker: document.getElementById("dialog-kicker"),
+      dialogTitle: document.getElementById("dialog-title"),
+      dialogMeta: document.getElementById("dialog-meta"),
+      dialogContent: document.getElementById("dialog-content"),
+      live: document.getElementById("live-region"),
+    };
+
+    function announce(message) {
+      explorerElements.live.textContent = "";
+      window.setTimeout(() => { explorerElements.live.textContent = message; }, 20);
+    }
+
+    function statusLabel(status) {
+      if (status === "required") return "AWS_REQUIRED";
+      if (status === "not-configured") return "NOT_CONFIGURED";
+      return status;
+    }
+
+    function updateHash() {
+      const params = new URLSearchParams();
+      params.set("journey", explorerState.journey);
+      if (explorerState.selectedComponent) params.set("component", explorerState.selectedComponent);
+      const nextHash = `#${params.toString()}`;
+      try {
+        window.history.replaceState(null, "", nextHash);
+      } catch (_error) {
+        // Browsers treat file:// history as an opaque origin; direct hash updates still work offline.
+        window.location.hash = nextHash;
+      }
+    }
+
+    function stopPlayback() {
+      if (explorerState.timer !== null) {
+        window.clearInterval(explorerState.timer);
+        explorerState.timer = null;
+      }
+      explorerElements.play.textContent = "Play";
+      explorerElements.play.setAttribute("aria-pressed", "false");
+    }
+
+    function renderJourney() {
+      const journey = window.LINEAGE_EXPLORER_DATA.journeys[explorerState.journey];
+      const flow = FLOW_PATHS[explorerState.journey];
+      const step = journey.steps[explorerState.step];
+      const status = STEP_STATUSES[explorerState.journey][explorerState.step];
+
+      document.querySelectorAll("[data-journey]").forEach((tab) => {
+        const selected = tab.dataset.journey === explorerState.journey;
+        tab.setAttribute("aria-selected", String(selected));
+        tab.tabIndex = selected ? 0 : -1;
+        if (selected) explorerElements.panel.setAttribute("aria-labelledby", tab.id);
+      });
+      document.querySelectorAll("[data-adapter]").forEach((button) => {
+        button.setAttribute("aria-pressed", String(button.dataset.adapter === explorerState.adapter));
+      });
+
+      explorerElements.mapLabel.textContent = `${explorerState.adapter.toUpperCase()} adapter path / ${journey.workflow}`;
+      explorerElements.graph.setAttribute("aria-label", `${journey.title} component path`);
+      explorerElements.graph.replaceChildren();
+      flow.forEach((node, index) => {
+        const item = document.createElement("li");
+        item.className = "flow-node";
+        item.dataset.kind = node.kind;
+        item.dataset.flowNode = node.component;
+        item.dataset.active = String(index === explorerState.step);
+        item.tabIndex = 0;
+        item.setAttribute("role", "button");
+        item.setAttribute("aria-label", `Open ${node[explorerState.adapter]} component detail`);
+        const kicker = document.createElement("small");
+        const label = document.createElement("strong");
+        const detail = document.createElement("span");
+        kicker.textContent = node.kicker;
+        label.textContent = node[explorerState.adapter];
+        detail.textContent = node.detail;
+        item.append(kicker, label, detail);
+        item.addEventListener("click", () => openComponent(node.component));
+        item.addEventListener("keydown", (event) => {
+          if (event.key === "Enter" || event.key === " ") {
+            event.preventDefault();
+            openComponent(node.component);
+          }
+        });
+        explorerElements.graph.append(item);
+      });
+
+      explorerElements.counter.textContent = `Step ${String(explorerState.step + 1).padStart(2, "0")} / ${String(journey.steps.length).padStart(2, "0")}`;
+      explorerElements.title.textContent = step[0];
+      explorerElements.description.textContent = step[1];
+      explorerElements.contract.textContent = step[2];
+      explorerElements.status.className = `status status--${status}`;
+      explorerElements.status.textContent = statusLabel(status);
+      explorerElements.progress.style.width = `${((explorerState.step + 1) / journey.steps.length) * 100}%`;
+      explorerElements.previous.disabled = explorerState.step === 0;
+      explorerElements.next.disabled = explorerState.step === journey.steps.length - 1;
+    }
+
+    function selectJourney(journeyId, shouldFocus = false) {
+      if (!window.LINEAGE_EXPLORER_DATA.journeys[journeyId]) return;
+      stopPlayback();
+      explorerState.journey = journeyId;
+      explorerState.step = 0;
+      renderJourney();
+      updateHash();
+      if (shouldFocus) document.querySelector(`[data-journey="${journeyId}"]`).focus();
+      announce(`${window.LINEAGE_EXPLORER_DATA.journeys[journeyId].title} selected`);
+    }
+
+    function renderInventory() {
+      const cards = [...document.querySelectorAll("[data-component]")];
+      let visible = 0;
+      cards.forEach((card) => {
+        const categoryMatch = explorerState.category === "all" || card.dataset.category === explorerState.category;
+        const statusMatch = explorerState.statuses.has(card.dataset.status);
+        card.hidden = !(categoryMatch && statusMatch);
+        if (!card.hidden) visible += 1;
+      });
+      explorerElements.count.textContent = `${visible} of ${cards.length} components shown`;
+      announce(`${visible} components match the current filters`);
+    }
+
+    function appendDialogField(title, text) {
+      const section = document.createElement("section");
+      section.className = "dialog-field";
+      const heading = document.createElement("h3");
+      const paragraph = document.createElement("p");
+      heading.textContent = title;
+      paragraph.textContent = text;
+      section.append(heading, paragraph);
+      explorerElements.dialogContent.append(section);
+    }
+
+    function openComponent(componentId, shouldUpdateHash = true) {
+      const card = document.querySelector(`[data-component="${componentId}"]`);
+      const detail = COMPONENT_DETAILS[componentId];
+      if (!card || !detail) return;
+      explorerState.lastFocus = document.activeElement;
+      explorerState.selectedComponent = componentId;
+      explorerElements.dialogKicker.textContent = card.querySelector(".component-card__type").textContent;
+      explorerElements.dialogTitle.textContent = card.querySelector("h3").textContent;
+      explorerElements.dialogMeta.replaceChildren();
+      const status = document.createElement("span");
+      status.className = `status status--${card.dataset.status}`;
+      status.textContent = statusLabel(card.dataset.status);
+      const spec = document.createElement("span");
+      spec.className = "status";
+      spec.textContent = card.querySelector(".component-card__spec").textContent;
+      explorerElements.dialogMeta.append(status, spec);
+      explorerElements.dialogContent.replaceChildren();
+      appendDialogField("Responsibility", card.querySelector("p").textContent);
+      appendDialogField("Inputs", detail.inputs);
+      appendDialogField("Outputs", detail.outputs);
+      appendDialogField("Deployment properties", detail.deployment);
+
+      const sourceSection = document.createElement("section");
+      sourceSection.className = "dialog-field";
+      const heading = document.createElement("h3");
+      heading.textContent = "Source trail";
+      const list = document.createElement("ul");
+      list.className = "dialog-sources";
+      detail.sources.forEach((href) => {
+        const item = document.createElement("li");
+        const link = document.createElement("a");
+        link.href = href;
+        link.textContent = href.replace(/^\.\.\/\.\.\//, "");
+        item.append(link);
+        list.append(item);
+      });
+      sourceSection.append(heading, list);
+      explorerElements.dialogContent.append(sourceSection);
+
+      explorerElements.backdrop.hidden = false;
+      document.body.style.overflow = "hidden";
+      document.getElementById("dialog-close").focus();
+      if (shouldUpdateHash) updateHash();
+      announce(`${explorerElements.dialogTitle.textContent} component detail opened`);
+    }
+
+    function closeDialog(shouldUpdateHash = true) {
+      if (explorerElements.backdrop.hidden) return;
+      explorerElements.backdrop.hidden = true;
+      document.body.style.overflow = "";
+      explorerState.selectedComponent = null;
+      if (shouldUpdateHash) updateHash();
+      if (explorerState.lastFocus instanceof HTMLElement) explorerState.lastFocus.focus();
+      announce("Component detail closed");
+    }
+
+    function readHashState() {
+      const params = new URLSearchParams(window.location.hash.slice(1));
+      const journey = params.get("journey");
+      const component = params.get("component");
+      if (journey && window.LINEAGE_EXPLORER_DATA.journeys[journey]) {
+        stopPlayback();
+        explorerState.journey = journey;
+        explorerState.step = 0;
+        renderJourney();
+      }
+      if (component && COMPONENT_DETAILS[component]) {
+        openComponent(component, false);
+      } else {
+        closeDialog(false);
+      }
+    }
+
+    const journeyTabs = [...document.querySelectorAll("[data-journey]")];
+    journeyTabs.forEach((tab) => {
+      tab.addEventListener("click", () => selectJourney(tab.dataset.journey));
+      tab.addEventListener("keydown", (event) => {
+        if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+        event.preventDefault();
+        const current = journeyTabs.indexOf(tab);
+        let target = current;
+        if (event.key === "ArrowLeft") target = (current - 1 + journeyTabs.length) % journeyTabs.length;
+        if (event.key === "ArrowRight") target = (current + 1) % journeyTabs.length;
+        if (event.key === "Home") target = 0;
+        if (event.key === "End") target = journeyTabs.length - 1;
+        selectJourney(journeyTabs[target].dataset.journey, true);
+      });
+    });
+
+    document.querySelectorAll("[data-adapter]").forEach((button) => {
+      button.addEventListener("click", () => {
+        explorerState.adapter = button.dataset.adapter;
+        renderJourney();
+        announce(`${button.textContent} adapter selected`);
+      });
+    });
+
+    explorerElements.previous.addEventListener("click", () => {
+      if (explorerState.step > 0) explorerState.step -= 1;
+      renderJourney();
+    });
+    explorerElements.next.addEventListener("click", () => {
+      const length = window.LINEAGE_EXPLORER_DATA.journeys[explorerState.journey].steps.length;
+      if (explorerState.step < length - 1) explorerState.step += 1;
+      renderJourney();
+    });
+    document.getElementById("journey-reset").addEventListener("click", () => {
+      stopPlayback();
+      explorerState.step = 0;
+      renderJourney();
+      announce("Journey reset to step one");
+    });
+    explorerElements.play.addEventListener("click", () => {
+      if (explorerState.timer !== null) {
+        stopPlayback();
+        return;
+      }
+      explorerElements.play.textContent = "Pause";
+      explorerElements.play.setAttribute("aria-pressed", "true");
+      explorerState.timer = window.setInterval(() => {
+        const length = window.LINEAGE_EXPLORER_DATA.journeys[explorerState.journey].steps.length;
+        if (explorerState.step >= length - 1) {
+          stopPlayback();
+          return;
+        }
+        explorerState.step += 1;
+        renderJourney();
+      }, 1600);
+    });
+
+    document.querySelectorAll("[data-status-filter]").forEach((button) => {
+      button.addEventListener("click", () => {
+        const status = button.dataset.statusFilter;
+        if (explorerState.statuses.has(status)) explorerState.statuses.delete(status);
+        else explorerState.statuses.add(status);
+        button.setAttribute("aria-pressed", String(explorerState.statuses.has(status)));
+        renderInventory();
+      });
+    });
+    explorerElements.category.addEventListener("change", () => {
+      explorerState.category = explorerElements.category.value;
+      renderInventory();
+    });
+    document.querySelectorAll("[data-component]").forEach((card) => {
+      card.addEventListener("click", () => openComponent(card.dataset.component));
+    });
+
+    document.getElementById("dialog-close").addEventListener("click", () => closeDialog());
+    explorerElements.backdrop.addEventListener("click", (event) => {
+      if (event.target === explorerElements.backdrop) closeDialog();
+    });
+    document.addEventListener("keydown", (event) => {
+      if (explorerElements.backdrop.hidden) return;
+      if (event.key === "Escape") {
+        event.preventDefault();
+        closeDialog();
+        return;
+      }
+      if (event.key !== "Tab") return;
+      const focusable = [...explorerElements.dialog.querySelectorAll("button, a[href], [tabindex]:not([tabindex='-1'])")];
+      if (focusable.length === 0) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    });
+
+    window.addEventListener("hashchange", readHashState);
+    window.addEventListener("beforeunload", stopPlayback);
+    const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
+    if (reducedMotion.matches) {
+      explorerElements.play.disabled = true;
+      explorerElements.play.title = "Autoplay is disabled because reduced motion is enabled.";
+    }
+
+    renderJourney();
+    renderInventory();
+    readHashState();
   </script>
 </body>
 </html>
