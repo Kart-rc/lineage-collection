@@ -10,6 +10,7 @@ from types import ModuleType
 ROOT = Path(__file__).parents[1]
 TARGET_ARCHITECTURE = "docs/architecture/lineage-platform-target.md"
 TARGET_ARCHITECTURE_HTML = "docs/architecture/lineage-platform-target.html"
+LINEAGE_DEPLOYMENT_EXPLORER = "docs/architecture/lineage-deployment-explorer.html"
 
 
 def _read(relative_path: str) -> str:
@@ -75,6 +76,69 @@ def test_operator_handoff_documents_workflows_generated_safety_and_acceptance() 
         "docs/build-prds/README.md",
     ):
         assert link in readme
+
+
+def test_lineage_deployment_explorer_covers_collection_deployment_and_product_flows() -> None:
+    explorer = _read(LINEAGE_DEPLOYMENT_EXPLORER)
+    lowered = explorer.lower()
+
+    for journey in ("sca collection", "runtime corroboration", "api and ui", "deployment"):
+        assert journey in lowered
+    for service in (
+        "ecs fargate",
+        "lambda",
+        "sns",
+        "sqs",
+        "kinesis",
+        "eventbridge",
+        "api gateway",
+        "cloudfront",
+        "dynamodb",
+        "s3",
+        "ecr",
+        "neptune",
+    ):
+        assert service in lowered
+    for target in (
+        "intake",
+        "control-stage",
+        "classification",
+        "coverage",
+        "runtime-validation",
+        "consolidation",
+        "proposal",
+        "publication",
+        "deployment",
+        "product-api",
+    ):
+        assert f'data-component="{target}"' in explorer
+    for status in (
+        "verified",
+        "synthesized",
+        "partial",
+        "planned",
+        "AWS_REQUIRED",
+        "NOT_CONFIGURED",
+    ):
+        assert status in explorer
+    for hook in (
+        'aria-live="polite"',
+        'role="dialog"',
+        'aria-modal="true"',
+        "prefers-reduced-motion",
+    ):
+        assert hook in explorer
+    for source in (
+        "infra/assets/lambda/Dockerfile",
+        "infra/assets/sca/Dockerfile",
+        "infra/lib/runtime-assets.ts",
+        "infra/lib/engines-stack.ts",
+        "infra/lib/intake-stack.ts",
+        "scripts/deploy_ephemeral_aws.sh",
+        "apps/api/src/lineage_api/application/workflows/definitions.py",
+        "docs/architecture/lineage-platform-target.md",
+    ):
+        assert source in explorer
 
 
 def test_coverage_matrix_accounts_for_every_component() -> None:
