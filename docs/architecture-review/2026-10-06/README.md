@@ -5,6 +5,7 @@ This package assesses the implementation at commit [`32958a35cdf49341b15a4d6cb05
 ## Start here
 
 - [Real Petclinic OTel lineage experiment](petclinic-experiment/README.md): executable harness, independent gold, sanitized captured evidence, and measured limits. See the [recorded comparison](petclinic-experiment/evidence/comparison.json) and [coverage denominators](petclinic-experiment/evidence/coverage-denominators.json).
+- [Static/runtime reconciliation deep dive](static-runtime-reconciliation-deep-dive.md): a worked database → service payload → Kafka → normalized table → daily-revenue example, with per-hop evidence and semantic-validation limits.
 - [Interactive guide](lineage-interactive-guide.html): download the HTML file and open it in a modern browser. It is self-contained and requires no server, account, or network connection. GitHub shows its source rather than running the interactive controls.
 - Architecture review, market benchmark, PRD, TDD, and ATDD coverage: [Markdown](architecture-review.md), [Word](Lineage_Collection_Architecture_Review.docx), or [PDF](Lineage_Collection_Architecture_Review.pdf).
 - Technical discussion guide: [Markdown](technical-discussion-guide.md), [Word](Lineage_Collection_Technical_Discussion_Guide.docx), or [PDF](Lineage_Collection_Technical_Discussion_Guide.pdf).
@@ -16,7 +17,7 @@ The proposed first milestone connects Java/Spring services through Kafka and Spa
 
 ## Validation
 
-The Word and PDF documents were rendered and visually reviewed. The interactive guide passed 689 DOM/JavaScript assertions; real-browser visual, responsive, keyboard, and print verification remains outstanding. Its calculators and ATDD counts are educational examples, not product measurements. See the [interactive QA report](lineage-interactive-guide-qa.md), [recorded results](lineage-guide-qa-results.json), and [reproducible test script](lineage-interactive-guide.qa.cjs).
+The Word and PDF documents were rendered and visually reviewed. The interactive guide passed 1,587 DOM/JavaScript and companion-document assertions; real-browser visual, responsive, keyboard, and print verification remains outstanding. Its calculators and ATDD counts are educational examples, not product measurements. See the [interactive QA report](lineage-interactive-guide-qa.md), [recorded results](lineage-guide-qa-results.json), and [reproducible test script](lineage-interactive-guide.qa.cjs).
 
 ## Executed Petclinic experiment
 

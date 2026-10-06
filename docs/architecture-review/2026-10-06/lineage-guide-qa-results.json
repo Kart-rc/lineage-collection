@@ -1,6 +1,6 @@
 {
   "passed": true,
-  "assertions": 689,
+  "assertions": 1587,
   "categories": [
     "offline/DOM/accessibility foundations",
     "54 architecture node selections across three repeated cycles",
@@ -10,13 +10,19 @@
     "precision/recall/capture arithmetic, presets and zero-prediction boundary",
     "capacity equations, backfill toggle, empty/negative/max inputs and stable/unstable queues",
     "four instrumentation modes × 32 ATDD scenario combinations, six denominators and loss/empty states",
+    "four-hop overlay across 192 hop/evidence/view/control states, exact fixtures, 17 typed edges, direct ancestors, mutations and reset",
+    "keyboard focus retention and companion Markdown JSON/fixture/privacy consistency",
     "12 technical answers, practice checklist and global reset",
     "public-content scan and pinned source path checks"
   ],
   "jsErrors": [],
   "sourceFile": "lineage-interactive-guide.html",
-  "sourceBytes": 96076,
-  "externalSourceLinks": 27,
+  "sourceBytes": 129904,
+  "sourceSha256": "000c864c75a40675685434f7a5a6e10cac76294bba57771cecd5ff8304a00686",
+  "markdownFile": "static-runtime-reconciliation-deep-dive.md",
+  "markdownBytes": 78187,
+  "markdownSha256": "7886940a6f16f624838458a3acb10ca56cf5366dc54f6f8c5ec64689fe6fd0f0",
+  "externalSourceLinks": 28,
   "limitations": [
     "JSDOM does not lay out pixels; no screenshot, clipping, responsive geometry or real-browser claim.",
     "External source links were inherited from primary-source research and checked structurally, not all re-fetched by this QA script.",
