@@ -1,0 +1,25 @@
+{
+  "passed": true,
+  "assertions": 689,
+  "categories": [
+    "offline/DOM/accessibility foundations",
+    "54 architecture node selections across three repeated cycles",
+    "all seven trace steps, both relation views, repeated/back/next boundaries",
+    "all 32 evidence-filter combinations including empty state",
+    "five failure scenarios and ten reveal panels",
+    "precision/recall/capture arithmetic, presets and zero-prediction boundary",
+    "capacity equations, backfill toggle, empty/negative/max inputs and stable/unstable queues",
+    "four instrumentation modes × 32 ATDD scenario combinations, six denominators and loss/empty states",
+    "12 technical answers, practice checklist and global reset",
+    "public-content scan and pinned source path checks"
+  ],
+  "jsErrors": [],
+  "sourceFile": "lineage-interactive-guide.html",
+  "sourceBytes": 96076,
+  "externalSourceLinks": 27,
+  "limitations": [
+    "JSDOM does not lay out pixels; no screenshot, clipping, responsive geometry or real-browser claim.",
+    "External source links were inherited from primary-source research and checked structurally, not all re-fetched by this QA script.",
+    "Native accessibility/browser/keyboard behavior is not fully established by DOM checks."
+  ]
+}
