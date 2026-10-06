@@ -1,0 +1,85 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "_producer": {
+      "type": "string",
+      "format": "uri"
+    },
+    "_schemaURL": {
+      "type": "string",
+      "format": "uri"
+    },
+    "evidenceClass": {
+      "enum": [
+        "DECLARED_AND_EXECUTED",
+        "INCOMPLETE",
+        "OBSERVED_FAILURE"
+      ]
+    },
+    "requiredEvidencePresent": {
+      "type": "boolean"
+    },
+    "captureCompleteness": {
+      "const": "NOT_ESTABLISHED"
+    },
+    "traceId": {
+      "type": "string"
+    },
+    "spanIds": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "jdbcSpanIds": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "contractSha256": {
+      "type": "string"
+    },
+    "sourceCommit": {
+      "type": "string"
+    },
+    "jarSha256": {
+      "type": "string"
+    },
+    "activeTemplateSha256": {
+      "type": "string"
+    },
+    "missingEvidence": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "scope": {
+      "type": "string"
+    },
+    "businessOutputValidated": {
+      "const": false
+    }
+  },
+  "required": [
+    "_producer",
+    "_schemaURL",
+    "evidenceClass",
+    "traceId",
+    "spanIds",
+    "jdbcSpanIds",
+    "contractSha256",
+    "sourceCommit",
+    "jarSha256",
+    "activeTemplateSha256",
+    "requiredEvidencePresent",
+    "captureCompleteness",
+    "missingEvidence",
+    "scope",
+    "businessOutputValidated"
+  ],
+  "additionalProperties": false,
+  "$id": "urn:lineage-experiment:schema:sha256:0f71b7d686b1b1df5b8d6fe9b0f1331dc0a3e3be7193a67f9e9761736112021a"
+}

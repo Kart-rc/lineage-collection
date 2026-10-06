@@ -1,0 +1,921 @@
+{
+  "baseline": [
+    {
+      "scenario": "owner_1_seed",
+      "status": 200,
+      "traceId": "fb7b07a74ad94643b0644b2215c21ffc",
+      "runId": "ccf5b463-8c86-565d-8e40-cf3119671a60",
+      "output": {
+        "pass": true,
+        "actual": {
+          "owner.name": "George Franklin",
+          "owner.address": "110 W. Liberty St.",
+          "owner.city": "Madison",
+          "owner.telephone": "6085551023"
+        },
+        "expected": {
+          "owner.name": "George Franklin",
+          "owner.address": "110 W. Liberty St.",
+          "owner.city": "Madison",
+          "owner.telephone": "6085551023"
+        },
+        "cellCount": 4,
+        "rowLabels": [
+          "Name",
+          "Address",
+          "City",
+          "Telephone"
+        ],
+        "httpChecksPass": true,
+        "unresolvedThymeleaf": false
+      },
+      "capture": {
+        "traceSpanCount": 11,
+        "httpServerSpanCount": 1,
+        "jdbcSpanCount": 4,
+        "ownersSelectSpanCount": 2,
+        "declarationCount": 0,
+        "requiredEvidencePresent": false,
+        "reasons": [
+          "Expected 1 successful mapping declarations"
+        ]
+      },
+      "typedEdgeQuality": {
+        "value": {
+          "truePositive": 0,
+          "predicted": 0,
+          "gold": 5,
+          "precision": null,
+          "recall": 0.0,
+          "missing": [
+            [
+              "owners.address",
+              "owner.address",
+              "HTML_RENDER"
+            ],
+            [
+              "owners.city",
+              "owner.city",
+              "HTML_RENDER"
+            ],
+            [
+              "owners.first_name",
+              "owner.name",
+              "CONCAT_HTML_RENDER"
+            ],
+            [
+              "owners.last_name",
+              "owner.name",
+              "CONCAT_HTML_RENDER"
+            ],
+            [
+              "owners.telephone",
+              "owner.telephone",
+              "HTML_RENDER"
+            ]
+          ],
+          "unexpected": []
+        },
+        "filter": {
+          "truePositive": 0,
+          "predicted": 0,
+          "gold": 4,
+          "precision": null,
+          "recall": 0.0,
+          "missing": [
+            [
+              "owners.id",
+              "owner.address",
+              "ROW_SELECTION"
+            ],
+            [
+              "owners.id",
+              "owner.city",
+              "ROW_SELECTION"
+            ],
+            [
+              "owners.id",
+              "owner.name",
+              "ROW_SELECTION"
+            ],
+            [
+              "owners.id",
+              "owner.telephone",
+              "ROW_SELECTION"
+            ]
+          ],
+          "unexpected": []
+        },
+        "pass": false
+      },
+      "schemaValid": true
+    },
+    {
+      "scenario": "owner_2_filter_control",
+      "status": 200,
+      "traceId": "3f389f1c8e674c7facedf7bcf443c6ba",
+      "runId": "ccee7af6-a041-5115-be0c-7b5675dc6c76",
+      "output": {
+        "pass": true,
+        "actual": {
+          "owner.name": "Betty Davis",
+          "owner.address": "638 Cardinal Ave.",
+          "owner.city": "Sun Prairie",
+          "owner.telephone": "6085551749"
+        },
+        "expected": {
+          "owner.name": "Betty Davis",
+          "owner.address": "638 Cardinal Ave.",
+          "owner.city": "Sun Prairie",
+          "owner.telephone": "6085551749"
+        },
+        "cellCount": 4,
+        "rowLabels": [
+          "Name",
+          "Address",
+          "City",
+          "Telephone"
+        ],
+        "httpChecksPass": true,
+        "unresolvedThymeleaf": false
+      },
+      "capture": {
+        "traceSpanCount": 11,
+        "httpServerSpanCount": 1,
+        "jdbcSpanCount": 4,
+        "ownersSelectSpanCount": 2,
+        "declarationCount": 0,
+        "requiredEvidencePresent": false,
+        "reasons": [
+          "Expected 1 successful mapping declarations"
+        ]
+      },
+      "typedEdgeQuality": {
+        "value": {
+          "truePositive": 0,
+          "predicted": 0,
+          "gold": 5,
+          "precision": null,
+          "recall": 0.0,
+          "missing": [
+            [
+              "owners.address",
+              "owner.address",
+              "HTML_RENDER"
+            ],
+            [
+              "owners.city",
+              "owner.city",
+              "HTML_RENDER"
+            ],
+            [
+              "owners.first_name",
+              "owner.name",
+              "CONCAT_HTML_RENDER"
+            ],
+            [
+              "owners.last_name",
+              "owner.name",
+              "CONCAT_HTML_RENDER"
+            ],
+            [
+              "owners.telephone",
+              "owner.telephone",
+              "HTML_RENDER"
+            ]
+          ],
+          "unexpected": []
+        },
+        "filter": {
+          "truePositive": 0,
+          "predicted": 0,
+          "gold": 4,
+          "precision": null,
+          "recall": 0.0,
+          "missing": [
+            [
+              "owners.id",
+              "owner.address",
+              "ROW_SELECTION"
+            ],
+            [
+              "owners.id",
+              "owner.city",
+              "ROW_SELECTION"
+            ],
+            [
+              "owners.id",
+              "owner.name",
+              "ROW_SELECTION"
+            ],
+            [
+              "owners.id",
+              "owner.telephone",
+              "ROW_SELECTION"
+            ]
+          ],
+          "unexpected": []
+        },
+        "pass": false
+      },
+      "schemaValid": true
+    },
+    {
+      "scenario": "missing_owner",
+      "status": 500,
+      "traceId": "8f4f887bb90046f7ae0c16105e0ebc09",
+      "runId": "0313a6c6-252e-5911-9bd3-69e9adb39ce8",
+      "output": {
+        "pass": true,
+        "expectedStatus": 500,
+        "actualStatus": 500
+      },
+      "capture": {
+        "traceSpanCount": 5,
+        "httpServerSpanCount": 1,
+        "jdbcSpanCount": 1,
+        "ownersSelectSpanCount": 1,
+        "declarationCount": 0,
+        "requiredEvidencePresent": true,
+        "reasons": []
+      },
+      "typedEdgeQuality": null,
+      "schemaValid": true
+    }
+  ],
+  "enhanced": [
+    {
+      "scenario": "owner_1_seed",
+      "status": 200,
+      "traceId": "d90bd324164046dfb56066d4a7ef382b",
+      "runId": "8328a748-d29d-57a6-9add-f394617e0612",
+      "output": {
+        "pass": true,
+        "actual": {
+          "owner.name": "George Franklin",
+          "owner.address": "110 W. Liberty St.",
+          "owner.city": "Madison",
+          "owner.telephone": "6085551023"
+        },
+        "expected": {
+          "owner.name": "George Franklin",
+          "owner.address": "110 W. Liberty St.",
+          "owner.city": "Madison",
+          "owner.telephone": "6085551023"
+        },
+        "cellCount": 4,
+        "rowLabels": [
+          "Name",
+          "Address",
+          "City",
+          "Telephone"
+        ],
+        "httpChecksPass": true,
+        "unresolvedThymeleaf": false
+      },
+      "capture": {
+        "traceSpanCount": 11,
+        "httpServerSpanCount": 1,
+        "jdbcSpanCount": 4,
+        "ownersSelectSpanCount": 2,
+        "declarationCount": 1,
+        "requiredEvidencePresent": true,
+        "reasons": []
+      },
+      "typedEdgeQuality": {
+        "value": {
+          "truePositive": 5,
+          "predicted": 5,
+          "gold": 5,
+          "precision": 1.0,
+          "recall": 1.0,
+          "missing": [],
+          "unexpected": []
+        },
+        "filter": {
+          "truePositive": 4,
+          "predicted": 4,
+          "gold": 4,
+          "precision": 1.0,
+          "recall": 1.0,
+          "missing": [],
+          "unexpected": []
+        },
+        "pass": true
+      },
+      "schemaValid": true
+    },
+    {
+      "scenario": "owner_2_filter_control",
+      "status": 200,
+      "traceId": "1c73a7e39a7a4e59929593dc86178b1b",
+      "runId": "5dfb0f8b-4b40-5fda-b94d-69bf01e6d9ac",
+      "output": {
+        "pass": true,
+        "actual": {
+          "owner.name": "Betty Davis",
+          "owner.address": "638 Cardinal Ave.",
+          "owner.city": "Sun Prairie",
+          "owner.telephone": "6085551749"
+        },
+        "expected": {
+          "owner.name": "Betty Davis",
+          "owner.address": "638 Cardinal Ave.",
+          "owner.city": "Sun Prairie",
+          "owner.telephone": "6085551749"
+        },
+        "cellCount": 4,
+        "rowLabels": [
+          "Name",
+          "Address",
+          "City",
+          "Telephone"
+        ],
+        "httpChecksPass": true,
+        "unresolvedThymeleaf": false
+      },
+      "capture": {
+        "traceSpanCount": 11,
+        "httpServerSpanCount": 1,
+        "jdbcSpanCount": 4,
+        "ownersSelectSpanCount": 2,
+        "declarationCount": 1,
+        "requiredEvidencePresent": true,
+        "reasons": []
+      },
+      "typedEdgeQuality": {
+        "value": {
+          "truePositive": 5,
+          "predicted": 5,
+          "gold": 5,
+          "precision": 1.0,
+          "recall": 1.0,
+          "missing": [],
+          "unexpected": []
+        },
+        "filter": {
+          "truePositive": 4,
+          "predicted": 4,
+          "gold": 4,
+          "precision": 1.0,
+          "recall": 1.0,
+          "missing": [],
+          "unexpected": []
+        },
+        "pass": true
+      },
+      "schemaValid": true
+    },
+    {
+      "scenario": "missing_owner",
+      "status": 500,
+      "traceId": "8d59d5b010b24b2898f558653ba3c851",
+      "runId": "7b5a378d-4b7b-54a6-be95-34c598603b15",
+      "output": {
+        "pass": true,
+        "expectedStatus": 500,
+        "actualStatus": 500
+      },
+      "capture": {
+        "traceSpanCount": 5,
+        "httpServerSpanCount": 1,
+        "jdbcSpanCount": 1,
+        "ownersSelectSpanCount": 1,
+        "declarationCount": 0,
+        "requiredEvidencePresent": true,
+        "reasons": []
+      },
+      "typedEdgeQuality": null,
+      "schemaValid": true
+    }
+  ],
+  "negativeControls": [
+    {
+      "control": "drop_mapping_event",
+      "method": "Offline deletion from actual captured evidence",
+      "detected": true,
+      "capture": {
+        "traceSpanCount": 11,
+        "httpServerSpanCount": 1,
+        "jdbcSpanCount": 4,
+        "ownersSelectSpanCount": 2,
+        "declarationCount": 0,
+        "requiredEvidencePresent": false,
+        "reasons": [
+          "Expected 1 successful mapping declarations"
+        ]
+      }
+    },
+    {
+      "control": "drop_all_jdbc_spans",
+      "method": "Offline deletion from actual captured evidence",
+      "detected": true,
+      "capture": {
+        "traceSpanCount": 7,
+        "httpServerSpanCount": 1,
+        "jdbcSpanCount": 0,
+        "ownersSelectSpanCount": 0,
+        "declarationCount": 1,
+        "requiredEvidencePresent": false,
+        "reasons": [
+          "No observed JDBC owners SELECT in scenario trace"
+        ]
+      }
+    },
+    {
+      "control": "drop_http_server_span",
+      "method": "Offline deletion from actual captured evidence",
+      "detected": true,
+      "capture": {
+        "traceSpanCount": 10,
+        "httpServerSpanCount": 0,
+        "jdbcSpanCount": 4,
+        "ownersSelectSpanCount": 2,
+        "declarationCount": 0,
+        "requiredEvidencePresent": false,
+        "reasons": [
+          "Expected exactly one HTTP SERVER span",
+          "Expected 1 successful mapping declarations"
+        ]
+      }
+    },
+    {
+      "control": "omit_last_name_edge",
+      "method": "Offline mutation of adapted actual event",
+      "detected": true,
+      "typedEdgeQuality": {
+        "value": {
+          "truePositive": 4,
+          "predicted": 4,
+          "gold": 5,
+          "precision": 1.0,
+          "recall": 0.8,
+          "missing": [
+            [
+              "owners.last_name",
+              "owner.name",
+              "CONCAT_HTML_RENDER"
+            ]
+          ],
+          "unexpected": []
+        },
+        "filter": {
+          "truePositive": 4,
+          "predicted": 4,
+          "gold": 4,
+          "precision": 1.0,
+          "recall": 1.0,
+          "missing": [],
+          "unexpected": []
+        },
+        "pass": false
+      }
+    },
+    {
+      "control": "invent_id_value_edge",
+      "method": "Offline mutation of adapted actual event",
+      "detected": true,
+      "typedEdgeQuality": {
+        "value": {
+          "truePositive": 5,
+          "predicted": 6,
+          "gold": 5,
+          "precision": 0.8333333333333334,
+          "recall": 1.0,
+          "missing": [],
+          "unexpected": [
+            [
+              "owners.id",
+              "owner.name",
+              "CONCAT_HTML_RENDER"
+            ]
+          ]
+        },
+        "filter": {
+          "truePositive": 4,
+          "predicted": 4,
+          "gold": 4,
+          "precision": 1.0,
+          "recall": 1.0,
+          "missing": [],
+          "unexpected": []
+        },
+        "pass": false
+      }
+    },
+    {
+      "control": "mislabel_identity",
+      "method": "Offline mutation of adapted actual event",
+      "detected": true,
+      "typedEdgeQuality": {
+        "value": {
+          "truePositive": 0,
+          "predicted": 5,
+          "gold": 5,
+          "precision": 0.0,
+          "recall": 0.0,
+          "missing": [
+            [
+              "owners.address",
+              "owner.address",
+              "HTML_RENDER"
+            ],
+            [
+              "owners.city",
+              "owner.city",
+              "HTML_RENDER"
+            ],
+            [
+              "owners.first_name",
+              "owner.name",
+              "CONCAT_HTML_RENDER"
+            ],
+            [
+              "owners.last_name",
+              "owner.name",
+              "CONCAT_HTML_RENDER"
+            ],
+            [
+              "owners.telephone",
+              "owner.telephone",
+              "HTML_RENDER"
+            ]
+          ],
+          "unexpected": [
+            [
+              "owners.address",
+              "owner.address",
+              "UNKNOWN"
+            ],
+            [
+              "owners.city",
+              "owner.city",
+              "UNKNOWN"
+            ],
+            [
+              "owners.first_name",
+              "owner.name",
+              "UNKNOWN"
+            ],
+            [
+              "owners.last_name",
+              "owner.name",
+              "UNKNOWN"
+            ],
+            [
+              "owners.telephone",
+              "owner.telephone",
+              "UNKNOWN"
+            ]
+          ]
+        },
+        "filter": {
+          "truePositive": 4,
+          "predicted": 4,
+          "gold": 4,
+          "precision": 1.0,
+          "recall": 1.0,
+          "missing": [],
+          "unexpected": []
+        },
+        "pass": false
+      }
+    },
+    {
+      "control": "wrong_dataset_identity",
+      "method": "Offline mutation of adapted actual event",
+      "detected": true,
+      "typedEdgeQuality": {
+        "value": {
+          "truePositive": 0,
+          "predicted": 5,
+          "gold": 5,
+          "precision": 0.0,
+          "recall": 0.0,
+          "missing": [
+            [
+              "owners.address",
+              "owner.address",
+              "HTML_RENDER"
+            ],
+            [
+              "owners.city",
+              "owner.city",
+              "HTML_RENDER"
+            ],
+            [
+              "owners.first_name",
+              "owner.name",
+              "CONCAT_HTML_RENDER"
+            ],
+            [
+              "owners.last_name",
+              "owner.name",
+              "CONCAT_HTML_RENDER"
+            ],
+            [
+              "owners.telephone",
+              "owner.telephone",
+              "HTML_RENDER"
+            ]
+          ],
+          "unexpected": [
+            [
+              "UNRESOLVED:{'name': 'PUBLIC.OWNERS', 'namespace': 'jdbc:h2:mem:petclinic', 'field': 'address', 'transformations': [{'type': 'DIRECT', 'subtype': 'TRANSFORMATION', 'description': 'HTML_TEXT(address)', 'masking': False}]}",
+              "UNRESOLVED:other-view",
+              "HTML_RENDER"
+            ],
+            [
+              "UNRESOLVED:{'name': 'PUBLIC.OWNERS', 'namespace': 'jdbc:h2:mem:petclinic', 'field': 'city', 'transformations': [{'type': 'DIRECT', 'subtype': 'TRANSFORMATION', 'description': 'HTML_TEXT(city)', 'masking': False}]}",
+              "UNRESOLVED:other-view",
+              "HTML_RENDER"
+            ],
+            [
+              "UNRESOLVED:{'name': 'PUBLIC.OWNERS', 'namespace': 'jdbc:h2:mem:petclinic', 'field': 'first_name', 'transformations': [{'type': 'DIRECT', 'subtype': 'TRANSFORMATION', 'description': \"HTML_TEXT(first_name + ' ' + last_name)\", 'masking': False}]}",
+              "UNRESOLVED:other-view",
+              "CONCAT_HTML_RENDER"
+            ],
+            [
+              "UNRESOLVED:{'name': 'PUBLIC.OWNERS', 'namespace': 'jdbc:h2:mem:petclinic', 'field': 'last_name', 'transformations': [{'type': 'DIRECT', 'subtype': 'TRANSFORMATION', 'description': \"HTML_TEXT(first_name + ' ' + last_name)\", 'masking': False}]}",
+              "UNRESOLVED:other-view",
+              "CONCAT_HTML_RENDER"
+            ],
+            [
+              "UNRESOLVED:{'name': 'PUBLIC.OWNERS', 'namespace': 'jdbc:h2:mem:petclinic', 'field': 'telephone', 'transformations': [{'type': 'DIRECT', 'subtype': 'TRANSFORMATION', 'description': 'HTML_TEXT(telephone)', 'masking': False}]}",
+              "UNRESOLVED:other-view",
+              "HTML_RENDER"
+            ]
+          ]
+        },
+        "filter": {
+          "truePositive": 0,
+          "predicted": 4,
+          "gold": 4,
+          "precision": 0.0,
+          "recall": 0.0,
+          "missing": [
+            [
+              "owners.id",
+              "owner.address",
+              "ROW_SELECTION"
+            ],
+            [
+              "owners.id",
+              "owner.city",
+              "ROW_SELECTION"
+            ],
+            [
+              "owners.id",
+              "owner.name",
+              "ROW_SELECTION"
+            ],
+            [
+              "owners.id",
+              "owner.telephone",
+              "ROW_SELECTION"
+            ]
+          ],
+          "unexpected": [
+            [
+              "UNRESOLVED:{'name': 'PUBLIC.OWNERS', 'namespace': 'jdbc:h2:mem:petclinic', 'field': 'id', 'transformations': [{'type': 'INDIRECT', 'subtype': 'FILTER', 'description': 'owners.id = request.ownerId', 'masking': False}]}",
+              "owner.address",
+              "ROW_SELECTION"
+            ],
+            [
+              "UNRESOLVED:{'name': 'PUBLIC.OWNERS', 'namespace': 'jdbc:h2:mem:petclinic', 'field': 'id', 'transformations': [{'type': 'INDIRECT', 'subtype': 'FILTER', 'description': 'owners.id = request.ownerId', 'masking': False}]}",
+              "owner.city",
+              "ROW_SELECTION"
+            ],
+            [
+              "UNRESOLVED:{'name': 'PUBLIC.OWNERS', 'namespace': 'jdbc:h2:mem:petclinic', 'field': 'id', 'transformations': [{'type': 'INDIRECT', 'subtype': 'FILTER', 'description': 'owners.id = request.ownerId', 'masking': False}]}",
+              "owner.name",
+              "ROW_SELECTION"
+            ],
+            [
+              "UNRESOLVED:{'name': 'PUBLIC.OWNERS', 'namespace': 'jdbc:h2:mem:petclinic', 'field': 'id', 'transformations': [{'type': 'INDIRECT', 'subtype': 'FILTER', 'description': 'owners.id = request.ownerId', 'masking': False}]}",
+              "owner.telephone",
+              "ROW_SELECTION"
+            ]
+          ]
+        },
+        "pass": false
+      }
+    },
+    {
+      "control": "untyped_extra_source",
+      "method": "Offline mutation of adapted actual event",
+      "detected": true,
+      "typedEdgeQuality": {
+        "value": {
+          "truePositive": 5,
+          "predicted": 6,
+          "gold": 5,
+          "precision": 0.8333333333333334,
+          "recall": 1.0,
+          "missing": [],
+          "unexpected": [
+            [
+              "owners.id",
+              "owner.name",
+              "UNKNOWN"
+            ]
+          ]
+        },
+        "filter": {
+          "truePositive": 4,
+          "predicted": 4,
+          "gold": 4,
+          "precision": 1.0,
+          "recall": 1.0,
+          "missing": [],
+          "unexpected": []
+        },
+        "pass": false
+      }
+    },
+    {
+      "control": "wrong_input_identity",
+      "method": "Offline mutation of adapted actual event",
+      "detected": true,
+      "typedEdgeQuality": {
+        "value": {
+          "truePositive": 4,
+          "predicted": 5,
+          "gold": 5,
+          "precision": 0.8,
+          "recall": 0.8,
+          "missing": [
+            [
+              "owners.first_name",
+              "owner.name",
+              "CONCAT_HTML_RENDER"
+            ]
+          ],
+          "unexpected": [
+            [
+              "UNRESOLVED:{'name': 'PUBLIC.OWNERS', 'namespace': 'jdbc:h2:mem:other-db', 'field': 'first_name', 'transformations': [{'type': 'DIRECT', 'subtype': 'TRANSFORMATION', 'description': \"HTML_TEXT(first_name + ' ' + last_name)\", 'masking': False}]}",
+              "owner.name",
+              "CONCAT_HTML_RENDER"
+            ]
+          ]
+        },
+        "filter": {
+          "truePositive": 4,
+          "predicted": 4,
+          "gold": 4,
+          "precision": 1.0,
+          "recall": 1.0,
+          "missing": [],
+          "unexpected": []
+        },
+        "pass": false
+      }
+    }
+  ],
+  "mutant": [
+    {
+      "scenario": "owner_1_seed",
+      "status": 200,
+      "traceId": "57366ef1cfd94b1a84e74ee1a2a49a73",
+      "runId": "e12ae45b-720f-5387-b7f9-95b0d56784e6",
+      "output": {
+        "pass": false,
+        "actual": {
+          "owner.name": "George",
+          "owner.address": "110 W. Liberty St.",
+          "owner.city": "Madison",
+          "owner.telephone": "6085551023"
+        },
+        "expected": {
+          "owner.name": "George Franklin",
+          "owner.address": "110 W. Liberty St.",
+          "owner.city": "Madison",
+          "owner.telephone": "6085551023"
+        },
+        "cellCount": 4,
+        "rowLabels": [
+          "Name",
+          "Address",
+          "City",
+          "Telephone"
+        ],
+        "httpChecksPass": true,
+        "unresolvedThymeleaf": false
+      },
+      "capture": {
+        "traceSpanCount": 11,
+        "httpServerSpanCount": 1,
+        "jdbcSpanCount": 4,
+        "ownersSelectSpanCount": 2,
+        "declarationCount": 1,
+        "requiredEvidencePresent": true,
+        "reasons": []
+      },
+      "typedEdgeQuality": {
+        "value": {
+          "truePositive": 5,
+          "predicted": 5,
+          "gold": 5,
+          "precision": 1.0,
+          "recall": 1.0,
+          "missing": [],
+          "unexpected": []
+        },
+        "filter": {
+          "truePositive": 4,
+          "predicted": 4,
+          "gold": 4,
+          "precision": 1.0,
+          "recall": 1.0,
+          "missing": [],
+          "unexpected": []
+        },
+        "pass": true
+      },
+      "schemaValid": true
+    },
+    {
+      "scenario": "owner_2_filter_control",
+      "status": 200,
+      "traceId": "64efd8c6c0a74cd8a5a7cf23ac6fc402",
+      "runId": "84a9f98b-ee5d-50b0-a9d5-dcf24fe3531c",
+      "output": {
+        "pass": false,
+        "actual": {
+          "owner.name": "Betty",
+          "owner.address": "638 Cardinal Ave.",
+          "owner.city": "Sun Prairie",
+          "owner.telephone": "6085551749"
+        },
+        "expected": {
+          "owner.name": "Betty Davis",
+          "owner.address": "638 Cardinal Ave.",
+          "owner.city": "Sun Prairie",
+          "owner.telephone": "6085551749"
+        },
+        "cellCount": 4,
+        "rowLabels": [
+          "Name",
+          "Address",
+          "City",
+          "Telephone"
+        ],
+        "httpChecksPass": true,
+        "unresolvedThymeleaf": false
+      },
+      "capture": {
+        "traceSpanCount": 11,
+        "httpServerSpanCount": 1,
+        "jdbcSpanCount": 4,
+        "ownersSelectSpanCount": 2,
+        "declarationCount": 1,
+        "requiredEvidencePresent": true,
+        "reasons": []
+      },
+      "typedEdgeQuality": {
+        "value": {
+          "truePositive": 5,
+          "predicted": 5,
+          "gold": 5,
+          "precision": 1.0,
+          "recall": 1.0,
+          "missing": [],
+          "unexpected": []
+        },
+        "filter": {
+          "truePositive": 4,
+          "predicted": 4,
+          "gold": 4,
+          "precision": 1.0,
+          "recall": 1.0,
+          "missing": [],
+          "unexpected": []
+        },
+        "pass": true
+      },
+      "schemaValid": true
+    },
+    {
+      "scenario": "missing_owner",
+      "status": 500,
+      "traceId": "68e69df0a6734f009134391160faefef",
+      "runId": "7ad4e138-8856-57d2-8735-b84b4cdf5401",
+      "output": {
+        "pass": true,
+        "expectedStatus": 500,
+        "actualStatus": 500
+      },
+      "capture": {
+        "traceSpanCount": 5,
+        "httpServerSpanCount": 1,
+        "jdbcSpanCount": 1,
+        "ownersSelectSpanCount": 1,
+        "declarationCount": 0,
+        "requiredEvidencePresent": true,
+        "reasons": []
+      },
+      "typedEdgeQuality": null,
+      "schemaValid": true
+    }
+  ]
+}

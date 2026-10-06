@@ -1,0 +1,72 @@
+[
+  {
+    "path": "src/main/java/org/springframework/samples/petclinic/owner/OwnerController.java",
+    "git_blob_sha1": "e5edf5bb6c3f7f78e6202e59ed0b28e1cada32f9",
+    "url": "https://github.com/spring-projects/spring-petclinic/blob/500158f732419217507c7656904b8e6aa1bcc0d6/src/main/java/org/springframework/samples/petclinic/owner/OwnerController.java",
+    "local_sha256": "611115841f671065ca2796fbb096102d56ce6aafd20bfe9a264f0a6968cca3ff",
+    "verified_local_bytes_match_pinned_github_blob": true
+  },
+  {
+    "path": "src/main/java/org/springframework/samples/petclinic/owner/OwnerRepository.java",
+    "git_blob_sha1": "d2b3dde40f837c78e53f19e436e3894baa7cd243",
+    "url": "https://github.com/spring-projects/spring-petclinic/blob/500158f732419217507c7656904b8e6aa1bcc0d6/src/main/java/org/springframework/samples/petclinic/owner/OwnerRepository.java",
+    "local_sha256": "654cc5a38b2806748116caf4fbd6a99010a35605db32a12707078c34ccec2cd9",
+    "verified_local_bytes_match_pinned_github_blob": true
+  },
+  {
+    "path": "src/main/java/org/springframework/samples/petclinic/owner/Owner.java",
+    "git_blob_sha1": "fb5eefa570295ea571567375b5bc6814da648722",
+    "url": "https://github.com/spring-projects/spring-petclinic/blob/500158f732419217507c7656904b8e6aa1bcc0d6/src/main/java/org/springframework/samples/petclinic/owner/Owner.java",
+    "local_sha256": "a5273cbccaf4993c92cc204c4481d52ebc611b731862f078b203b2a7eefa5f8a",
+    "verified_local_bytes_match_pinned_github_blob": true
+  },
+  {
+    "path": "src/main/java/org/springframework/samples/petclinic/model/Person.java",
+    "git_blob_sha1": "92ca39a01b9ac4a48ac65c0271ef9fbf366562d4",
+    "url": "https://github.com/spring-projects/spring-petclinic/blob/500158f732419217507c7656904b8e6aa1bcc0d6/src/main/java/org/springframework/samples/petclinic/model/Person.java",
+    "local_sha256": "a872c368cd5b09a7cb8a3f42e1baff1f6b0adc7cfc5bccf5f426374292ba4244",
+    "verified_local_bytes_match_pinned_github_blob": true
+  },
+  {
+    "path": "src/main/java/org/springframework/samples/petclinic/model/BaseEntity.java",
+    "git_blob_sha1": "6babed56da3889bacd8114da0117659b774b7441",
+    "url": "https://github.com/spring-projects/spring-petclinic/blob/500158f732419217507c7656904b8e6aa1bcc0d6/src/main/java/org/springframework/samples/petclinic/model/BaseEntity.java",
+    "local_sha256": "2c8f47a328f8bc4ad0ed887890dcf731469ec8f1032b5420d173c7aa5a352600",
+    "verified_local_bytes_match_pinned_github_blob": true
+  },
+  {
+    "path": "src/main/resources/db/h2/schema.sql",
+    "git_blob_sha1": "f53b168084ecf4093d719abaa82ed08c9e6aef03",
+    "url": "https://github.com/spring-projects/spring-petclinic/blob/500158f732419217507c7656904b8e6aa1bcc0d6/src/main/resources/db/h2/schema.sql",
+    "local_sha256": "4ff59b25496040ae131160fb110a4207ff05ccab8e6695aa1ca79d963972e73c",
+    "verified_local_bytes_match_pinned_github_blob": true
+  },
+  {
+    "path": "src/main/resources/db/h2/data.sql",
+    "git_blob_sha1": "f232b1361f43ff29316d34707b0a89bec2994764",
+    "url": "https://github.com/spring-projects/spring-petclinic/blob/500158f732419217507c7656904b8e6aa1bcc0d6/src/main/resources/db/h2/data.sql",
+    "local_sha256": "c2e67030c7e79b5dab10d6452d56ea3a234ebaf859dc1c0a8e724731df07a09f",
+    "verified_local_bytes_match_pinned_github_blob": true
+  },
+  {
+    "path": "src/main/resources/application.properties",
+    "git_blob_sha1": "d000edb6a50e07bd7ac2c70f8768d1f776ad3a3b",
+    "url": "https://github.com/spring-projects/spring-petclinic/blob/500158f732419217507c7656904b8e6aa1bcc0d6/src/main/resources/application.properties",
+    "local_sha256": "67c1e7e0a0443d290301449110005ab75d223add305ed9c06897437df686de0e",
+    "verified_local_bytes_match_pinned_github_blob": true
+  },
+  {
+    "path": "src/main/java/org/springframework/samples/petclinic/system/WebConfiguration.java",
+    "git_blob_sha1": "1ef32e4dc5bbddbc03fee04ef83ed9444e771529",
+    "url": "https://github.com/spring-projects/spring-petclinic/blob/500158f732419217507c7656904b8e6aa1bcc0d6/src/main/java/org/springframework/samples/petclinic/system/WebConfiguration.java",
+    "local_sha256": "d9eb227f4ffcd434b2000ac30fce9b5e341f85e893c4b3536b50fbbc15384b92",
+    "verified_local_bytes_match_pinned_github_blob": true
+  },
+  {
+    "path": "src/main/resources/templates/owners/ownerDetails.html",
+    "git_blob_sha1": "cc175cd131514fafb5b294e9863188961e604fd0",
+    "url": "https://github.com/spring-projects/spring-petclinic/blob/500158f732419217507c7656904b8e6aa1bcc0d6/src/main/resources/templates/owners/ownerDetails.html",
+    "local_sha256": "adf2ef3ba0e6994f67bed35b6bf3ee9f7d3197af96bec35c90c003dba74bfbf2",
+    "verified_local_bytes_match_pinned_github_blob": true
+  }
+]

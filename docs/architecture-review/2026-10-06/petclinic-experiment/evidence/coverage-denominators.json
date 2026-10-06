@@ -1,0 +1,134 @@
+{
+  "scenarioCatalog": {
+    "modes": [
+      "baseline",
+      "enhanced",
+      "mutant"
+    ],
+    "perMode": [
+      "owner_1_seed",
+      "owner_2_filter_control",
+      "missing_owner"
+    ],
+    "executed": 9,
+    "applicable": 9
+  },
+  "potentialOperations": {
+    "observed": 1,
+    "denominator": 7,
+    "inventory": "contracts/potential-operations.json",
+    "scope": "OwnerController"
+  },
+  "codeBranches": {
+    "allApplicationClasses": {
+      "INSTRUCTION": {
+        "covered": 302,
+        "missed": 1105,
+        "denominator": 1407
+      },
+      "BRANCH": {
+        "covered": 14,
+        "missed": 128,
+        "denominator": 142
+      },
+      "LINE": {
+        "covered": 90,
+        "missed": 267,
+        "denominator": 357
+      },
+      "COMPLEXITY": {
+        "covered": 46,
+        "missed": 142,
+        "denominator": 188
+      },
+      "METHOD": {
+        "covered": 44,
+        "missed": 73,
+        "denominator": 117
+      },
+      "CLASS": {
+        "covered": 21,
+        "missed": 3,
+        "denominator": 24
+      }
+    },
+    "OwnerController": {
+      "INSTRUCTION": {
+        "covered": 59,
+        "missed": 203,
+        "denominator": 262
+      },
+      "BRANCH": {
+        "covered": 1,
+        "missed": 19,
+        "denominator": 20
+      },
+      "LINE": {
+        "covered": 13,
+        "missed": 47,
+        "denominator": 60
+      },
+      "COMPLEXITY": {
+        "covered": 5,
+        "missed": 19,
+        "denominator": 24
+      },
+      "METHOD": {
+        "covered": 5,
+        "missed": 9,
+        "denominator": 14
+      },
+      "CLASS": {
+        "covered": 1,
+        "missed": 0,
+        "denominator": 1
+      }
+    }
+  },
+  "typedValueEdgesPerSuccessfulEnhancedScenario": {
+    "correct": 5,
+    "predicted": 5,
+    "gold": 5
+  },
+  "filterInfluencesPerSuccessfulEnhancedScenario": {
+    "correct": 4,
+    "predicted": 4,
+    "gold": 4
+  },
+  "requiredBoundaryAssociations": {
+    "correct": 4,
+    "denominator": 4,
+    "requirements": [
+      "JDBC has full ancestor chain to registered HTTP SERVER",
+      "successful mapping event is associated with that HTTP SERVER"
+    ],
+    "scenarios": [
+      "owner_1_seed",
+      "owner_2_filter_control"
+    ]
+  },
+  "requiredSensorPresence": {
+    "http": {
+      "present": 3,
+      "expected": 3
+    },
+    "ownersSelect": {
+      "present": 3,
+      "expected": 3
+    },
+    "successfulMapping": {
+      "present": 2,
+      "expected": 2
+    },
+    "scope": "enhanced"
+  },
+  "captureCompleteness": "NOT_ESTABLISHED",
+  "offlineNegativeControls": {
+    "detected": 9,
+    "defined": 9
+  },
+  "realMutation": {
+    "detectedOutputFailures": 2,
+    "expected": 2
+  }
+}

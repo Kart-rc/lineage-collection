@@ -1,0 +1,51 @@
+[
+  {
+    "method": "GET",
+    "route": "/owners/new",
+    "source": "petclinic/src/main/java/org/springframework/samples/petclinic/owner/OwnerController.java",
+    "line": 72,
+    "scope": "OwnerController only"
+  },
+  {
+    "method": "POST",
+    "route": "/owners/new",
+    "source": "petclinic/src/main/java/org/springframework/samples/petclinic/owner/OwnerController.java",
+    "line": 77,
+    "scope": "OwnerController only"
+  },
+  {
+    "method": "GET",
+    "route": "/owners/find",
+    "source": "petclinic/src/main/java/org/springframework/samples/petclinic/owner/OwnerController.java",
+    "line": 89,
+    "scope": "OwnerController only"
+  },
+  {
+    "method": "GET",
+    "route": "/owners",
+    "source": "petclinic/src/main/java/org/springframework/samples/petclinic/owner/OwnerController.java",
+    "line": 94,
+    "scope": "OwnerController only"
+  },
+  {
+    "method": "GET",
+    "route": "/owners/{ownerId}/edit",
+    "source": "petclinic/src/main/java/org/springframework/samples/petclinic/owner/OwnerController.java",
+    "line": 148,
+    "scope": "OwnerController only"
+  },
+  {
+    "method": "POST",
+    "route": "/owners/{ownerId}/edit",
+    "source": "petclinic/src/main/java/org/springframework/samples/petclinic/owner/OwnerController.java",
+    "line": 153,
+    "scope": "OwnerController only"
+  },
+  {
+    "method": "GET",
+    "route": "/owners/{ownerId}",
+    "source": "petclinic/src/main/java/org/springframework/samples/petclinic/owner/OwnerController.java",
+    "line": 178,
+    "scope": "OwnerController only"
+  }
+]

@@ -1,0 +1,31 @@
+{
+  "verifiedAt": "2026-10-06T05:05:26.995663+00:00",
+  "jarEntry": "BOOT-INF/classes/templates/owners/ownerDetails.html",
+  "sha256": "adf2ef3ba0e6994f67bed35b6bf3ee9f7d3197af96bec35c90c003dba74bfbf2",
+  "checks": [
+    {
+      "runId": "baseline:owner_1_seed:f7a2cc7e-6a84-40e2-9d8b-2ce323ee0cc2",
+      "jarTemplateHashMatchesRecordedHash": true
+    },
+    {
+      "runId": "baseline:owner_2_filter_control:6cb8f8bc-07ff-4404-9735-3c47b74247b9",
+      "jarTemplateHashMatchesRecordedHash": true
+    },
+    {
+      "runId": "baseline:missing_owner:ef19a3c2-ab15-42d2-9011-6949eeffd8a5",
+      "jarTemplateHashMatchesRecordedHash": true
+    },
+    {
+      "runId": "enhanced:owner_1_seed:27c4e144-e18f-4dfa-8878-a67931d7f5f7",
+      "jarTemplateHashMatchesRecordedHash": true
+    },
+    {
+      "runId": "enhanced:owner_2_filter_control:079a96e8-bfe7-4a86-8f43-c63127ea0b64",
+      "jarTemplateHashMatchesRecordedHash": true
+    },
+    {
+      "runId": "enhanced:missing_owner:56a5360f-8859-44eb-af9d-215ab70975e2",
+      "jarTemplateHashMatchesRecordedHash": true
+    }
+  ]
+}

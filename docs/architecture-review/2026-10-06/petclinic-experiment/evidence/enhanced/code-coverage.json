@@ -1,0 +1,66 @@
+{
+  "allApplicationClasses": {
+    "INSTRUCTION": {
+      "covered": 302,
+      "missed": 1105,
+      "denominator": 1407
+    },
+    "BRANCH": {
+      "covered": 14,
+      "missed": 128,
+      "denominator": 142
+    },
+    "LINE": {
+      "covered": 90,
+      "missed": 267,
+      "denominator": 357
+    },
+    "COMPLEXITY": {
+      "covered": 46,
+      "missed": 142,
+      "denominator": 188
+    },
+    "METHOD": {
+      "covered": 44,
+      "missed": 73,
+      "denominator": 117
+    },
+    "CLASS": {
+      "covered": 21,
+      "missed": 3,
+      "denominator": 24
+    }
+  },
+  "OwnerController": {
+    "INSTRUCTION": {
+      "covered": 59,
+      "missed": 203,
+      "denominator": 262
+    },
+    "BRANCH": {
+      "covered": 1,
+      "missed": 19,
+      "denominator": 20
+    },
+    "LINE": {
+      "covered": 13,
+      "missed": 47,
+      "denominator": 60
+    },
+    "COMPLEXITY": {
+      "covered": 5,
+      "missed": 19,
+      "denominator": 24
+    },
+    "METHOD": {
+      "covered": 5,
+      "missed": 9,
+      "denominator": 14
+    },
+    "CLASS": {
+      "covered": 1,
+      "missed": 0,
+      "denominator": 1
+    }
+  }
+}

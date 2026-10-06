@@ -1,0 +1,28 @@
+{
+  "recordedAt": "2026-10-06T05:09:31.876348+00:00",
+  "os": "Linux-6.18.44-x86_64-with-glibc2.41",
+  "python": "3.12.14",
+  "java": "Eclipse Temurin 21.0.12.1+1",
+  "maven": "3.9.16",
+  "springBoot": "4.1.0",
+  "otelAgent": "2.32.0",
+  "otelApi": "1.59.0",
+  "jacoco": "0.8.15",
+  "sourceCommit": "500158f732419217507c7656904b8e6aa1bcc0d6",
+  "jarSha256": "6719bdc73d85a7dabd90ae8a1523fa49602197ddc2bbbaf5725b0cf01414116f",
+  "execution": "Linux cloud execution workspace; real loopback HTTP; fresh H2 per JVM; no containers, external writes, production deployment or paid APIs",
+  "gitAcquisition": "Pinned official source archive, no git ownership/trust overrides",
+  "buildSkipFlags": [
+    "maven.test.skip=true",
+    "spring-javaformat.skip=true",
+    "checkstyle.skip=true",
+    "maven.gitcommitid.skip=true"
+  ],
+  "focusedUpstreamTests": {
+    "passed": 30,
+    "failed": 0,
+    "errors": 0,
+    "firstAttempt": "12 passed, 18 Mockito self-attach initialization errors",
+    "recovery": "Official Mockito 5.23.0 startup -javaagent; no security setting changed"
+  }
+}

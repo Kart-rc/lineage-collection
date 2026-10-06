@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+
+<html>
+
+<head>
+
+  <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
+  <meta charset="utf-8">
+  <meta http-equiv="X-UA-Compatible" content="IE=edge">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="shortcut icon" type="image/x-icon" href="/resources/images/favicon.png">
+  <title>PetClinic :: a Spring Framework demonstration</title>
+  <link href="/webjars/font-awesome/4.7.0/css/font-awesome.min.css" rel="stylesheet">
+  <link rel="stylesheet" href="/resources/css/petclinic.css" />
+
+</head>
+
+<body>
+
+  <nav class="navbar navbar-expand-lg navbar-dark" role="navigation">
+    <div class="container-fluid">
+      <a class="navbar-brand" href="/"><span></span></a>
+      <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#main-navbar">
+        <span class="navbar-toggler-icon"></span>
+      </button>
+      <div class="collapse navbar-collapse" id="main-navbar" style>
+
+        
+
+        <ul class="nav navbar-nav me-auto">
+
+          <li class="nav-item">
+            <a class="nav-link" href="/" title="home page">
+              <span class="fa fa-home"></span>
+              <span>Home</span>
+            </a>
+          </li>
+
+          <li class="nav-item">
+            <a class="nav-link active" href="/owners/find" title="find owners">
+              <span class="fa fa-search"></span>
+              <span>Find Owners</span>
+            </a>
+          </li>
+
+          <li class="nav-item">
+            <a class="nav-link" href="/vets.html" title="veterinarians">
+              <span class="fa fa-th-list"></span>
+              <span>Veterinarians</span>
+            </a>
+          </li>
+
+          <li class="nav-item">
+            <a class="nav-link" href="/oups" title="trigger a RuntimeException to see how it is handled">
+              <span class="fa fa-exclamation-triangle"></span>
+              <span>Error</span>
+            </a>
+          </li>
+
+        </ul>
+      </div>
+    </div>
+  </nav>
+  <div class="container-fluid">
+    <div class="container xd-container">
+
+      <body>
+
+  <h2>Owner Information</h2>
+
+  
+
+  
+
+  <table class="table table-striped">
+    <tr>
+      <th>Name</th>
+      <td><b>George Franklin</b></td>
+    </tr>
+    <tr>
+      <th>Address</th>
+      <td>110 W. Liberty St.</td>
+    </tr>
+    <tr>
+      <th>City</th>
+      <td>Madison</td>
+    </tr>
+    <tr>
+      <th>Telephone</th>
+      <td>6085551023</td>
+    </tr>
+  </table>
+
+  <a href="1/edit" class="btn btn-primary">Edit Owner</a>
+  <a href="1/pets/new" class="btn btn-primary">Add New Pet</a>
+
+  <br />
+  <br />
+  <br />
+  <h2>Pets and Visits</h2>
+
+  <table class="table table-striped">
+
+    <tr>
+      <td valign="top">
+        <dl class="dl-horizontal">
+          <dt>Name</dt>
+          <dd>Leo</dd>
+          <dt>Birth Date</dt>
+          <dd>2010-09-07</dd>
+          <dt>Type</dt>
+          <dd>cat</dd>
+        </dl>
+      </td>
+      <td valign="top">
+        <table class="table-condensed">
+          <thead>
+            <tr>
+              <th>Visit Date</th>
+              <th>Description</th>
+            </tr>
+          </thead>
+          
+          <tr>
+            <td><a href="1/pets/1/edit">Edit Pet</a></td>
+            <td><a href="1/pets/1/visits/new">Add Visit</a></td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+
+  </table>
+  <script>
+    // Function to hide the success and error messages after 3 seconds
+    function hideMessages() {
+      setTimeout(function () {
+        document.getElementById("success-message").style.display = "none";
+        document.getElementById("error-message").style.display = "none";
+      }, 3000); // 3000 milliseconds (3 seconds)
+    }
+
+    // Call the function to hide messages
+    hideMessages();
+  </script>
+
+</body>
+
+      <br />
+      <br />
+      <div class="container">
+        <div class="row">
+          <div class="col-12 text-center">
+            <img src="/resources/images/spring-logo.svg" alt="VMware Tanzu Logo" class="logo">
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="/webjars/bootstrap/5.3.8/dist/js/bootstrap.bundle.min.js"></script>
+
+</body>
+
+</html>

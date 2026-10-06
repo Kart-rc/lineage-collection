@@ -1,0 +1,61 @@
+[
+  {
+    "runId": "mutant:owner_1_seed:7bc9fa55-ad62-4511-bf6c-ef503cf4363d",
+    "scenario": "owner_1_seed",
+    "traceId": "57366ef1cfd94b1a84e74ee1a2a49a73",
+    "parentSpanId": "d6c8ea1cf5a34f7a",
+    "path": "/owners/1",
+    "activeTemplateSha256": "0946d88a5fa4d71ed3a9f02c19dc6724302f0c2a5dd9d43daa2894c873114e36",
+    "sourceCommit": "500158f732419217507c7656904b8e6aa1bcc0d6",
+    "jarSha256": "6719bdc73d85a7dabd90ae8a1523fa49602197ddc2bbbaf5725b0cf01414116f",
+    "scheduledAt": "2026-10-06T05:04:53.035423+00:00",
+    "status": 200,
+    "headers": {
+      "Content-Type": "text/html;charset=UTF-8",
+      "Content-Language": "en",
+      "Transfer-Encoding": "chunked",
+      "Date": "Tue, 06 Oct 2026 05:04:53 GMT",
+      "Connection": "close"
+    },
+    "completedAt": "2026-10-06T05:04:53.806828+00:00"
+  },
+  {
+    "runId": "mutant:owner_2_filter_control:3874e565-6fef-40b6-b2b1-92c830b3e51c",
+    "scenario": "owner_2_filter_control",
+    "traceId": "64efd8c6c0a74cd8a5a7cf23ac6fc402",
+    "parentSpanId": "979661c502b44ccf",
+    "path": "/owners/2",
+    "activeTemplateSha256": "0946d88a5fa4d71ed3a9f02c19dc6724302f0c2a5dd9d43daa2894c873114e36",
+    "sourceCommit": "500158f732419217507c7656904b8e6aa1bcc0d6",
+    "jarSha256": "6719bdc73d85a7dabd90ae8a1523fa49602197ddc2bbbaf5725b0cf01414116f",
+    "scheduledAt": "2026-10-06T05:04:53.869608+00:00",
+    "status": 200,
+    "headers": {
+      "Content-Type": "text/html;charset=UTF-8",
+      "Content-Language": "en",
+      "Transfer-Encoding": "chunked",
+      "Date": "Tue, 06 Oct 2026 05:04:53 GMT",
+      "Connection": "close"
+    },
+    "completedAt": "2026-10-06T05:04:53.901189+00:00"
+  },
+  {
+    "runId": "mutant:missing_owner:6632d92e-2ad0-4d2d-8697-52284786ae87",
+    "scenario": "missing_owner",
+    "traceId": "68e69df0a6734f009134391160faefef",
+    "parentSpanId": "4d7ba7539f314745",
+    "path": "/owners/999999",
+    "activeTemplateSha256": "0946d88a5fa4d71ed3a9f02c19dc6724302f0c2a5dd9d43daa2894c873114e36",
+    "sourceCommit": "500158f732419217507c7656904b8e6aa1bcc0d6",
+    "jarSha256": "6719bdc73d85a7dabd90ae8a1523fa49602197ddc2bbbaf5725b0cf01414116f",
+    "scheduledAt": "2026-10-06T05:04:53.962515+00:00",
+    "status": 500,
+    "headers": {
+      "Content-Type": "application/json",
+      "Transfer-Encoding": "chunked",
+      "Date": "Tue, 06 Oct 2026 05:04:54 GMT",
+      "Connection": "close"
+    },
+    "completedAt": "2026-10-06T05:04:54.051552+00:00"
+  }
+]

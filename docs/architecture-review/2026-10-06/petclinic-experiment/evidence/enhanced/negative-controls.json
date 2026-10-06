@@ -1,0 +1,383 @@
+[
+  {
+    "control": "drop_mapping_event",
+    "method": "Offline deletion from actual captured evidence",
+    "detected": true,
+    "capture": {
+      "traceSpanCount": 11,
+      "httpServerSpanCount": 1,
+      "jdbcSpanCount": 4,
+      "ownersSelectSpanCount": 2,
+      "declarationCount": 0,
+      "requiredEvidencePresent": false,
+      "reasons": [
+        "Expected 1 successful mapping declarations"
+      ]
+    }
+  },
+  {
+    "control": "drop_all_jdbc_spans",
+    "method": "Offline deletion from actual captured evidence",
+    "detected": true,
+    "capture": {
+      "traceSpanCount": 7,
+      "httpServerSpanCount": 1,
+      "jdbcSpanCount": 0,
+      "ownersSelectSpanCount": 0,
+      "declarationCount": 1,
+      "requiredEvidencePresent": false,
+      "reasons": [
+        "No observed JDBC owners SELECT in scenario trace"
+      ]
+    }
+  },
+  {
+    "control": "drop_http_server_span",
+    "method": "Offline deletion from actual captured evidence",
+    "detected": true,
+    "capture": {
+      "traceSpanCount": 10,
+      "httpServerSpanCount": 0,
+      "jdbcSpanCount": 4,
+      "ownersSelectSpanCount": 2,
+      "declarationCount": 0,
+      "requiredEvidencePresent": false,
+      "reasons": [
+        "Expected exactly one HTTP SERVER span",
+        "Expected 1 successful mapping declarations"
+      ]
+    }
+  },
+  {
+    "control": "omit_last_name_edge",
+    "method": "Offline mutation of adapted actual event",
+    "detected": true,
+    "typedEdgeQuality": {
+      "value": {
+        "truePositive": 4,
+        "predicted": 4,
+        "gold": 5,
+        "precision": 1.0,
+        "recall": 0.8,
+        "missing": [
+          [
+            "owners.last_name",
+            "owner.name",
+            "CONCAT_HTML_RENDER"
+          ]
+        ],
+        "unexpected": []
+      },
+      "filter": {
+        "truePositive": 4,
+        "predicted": 4,
+        "gold": 4,
+        "precision": 1.0,
+        "recall": 1.0,
+        "missing": [],
+        "unexpected": []
+      },
+      "pass": false
+    }
+  },
+  {
+    "control": "invent_id_value_edge",
+    "method": "Offline mutation of adapted actual event",
+    "detected": true,
+    "typedEdgeQuality": {
+      "value": {
+        "truePositive": 5,
+        "predicted": 6,
+        "gold": 5,
+        "precision": 0.8333333333333334,
+        "recall": 1.0,
+        "missing": [],
+        "unexpected": [
+          [
+            "owners.id",
+            "owner.name",
+            "CONCAT_HTML_RENDER"
+          ]
+        ]
+      },
+      "filter": {
+        "truePositive": 4,
+        "predicted": 4,
+        "gold": 4,
+        "precision": 1.0,
+        "recall": 1.0,
+        "missing": [],
+        "unexpected": []
+      },
+      "pass": false
+    }
+  },
+  {
+    "control": "mislabel_identity",
+    "method": "Offline mutation of adapted actual event",
+    "detected": true,
+    "typedEdgeQuality": {
+      "value": {
+        "truePositive": 0,
+        "predicted": 5,
+        "gold": 5,
+        "precision": 0.0,
+        "recall": 0.0,
+        "missing": [
+          [
+            "owners.address",
+            "owner.address",
+            "HTML_RENDER"
+          ],
+          [
+            "owners.city",
+            "owner.city",
+            "HTML_RENDER"
+          ],
+          [
+            "owners.first_name",
+            "owner.name",
+            "CONCAT_HTML_RENDER"
+          ],
+          [
+            "owners.last_name",
+            "owner.name",
+            "CONCAT_HTML_RENDER"
+          ],
+          [
+            "owners.telephone",
+            "owner.telephone",
+            "HTML_RENDER"
+          ]
+        ],
+        "unexpected": [
+          [
+            "owners.address",
+            "owner.address",
+            "UNKNOWN"
+          ],
+          [
+            "owners.city",
+            "owner.city",
+            "UNKNOWN"
+          ],
+          [
+            "owners.first_name",
+            "owner.name",
+            "UNKNOWN"
+          ],
+          [
+            "owners.last_name",
+            "owner.name",
+            "UNKNOWN"
+          ],
+          [
+            "owners.telephone",
+            "owner.telephone",
+            "UNKNOWN"
+          ]
+        ]
+      },
+      "filter": {
+        "truePositive": 4,
+        "predicted": 4,
+        "gold": 4,
+        "precision": 1.0,
+        "recall": 1.0,
+        "missing": [],
+        "unexpected": []
+      },
+      "pass": false
+    }
+  },
+  {
+    "control": "wrong_dataset_identity",
+    "method": "Offline mutation of adapted actual event",
+    "detected": true,
+    "typedEdgeQuality": {
+      "value": {
+        "truePositive": 0,
+        "predicted": 5,
+        "gold": 5,
+        "precision": 0.0,
+        "recall": 0.0,
+        "missing": [
+          [
+            "owners.address",
+            "owner.address",
+            "HTML_RENDER"
+          ],
+          [
+            "owners.city",
+            "owner.city",
+            "HTML_RENDER"
+          ],
+          [
+            "owners.first_name",
+            "owner.name",
+            "CONCAT_HTML_RENDER"
+          ],
+          [
+            "owners.last_name",
+            "owner.name",
+            "CONCAT_HTML_RENDER"
+          ],
+          [
+            "owners.telephone",
+            "owner.telephone",
+            "HTML_RENDER"
+          ]
+        ],
+        "unexpected": [
+          [
+            "UNRESOLVED:{'name': 'PUBLIC.OWNERS', 'namespace': 'jdbc:h2:mem:petclinic', 'field': 'address', 'transformations': [{'type': 'DIRECT', 'subtype': 'TRANSFORMATION', 'description': 'HTML_TEXT(address)', 'masking': False}]}",
+            "UNRESOLVED:other-view",
+            "HTML_RENDER"
+          ],
+          [
+            "UNRESOLVED:{'name': 'PUBLIC.OWNERS', 'namespace': 'jdbc:h2:mem:petclinic', 'field': 'city', 'transformations': [{'type': 'DIRECT', 'subtype': 'TRANSFORMATION', 'description': 'HTML_TEXT(city)', 'masking': False}]}",
+            "UNRESOLVED:other-view",
+            "HTML_RENDER"
+          ],
+          [
+            "UNRESOLVED:{'name': 'PUBLIC.OWNERS', 'namespace': 'jdbc:h2:mem:petclinic', 'field': 'first_name', 'transformations': [{'type': 'DIRECT', 'subtype': 'TRANSFORMATION', 'description': \"HTML_TEXT(first_name + ' ' + last_name)\", 'masking': False}]}",
+            "UNRESOLVED:other-view",
+            "CONCAT_HTML_RENDER"
+          ],
+          [
+            "UNRESOLVED:{'name': 'PUBLIC.OWNERS', 'namespace': 'jdbc:h2:mem:petclinic', 'field': 'last_name', 'transformations': [{'type': 'DIRECT', 'subtype': 'TRANSFORMATION', 'description': \"HTML_TEXT(first_name + ' ' + last_name)\", 'masking': False}]}",
+            "UNRESOLVED:other-view",
+            "CONCAT_HTML_RENDER"
+          ],
+          [
+            "UNRESOLVED:{'name': 'PUBLIC.OWNERS', 'namespace': 'jdbc:h2:mem:petclinic', 'field': 'telephone', 'transformations': [{'type': 'DIRECT', 'subtype': 'TRANSFORMATION', 'description': 'HTML_TEXT(telephone)', 'masking': False}]}",
+            "UNRESOLVED:other-view",
+            "HTML_RENDER"
+          ]
+        ]
+      },
+      "filter": {
+        "truePositive": 0,
+        "predicted": 4,
+        "gold": 4,
+        "precision": 0.0,
+        "recall": 0.0,
+        "missing": [
+          [
+            "owners.id",
+            "owner.address",
+            "ROW_SELECTION"
+          ],
+          [
+            "owners.id",
+            "owner.city",
+            "ROW_SELECTION"
+          ],
+          [
+            "owners.id",
+            "owner.name",
+            "ROW_SELECTION"
+          ],
+          [
+            "owners.id",
+            "owner.telephone",
+            "ROW_SELECTION"
+          ]
+        ],
+        "unexpected": [
+          [
+            "UNRESOLVED:{'name': 'PUBLIC.OWNERS', 'namespace': 'jdbc:h2:mem:petclinic', 'field': 'id', 'transformations': [{'type': 'INDIRECT', 'subtype': 'FILTER', 'description': 'owners.id = request.ownerId', 'masking': False}]}",
+            "owner.address",
+            "ROW_SELECTION"
+          ],
+          [
+            "UNRESOLVED:{'name': 'PUBLIC.OWNERS', 'namespace': 'jdbc:h2:mem:petclinic', 'field': 'id', 'transformations': [{'type': 'INDIRECT', 'subtype': 'FILTER', 'description': 'owners.id = request.ownerId', 'masking': False}]}",
+            "owner.city",
+            "ROW_SELECTION"
+          ],
+          [
+            "UNRESOLVED:{'name': 'PUBLIC.OWNERS', 'namespace': 'jdbc:h2:mem:petclinic', 'field': 'id', 'transformations': [{'type': 'INDIRECT', 'subtype': 'FILTER', 'description': 'owners.id = request.ownerId', 'masking': False}]}",
+            "owner.name",
+            "ROW_SELECTION"
+          ],
+          [
+            "UNRESOLVED:{'name': 'PUBLIC.OWNERS', 'namespace': 'jdbc:h2:mem:petclinic', 'field': 'id', 'transformations': [{'type': 'INDIRECT', 'subtype': 'FILTER', 'description': 'owners.id = request.ownerId', 'masking': False}]}",
+            "owner.telephone",
+            "ROW_SELECTION"
+          ]
+        ]
+      },
+      "pass": false
+    }
+  },
+  {
+    "control": "untyped_extra_source",
+    "method": "Offline mutation of adapted actual event",
+    "detected": true,
+    "typedEdgeQuality": {
+      "value": {
+        "truePositive": 5,
+        "predicted": 6,
+        "gold": 5,
+        "precision": 0.8333333333333334,
+        "recall": 1.0,
+        "missing": [],
+        "unexpected": [
+          [
+            "owners.id",
+            "owner.name",
+            "UNKNOWN"
+          ]
+        ]
+      },
+      "filter": {
+        "truePositive": 4,
+        "predicted": 4,
+        "gold": 4,
+        "precision": 1.0,
+        "recall": 1.0,
+        "missing": [],
+        "unexpected": []
+      },
+      "pass": false
+    }
+  },
+  {
+    "control": "wrong_input_identity",
+    "method": "Offline mutation of adapted actual event",
+    "detected": true,
+    "typedEdgeQuality": {
+      "value": {
+        "truePositive": 4,
+        "predicted": 5,
+        "gold": 5,
+        "precision": 0.8,
+        "recall": 0.8,
+        "missing": [
+          [
+            "owners.first_name",
+            "owner.name",
+            "CONCAT_HTML_RENDER"
+          ]
+        ],
+        "unexpected": [
+          [
+            "UNRESOLVED:{'name': 'PUBLIC.OWNERS', 'namespace': 'jdbc:h2:mem:other-db', 'field': 'first_name', 'transformations': [{'type': 'DIRECT', 'subtype': 'TRANSFORMATION', 'description': \"HTML_TEXT(first_name + ' ' + last_name)\", 'masking': False}]}",
+            "owner.name",
+            "CONCAT_HTML_RENDER"
+          ]
+        ]
+      },
+      "filter": {
+        "truePositive": 4,
+        "predicted": 4,
+        "gold": 4,
+        "precision": 1.0,
+        "recall": 1.0,
+        "missing": [],
+        "unexpected": []
+      },
+      "pass": false
+    }
+  }
+]

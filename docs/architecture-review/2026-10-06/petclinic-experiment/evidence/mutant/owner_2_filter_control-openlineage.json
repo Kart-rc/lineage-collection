@@ -1,0 +1,239 @@
+[
+  {
+    "eventTime": "2026-10-06T05:04:53.871758+00:00",
+    "eventType": "START",
+    "producer": "urn:lineage-experiment:otel-openlineage-adapter:v1",
+    "schemaURL": "https://openlineage.io/spec/2-0-2/OpenLineage.json#/$defs/RunEvent",
+    "run": {
+      "runId": "84a9f98b-ee5d-50b0-a9d5-dcf24fe3531c",
+      "facets": {
+        "experiment_lineageEvidence": {
+          "_producer": "urn:lineage-experiment:otel-openlineage-adapter:v1",
+          "_schemaURL": "urn:lineage-experiment:schema:sha256:0f71b7d686b1b1df5b8d6fe9b0f1331dc0a3e3be7193a67f9e9761736112021a",
+          "evidenceClass": "DECLARED_AND_EXECUTED",
+          "traceId": "64efd8c6c0a74cd8a5a7cf23ac6fc402",
+          "spanIds": [
+            "b4d37cd54b90d9fa",
+            "b24783742879d617",
+            "df69fae00f517bea",
+            "1e22f60fa1e24048",
+            "c15d3f92f6b6d6f3",
+            "5097089792898a33",
+            "986b12a5afb8124b",
+            "c511ccae2a3a49d3",
+            "0b3077bac8fea148",
+            "325734e1da42ecb0",
+            "c421f162c4debf59"
+          ],
+          "jdbcSpanIds": [
+            "c511ccae2a3a49d3",
+            "325734e1da42ecb0"
+          ],
+          "contractSha256": "83c7b1c776364ee8d68b11ad5eb23728abee9713bdd8e5daa33e9ec2a19ab36a",
+          "sourceCommit": "500158f732419217507c7656904b8e6aa1bcc0d6",
+          "jarSha256": "6719bdc73d85a7dabd90ae8a1523fa49602197ddc2bbbaf5725b0cf01414116f",
+          "activeTemplateSha256": "0946d88a5fa4d71ed3a9f02c19dc6724302f0c2a5dd9d43daa2894c873114e36",
+          "requiredEvidencePresent": true,
+          "captureCompleteness": "NOT_ESTABLISHED",
+          "missingEvidence": [],
+          "scope": "Owner summary table only",
+          "businessOutputValidated": false
+        }
+      }
+    },
+    "job": {
+      "namespace": "service://spring-petclinic",
+      "name": "GET /owners/{ownerId}",
+      "facets": {}
+    },
+    "inputs": [],
+    "outputs": []
+  },
+  {
+    "eventTime": "2026-10-06T05:04:53.900766+00:00",
+    "eventType": "COMPLETE",
+    "producer": "urn:lineage-experiment:otel-openlineage-adapter:v1",
+    "schemaURL": "https://openlineage.io/spec/2-0-2/OpenLineage.json#/$defs/RunEvent",
+    "run": {
+      "runId": "84a9f98b-ee5d-50b0-a9d5-dcf24fe3531c",
+      "facets": {
+        "experiment_lineageEvidence": {
+          "_producer": "urn:lineage-experiment:otel-openlineage-adapter:v1",
+          "_schemaURL": "urn:lineage-experiment:schema:sha256:0f71b7d686b1b1df5b8d6fe9b0f1331dc0a3e3be7193a67f9e9761736112021a",
+          "evidenceClass": "DECLARED_AND_EXECUTED",
+          "traceId": "64efd8c6c0a74cd8a5a7cf23ac6fc402",
+          "spanIds": [
+            "b4d37cd54b90d9fa",
+            "b24783742879d617",
+            "df69fae00f517bea",
+            "1e22f60fa1e24048",
+            "c15d3f92f6b6d6f3",
+            "5097089792898a33",
+            "986b12a5afb8124b",
+            "c511ccae2a3a49d3",
+            "0b3077bac8fea148",
+            "325734e1da42ecb0",
+            "c421f162c4debf59"
+          ],
+          "jdbcSpanIds": [
+            "c511ccae2a3a49d3",
+            "325734e1da42ecb0"
+          ],
+          "contractSha256": "83c7b1c776364ee8d68b11ad5eb23728abee9713bdd8e5daa33e9ec2a19ab36a",
+          "sourceCommit": "500158f732419217507c7656904b8e6aa1bcc0d6",
+          "jarSha256": "6719bdc73d85a7dabd90ae8a1523fa49602197ddc2bbbaf5725b0cf01414116f",
+          "activeTemplateSha256": "0946d88a5fa4d71ed3a9f02c19dc6724302f0c2a5dd9d43daa2894c873114e36",
+          "requiredEvidencePresent": true,
+          "captureCompleteness": "NOT_ESTABLISHED",
+          "missingEvidence": [],
+          "scope": "Owner summary table only",
+          "businessOutputValidated": false
+        }
+      }
+    },
+    "job": {
+      "namespace": "service://spring-petclinic",
+      "name": "GET /owners/{ownerId}",
+      "facets": {}
+    },
+    "inputs": [
+      {
+        "name": "PUBLIC.OWNERS",
+        "namespace": "jdbc:h2:mem:petclinic",
+        "facets": {}
+      }
+    ],
+    "outputs": [
+      {
+        "name": "owners/ownerDetails#owner-summary",
+        "namespace": "logical://spring-petclinic",
+        "facets": {
+          "schema": {
+            "_producer": "urn:lineage-experiment:otel-openlineage-adapter:v1",
+            "_schemaURL": "https://openlineage.io/spec/facets/1-2-0/SchemaDatasetFacet.json#/$defs/SchemaDatasetFacet",
+            "fields": [
+              {
+                "name": "name",
+                "type": "HTML_TEXT"
+              },
+              {
+                "name": "address",
+                "type": "HTML_TEXT"
+              },
+              {
+                "name": "city",
+                "type": "HTML_TEXT"
+              },
+              {
+                "name": "telephone",
+                "type": "HTML_TEXT"
+              }
+            ]
+          },
+          "columnLineage": {
+            "_producer": "urn:lineage-experiment:otel-openlineage-adapter:v1",
+            "_schemaURL": "https://openlineage.io/spec/facets/1-2-0/ColumnLineageDatasetFacet.json#/$defs/ColumnLineageDatasetFacet",
+            "fields": {
+              "name": {
+                "inputFields": [
+                  {
+                    "name": "PUBLIC.OWNERS",
+                    "namespace": "jdbc:h2:mem:petclinic",
+                    "field": "first_name",
+                    "transformations": [
+                      {
+                        "type": "DIRECT",
+                        "subtype": "TRANSFORMATION",
+                        "description": "HTML_TEXT(first_name + ' ' + last_name)",
+                        "masking": false
+                      }
+                    ]
+                  },
+                  {
+                    "name": "PUBLIC.OWNERS",
+                    "namespace": "jdbc:h2:mem:petclinic",
+                    "field": "last_name",
+                    "transformations": [
+                      {
+                        "type": "DIRECT",
+                        "subtype": "TRANSFORMATION",
+                        "description": "HTML_TEXT(first_name + ' ' + last_name)",
+                        "masking": false
+                      }
+                    ]
+                  }
+                ]
+              },
+              "address": {
+                "inputFields": [
+                  {
+                    "name": "PUBLIC.OWNERS",
+                    "namespace": "jdbc:h2:mem:petclinic",
+                    "field": "address",
+                    "transformations": [
+                      {
+                        "type": "DIRECT",
+                        "subtype": "TRANSFORMATION",
+                        "description": "HTML_TEXT(address)",
+                        "masking": false
+                      }
+                    ]
+                  }
+                ]
+              },
+              "city": {
+                "inputFields": [
+                  {
+                    "name": "PUBLIC.OWNERS",
+                    "namespace": "jdbc:h2:mem:petclinic",
+                    "field": "city",
+                    "transformations": [
+                      {
+                        "type": "DIRECT",
+                        "subtype": "TRANSFORMATION",
+                        "description": "HTML_TEXT(city)",
+                        "masking": false
+                      }
+                    ]
+                  }
+                ]
+              },
+              "telephone": {
+                "inputFields": [
+                  {
+                    "name": "PUBLIC.OWNERS",
+                    "namespace": "jdbc:h2:mem:petclinic",
+                    "field": "telephone",
+                    "transformations": [
+                      {
+                        "type": "DIRECT",
+                        "subtype": "TRANSFORMATION",
+                        "description": "HTML_TEXT(telephone)",
+                        "masking": false
+                      }
+                    ]
+                  }
+                ]
+              }
+            },
+            "dataset": [
+              {
+                "name": "PUBLIC.OWNERS",
+                "namespace": "jdbc:h2:mem:petclinic",
+                "field": "id",
+                "transformations": [
+                  {
+                    "type": "INDIRECT",
+                    "subtype": "FILTER",
+                    "description": "owners.id = request.ownerId",
+                    "masking": false
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      }
+    ]
+  }
+]

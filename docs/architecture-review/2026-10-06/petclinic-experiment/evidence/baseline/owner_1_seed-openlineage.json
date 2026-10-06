@@ -1,0 +1,106 @@
+[
+  {
+    "eventTime": "2026-10-06T05:04:23.945833+00:00",
+    "eventType": "START",
+    "producer": "urn:lineage-experiment:otel-openlineage-adapter:v1",
+    "schemaURL": "https://openlineage.io/spec/2-0-2/OpenLineage.json#/$defs/RunEvent",
+    "run": {
+      "runId": "ccf5b463-8c86-565d-8e40-cf3119671a60",
+      "facets": {
+        "experiment_lineageEvidence": {
+          "_producer": "urn:lineage-experiment:otel-openlineage-adapter:v1",
+          "_schemaURL": "urn:lineage-experiment:schema:sha256:0f71b7d686b1b1df5b8d6fe9b0f1331dc0a3e3be7193a67f9e9761736112021a",
+          "evidenceClass": "INCOMPLETE",
+          "traceId": "fb7b07a74ad94643b0644b2215c21ffc",
+          "spanIds": [
+            "a962ce8a20d6a86e",
+            "feaf81195359e348",
+            "b1d9f3ac3e2acc10",
+            "b9c422a696a72425",
+            "81a396ff90f929b5",
+            "6ca51dd659759a30",
+            "515d9946070310a5",
+            "723d6898083b2994",
+            "cea3d306a4fdfc76",
+            "5f528d78edcb77b8",
+            "ee14d751eeb7a355"
+          ],
+          "jdbcSpanIds": [
+            "515d9946070310a5",
+            "cea3d306a4fdfc76"
+          ],
+          "contractSha256": "83c7b1c776364ee8d68b11ad5eb23728abee9713bdd8e5daa33e9ec2a19ab36a",
+          "sourceCommit": "500158f732419217507c7656904b8e6aa1bcc0d6",
+          "jarSha256": "6719bdc73d85a7dabd90ae8a1523fa49602197ddc2bbbaf5725b0cf01414116f",
+          "activeTemplateSha256": "adf2ef3ba0e6994f67bed35b6bf3ee9f7d3197af96bec35c90c003dba74bfbf2",
+          "requiredEvidencePresent": false,
+          "captureCompleteness": "NOT_ESTABLISHED",
+          "missingEvidence": [
+            "Expected 1 successful mapping declarations"
+          ],
+          "scope": "Owner summary table only",
+          "businessOutputValidated": false
+        }
+      }
+    },
+    "job": {
+      "namespace": "service://spring-petclinic",
+      "name": "GET /owners/{ownerId}",
+      "facets": {}
+    },
+    "inputs": [],
+    "outputs": []
+  },
+  {
+    "eventTime": "2026-10-06T05:04:24.725673+00:00",
+    "eventType": "COMPLETE",
+    "producer": "urn:lineage-experiment:otel-openlineage-adapter:v1",
+    "schemaURL": "https://openlineage.io/spec/2-0-2/OpenLineage.json#/$defs/RunEvent",
+    "run": {
+      "runId": "ccf5b463-8c86-565d-8e40-cf3119671a60",
+      "facets": {
+        "experiment_lineageEvidence": {
+          "_producer": "urn:lineage-experiment:otel-openlineage-adapter:v1",
+          "_schemaURL": "urn:lineage-experiment:schema:sha256:0f71b7d686b1b1df5b8d6fe9b0f1331dc0a3e3be7193a67f9e9761736112021a",
+          "evidenceClass": "INCOMPLETE",
+          "traceId": "fb7b07a74ad94643b0644b2215c21ffc",
+          "spanIds": [
+            "a962ce8a20d6a86e",
+            "feaf81195359e348",
+            "b1d9f3ac3e2acc10",
+            "b9c422a696a72425",
+            "81a396ff90f929b5",
+            "6ca51dd659759a30",
+            "515d9946070310a5",
+            "723d6898083b2994",
+            "cea3d306a4fdfc76",
+            "5f528d78edcb77b8",
+            "ee14d751eeb7a355"
+          ],
+          "jdbcSpanIds": [
+            "515d9946070310a5",
+            "cea3d306a4fdfc76"
+          ],
+          "contractSha256": "83c7b1c776364ee8d68b11ad5eb23728abee9713bdd8e5daa33e9ec2a19ab36a",
+          "sourceCommit": "500158f732419217507c7656904b8e6aa1bcc0d6",
+          "jarSha256": "6719bdc73d85a7dabd90ae8a1523fa49602197ddc2bbbaf5725b0cf01414116f",
+          "activeTemplateSha256": "adf2ef3ba0e6994f67bed35b6bf3ee9f7d3197af96bec35c90c003dba74bfbf2",
+          "requiredEvidencePresent": false,
+          "captureCompleteness": "NOT_ESTABLISHED",
+          "missingEvidence": [
+            "Expected 1 successful mapping declarations"
+          ],
+          "scope": "Owner summary table only",
+          "businessOutputValidated": false
+        }
+      }
+    },
+    "job": {
+      "namespace": "service://spring-petclinic",
+      "name": "GET /owners/{ownerId}",
+      "facets": {}
+    },
+    "inputs": [],
+    "outputs": []
+  }
+]

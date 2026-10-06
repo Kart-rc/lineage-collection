@@ -1,0 +1,88 @@
+[
+  {
+    "eventTime": "2026-10-06T05:04:24.865911+00:00",
+    "eventType": "START",
+    "producer": "urn:lineage-experiment:otel-openlineage-adapter:v1",
+    "schemaURL": "https://openlineage.io/spec/2-0-2/OpenLineage.json#/$defs/RunEvent",
+    "run": {
+      "runId": "0313a6c6-252e-5911-9bd3-69e9adb39ce8",
+      "facets": {
+        "experiment_lineageEvidence": {
+          "_producer": "urn:lineage-experiment:otel-openlineage-adapter:v1",
+          "_schemaURL": "urn:lineage-experiment:schema:sha256:0f71b7d686b1b1df5b8d6fe9b0f1331dc0a3e3be7193a67f9e9761736112021a",
+          "evidenceClass": "OBSERVED_FAILURE",
+          "traceId": "8f4f887bb90046f7ae0c16105e0ebc09",
+          "spanIds": [
+            "8fb3b26d011a93ab",
+            "3dada56f2d1efb88",
+            "b521c94fdec5adbb",
+            "821ec87ee6b2ffa1",
+            "50a892e74946f825"
+          ],
+          "jdbcSpanIds": [
+            "821ec87ee6b2ffa1"
+          ],
+          "contractSha256": "83c7b1c776364ee8d68b11ad5eb23728abee9713bdd8e5daa33e9ec2a19ab36a",
+          "sourceCommit": "500158f732419217507c7656904b8e6aa1bcc0d6",
+          "jarSha256": "6719bdc73d85a7dabd90ae8a1523fa49602197ddc2bbbaf5725b0cf01414116f",
+          "activeTemplateSha256": "adf2ef3ba0e6994f67bed35b6bf3ee9f7d3197af96bec35c90c003dba74bfbf2",
+          "requiredEvidencePresent": true,
+          "captureCompleteness": "NOT_ESTABLISHED",
+          "missingEvidence": [],
+          "scope": "Owner summary table only",
+          "businessOutputValidated": false
+        }
+      }
+    },
+    "job": {
+      "namespace": "service://spring-petclinic",
+      "name": "GET /owners/{ownerId}",
+      "facets": {}
+    },
+    "inputs": [],
+    "outputs": []
+  },
+  {
+    "eventTime": "2026-10-06T05:04:24.938496+00:00",
+    "eventType": "FAIL",
+    "producer": "urn:lineage-experiment:otel-openlineage-adapter:v1",
+    "schemaURL": "https://openlineage.io/spec/2-0-2/OpenLineage.json#/$defs/RunEvent",
+    "run": {
+      "runId": "0313a6c6-252e-5911-9bd3-69e9adb39ce8",
+      "facets": {
+        "experiment_lineageEvidence": {
+          "_producer": "urn:lineage-experiment:otel-openlineage-adapter:v1",
+          "_schemaURL": "urn:lineage-experiment:schema:sha256:0f71b7d686b1b1df5b8d6fe9b0f1331dc0a3e3be7193a67f9e9761736112021a",
+          "evidenceClass": "OBSERVED_FAILURE",
+          "traceId": "8f4f887bb90046f7ae0c16105e0ebc09",
+          "spanIds": [
+            "8fb3b26d011a93ab",
+            "3dada56f2d1efb88",
+            "b521c94fdec5adbb",
+            "821ec87ee6b2ffa1",
+            "50a892e74946f825"
+          ],
+          "jdbcSpanIds": [
+            "821ec87ee6b2ffa1"
+          ],
+          "contractSha256": "83c7b1c776364ee8d68b11ad5eb23728abee9713bdd8e5daa33e9ec2a19ab36a",
+          "sourceCommit": "500158f732419217507c7656904b8e6aa1bcc0d6",
+          "jarSha256": "6719bdc73d85a7dabd90ae8a1523fa49602197ddc2bbbaf5725b0cf01414116f",
+          "activeTemplateSha256": "adf2ef3ba0e6994f67bed35b6bf3ee9f7d3197af96bec35c90c003dba74bfbf2",
+          "requiredEvidencePresent": true,
+          "captureCompleteness": "NOT_ESTABLISHED",
+          "missingEvidence": [],
+          "scope": "Owner summary table only",
+          "businessOutputValidated": false
+        }
+      }
+    },
+    "job": {
+      "namespace": "service://spring-petclinic",
+      "name": "GET /owners/{ownerId}",
+      "facets": {}
+    },
+    "inputs": [],
+    "outputs": []
+  }
+]
